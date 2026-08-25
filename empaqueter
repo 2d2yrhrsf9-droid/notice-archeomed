@@ -1,0 +1,15 @@
+#!/bin/sh
+# Fabrique l'archive à téléverser dans WordPress.
+#
+# Le dossier du plugin part tel quel : WordPress attend une archive dont le
+# premier niveau est le dossier de l'extension, et rien d'autre.
+set -eu
+RACINE=$(cd "$(dirname "$0")" && pwd)
+CIBLE="$RACINE/notice-archeomed-rtf.zip"
+
+rm -f "$CIBLE"
+cd "$RACINE"
+zip -q -r "$CIBLE" notice-archeomed-rtf \
+    -x '*.DS_Store' -x '__MACOSX/*'
+echo "Archive écrite : $CIBLE"
+unzip -l "$CIBLE" | sed -n '4,$p' | sed '$d;$d'

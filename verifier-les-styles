@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Les styles que le générateur demande sont-ils dans le modèle ?
+
+Le générateur désigne les styles par leur nom affiché dans Word et résout
+l'identifiant interne à la lecture du modèle. C'est ce qui permet de suivre
+une évolution de la feuille Métopes en remplaçant « modele-metopes.docx » et
+rien d'autre — mais c'est aussi ce qui fait qu'un style disparu ne se voit
+pas : le paragraphe sort en Normal, et l'on ne s'en aperçoit qu'à la
+relecture, notice par notice.
+
+Ce contrôle rapproche donc trois choses : ce que le code demande, ce que le
+modèle livré contient, et ce que porte le fichier de stylage de référence.
+À passer chaque fois qu'on remplace le modèle.
+
+    ./verifier-les-styles
+"""
+
+import re
+import sys
+import zipfile
+from pathlib import Path
+
+RACINE = Path(__file__).resolve().parent
+MODELE = RACINE / "notice-archeomed-rtf" / "modele-metopes.docx"
+REFERENCE = RACINE / "reference" / "stylage_notice.docx"
+CODE = RACINE / "notice-archeomed-rtf" / "notice-archeomed-rtf.php"
+
+
+def styles_dun_docx(chemin):
+    """Les noms de style affichés, quel que soit leur type."""
+    with zipfile.ZipFile(chemin) as archive:
+        xml = archive.read("word/styles.xml").decode("utf-8")
+    return {
+        nom
+        for _, nom in re.findall(
+            r'<w:style [^>]*w:styleId="([^"]+)".*?<w:name w:val="([^"]*)"', xml, re.S
+        )
+    }
+
+
+def styles_demandes(chemin):
+    """Ce que le générateur applique, lu dans le code lui-même."""
+    code = chemin.read_text(encoding="utf-8")
+    return set(
+        re.findall(r"add_(?:raw_)?paragraph\(\s*'([^']+)'", code)
+        + re.findall(r"char_run\(\s*'([^']+)'", code)
+    )
+
+
+def main():
+    for chemin in (MODELE, CODE):
+        if not chemin.is_file():
+            print(f"Introuvable : {chemin}", file=sys.stderr)
+            return 2
+
+    modele = styles_dun_docx(MODELE)
+    reference = styles_dun_docx(REFERENCE) if REFERENCE.is_file() else set()
+    demandes = sorted(styles_demandes(CODE))
+
+    manquants = []
+    for style in demandes:
+        dans_modele = style in modele
+        note = ""
+        if reference and style not in reference:
+            note = "   (absent du fichier de stylage de référence)"
+        if dans_modele:
+            print(f"  ✓  {style}{note}")
+        else:
+            manquants.append(style)
+            print(f"  ✗  {style}   ABSENT DU MODÈLE{note}")
+
+    print()
+    if manquants:
+        print(f"{len(manquants)} style(s) demandé(s) par le code mais absent(s) du "
+              f"modèle : les paragraphes concernés sortiront en Normal.")
+        return 1
+    print(f"Les {len(demandes)} styles demandés sont dans le modèle.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

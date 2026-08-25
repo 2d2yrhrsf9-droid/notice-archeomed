@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Un filet, faute de PHP sur la machine de travail.
+
+Il n'y a ni PHP, ni Docker, ni Homebrew sur le poste où ce plugin s'écrit :
+« php -l » n'est pas jouable. Ce contrôle ne le remplace pas — il ne connaît
+ni la grammaire du langage ni ses fonctions —, mais il attrape la faute qui
+arrive vraiment quand on modifie un fichier par morceaux : une accolade, une
+parenthèse ou une apostrophe restée ouverte.
+
+Il sait sortir des balises PHP : le HTML, le CSS et le JavaScript des pages
+portent des accolades qui ne le regardent pas.
+
+    ./verifier-la-syntaxe notice-archeomed-rtf/*.php
+
+Rend 1 si quelque chose cloche. Un passage vert ne dispense pas d'installer
+sur un site d'essai avant la production.
+"""
+
+import sys, pathlib
+
+def verifier(chemin):
+    s = pathlib.Path(chemin).read_text(encoding='utf-8')
+    i, n = 0, len(s)
+    pile, ligne = [], 1
+    fautes = []
+    while i < n:
+        c = s[i]
+        # Hors des balises PHP, tout est du texte : le HTML, le CSS et le
+        # JavaScript y portent des accolades qui ne nous regardent pas.
+        if c == '?' and s.startswith('?>', i):
+            j = s.find('<?php', i)
+            if j < 0:
+                j = s.find('<?=', i)
+            if j < 0:
+                break
+            ligne += s.count('\n', i, j)
+            i = j + 5
+            continue
+        if c == '\n':
+            ligne += 1; i += 1; continue
+        if c == '/' and i + 1 < n and s[i+1] == '/':
+            while i < n and s[i] != '\n': i += 1
+            continue
+        if c == '#' and not (i + 1 < n and s[i+1] == '['):
+            while i < n and s[i] != '\n': i += 1
+            continue
+        if c == '/' and i + 1 < n and s[i+1] == '*':
+            j = s.find('*/', i + 2)
+            if j < 0: fautes.append((ligne, "commentaire non refermé")); break
+            ligne += s.count('\n', i, j); i = j + 2; continue
+        if c in '"\'':
+            q, i = c, i + 1
+            while i < n:
+                if s[i] == '\\': i += 2; continue
+                if s[i] == '\n': ligne += 1
+                if s[i] == q: break
+                i += 1
+            i += 1; continue
+        if c == '<' and s.startswith('<<<', i):
+            fin = s.find('\n', i)
+            marque = s[i+3:fin].strip().strip('"\'')
+            j = s.find('\n' + marque, fin)
+            if j < 0: j = s.find(marque, fin)
+            ligne += s.count('\n', i, j); i = j + len(marque); continue
+        if c in '({[':
+            pile.append((c, ligne))
+        elif c in ')}]':
+            paires = {')': '(', '}': '{', ']': '['}
+            if not pile or pile[-1][0] != paires[c]:
+                fautes.append((ligne, f"« {c} » sans ouvrant correspondant")); break
+            pile.pop()
+        i += 1
+    for ouvrant, l in pile:
+        fautes.append((l, f"« {ouvrant} » jamais refermé"))
+    return fautes
+
+sortie = 0
+for chemin in sys.argv[1:]:
+    fautes = verifier(chemin)
+    nom = pathlib.Path(chemin).name
+    if fautes:
+        sortie = 1
+        for l, quoi in fautes[:5]:
+            print(f"  ✗ {nom}:{l} — {quoi}")
+    else:
+        print(f"  ✓ {nom}")
+sys.exit(sortie)

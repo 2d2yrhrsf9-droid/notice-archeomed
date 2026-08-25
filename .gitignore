@@ -1,0 +1,6 @@
+# Rien de ce qui se fabrique ne se versionne.
+*.zip
+.DS_Store
+
+# Pièces de travail de la revue, gardées à côté du code sans être publiées.
+reference/
