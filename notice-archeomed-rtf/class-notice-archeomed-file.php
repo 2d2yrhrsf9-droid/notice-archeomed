@@ -566,9 +566,10 @@ class Notice_Archeomed_File {
 			return;   // un récapitulatif vide n'apprend rien et se met à ignorer
 		}
 
-		$plugin = $this->plugin();
-		$destinataire = ( null !== $plugin ) ? $plugin->adresse_de_la_redaction() : '';
-		if ( ! is_email( $destinataire ) ) {
+		// Le récapitulatif a ses propres destinataires : on peut vouloir la
+		// liste du jour sans recevoir les quarante notices qui la composent.
+		$destinataires = Notice_Archeomed_Settings::destinataires_de( 'recap' );
+		if ( empty( $destinataires ) ) {
 			return;
 		}
 
@@ -602,7 +603,7 @@ class Notice_Archeomed_File {
 			. 'télécharge d’un clic, prêt à relire.</p>';
 
 		wp_mail(
-			$destinataire,
+			$destinataires,
 			sprintf( 'Notices Archéomed — %d reçue(s) le %s',
 				count( $ids ), date_i18n( 'j F Y' ) ),
 			'<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222">'

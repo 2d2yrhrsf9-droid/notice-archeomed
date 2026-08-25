@@ -87,10 +87,36 @@ les soumissions et un bandeau rouge le signale dans l'administration.
 Un bouton « Tester la clé secrète » interroge Cloudflare et confirme que la
 clé est reconnue, sans envoyer de notice.
 
-La même page porte l'adresse de la rédaction, **qui n'a pas de valeur par
-défaut**. Tant qu'elle manque, les notices déposées sont conservées en file
-mais aucune ne part, et un bandeau rouge le signale sur toutes les pages de
-l'administration. C'est donc le premier réglage à faire après l'installation.
+La même page porte la liste des destinataires, **qui n'a pas de valeur par
+défaut**. Tant que personne n'y reçoit les notices, les dépôts sont conservés
+en file mais aucun ne part, et un bandeau rouge le signale sur toutes les
+pages de l'administration. C'est donc le premier réglage à faire après
+l'installation.
+
+## Qui reçoit quoi
+
+Deux sortes de courriels partent du plugin, et l'on choisit destinataire par
+destinataire :
+
+| Sorte | Quand | Ce qu'il porte |
+|---|---|---|
+| **Notice** | à chaque dépôt | le texte mis en forme, le document stylé Métopes, les illustrations |
+| **Récapitulatif** | une fois par jour | la liste des notices reçues, rangées par rubrique, chacune liée à sa fiche |
+
+Une rédaction n'est pas une personne : le secrétariat veut chaque notice à
+mesure qu'elle arrive, la direction veut la liste du jour et non quarante
+courriels. Chaque ligne du tableau porte donc une adresse et deux cases. Le
+bouton « + Ajouter un destinataire » en ajoute une, la croix la retire, et
+une adresse effacée disparaît à l'enregistrement. Dix destinataires au plus.
+
+Les notices partent en un seul courriel adressé à tous ceux qui les
+reçoivent : les pièces jointes pèsent jusqu'à vingt méga-octets, et les
+répéter par destinataire ferait payer la liste au poids. Les destinataires se
+voient donc les uns les autres, ce qui est le cas d'une rédaction.
+
+**Reprise de l'ancien réglage.** Les installations qui n'avaient qu'une
+adresse unique la retrouvent en tête de liste, cochée pour les deux sortes :
+la mise à jour n'interrompt aucun envoi, même si l'on n'ouvre pas la page.
 
 **La clé qui figurait dans la version 1 est à considérer comme compromise :
 elle circulait en clair dans le fichier PHP. Il faut en générer une nouvelle
@@ -105,11 +131,16 @@ de réglages :
 ```php
 define( 'NA_TURNSTILE_SECRET', 'votre_cle_secrete' );
 define( 'NA_TURNSTILE_SITE',   'votre_cle_de_site' );
-define( 'NA_DEST_EMAIL',       'adresse@exemple.fr' );
+define( 'NA_DEST_EMAIL',       'adresse@exemple.fr, autre@exemple.fr' );
 ```
 
 Les champs correspondants apparaissent alors verrouillés dans l'interface,
 pour éviter toute ambiguïté sur la valeur réellement appliquée.
+
+`NA_DEST_EMAIL` accepte plusieurs adresses séparées par des virgules. Elles
+reçoivent alors **tout**, notices comme récapitulatifs : la constante n'a pas
+d'endroit où dire qui reçoit quoi. Pour distinguer, il faut passer par la page
+de réglages et laisser la constante indéfinie.
 
 ## Contenu du dossier
 

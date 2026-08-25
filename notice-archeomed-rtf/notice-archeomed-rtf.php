@@ -84,7 +84,7 @@ add_action(
 		// que rien ne parte. C'est le premier réglage d'une installation, et
 		// celui qu'on oublie : il se signale donc en rouge et sur toutes les
 		// pages, tant qu'il manque.
-		if ( ! is_email( trim( Notice_Archeomed_Settings::get( 'dest_email' ) ) ) ) {
+		if ( empty( Notice_Archeomed_Settings::destinataires_de( 'notices' ) ) ) {
 			$lien = admin_url( 'options-general.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
 			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
 				. esc_html__( 'l\'adresse de la rédaction n\'est pas renseignée. Les notices déposées sont conservées, mais aucune ne peut être expédiée tant qu\'elle manque.', 'notice-archeomed' )
@@ -103,11 +103,6 @@ add_action(
 class Notice_Archeomed_Pactols {
 	// Valeurs par défaut. Elles sont surchargées par la page de réglages
 	// (Réglages > Notice Archéomed) ou par une constante de wp-config.php.
-	// Aucune adresse par défaut : celle de la rédaction se renseigne à
-	// l'installation, dans Réglages ▸ Notice Archéomed ou par la constante
-	// NA_DEST_EMAIL de wp-config.php. Une adresse écrite ici partirait avec le
-	// code partout où il est lu.
-	const DEST_EMAIL          = '';
 	// Modèle RTF portant la feuille de styles Métopes, livré avec le plugin.
 	const RTF_TEMPLATE        = 'modele-metopes.rtf';
 	const DOCX_TEMPLATE       = 'modele-metopes.docx';
@@ -503,10 +498,6 @@ class Notice_Archeomed_Pactols {
 		exit;
 	}
 
-	/** L'adresse de la rédaction, lisible depuis la file d'attente. */
-	public function adresse_de_la_redaction() {
-		return $this->dest_email();
-	}
 
 	/**
 	 * Ce qu'on avait saisi, quand la soumission n'a pas abouti.
@@ -690,13 +681,26 @@ class Notice_Archeomed_Pactols {
 		return add_query_arg( 'notice_reprise', $jeton, $this->url_du_formulaire() );
 	}
 
-	private function dest_email() {
-		$mail = trim( Notice_Archeomed_Settings::get( 'dest_email' ) );
-		if ( is_email( $mail ) ) {
-			return $mail;
+	/** Les adresses qui reçoivent chaque notice à mesure qu'elle arrive. */
+	private function destinataires_des_notices() {
+		return Notice_Archeomed_Settings::destinataires_de( 'notices' );
+	}
+
+	/**
+	 * L'adresse à laquelle un auteur répond, et celle qu'on lui donne à
+	 * écrire quand un envoi échoue.
+	 *
+	 * La première de la liste : il faut bien en choisir une, et c'est celle
+	 * qu'on a placée en tête. À défaut de destinataire des notices, le premier
+	 * de la liste quel qu'il soit — mieux vaut une adresse que rien.
+	 */
+	private function adresse_de_contact() {
+		$notices = $this->destinataires_des_notices();
+		if ( ! empty( $notices ) ) {
+			return $notices[0];
 		}
-		$defaut = trim( self::DEST_EMAIL );
-		return is_email( $defaut ) ? $defaut : '';
+		$tous = Notice_Archeomed_Settings::destinataires();
+		return ! empty( $tous ) ? $tous[0]['email'] : '';
 	}
 	/**
 	 * L'éditeur et le contrôle anti-robot ne servent que sur la page du
@@ -903,7 +907,7 @@ class Notice_Archeomed_Pactols {
 			'envoi'        => 'Le courriel n\'a pas pu partir, mais votre notice n\'est pas perdue : elle est conservée sur le serveur, fichier stylé compris.',
 		);
 		$mot = isset( $messages[ $raison ] ) ? $messages[ $raison ] : 'Une erreur est survenue lors de l\'envoi.';
-		$redaction = $this->dest_email();
+		$redaction = $this->adresse_de_contact();
 		return '' !== $redaction
 			? $mot . ' Si le problème persiste, écrivez à ' . esc_html( $redaction ) . '.'
 			: $mot . ' Si le problème persiste, écrivez à la rédaction de la revue.';
@@ -3026,19 +3030,23 @@ class Notice_Archeomed_Pactols {
 		}
 
 		// Sans destinataire, on ne tente rien : rendre faux laisse la notice en
-		// file, où elle attend que l'adresse soit renseignée plutôt que de
+		// file, où elle attend qu'une adresse soit renseignée plutôt que de
 		// partir nulle part.
-		$redaction = $this->dest_email();
-		if ( '' === $redaction ) {
-			error_log( 'Notice Archeomed: aucune adresse de rédaction renseignée, envoi ajourné.' );
+		$pour_la_redaction = $this->destinataires_des_notices();
+		if ( empty( $pour_la_redaction ) ) {
+			error_log( 'Notice Archeomed: aucun destinataire pour les notices, envoi ajourné.' );
 			return false;
 		}
+		$redaction = $pour_la_redaction[0];
 
 		$existants = array_values( array_filter( (array) $produits, 'file_exists' ) );
-		$sent = wp_mail( $redaction, $subject, $wrap_open . $notice . $wrap_close,
+		// Un seul envoi pour toute la rédaction : les pièces jointes pèsent
+		// jusqu'à vingt méga-octets, et les répéter par destinataire ferait
+		// payer la liste au poids.
+		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $notice . $wrap_close,
 			$headers, $existants );
 		if ( ! $sent ) {
-			error_log( 'Notice Archeomed: wp_mail failed for ' . $redaction );
+			error_log( 'Notice Archeomed: wp_mail failed for ' . implode( ', ', $pour_la_redaction ) );
 			return false;
 		}
 

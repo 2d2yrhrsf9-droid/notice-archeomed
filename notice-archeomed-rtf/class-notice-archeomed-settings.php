@@ -25,11 +25,16 @@ class Notice_Archeomed_Settings {
 	const OPTION_GROUP = 'notice_archeomed_settings';
 	const OPTION_NAME  = 'notice_archeomed_options';
 	const PAGE_SLUG    = 'notice-archeomed';
+	// Assez pour une rédaction ; assez peu pour qu'une liste devenue illisible
+	// se remarque avant d'être un annuaire.
+	const MAX_DESTINATAIRES = 10;
 
 	/**
 	 * Valeurs par défaut, reprises de la version précédente du plugin.
 	 */
 	private static $defaults = array(
+		// Conservé pour les installations d'avant la liste : il n'est plus
+		// écrit, seulement relu. Voir destinataires().
 		'dest_email'         => '',
 		'turnstile_site'     => '0x4AAAAAADnqPBVc6ZpaeiEi',
 		'turnstile_secret'   => '',
@@ -71,6 +76,99 @@ class Notice_Archeomed_Settings {
 			return trim( (string) $options[ $key ] );
 		}
 		return isset( self::$defaults[ $key ] ) ? self::$defaults[ $key ] : '';
+	}
+
+	/**
+	 * Les destinataires, chacun avec ce qu'il reçoit.
+	 *
+	 * Une rédaction n'est pas une personne : le secrétariat veut chaque notice
+	 * à mesure qu'elle arrive, la direction veut le récapitulatif du jour et
+	 * pas quarante courriels. Un destinataire unique obligeait à faire suivre
+	 * à la main, ou à tout envoyer à tout le monde.
+	 *
+	 * Rend une liste de tableaux { email, notices, recap }. Vide si rien n'est
+	 * réglé : c'est alors qu'aucun courriel ne part, et le plugin le dit en
+	 * rouge dans l'administration.
+	 */
+	public static function destinataires() {
+		// La constante prime, comme pour les autres réglages. Elle accepte
+		// plusieurs adresses séparées par des virgules ; elles reçoivent tout,
+		// faute d'endroit où dire qui reçoit quoi.
+		if ( defined( 'NA_DEST_EMAIL' ) && '' !== trim( (string) constant( 'NA_DEST_EMAIL' ) ) ) {
+			$liste = array();
+			foreach ( explode( ',', (string) constant( 'NA_DEST_EMAIL' ) ) as $brut ) {
+				$mail = sanitize_email( trim( $brut ) );
+				if ( is_email( $mail ) ) {
+					$liste[] = array( 'email' => $mail, 'notices' => true, 'recap' => true );
+				}
+			}
+			if ( ! empty( $liste ) ) {
+				return $liste;
+			}
+		}
+
+		$options = get_option( self::OPTION_NAME, array() );
+		$brut    = ( isset( $options['destinataires'] ) && is_array( $options['destinataires'] ) )
+			? $options['destinataires'] : array();
+		$liste = array();
+		foreach ( $brut as $item ) {
+			if ( ! is_array( $item ) || empty( $item['email'] ) ) {
+				continue;
+			}
+			$mail = sanitize_email( trim( (string) $item['email'] ) );
+			if ( ! is_email( $mail ) ) {
+				continue;
+			}
+			$liste[] = array(
+				'email'   => $mail,
+				'notices' => ! empty( $item['notices'] ),
+				'recap'   => ! empty( $item['recap'] ),
+			);
+			if ( count( $liste ) >= self::MAX_DESTINATAIRES ) {
+				break;
+			}
+		}
+		if ( ! empty( $liste ) ) {
+			return $liste;
+		}
+
+		// Reprise silencieuse de l'ancien réglage : une adresse unique, qui
+		// recevait les notices comme les récapitulatifs. Une mise à jour ne
+		// doit pas interrompre les envois le temps qu'on rouvre la page.
+		$ancien = isset( $options['dest_email'] )
+			? sanitize_email( trim( (string) $options['dest_email'] ) ) : '';
+		if ( is_email( $ancien ) ) {
+			return array( array( 'email' => $ancien, 'notices' => true, 'recap' => true ) );
+		}
+		return array();
+	}
+
+	/** Les adresses d'une liste déjà lue qui reçoivent telle sorte de courriel. */
+	private static function destinataires_de_la_liste( $liste, $sorte ) {
+		$out = array();
+		foreach ( (array) $liste as $qui ) {
+			if ( ! empty( $qui[ $sorte ] ) ) {
+				$out[] = $qui['email'];
+			}
+		}
+		return $out;
+	}
+
+	/** Les adresses qui reçoivent « notices » ou « recap ». */
+	public static function destinataires_de( $sorte ) {
+		$out = array();
+		foreach ( self::destinataires() as $qui ) {
+			if ( ! empty( $qui[ $sorte ] ) ) {
+				$out[] = $qui['email'];
+			}
+		}
+		return $out;
+	}
+
+	/** Vrai quand la liste est imposée par la constante wp-config.php. */
+	public static function destinataires_verrouilles() {
+		return defined( 'NA_DEST_EMAIL' )
+			&& '' !== trim( (string) constant( 'NA_DEST_EMAIL' ) );
 	}
 
 	/**
@@ -123,18 +221,69 @@ class Notice_Archeomed_Settings {
 		$current = get_option( self::OPTION_NAME, array() );
 		$out     = is_array( $current ) ? $current : array();
 
-		if ( isset( $input['dest_email'] ) ) {
-			$email = sanitize_email( $input['dest_email'] );
-			if ( '' === trim( $input['dest_email'] ) ) {
-				$out['dest_email'] = '';
-			} elseif ( is_email( $email ) ) {
-				$out['dest_email'] = $email;
-			} else {
+		if ( isset( $input['destinataires'] ) && is_array( $input['destinataires'] ) ) {
+			$liste   = array();
+			$refuses = array();
+			$vus     = array();
+			foreach ( $input['destinataires'] as $item ) {
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+				$saisi = isset( $item['email'] ) ? trim( (string) $item['email'] ) : '';
+				if ( '' === $saisi ) {
+					continue;   // une ligne vidée est une ligne supprimée
+				}
+				$email = sanitize_email( $saisi );
+				if ( ! is_email( $email ) ) {
+					$refuses[] = $saisi;
+					continue;
+				}
+				// La même adresse deux fois enverrait le même courriel deux
+				// fois : on garde la première ligne, qui porte ses cases.
+				$clef = strtolower( $email );
+				if ( isset( $vus[ $clef ] ) ) {
+					continue;
+				}
+				$vus[ $clef ] = true;
+				$liste[] = array(
+					'email'   => $email,
+					'notices' => ! empty( $item['notices'] ) ? 1 : 0,
+					'recap'   => ! empty( $item['recap'] ) ? 1 : 0,
+				);
+				if ( count( $liste ) >= self::MAX_DESTINATAIRES ) {
+					break;
+				}
+			}
+			$out['destinataires'] = $liste;
+			// L'ancien champ unique a servi de reprise ; la liste enregistrée
+			// le remplace, et le garder ferait deux vérités.
+			$out['dest_email'] = '';
+
+			if ( ! empty( $refuses ) ) {
 				add_settings_error(
 					self::OPTION_NAME,
-					'dest_email',
-					'L\'adresse de la rédaction n\'est pas une adresse électronique valide. L\'ancienne valeur a été conservée.',
+					'destinataires',
+					sprintf(
+						/* translators: %s : les adresses refusées, séparées par des virgules. */
+						'Adresse non valide, écartée de la liste : %s. Les autres ont bien été enregistrées.',
+						esc_html( implode( ', ', $refuses ) )
+					),
 					'error'
+				);
+			}
+			if ( empty( $liste ) ) {
+				add_settings_error(
+					self::OPTION_NAME,
+					'destinataires_vide',
+					'Aucun destinataire n\'est enregistré : les notices déposées seront conservées, mais aucune ne partira.',
+					'warning'
+				);
+			} elseif ( empty( self::destinataires_de_la_liste( $liste, 'notices' ) ) ) {
+				add_settings_error(
+					self::OPTION_NAME,
+					'destinataires_sans_notices',
+					'Personne ne reçoit les notices : elles seront conservées sans être expédiées. Cochez « Notices » pour au moins un destinataire.',
+					'warning'
 				);
 			}
 		}
@@ -218,7 +367,7 @@ class Notice_Archeomed_Settings {
 
 		$secret_locked = self::is_locked( 'turnstile_secret' );
 		$site_locked   = self::is_locked( 'turnstile_site' );
-		$email_locked  = self::is_locked( 'dest_email' );
+		$email_locked  = self::destinataires_verrouilles();
 		$options       = get_option( self::OPTION_NAME, array() );
 		$has_secret    = '' !== trim( self::get( 'turnstile_secret' ) );
 		// Le formulaire n'est hors service que si Turnstile est bien ce sur
@@ -334,31 +483,135 @@ class Notice_Archeomed_Settings {
 					</tr>
 				</table>
 
-				<h2>Destinataire</h2>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="na_email">Adresse de la rédaction</label></th>
-						<td>
-							<input type="email" id="na_email" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[dest_email]"
-								value="<?php echo esc_attr( isset( $options['dest_email'] ) ? $options['dest_email'] : self::get( 'dest_email' ) ); ?>"
-								<?php disabled( $email_locked ); ?>>
-							<p class="description">
-								<?php if ( $email_locked ) : ?>
-									Valeur imposée par la constante <code>NA_DEST_EMAIL</code>.
-								<?php else : ?>
-									<?php $adresse_en_cours = trim( self::get( 'dest_email' ) ); ?>
-									Adresse qui reçoit les notices et le fichier joint.
-									<?php if ( '' !== $adresse_en_cours ) : ?>
-										Valeur actuellement utilisée : <code><?php echo esc_html( $adresse_en_cours ); ?></code>
-									<?php else : ?>
-										<strong>Aucune adresse n’est renseignée</strong> : les notices déposées sont conservées, mais aucune ne peut être expédiée.
-									<?php endif; ?>
-								<?php endif; ?>
-							</p>
-						</td>
-					</tr>
-				</table>
+				<h2>Qui reçoit quoi</h2>
+				<?php $destinataires = self::destinataires(); ?>
+				<?php if ( $email_locked ) : ?>
+					<p class="description">
+						Liste imposée par la constante <code>NA_DEST_EMAIL</code> de
+						<code>wp-config.php</code> : les adresses qui y figurent reçoivent
+						tout, notices comme récapitulatifs.
+					</p>
+					<ul style="margin-left:1.5em;list-style:disc">
+						<?php foreach ( $destinataires as $qui ) : ?>
+							<li><code><?php echo esc_html( $qui['email'] ); ?></code></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php else : ?>
+					<p class="description" style="max-width:46em">
+						Deux sortes de courriels partent d'ici : <strong>une notice à chaque
+						dépôt</strong>, avec son document et ses illustrations, et
+						<strong>un récapitulatif quotidien</strong> qui liste ce qui est
+						arrivé dans la journée. Chacun choisit ce qu'il veut recevoir.
+					</p>
+					<table class="widefat striped" id="na-destinataires" style="max-width:48em;margin-top:10px">
+						<thead>
+							<tr>
+								<th style="width:55%">Adresse</th>
+								<th style="width:15%">Notices</th>
+								<th style="width:20%">Récapitulatif</th>
+								<th style="width:10%"></th>
+							</tr>
+						</thead>
+						<tbody>
+						<?php
+						// Une ligne vide en plus, pour qu'on puisse ajouter sans
+						// avoir à chercher le bouton du premier coup.
+						$lignes = $destinataires;
+						$lignes[] = array( 'email' => '', 'notices' => true, 'recap' => false );
+						foreach ( $lignes as $rang => $qui ) :
+							$nom = esc_attr( self::OPTION_NAME ) . '[destinataires][' . (int) $rang . ']';
+						?>
+							<tr class="na-destinataire">
+								<td>
+									<input type="email" class="regular-text" style="width:100%"
+										name="<?php echo $nom; ?>[email]"
+										value="<?php echo esc_attr( $qui['email'] ); ?>"
+										placeholder="adresse@exemple.fr">
+								</td>
+								<td style="text-align:center">
+									<input type="checkbox" value="1" name="<?php echo $nom; ?>[notices]"
+										<?php checked( ! empty( $qui['notices'] ) ); ?>>
+								</td>
+								<td style="text-align:center">
+									<input type="checkbox" value="1" name="<?php echo $nom; ?>[recap]"
+										<?php checked( ! empty( $qui['recap'] ) ); ?>>
+								</td>
+								<td style="text-align:center">
+									<button type="button" class="button-link na-oter"
+										aria-label="Retirer ce destinataire" title="Retirer ce destinataire">✕</button>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+						</tbody>
+					</table>
+					<p>
+						<button type="button" class="button" id="na-ajouter-destinataire">+ Ajouter un destinataire</button>
+						<span class="description" style="margin-left:8px">
+							<?php echo (int) self::MAX_DESTINATAIRES; ?> au plus. Une adresse effacée est retirée à l'enregistrement.
+						</span>
+					</p>
+					<?php
+					$pour_notices = self::destinataires_de( 'notices' );
+					$pour_recap   = self::destinataires_de( 'recap' );
+					?>
+					<p class="description">
+						<?php if ( empty( $pour_notices ) ) : ?>
+							<strong style="color:#b32d2e">Personne ne reçoit les notices</strong> :
+							les dépôts sont conservés, mais aucun ne part.
+						<?php else : ?>
+							Notices : <code><?php echo esc_html( implode( ', ', $pour_notices ) ); ?></code>.
+						<?php endif; ?>
+						<br>
+						<?php if ( empty( $pour_recap ) ) : ?>
+							Récapitulatif : personne. Il ne sera pas envoyé.
+						<?php else : ?>
+							Récapitulatif : <code><?php echo esc_html( implode( ', ', $pour_recap ) ); ?></code>.
+						<?php endif; ?>
+					</p>
+					<script>
+					(function () {
+						var table = document.getElementById('na-destinataires');
+						var corps = table.querySelector('tbody');
+						var bouton = document.getElementById('na-ajouter-destinataire');
+						var maximum = <?php echo (int) self::MAX_DESTINATAIRES; ?>;
+						var prefixe = <?php echo wp_json_encode( self::OPTION_NAME ); ?>;
+						// Le rang de la prochaine ligne : on ne réutilise pas ceux des
+						// lignes retirées, l'enregistrement renumérote de toute façon.
+						var suivant = corps.querySelectorAll('tr.na-destinataire').length;
+						function ajouter() {
+							if (corps.querySelectorAll('tr.na-destinataire').length >= maximum) {
+								bouton.disabled = true;
+								return;
+							}
+							var nom = prefixe + '[destinataires][' + (suivant++) + ']';
+							var tr = document.createElement('tr');
+							tr.className = 'na-destinataire';
+							tr.innerHTML =
+								'<td><input type="email" class="regular-text" style="width:100%" placeholder="adresse@exemple.fr" name="' + nom + '[email]"></td>' +
+								'<td style="text-align:center"><input type="checkbox" value="1" checked name="' + nom + '[notices]"></td>' +
+								'<td style="text-align:center"><input type="checkbox" value="1" name="' + nom + '[recap]"></td>' +
+								'<td style="text-align:center"><button type="button" class="button-link na-oter" aria-label="Retirer ce destinataire" title="Retirer ce destinataire">\u2715</button></td>';
+							corps.appendChild(tr);
+							tr.querySelector('input[type=email]').focus();
+							bouton.disabled = corps.querySelectorAll('tr.na-destinataire').length >= maximum;
+						}
+						bouton.addEventListener('click', ajouter);
+						corps.addEventListener('click', function (e) {
+							var b = e.target.closest('.na-oter');
+							if (!b) { return; }
+							var lignes = corps.querySelectorAll('tr.na-destinataire');
+							// La dernière ligne se vide plutôt que de disparaître : un
+							// tableau sans aucune ligne n'offre plus où saisir.
+							if (lignes.length <= 1) {
+								b.closest('tr').querySelectorAll('input[type=email]').forEach(function (i) { i.value = ''; });
+								return;
+							}
+							b.closest('tr').remove();
+							bouton.disabled = false;
+						});
+					}());
+					</script>
+				<?php endif; ?>
 
 				<h2>Rythme d'envoi</h2>
 				<table class="form-table" role="presentation">
