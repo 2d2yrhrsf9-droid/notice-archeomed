@@ -132,6 +132,14 @@ class Notice_Archeomed_Pactols {
 	// programmée, une université et un service de collectivité la portent
 	// ensemble. Trois lignes suffisent à ce qu'on voit passer.
 	const MAX_ORGANISMES      = 3;
+	// Les bornes de l'encoche, en centièmes de la largeur utile : assez loin
+	// des bords pour que la pièce reste entière et la cible non devinable.
+	const PUZZLE_MIN          = 30;
+	const PUZZLE_MAX          = 88;
+	// L'écart admis entre la pièce et son encoche. Assez large pour qu'on y
+	// arrive au doigt et à la flèche du clavier, assez étroit pour qu'il
+	// faille viser.
+	const PUZZLE_TOLERANCE    = 4;
 	const ALLOWED_EXT         = array( 'jpg', 'jpeg', 'tiff', 'tif', 'pdf' );
 	// La clé de site est publique : elle figure dans le code HTML de la page.
 	const TURNSTILE_SITE_KEY   = '0x4AAAAAADnqPBVc6ZpaeiEi';
@@ -256,8 +264,8 @@ class Notice_Archeomed_Pactols {
 	 * Turnstile suppose que le serveur puisse joindre Cloudflare. Sur un
 	 * hébergement institutionnel qui sort par un proxy filtrant, il ne le peut
 	 * pas : la vérification échoue, le plugin laisse passer pour ne pas perdre
-	 * de notice, et la protection n'en est plus une. Le curseur posé dans le
-	 * formulaire, lui, se vérifie sur place et ne dépend de personne.
+	 * de notice, et la protection n'en est plus une. La vérification posée dans
+	 * le formulaire, elle, se fait sur place et ne dépend de personne.
 	 */
 	private function protection() {
 		$mode = Notice_Archeomed_Settings::get( 'protection' );
@@ -295,28 +303,34 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Le défi posé dans le formulaire : un curseur à mener jusqu'au bout.
+	 * Le défi posé dans le formulaire : une pièce à glisser dans son encoche.
 	 *
-	 * C'était une addition. Elle demandait de lire, de calculer et d'écrire à
-	 * qui venait de rédiger sept cents mots — et un robot la résolvait d'une
-	 * expression régulière, la question étant en clair à côté de sa réponse
-	 * scellée. Le curseur ne protège ni mieux ni moins bien : il ne coûte rien
-	 * à qui dépose, se manœuvre au clavier comme à la souris, et se dit aux
-	 * lecteurs d'écran. La protection véritable reste ailleurs — Turnstile
-	 * quand le proxy le laisse passer, le champ-piège, le délai minimal et les
-	 * plafonds horaires.
+	 * C'était une addition, puis un curseur à mener au bout. L'addition
+	 * demandait de lire, de calculer et d'écrire à qui venait de rédiger sept
+	 * cents mots. Le curseur, lui, s'appuyait sur un « input type=range » : un
+	 * thème qui remet l'apparence des champs à zéro lui ôte sa pastille, et il
+	 * ne restait qu'à cliquer la piste de proche en proche. La pièce se dessine
+	 * donc entièrement, et se déplace sur des événements pointeur, sur quoi
+	 * aucune feuille de style n'a prise.
+	 *
+	 * Elle ne protège ni mieux ni moins bien que ce qu'elle remplace : la
+	 * position de l'encoche est dans la page, comme la réponse l'était. La
+	 * protection véritable reste ailleurs — Turnstile quand le proxy le laisse
+	 * passer, le champ-piège, le délai minimal et les plafonds horaires.
 	 */
-	private function defi_du_curseur() {
-		// Une cible tirée au sort plutôt qu'une constante : le corps d'un envoi
-		// capté sur une page ne se rejoue pas tel quel sur une autre.
-		$cible = wp_rand( 80, 100 );
+	private function defi_du_puzzle() {
+		// La position de l'encoche, en centièmes de la largeur utile. Tirée au
+		// sort plutôt que constante : le corps d'un envoi capté sur une page ne
+		// se rejoue pas tel quel sur une autre. Les bornes laissent la pièce
+		// visible aux deux extrémités.
+		$cible = wp_rand( self::PUZZLE_MIN, self::PUZZLE_MAX );
 		return array(
 			'cible'  => $cible,
 			'preuve' => $this->sceau_du_defi( $cible, $this->heure_du_defi() ),
 		);
 	}
 
-	private function verifier_le_curseur() {
+	private function verifier_le_puzzle() {
 		$donnee = isset( $_POST['na_curseur'] )
 			? sanitize_text_field( wp_unslash( $_POST['na_curseur'] ) ) : '';
 		$preuve = isset( $_POST['na_preuve'] )
@@ -326,7 +340,7 @@ class Notice_Archeomed_Pactols {
 			return false;
 		}
 		$cible = (int) $donnee;
-		if ( $cible < 80 || $cible > 100 ) {
+		if ( $cible < self::PUZZLE_MIN || $cible > self::PUZZLE_MAX ) {
 			return false;
 		}
 		// L'heure en cours, puis celle d'avant : un formulaire ouvert à la
@@ -344,8 +358,8 @@ class Notice_Archeomed_Pactols {
 	 * Le passage obligé, quelle que soit la protection choisie.
 	 */
 	private function verifier_la_protection() {
-		if ( $this->protection_utilise_la_question() && ! $this->verifier_le_curseur() ) {
-			error_log( 'Notice Archeomed: curseur de vérification non validé.' );
+		if ( $this->protection_utilise_la_question() && ! $this->verifier_le_puzzle() ) {
+			error_log( 'Notice Archeomed: vérification par le puzzle non validée.' );
 			return false;
 		}
 		if ( $this->protection_utilise_turnstile() && ! $this->verify_turnstile() ) {
@@ -503,7 +517,7 @@ class Notice_Archeomed_Pactols {
 	 * Ce qu'on avait saisi, quand la soumission n'a pas abouti.
 	 *
 	 * Une notice se rédige en une heure. La perdre parce qu'on a oublié le
-	 * curseur de vérification — ou parce que la page avait expiré pendant
+	 * la vérification anti-robot — ou parce que la page avait expiré pendant
 	 * qu'on écrivait — est le défaut le plus coûteux qu'un formulaire puisse avoir,
 	 * et celui qui décourage pour de bon.
 	 *
@@ -900,7 +914,7 @@ class Notice_Archeomed_Pactols {
 			'securite'     => 'La page avait expiré. Rechargez-la et redéposez votre notice — le texte saisi est conservé par le navigateur si vous revenez en arrière.',
 			'quota'        => 'Trop de tentatives depuis cette connexion. Attendez une heure, ou écrivez directement à la rédaction.',
 			'envois'       => 'Le nombre de notices envoyées depuis cette adresse a atteint la limite horaire. Attendez une heure, ou écrivez directement à la rédaction.',
-			'verification' => 'La vérification anti-robot n\'a pas abouti. Amenez le curseur au bout de sa course, puis renvoyez le formulaire.',
+			'verification' => 'La vérification anti-robot n\'a pas abouti. Glissez la pièce dans son encoche, puis renvoyez le formulaire.',
 			'champs'       => 'Un renseignement obligatoire manque ou n\'est pas valide.',
 			'texte'        => 'Le texte de la notice est vide, ou dépasse la longueur admise.',
 			'fichiers'     => 'Un fichier joint a été refusé : trois au plus, vingt méga-octets en tout, et seulement des .jpg, .tif ou .pdf.',
@@ -1018,11 +1032,31 @@ class Notice_Archeomed_Pactols {
 			.na-form .na-lieu { position: relative; margin-bottom: 6px; }
 			.na-form .na-lieu input[type=text] { margin: 0; }
 			.na-form input.na-organisme { margin-bottom: 6px; }
-			.na-form .na-curseur { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
-			.na-form .na-curseur input[type=range] { flex: 1; max-width: 420px; height: 34px; margin: 0; cursor: grab; accent-color: #8a6d3b; }
-			.na-form .na-curseur input[type=range]:active { cursor: grabbing; }
-			.na-form .na-curseur-etat { font-size: 14px; color: #555; white-space: nowrap; }
-			.na-form .na-curseur-etat.na-fait { color: #2f6b2f; font-weight: 600; }
+			/* La pièce et son encoche. Tout est dessiné : aucun champ natif ne
+			   sert ici, et un thème qui remet l'apparence des champs à zéro n'a
+			   donc rien à casser. */
+			.na-form .na-puzzle-scene { position: relative; margin-top: 10px; max-width: 420px;
+				border-radius: 6px; overflow: hidden; line-height: 0; }
+			.na-form .na-puzzle-scene canvas.na-puzzle-fond { width: 100%; height: auto; display: block; }
+			.na-form .na-puzzle-scene canvas.na-puzzle-piece { position: absolute; top: 50%;
+				transform: translateY(-50%); height: auto;
+				filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); pointer-events: none; }
+			.na-form .na-puzzle-piste { position: relative; max-width: 420px; height: 34px;
+				margin-top: 8px; background: #ececec; border: 1px solid #cfcfcf; border-radius: 17px; }
+			.na-form .na-puzzle-poignee { position: absolute; top: 50%; left: 0; width: 46px;
+				height: 30px; transform: translate(0, -50%); background: #fff;
+				border: 1px solid #8a6d3b; border-radius: 15px; cursor: grab;
+				touch-action: none; display: flex; align-items: center; justify-content: center;
+				box-shadow: 0 1px 3px rgba(0,0,0,.25); box-sizing: border-box; }
+			.na-form .na-puzzle-poignee::after { content: '⋮⋮'; color: #8a6d3b;
+				font-size: 13px; letter-spacing: -2px; }
+			.na-form .na-prise .na-puzzle-poignee { cursor: grabbing; }
+			.na-form .na-rate .na-puzzle-scene { animation: na-secousse .3s; }
+			@keyframes na-secousse { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+			.na-form .na-puzzle-etat { display: block; font-size: 14px; color: #555; margin-top: 6px; }
+			.na-form .na-fait .na-puzzle-etat { color: #2f6b2f; font-weight: 600; }
+			.na-form .na-puzzle-rejouer { background: none; border: 0; padding: 0; margin-top: 2px;
+				color: #2271b1; text-decoration: underline; cursor: pointer; font-size: 13px; }
 			.na-form .na-question.na-fait { border-color: #4a8a4a; }
 			.na-form .na-suggestions,
 			.na-form .na-pactols-suggestions { position: absolute; z-index: 50; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: 0; max-height: 380px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
@@ -1224,17 +1258,29 @@ class Notice_Archeomed_Pactols {
 			<div class="na-intro na-spaced">
 				Les informations transmises via ce formulaire sont utilisées uniquement pour l'instruction éditoriale des notices destinées à la Chronique d'<em>Archéologie médiévale</em>. Elles sont adressées à la rédaction de la revue et ne sont pas utilisées à d'autres fins. Elles sont conservées pendant la durée nécessaire au traitement éditorial de la notice. Pour toute demande relative à ces données, vous pouvez contacter la rédaction à l'adresse indiquée sur le site.
 			</div>
-			<?php if ( $this->protection_utilise_la_question() ) : $defi = $this->defi_du_curseur(); ?>
-				<div class="na-question" id="na-curseur-bloc" data-cible="<?php echo esc_attr( $defi['cible'] ); ?>">
-					<label for="na-curseur-piste">Amenez le curseur au bout de sa course</label>
-					<p class="na-help">Pour distinguer un lecteur d’un robot. Au clavier :
-					atteignez le curseur par la tabulation, puis la flèche droite ou la
-					touche Fin.</p>
-					<div class="na-curseur">
-						<input type="range" id="na-curseur-piste" min="0" max="10" step="1" value="0"
-							aria-describedby="na-curseur-etat">
-						<span class="na-curseur-etat" id="na-curseur-etat" role="status">À faire glisser</span>
+			<?php if ( $this->protection_utilise_la_question() ) : $defi = $this->defi_du_puzzle(); ?>
+				<div class="na-question" id="na-puzzle"
+					data-cible="<?php echo esc_attr( $defi['cible'] ); ?>"
+					data-tolerance="<?php echo esc_attr( self::PUZZLE_TOLERANCE ); ?>">
+					<label for="na-puzzle-poignee">Faites glisser la pièce jusque dans son encoche</label>
+					<p class="na-help">Une vérification pour distinguer un lecteur d’un
+					robot. Au clavier : atteignez le curseur par la tabulation, déplacez-le
+					avec les flèches — la touche Majuscule enfoncée pour aller plus vite —,
+					puis validez par Entrée.</p>
+					<div class="na-puzzle-scene">
+						<canvas class="na-puzzle-fond" id="na-puzzle-fond" width="320" height="150"
+							role="img" aria-label="Image de vérification portant une encoche à combler"></canvas>
+						<canvas class="na-puzzle-piece" id="na-puzzle-piece" width="59" height="48"
+							aria-hidden="true"></canvas>
 					</div>
+					<div class="na-puzzle-piste">
+						<div class="na-puzzle-poignee" id="na-puzzle-poignee" tabindex="0"
+							role="slider" aria-label="Position de la pièce"
+							aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+							aria-describedby="na-puzzle-etat"></div>
+					</div>
+					<span class="na-puzzle-etat" id="na-puzzle-etat" role="status">À faire glisser</span>
+					<button type="button" class="na-puzzle-rejouer" id="na-puzzle-rejouer">Recommencer</button>
 					<input type="hidden" name="na_curseur" id="na-curseur-valeur" value="">
 					<input type="hidden" name="na_preuve" value="<?php echo esc_attr( $defi['preuve'] ); ?>">
 				</div>
@@ -1684,32 +1730,203 @@ class Notice_Archeomed_Pactols {
 					alert('Certains fichiers ont été refusés :\n' + refused.join('\n'));
 				}
 			});
-			// Le curseur de vérification. Mené au bout de sa course, il dépose la
-			// valeur scellée que le serveur attend ; ramené en arrière, il
-			// l'efface. Le formulaire réclame déjà JavaScript pour son éditeur :
-			// on ne perd donc personne en le réclamant ici aussi.
-			var curseurBloc   = document.getElementById('na-curseur-bloc');
-			var curseurPiste  = document.getElementById('na-curseur-piste');
-			var curseurValeur = document.getElementById('na-curseur-valeur');
-			var curseurEtat   = document.getElementById('na-curseur-etat');
-			function curseurAuBout() {
-				return !curseurPiste || (curseurValeur && curseurValeur.value !== '');
-			}
-			if (curseurPiste) {
-				// Un rechargement peut laisser le curseur où le navigateur l'avait
-				// gardé : la vérification se refait à chaque envoi.
-				curseurPiste.value = 0;
-				var majCurseur = function () {
-					var auBout = Number(curseurPiste.value) >= Number(curseurPiste.max);
-					curseurValeur.value = auBout ? (curseurBloc.getAttribute('data-cible') || '') : '';
-					curseurEtat.textContent = auBout ? '\u2713 Merci' : 'À faire glisser';
-					curseurEtat.classList.toggle('na-fait', auBout);
-					curseurBloc.classList.toggle('na-fait', auBout);
-				};
-				curseurPiste.addEventListener('input', majCurseur);
-				curseurPiste.addEventListener('change', majCurseur);
-				majCurseur();
-			}
+			// La pièce de vérification. Glissée dans son encoche, elle dépose la
+			// valeur scellée que le serveur attend. Le formulaire réclame déjà
+			// JavaScript pour son éditeur : on ne perd personne en le réclamant
+			// ici aussi.
+			(function () {
+				var bloc = document.getElementById('na-puzzle');
+				if (!bloc) { return; }
+				var toile   = document.getElementById('na-puzzle-fond');
+				var piece   = document.getElementById('na-puzzle-piece');
+				var poignee = document.getElementById('na-puzzle-poignee');
+				var etat    = document.getElementById('na-puzzle-etat');
+				var champ   = document.getElementById('na-curseur-valeur');
+				var rejouer = document.getElementById('na-puzzle-rejouer');
+
+				var CIBLE     = parseInt(bloc.getAttribute('data-cible'), 10);
+				var TOLERANCE = parseInt(bloc.getAttribute('data-tolerance'), 10);
+				var L = 320, H = 150;          // résolution interne de la toile
+				var COTE = 46;                 // côté de la pièce, en unités de toile
+				var LANG = Math.ceil(COTE * 0.22) + 2;  // la languette déborde à droite
+				var MARGE = 6;
+				var utile = L - COTE - MARGE * 2;   // course possible du bord gauche
+				var posY = Math.round((H - COTE) / 2);
+				var pos = 0;                   // position courante, en centièmes
+				var gagne = false;
+
+				// ── Le tracé d'une pièce de puzzle : un carré arrondi, une languette à
+				// droite, une encoche en haut. Dessiné à l'origine, à charge de l'appelant
+				// de translater le contexte.
+				function tracer(ctx, c) {
+					var t = c * 0.22;                     // rayon des languettes
+					var m = c / 2;
+					ctx.beginPath();
+					ctx.moveTo(0, 0);
+					ctx.lineTo(m - t, 0);
+					ctx.arc(m, 0, t, Math.PI, 0, true);   // encoche en haut (creux)
+					ctx.lineTo(c, 0);
+					ctx.lineTo(c, m - t);
+					ctx.arc(c, m, t, -Math.PI / 2, Math.PI / 2, false); // languette à droite
+					ctx.lineTo(c, c);
+					ctx.lineTo(0, c);
+					ctx.closePath();
+				}
+
+				// ── Un fond dessiné plutôt qu'une image à servir : rien à téléverser, et
+				// il change à chaque affichage, ce qui rend la comparaison de pixels
+				// inutile à qui voudrait résoudre le défi de tête.
+				function fond(ctx) {
+					var d = ctx.createLinearGradient(0, 0, L, H);
+					d.addColorStop(0, '#3b4a6b');
+					d.addColorStop(1, '#8a6d3b');
+					ctx.fillStyle = d;
+					ctx.fillRect(0, 0, L, H);
+					for (var i = 0; i < 14; i++) {
+						ctx.beginPath();
+						ctx.globalAlpha = 0.10 + Math.random() * 0.16;
+						ctx.fillStyle = i % 2 ? '#ffffff' : '#000000';
+						var r = 14 + Math.random() * 46;
+						ctx.arc(Math.random() * L, Math.random() * H, r, 0, Math.PI * 2);
+						ctx.fill();
+					}
+					ctx.globalAlpha = 1;
+				}
+
+				var scene = document.createElement('canvas');
+				scene.width = L; scene.height = H;
+				fond(scene.getContext('2d'));
+
+				// Le fond, avec le trou à la place de la pièce.
+				var cx = toile.getContext('2d');
+				var xCible = MARGE + Math.round(utile * CIBLE / 100);
+				cx.drawImage(scene, 0, 0);
+				cx.save();
+				cx.translate(xCible, posY);
+				tracer(cx, COTE);
+				cx.restore();
+				cx.save();
+				cx.translate(xCible, posY);
+				tracer(cx, COTE);
+				cx.fillStyle = 'rgba(0,0,0,0.55)';
+				cx.fill();
+				cx.lineWidth = 1.5;
+				cx.strokeStyle = 'rgba(255,255,255,0.65)';
+				cx.stroke();
+				cx.restore();
+
+				// La pièce : les pixels du fond qui manquent au trou. Son canevas doit
+				// être plus large que le côté — la languette déborde à droite, et elle
+				// était tout bonnement rognée.
+				piece.width  = COTE + LANG;
+				piece.height = COTE + 2;
+				piece.style.width = (100 * (COTE + LANG) / L) + '%';
+				var px = piece.getContext('2d');
+				px.save();
+				tracer(px, COTE);
+				px.clip();
+				px.drawImage(scene, -xCible, -posY);
+				px.restore();
+				px.save();
+				tracer(px, COTE);
+				px.lineWidth = 1.5;
+				px.strokeStyle = 'rgba(255,255,255,0.85)';
+				px.stroke();
+				px.restore();
+
+				function placer(p) {
+					pos = Math.max(0, Math.min(100, p));
+					piece.style.left = (100 * (MARGE + utile * pos / 100) / L) + '%';
+					// La poignée reste dans la piste : posée à « pos % », elle se décale
+					// d'autant de sa propre largeur. À zéro elle affleure à gauche, à cent
+					// à droite, et jamais elle ne déborde du cadre.
+					poignee.style.left = pos + '%';
+					poignee.style.transform = 'translate(' + (-pos) + '%, -50%)';
+					poignee.setAttribute('aria-valuenow', Math.round(pos));
+				}
+
+				function verifier() {
+					if (Math.abs(pos - CIBLE) <= TOLERANCE) {
+						gagne = true;
+						champ.value = String(CIBLE);
+						bloc.classList.add('na-fait');
+						etat.textContent = '✓ Vérification réussie';
+						placer(CIBLE);
+						poignee.setAttribute('aria-disabled', 'true');
+						return true;
+					}
+					etat.textContent = 'Pas tout à fait : la pièce doit combler l’encoche.';
+					bloc.classList.add('na-rate');
+					window.setTimeout(function () { bloc.classList.remove('na-rate'); }, 600);
+					placer(0);
+					return false;
+				}
+
+				// ── Le déplacement. Événements pointeur : une seule écriture pour la
+				// souris, le doigt et le stylet, et le navigateur ne nous vole pas le
+				// geste en cours de route grâce à la capture.
+				var actif = false, depart = 0, posDepart = 0;
+				var piste = poignee.parentElement;
+				// La course de la poignée, en pixels d'écran. C'est la piste qu'on mesure,
+				// et non la scène : la poignée doit rester sous le doigt, et non avancer
+				// à la vitesse — plus lente — de la pièce sur son fond.
+				function courseEcran() {
+					return Math.max(1, piste.getBoundingClientRect().width
+						- poignee.getBoundingClientRect().width);
+				}
+				poignee.addEventListener('pointerdown', function (e) {
+					if (gagne) { return; }
+					actif = true;
+					depart = e.clientX;
+					posDepart = pos;
+					poignee.setPointerCapture(e.pointerId);
+					bloc.classList.add('na-prise');
+					e.preventDefault();
+				});
+				poignee.addEventListener('pointermove', function (e) {
+					if (!actif) { return; }
+					var d = (e.clientX - depart) / courseEcran() * 100;
+					placer(posDepart + d);
+					e.preventDefault();
+				});
+				function relacher(e, valide) {
+					if (!actif) { return; }
+					actif = false;
+					bloc.classList.remove('na-prise');
+					try { poignee.releasePointerCapture(e.pointerId); } catch (err) {}
+					// Un geste interrompu — le navigateur reprend le pointeur pour faire
+					// défiler la page — n'est pas une tentative ratée : on remet la pièce
+					// sans rien reprocher.
+					if (valide) { verifier(); } else { placer(0); }
+				}
+				poignee.addEventListener('pointerup', function (e) { relacher(e, true); });
+				poignee.addEventListener('pointercancel', function (e) { relacher(e, false); });
+
+				// ── Au clavier : les flèches déplacent, Entrée ou Espace valide.
+				poignee.addEventListener('keydown', function (e) {
+					if (gagne) { return; }
+					var pas = e.shiftKey ? 10 : 2;
+					// Les noms courts — « Right », « Left » — sont ceux des navigateurs
+					// d'avant la norme actuelle. Les accepter ne coûte rien et évite un
+					// clavier muet là où l'on ne pourra pas aller voir.
+					var k = e.key;
+					if (k === 'ArrowRight' || k === 'Right' || k === 'ArrowUp' || k === 'Up') { placer(pos + pas); }
+					else if (k === 'ArrowLeft' || k === 'Left' || k === 'ArrowDown' || k === 'Down') { placer(pos - pas); }
+					else if (k === 'Home') { placer(0); }
+					else if (k === 'End') { placer(100); }
+					else if (k === 'Enter' || k === ' ' || k === 'Spacebar') { verifier(); }
+					else { return; }
+					e.preventDefault();
+				});
+
+				rejouer.addEventListener('click', function () {
+					if (!gagne) { placer(0); etat.textContent = 'À faire glisser'; }
+				});
+
+				placer(0);
+				window.naPuzzleFait = function () { return gagne; };
+				window.naPuzzleFocus = function () { poignee.focus(); };
+			}());
 			document.getElementById('na-form').addEventListener('submit', function (e) {
 				if (!quill) {
 					e.preventDefault();
@@ -1721,10 +1938,10 @@ class Notice_Archeomed_Pactols {
 					alert('Merci de cocher au moins une nature d\'opération.');
 					return;
 				}
-				if (!curseurAuBout()) {
+				if (window.naPuzzleFait && !window.naPuzzleFait()) {
 					e.preventDefault();
-					alert('Amenez le curseur de vérification au bout de sa course avant d\u2019envoyer.');
-					curseurPiste.focus();
+					alert('Faites glisser la pièce dans son encoche avant d\u2019envoyer.');
+					window.naPuzzleFocus();
 					return;
 				}
 				if (hasUnselectedPactolsInput()) {

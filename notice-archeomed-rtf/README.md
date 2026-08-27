@@ -42,17 +42,28 @@ défaut :
 
 | Choix | Ce que ça suppose |
 |---|---|
-| **Curseur à glisser dans le formulaire** | rien : un curseur à mener au bout, vérifié sur place |
+| **Pièce de puzzle à glisser** | rien : une pièce à mener dans son encoche, vérifiée sur place |
 | Cloudflare Turnstile seul | que **le serveur** puisse joindre `challenges.cloudflare.com` |
-| Les deux | idem, en plus du curseur |
+| Les deux | idem, en plus de la pièce |
 
-Le curseur a remplacé une addition en toutes lettres. Il ne protège ni mieux
-ni moins bien — l'un comme l'autre se résolvent d'une expression régulière par
-qui vise ce formulaire —, mais il ne coûte rien à qui vient d'écrire sept
-cents mots, se manœuvre au clavier comme à la souris, et se dit aux lecteurs
-d'écran. Ce qui protège vraiment est ailleurs : Turnstile quand le proxy le
-laisse passer, le champ-piège, le délai minimal de trois secondes et les
-plafonds horaires.
+La vérification a d'abord été une addition en toutes lettres, puis un curseur
+à mener au bout de sa course. Le curseur s'appuyait sur un `input type=range` :
+**un thème qui remet l'apparence des champs à zéro lui ôte sa pastille**, et
+il ne restait qu'à cliquer la piste de proche en proche pour avancer. La pièce
+de puzzle est donc dessinée de bout en bout sur deux `canvas`, et se déplace
+sur des événements pointeur — souris, doigt et stylet d'une seule écriture —
+sur quoi aucune feuille de style n'a prise.
+
+Elle ne protège ni mieux ni moins bien que ce qu'elle remplace : la position
+de l'encoche est dans la page, comme la réponse de l'addition y était. Ce qui
+protège vraiment est ailleurs : Turnstile quand le proxy le laisse passer, le
+champ-piège, le délai minimal de trois secondes et les plafonds horaires.
+
+**Au clavier**, la poignée se rejoint par la tabulation, se déplace aux
+flèches — de dix crans la touche Majuscule enfoncée — et se valide par Entrée.
+Le fond et la pièce sont dessinés à chaque affichage : un lecteur d'écran ne
+peut pas résoudre un alignement visuel, et c'est la limite reconnue de ce
+genre de vérification. Turnstile, lui, sait s'en passer.
 
 **Le sceau porte l'heure.** Il ne portait que la réponse : un couple
 (réponse, sceau) récolté une fois valait indéfiniment, sur toutes les pages.
@@ -393,7 +404,7 @@ styles fera évoluer.
 ## Ce qui se passe quand ça ne passe pas
 
 **La saisie n'est jamais perdue.** Une notice se rédige en une heure : la
-perdre parce qu'on a oublié le curseur anti-robot, ou parce que la
+perdre parce qu'on a oublié la vérification anti-robot, ou parce que la
 page avait expiré pendant qu'on écrivait, est le défaut le plus coûteux qu'un
 formulaire puisse avoir. Tout refus met donc la saisie de côté et le
 formulaire se remplit de lui-même au retour — champs, cases cochées, mots-clés
