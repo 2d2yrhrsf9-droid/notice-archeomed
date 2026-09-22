@@ -86,6 +86,41 @@ class Notice_Archeomed_DOCX {
 	/**
 	 * Vérifie le modèle et construit l'index des styles.
 	 */
+	/**
+	 * Le style du bloc que la rédaction ôte avant de passer au XML.
+	 *
+	 * Il n'est pas dans le gabarit Métopes, et il n'y sera pas : ce gabarit
+	 * s'exporte à neuf à chaque évolution de la feuille, et tout ce qu'on y
+	 * ajouterait à la main serait à refaire. Il est donc injecté dans la
+	 * feuille de styles au moment d'écrire le fichier — le gabarit livré
+	 * reste intact, et le document produit porte le style.
+	 *
+	 * Son intérêt tient à un geste de Word : un clic droit sur le style, dans
+	 * le volet des styles, puis « Sélectionner toutes les occurrences ». Tout
+	 * le bloc se prend d'un coup, et se supprime d'une touche.
+	 */
+	const STYLE_A_SUPPRIMER = 'à supprimer';
+	const ID_A_SUPPRIMER    = 'naasupprimer';
+
+	/**
+	 * La définition XML du style, à glisser avant la fin de la feuille.
+	 */
+	private function style_a_supprimer_xml() {
+		$base = isset( $this->styles['Normal'] )
+			? '<w:basedOn w:val="' . self::esc( $this->styles['Normal'] ) . '"/>' : '';
+		return '<w:style w:type="paragraph" w:customStyle="1" w:styleId="'
+			. self::ID_A_SUPPRIMER . '">'
+			. '<w:name w:val="' . self::esc( self::STYLE_A_SUPPRIMER ) . '"/>'
+			. $base
+			// « qFormat » le fait paraître dans la galerie des styles : c'est
+			// par là qu'on le trouve pour tout sélectionner.
+			. '<w:qFormat/>'
+			// Gris : le bloc se distingue du texte à l'œil, sans emprunter le
+			// surlignement, qui appartient à Métopes et veut dire autre chose.
+			. '<w:rPr><w:color w:val="808080"/></w:rPr>'
+			. '</w:style>';
+	}
+
 	private function load_template() {
 		if ( ! class_exists( 'ZipArchive' ) ) {
 			$this->error = "L'extension PHP ZipArchive est requise pour produire un fichier DOCX.";
@@ -109,7 +144,11 @@ class Notice_Archeomed_DOCX {
 		$this->index_styles( $styles );
 		if ( empty( $this->styles ) ) {
 			$this->error = 'Aucun style reconnu dans le modèle DOCX.';
+			return;
 		}
+		// Le style d'effacement n'est pas dans le gabarit : on l'y ajoute pour
+		// la durée du document, et « write_to » l'écrira dans la feuille.
+		$this->styles[ self::STYLE_A_SUPPRIMER ] = self::ID_A_SUPPRIMER;
 	}
 
 	/**
@@ -379,7 +418,19 @@ class Notice_Archeomed_DOCX {
 			if ( 'word/document.xml' === $name || 'word/_rels/document.xml.rels' === $name ) {
 				continue; // Régénérés ci-dessous.
 			}
-			$dest->addFromString( $name, $src->getFromIndex( $i ) );
+			$contenu = $src->getFromIndex( $i );
+			if ( 'word/styles.xml' === $name && is_string( $contenu ) ) {
+				// Le style d'effacement entre ici, juste avant la fermeture.
+				// Si la balise manquait, on laisse la feuille telle quelle
+				// plutôt que d'écrire un XML bancal.
+				$pos = strrpos( $contenu, '</w:styles>' );
+				if ( false !== $pos ) {
+					$contenu = substr( $contenu, 0, $pos )
+						. $this->style_a_supprimer_xml()
+						. substr( $contenu, $pos );
+				}
+			}
+			$dest->addFromString( $name, $contenu );
 		}
 		$src->close();
 

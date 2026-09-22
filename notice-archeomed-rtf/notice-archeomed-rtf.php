@@ -13,6 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-nommage.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-paquet.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
@@ -34,7 +36,7 @@ register_deactivation_hook( __FILE__, array( 'Notice_Archeomed_File', 'desactive
 add_filter(
 	'plugin_action_links_' . plugin_basename( __FILE__ ),
 	function ( $links ) {
-		$url  = admin_url( 'options-general.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+		$url  = Notice_Archeomed_Settings::url();
 		$lien = '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Réglages', 'notice-archeomed' ) . '</a>';
 		array_unshift( $links, $lien );
 		return $links;
@@ -85,7 +87,7 @@ add_action(
 		// celui qu'on oublie : il se signale donc en rouge et sur toutes les
 		// pages, tant qu'il manque.
 		if ( empty( Notice_Archeomed_Settings::destinataires_de( 'notices' ) ) ) {
-			$lien = admin_url( 'options-general.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+			$lien = Notice_Archeomed_Settings::url();
 			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
 				. esc_html__( 'l\'adresse de la rédaction n\'est pas renseignée. Les notices déposées sont conservées, mais aucune ne peut être expédiée tant qu\'elle manque.', 'notice-archeomed' )
 				. ' <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Renseigner l\'adresse', 'notice-archeomed' ) . '</a></p></div>';
@@ -93,7 +95,7 @@ add_action(
 		$protection = Notice_Archeomed_Settings::get( 'protection' );
 		$turnstile_sert = in_array( $protection, array( 'turnstile', 'les_deux' ), true );
 		if ( $turnstile_sert && '' === trim( Notice_Archeomed_Settings::get( 'turnstile_secret' ) ) ) {
-			$lien = admin_url( 'options-general.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+			$lien = Notice_Archeomed_Settings::url();
 			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
 				. esc_html__( 'la clé secrète Turnstile n\'est pas renseignée. Tant qu\'elle est absente, le formulaire refuse toutes les soumissions.', 'notice-archeomed' )
 				. ' <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Renseigner la clé', 'notice-archeomed' ) . '</a></p></div>';
@@ -225,6 +227,7 @@ class Notice_Archeomed_Pactols {
 		$this->brancher_la_file();
 		add_action( 'admin_post_na_document', array( $this, 'telecharger_le_document' ) );
 		add_action( 'admin_post_na_fascicule', array( $this, 'telecharger_le_fascicule' ) );
+		add_action( 'admin_post_na_paquet', array( $this, 'telecharger_le_paquet' ) );
 		add_action( 'admin_post_na_illustration', array( $this, 'telecharger_une_illustration' ) );
 		add_action( 'before_delete_post', array( $this, 'effacer_les_illustrations' ) );
 	}
@@ -443,6 +446,61 @@ class Notice_Archeomed_Pactols {
 	 * se relisent pas : on les ouvre une à une, on perd le fil, et l'on ne voit
 	 * ni les doublons ni les communes qui se suivent mal.
 	 */
+	/**
+	 * Le paquet d'une rubrique : le document, les illustrations, l'arborescence.
+	 *
+	 * Le document est celui du fascicule, fabriqué par le même chemin : une
+	 * seule façon d'assembler une rubrique, et non deux qui divergeraient.
+	 */
+	public function telecharger_le_paquet() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_paquet' );
+		$rubrique = isset( $_GET['rubrique'] )
+			? sanitize_text_field( wp_unslash( $_GET['rubrique'] ) ) : '';
+		if ( ! in_array( $rubrique, $this->rubriques, true ) ) {
+			wp_die( esc_html__( 'Rubrique inconnue.', 'notice-archeomed' ) );
+		}
+		$ids = $this->file()->notices_de_la_rubrique( $rubrique );
+		if ( empty( $ids ) ) {
+			wp_die( esc_html__( 'Aucune notice dans cette rubrique.', 'notice-archeomed' ) );
+		}
+		// Redimensionner cent images prend plus que les trente secondes
+		// d'usage. On demande du temps ; si l'hébergement refuse, l'encart de
+		// diagnostic l'aura déjà dit.
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 300 );
+		}
+
+		$erreur   = '';
+		$document = $this->fabriquer_le_fascicule( $rubrique, $ids, $erreur );
+		if ( '' === $document ) {
+			wp_die( esc_html( $erreur ) );
+		}
+
+		$notices = array();
+		foreach ( $ids as $id ) {
+			$d = get_post_meta( $id, '_na_donnees', true );
+			if ( ! is_array( $d ) || empty( $d ) ) {
+				continue;
+			}
+			$notices[] = array(
+				'd'             => $d,
+				'illustrations' => array_values( array_filter(
+					(array) get_post_meta( $id, '_na_illustrations', true ), 'file_exists' ) ),
+			);
+		}
+
+		$paquet  = new Notice_Archeomed_Paquet();
+		$archive = $paquet->assembler( $rubrique, $notices, $document, $erreur );
+		@unlink( $document );
+		if ( '' === $archive ) {
+			wp_die( esc_html( '' !== $erreur ? $erreur : "Le paquet n'a pas pu être assemblé." ) );
+		}
+		$this->rendre_le_fichier( $archive, basename( $archive ) );
+	}
+
 	public function telecharger_le_fascicule() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
@@ -458,11 +516,29 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html__( 'Aucune notice dans cette rubrique.', 'notice-archeomed' ) );
 		}
 
-		$format = class_exists( 'ZipArchive' ) ? 'docx' : 'rtf';
 		$erreur = '';
+		$chemin = $this->fabriquer_le_fascicule( $rubrique, $ids, $erreur );
+		if ( '' === $chemin ) {
+			wp_die( esc_html( $erreur ) );
+		}
+		$this->rendre_le_fichier( $chemin, basename( $chemin ) );
+	}
+
+	/**
+	 * Le document d'une rubrique, assemblé une fois pour deux usages.
+	 *
+	 * Le fascicule le sert seul ; le paquet le range dans « style ». Deux
+	 * chemins qui l'assembleraient chacun de leur côté finiraient par ne plus
+	 * produire la même chose, et l'écart ne se verrait qu'à la relecture.
+	 *
+	 * Rend le chemin du fichier, ou une chaîne vide en renseignant l'erreur.
+	 */
+	private function fabriquer_le_fascicule( $rubrique, $ids, &$erreur ) {
+		$erreur = '';
+		$format = class_exists( 'ZipArchive' ) ? 'docx' : 'rtf';
 		$doc    = $this->ouvrir_un_document( $format, $erreur );
 		if ( null === $doc ) {
-			wp_die( esc_html( $erreur ) );
+			return '';
 		}
 		// La rubrique une fois en tête, puis une sous-rubrique par groupe :
 		// « IV. – Sépultures et nécropoles », « IV.1 – Opérations de terrain »,
@@ -491,18 +567,23 @@ class Notice_Archeomed_Pactols {
 			. ( 'docx' === $format ? '.docx' : '.rtf' );
 		$chemin  = $doc->write_to( $tmp_dir, 'notice-archeomed-' . $nom );
 		if ( '' === $chemin ) {
-			wp_die( esc_html( $doc->get_error() ) );
+			$erreur = $doc->get_error();
+			return '';
 		}
-		$this->rendre_le_fichier( $chemin, $nom );
+		return $chemin;
 	}
 
 	/**
 	 * Sert un fichier fabriqué à l'instant, puis l'efface : il se refait.
 	 */
 	private function rendre_le_fichier( $chemin, $nom ) {
-		$type = ( '.docx' === strtolower( substr( $chemin, -5 ) ) )
-			? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-			: 'application/rtf';
+		$extension = strtolower( (string) pathinfo( $chemin, PATHINFO_EXTENSION ) );
+		$types     = array(
+			'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			'rtf'  => 'application/rtf',
+			'zip'  => 'application/zip',
+		);
+		$type = isset( $types[ $extension ] ) ? $types[ $extension ] : 'application/octet-stream';
 		nocache_headers();
 		header( 'Content-Type: ' . $type );
 		header( 'Content-Disposition: attachment; filename="' . rawurlencode( $nom ) . '"' );
@@ -2253,6 +2334,47 @@ class Notice_Archeomed_Pactols {
 		return '' === $nom ? array() : array( $nom );
 	}
 
+	/**
+	 * La casse des libellés Pactols, telle que la revue les imprime.
+	 *
+	 * Pactols écrit ses libellés en bas de casse — « opération de diagnostic ».
+	 * Le formulaire les affiche capitalisés parce qu'ils y sont des intitulés
+	 * de cases à cocher. Dans le texte imprimé, la revue suit Pactols pour les
+	 * natures et capitalise les périodes, qui sont des noms d'époques.
+	 *
+	 * « ucfirst » et « lcfirst » coupent l'octet et non le caractère : sur un
+	 * « É » ils rendent du charabia. D'où le détour par mb_*, avec repli.
+	 */
+	private function bas_de_casse( $libelle ) {
+		$libelle = (string) $libelle;
+		if ( '' === $libelle || ! function_exists( 'mb_substr' ) ) {
+			return lcfirst( $libelle );
+		}
+		return mb_strtolower( mb_substr( $libelle, 0, 1 ) ) . mb_substr( $libelle, 1 );
+	}
+
+	private function capitale_initiale( $libelle ) {
+		$libelle = (string) $libelle;
+		if ( '' === $libelle || ! function_exists( 'mb_substr' ) ) {
+			return ucfirst( $libelle );
+		}
+		return mb_strtoupper( mb_substr( $libelle, 0, 1 ) ) . mb_substr( $libelle, 1 );
+	}
+
+	/** Les libellés d'une liste d'items Pactols, dans la casse voulue. */
+	private function libelles_pactols( $items, $capitale = false ) {
+		$out = array();
+		foreach ( (array) $items as $item ) {
+			$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+			if ( '' === $label ) {
+				continue;
+			}
+			$out[] = $capitale ? $this->capitale_initiale( $label )
+				: $this->bas_de_casse( $label );
+		}
+		return $out;
+	}
+
 	/** « Organisme porteur de l'opération », au pluriel s'ils sont plusieurs. */
 	private function libelle_organisme( $combien ) {
 		return $combien > 1
@@ -2460,7 +2582,7 @@ class Notice_Archeomed_Pactols {
 
 		// --- Bloc responsable (collé au point final du texte, entre parenthèses) ---
 		$resp_nom_complet = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
-		$resp = 'Responsable d\'opération : ' . $resp_nom_complet . ', ' . $d['resp_inst'];
+		$resp = 'Responsable de l\'opération : ' . $resp_nom_complet . ', ' . $d['resp_inst'];
 		$segments = array( $resp );
 		$coresp_nom_complet = trim( $d['coresp_prenom'] . ' ' . $d['coresp_nom'] );
 		if ( '' !== $coresp_nom_complet ) {
@@ -2671,40 +2793,47 @@ class Notice_Archeomed_Pactols {
 			$doc->add_paragraph( 'Normal', $runs );
 		}
 
-		// 4. Titre de la notice : Commune (département), lieu-dit en italique.
+		// 4. Titre de la notice : « Commune (département). Lieu-dit » —
+		// un point sépare, et non une virgule, comme la revue le compose.
 		$titre = array( array( 'text' => $commune_dept ) );
 		if ( '' !== $d['lieu_dit'] ) {
-			$titre[] = array( 'text' => ', ' );
+			$titre[] = array( 'text' => '. ' );
 			$titre[] = array( 'text' => $d['lieu_dit'], 'i' => true );
 		}
 		$doc->add_paragraph( 'TEI_Titre 2+notice', $titre );
 
-		// 4 bis. La nature de l'opération, sous le titre de la notice, avec
-		// les identifiants Pactols qui la désignent. Elle tenait lieu de titre
-		// de niveau 1, place qui revient à la sous-rubrique : c'est un
-		// renseignement sur l'opération, non une division du volume.
-		$natures = isset( $d['nature_items'] ) ? (array) $d['nature_items'] : array();
-		if ( ! empty( $natures ) ) {
-			$morceaux = array();
-			foreach ( $natures as $item ) {
-				$part = $doc->plain( $item['label'] );
-				if ( ! empty( $item['ark'] ) ) {
-					$part .= $doc->plain( ' [' )
-						. $doc->hyperlink( $item['ark'], $this->ark_id( $item['ark'] ) )
-						. $doc->plain( ']' );
-				}
-				$morceaux[] = $part;
-			}
-			$doc->add_raw_paragraph( 'TEI_archeoCHR_fieldwork_method',
-				implode( $doc->plain( ', ' ), $morceaux ) );
-		} elseif ( '' !== $d['nature'] ) {
+		// 4 bis à 5. Les métadonnées de l'opération, telles qu'elles
+		// s'impriment désormais dans la notice.
+		//
+		// Elles ne paraissaient que plus bas, dans le bloc d'indexation, avec
+		// leurs identifiants entre crochets — bon pour la chaîne XML,
+		// illisible dans un volume. La décision de l'année est de les donner
+		// au lecteur : sans ARK, dans l'ordre de la mise en page, et dans la
+		// casse de la revue — Pactols pour les natures, capitale initiale
+		// pour les périodes. Le bloc détaillé reste en dessous, à supprimer
+		// d'un bloc quand on prépare le XML.
+		$natures = $this->libelles_pactols(
+			isset( $d['nature_items'] ) ? $d['nature_items'] : array() );
+		if ( empty( $natures ) && '' !== $d['nature'] ) {
 			// Une notice d'avant les identifiants : le libellé seul.
+			$natures = array_map( array( $this, 'bas_de_casse' ),
+				array_filter( array_map( 'trim', explode( ',', $d['nature'] ) ) ) );
+		}
+		if ( ! empty( $natures ) ) {
 			$doc->add_paragraph( 'TEI_archeoCHR_fieldwork_method',
-				array( array( 'text' => $d['nature'] ) ) );
+				array( array( 'text' => "Nature de l'opération : "
+					. implode( ', ', $natures ) ) ) );
 		}
 
-		// 5. Métadonnées de l'opération, chacune dans son style Métopes.
-		// La nature de l'opération figure déjà en titre de rubrique.
+		$periodes = $this->libelles_pactols(
+			isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(),
+			true );
+		if ( ! empty( $periodes ) ) {
+			$doc->add_paragraph( 'TEI_archeoCHR_keywords_subjects:chronology',
+				array( array( 'text' => 'Période historique : '
+					. implode( ', ', $periodes ) ) ) );
+		}
+
 		$doc->add_paragraph(
 			'TEI_archeoCHR_fieldwork_year',
 			array( array( 'text' => "Année de l'opération : " . $d['annee'] ) )
@@ -2722,6 +2851,14 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => $this->libelle_organisme( count( $organismes_doc ) )
 					. ' : ' . implode( ', ', $organismes_doc ) ) )
 			);
+		}
+		// Les sujets Pactols, en clair et sans identifiant : ce sont eux que
+		// la revue imprime sous le nom de « mots-clés ».
+		$sujets = $this->libelles_pactols(
+			isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
+		if ( ! empty( $sujets ) ) {
+			$doc->add_paragraph( 'TEI_archeoCHR_keywords_subjects',
+				array( array( 'text' => 'Mots-clés : ' . implode( ', ', $sujets ) ) ) );
 		}
 
 		// 6. Texte de la notice, un paragraphe par <p>, avec le bloc responsable
@@ -2779,13 +2916,25 @@ class Notice_Archeomed_Pactols {
 			);
 		}
 
-		// 9. Coordonnées des responsables.
+		// 9 et 10. Ce qui sert à la rédaction, non au lecteur.
+		//
+		// Les coordonnées des responsables et l'indexation Pactols avec ses
+		// identifiants n'ont rien à faire dans un volume imprimé : elles
+		// servent à instruire la notice, puis à nourrir la chaîne XML. Depuis
+		// que les métadonnées paraissent aussi en tête, ce bloc fait double
+		// emploi pour qui prépare le texte.
+		//
+		// Il porte donc un style à lui, « à supprimer » : un clic droit
+		// dessus dans le volet des styles de Word, « Sélectionner toutes les
+		// occurrences », et tout le bloc s'ôte d'une touche. En RTF — le
+		// repli des hébergements sans ZipArchive — le style est inconnu et le
+		// paragraphe sort en Normal, sans que rien ne casse.
 		$contacts = $this->contacts_list( $d );
 		if ( ! empty( $contacts ) ) {
-			$doc->add_paragraph( 'Normal', array( array( 'text' => 'Coordonnées des responsables :', 'b' => true ) ) );
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => 'Coordonnées des responsables :', 'b' => true ) ) );
 			foreach ( $contacts as $nom => $infos ) {
 				$doc->add_raw_paragraph(
-					'Normal',
+					Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 					$doc->char_run( $infos['cs'], $nom )
 						. $doc->plain( ' : ' )
 						. $doc->hyperlink( 'mailto:' . $infos['mail'], $infos['mail'] )
@@ -2794,7 +2943,7 @@ class Notice_Archeomed_Pactols {
 		}
 
 		// 10. Indexation Pactols : libellé suivi de l'ARK cliquable.
-		$doc->add_paragraph( 'Normal', array( array( 'text' => 'Indexation', 'b' => true ) ) );
+		$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => 'Indexation', 'b' => true ) ) );
 
 		$lieux = $this->lieux_de( $d );
 		if ( ! empty( $lieux ) ) {
@@ -2817,7 +2966,7 @@ class Notice_Archeomed_Pactols {
 			if ( '' !== trim( $departement ) ) {
 				$contenu .= $doc->plain( ' (' . $departement . ')' );
 			}
-			$doc->add_raw_paragraph( 'Normal', $contenu );
+			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $contenu );
 		}
 
 		$blocs = array(
@@ -2830,7 +2979,7 @@ class Notice_Archeomed_Pactols {
 			if ( empty( $items ) ) {
 				continue;
 			}
-			$doc->add_paragraph( 'Normal', array( array( 'text' => $titre_bloc . ' :', 'b' => true ) ) );
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => $titre_bloc . ' :', 'b' => true ) ) );
 			$parts = array();
 			foreach ( $items as $item ) {
 				$part = $doc->plain( $item['label'] );
@@ -2843,7 +2992,7 @@ class Notice_Archeomed_Pactols {
 				}
 				$parts[] = $part;
 			}
-			$doc->add_raw_paragraph( 'Normal', implode( $doc->plain( ', ' ), $parts ) );
+			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, implode( $doc->plain( ', ' ), $parts ) );
 		}
 	}
 
@@ -2907,13 +3056,13 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Construit le bloc « (Responsable d'opération : … ) » en RTF, avec les
+	 * Construit le bloc « (Responsable de l'opération : … ) » en RTF, avec les
 	 * styles de caractère Métopes : les noms portent TEI_archeoCHR_name:fld
 	 * (responsable de terrain) ou TEI_archeoCHR_name:aut (co-auteur), et les
 	 * institutions portent TEI_archeoCHR_aff_inline.
 	 */
 	/**
-	 * Le bloc « (Responsable d'opération : …) », collé à la fin du texte.
+	 * Le bloc « (Responsable de l'opération : …) », collé à la fin du texte.
 	 *
 	 * Il recevait un format dont il ne se servait pas : tout passe par
 	 * « plain » et « char_run », que le document sait rendre dans son propre
@@ -2925,7 +3074,7 @@ class Notice_Archeomed_Pactols {
 
 		$resp = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
 		if ( '' !== $resp ) {
-			$seg = $doc->plain( "Responsable d'opération : " )
+			$seg = $doc->plain( "Responsable de l'opération : " )
 				. $doc->char_run( 'TEI_archeoCHR_name:fld', $resp );
 			if ( '' !== $d['resp_inst'] ) {
 				$seg .= $doc->plain( ', ' )
@@ -2970,7 +3119,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function responsables_inline( $d ) {
 		$segments = array(
-			"Responsable d'opération : " . trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] ) . ', ' . $d['resp_inst'],
+			"Responsable de l'opération : " . trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] ) . ', ' . $d['resp_inst'],
 		);
 		$coresp = trim( $d['coresp_prenom'] . ' ' . $d['coresp_nom'] );
 		if ( '' !== $coresp ) {

@@ -201,6 +201,82 @@ gabarit et enregistrez-le au format RTF sous ce nom.
 Un style qui aurait disparu du modèle ne provoque pas d'erreur : le
 paragraphe concerné sort en Normal et se repère à la relecture.
 
+## Les métadonnées dans la notice imprimée
+
+Depuis 2026, les métadonnées ne restent plus cantonnées au bloc d'indexation :
+elles paraissent en tête de notice, dans l'ordre de la mise en page et
+**sans les identifiants ARK**, qui ne se lisent pas dans un volume.
+
+```
+[TEI_Titre 2+notice]                          Aix-en-Provence (Bouches-du-Rhône). Rue des Chartreux
+[TEI_archeoCHR_fieldwork_method]              Nature de l'opération : archéologie du bâti
+[TEI_archeoCHR_keywords_subjects:chronology]  Période historique : Temps modernes, Époque contemporaine
+[TEI_archeoCHR_fieldwork_year]                Année de l'opération : 2024
+[TEI_archeoCHR_IDpatriarche]                  Numéro d'autorisation : 2269
+[TEI_archeoCHR_holder]                        Organisme porteur de l'opération : …
+[TEI_archeoCHR_keywords_subjects]             Mots-clés : couvent, chartreux, cloître
+```
+
+Un **point** sépare la commune du lieu-dit, qui s'écrit en italique. Les
+natures gardent la casse de Pactols — « archéologie du bâti » —, les périodes
+prennent une capitale initiale — « Bas Moyen Âge ». Le bloc de responsabilité
+reste collé au point final du texte : « (Responsable de l'opération : …) ».
+
+## Le nom des illustrations
+
+Pas d'accent, pas d'espace, le souligné pour seul séparateur. C'est la règle
+de la chaîne éditoriale de la revue, suivie à la lettre : un dossier passé
+d'un outil à l'autre doit garder ses noms.
+
+« Briollay_49_ Palaisjustice.EPS » devient « Briollay_49_Palaisjustice.eps ».
+La casse est gardée, l'extension passe en bas de casse.
+
+Le nom se bâtit sur un modèle réglable, dans **Réglages ▸ Iconographie** :
+
+| Jeton | Ce qu'il vaut |
+|---|---|
+| `{numero}` | le numéro en préparation — « AM55 » |
+| `{rubrique}` | le rang de la rubrique — « 2 » pour la deuxième |
+| `{commune}` | la commune de la notice |
+| `{annee}` | l'année de l'opération |
+| `{n}` | le rang de la figure dans la notice |
+
+Le modèle par défaut, `{numero}_{rubrique}_{commune}_{annee}_Fig_{n}`, donne
+`AM55_2_Aix_en_Provence_2024_Fig_1.jpg`. **`{n}` est obligatoire** : sans lui,
+deux illustrations d'une même notice porteraient le même nom et l'une
+écraserait l'autre sans bruit.
+
+## Les deux définitions
+
+`icono/br` porte la basse définition, celle que le document Word appelle en
+lien : elle sert à voir la figure à sa place, non à l'imprimer. `icono/hr`
+porte la haute définition, qui part à la mise en page. Largeur, résolution et
+qualité se règlent pour chacune ; les valeurs sont bornées, un « 0 » en
+largeur donnerait une image vide et un « 20000 » épuiserait le serveur.
+
+`icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
+a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.
+
+## Le bloc « à supprimer »
+
+Les coordonnées des responsables et l'indexation Pactols avec ses ARK restent
+en dessous : la rédaction en a besoin, le lecteur non. Elles portent donc un
+style de paragraphe nommé **« à supprimer »**, gris à l'écran.
+
+Dans Word : clic droit sur ce style dans le volet des styles, puis
+« Sélectionner toutes les occurrences ». Tout le bloc se prend d'un coup et
+s'ôte d'une touche — c'est ainsi qu'on obtient la version propre à passer au
+XML.
+
+**Ce style n'est pas dans le gabarit Métopes, et n'y sera pas.** Le gabarit
+s'exporte à neuf à chaque évolution de la feuille, et ce qu'on y ajouterait à
+la main serait à refaire. Il est injecté dans la feuille de styles au moment
+d'écrire le fichier : le gabarit livré reste intact, le document produit porte
+le style. C'est pourquoi `./verifier-les-styles` ne le réclame pas.
+
+En RTF — le repli des hébergements sans `ZipArchive` — le style est inconnu et
+les paragraphes sortent en Normal, sans que rien ne casse.
+
 ## Correspondance champ / style
 
 | Bloc de la notice | Style Métopes |

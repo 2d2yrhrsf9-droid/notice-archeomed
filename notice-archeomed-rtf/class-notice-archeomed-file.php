@@ -533,6 +533,28 @@ class Notice_Archeomed_File {
 		$vues['na_fascicules'] = '<span style="display:block;margin:8px 0 4px">'
 			. '<strong>' . esc_html__( 'Fascicule à relire :', 'notice-archeomed' )
 			. '</strong> ' . implode( ' · ', $liens ) . '</span>';
+
+		// Le paquet complet, à côté du fascicule seul : le même document, plus
+		// les illustrations rangées aux dossiers de Métopes.
+		$paquets = array();
+		foreach ( $rubriques as $rubrique ) {
+			$url = wp_nonce_url(
+				add_query_arg(
+					array( 'action' => 'na_paquet', 'rubrique' => rawurlencode( $rubrique ) ),
+					admin_url( 'admin-post.php' )
+				),
+				'na_paquet'
+			);
+			$court = trim( strtok( $rubrique, '.' ) );
+			$paquets[] = '<a href="' . esc_url( $url ) . '" title="'
+				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
+		}
+		$vues['na_paquets'] = '<span style="display:block;margin:0 0 8px">'
+			. '<strong>' . esc_html__( 'Paquet Métopes (zip) :', 'notice-archeomed' )
+			. '</strong> ' . implode( ' · ', $paquets )
+			. ' <span class="description">'
+			. esc_html__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' )
+			. '</span></span>';
 		return $vues;
 	}
 

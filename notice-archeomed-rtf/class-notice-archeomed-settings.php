@@ -47,6 +47,43 @@ class Notice_Archeomed_Settings {
 		// joindre Cloudflare — hébergement institutionnel derrière un proxy
 		// filtrant — n'a alors rien à régler pour que le formulaire protège.
 		'protection'         => 'locale',
+
+		// — L'iconographie d'un numéro —
+		// Le numéro en préparation ouvre le nom de chaque illustration, comme
+		// la mise en page le fait : « AM55_2_Etiolles_2024_Fig_1.jpg ».
+		'numero'             => '',
+		'nom_modele'         => '{numero}_{rubrique}_{commune}_{annee}_Fig_{n}',
+		// La basse définition sert au lien posé dans le Word : elle doit se
+		// voir à l'écran, pas s'imprimer. Le poids compte autant que la
+		// largeur — cent figures liées dans un fascicule, et le dossier
+		// devient intransportable.
+		'br_largeur'         => 1000,
+		'br_dpi'             => 96,
+		'br_qualite'         => 82,
+		'br_poids'           => 1024,   // en kilo-octets
+		'br_tolerance'       => 15,     // en pour-cent, sous le plafond
+		// La haute définition part à la mise en page, et elle ne se règle pas
+		// d'une seule main : une photographie se satisfait de 300 dpi, un
+		// dessin au trait en réclame 1200, et le convertir en JPEG lui ôte
+		// justement ce qu'on lui demande. Deux familles, deux réglages.
+		'hr_photo_jpeg'      => 1,
+		'hr_photo_dpi'       => 300,
+		'hr_photo_qualite'   => 92,
+		'hr_trait_jpeg'      => 0,
+		'hr_trait_dpi'       => 1200,
+		'hr_trait_qualite'   => 95,
+		// Les originaux, gardés à côté : rien de ce que l'auteur a envoyé ne
+		// doit disparaître dans une conversion.
+		'garder_originaux'   => 1,
+	);
+
+	/** Les jetons admis dans le modèle de nom, et ce qu'ils valent. */
+	const JETONS_DE_NOM = array(
+		'{numero}'   => 'le numéro en préparation — « AM55 »',
+		'{rubrique}' => 'le rang de la rubrique — « 2 » pour la deuxième',
+		'{commune}'  => 'la commune de la notice',
+		'{annee}'    => 'l’année de l’opération',
+		'{n}'        => 'le rang de la figure dans la notice',
 	);
 
 	public function __construct() {
@@ -188,12 +225,31 @@ class Notice_Archeomed_Settings {
 			&& '' !== trim( (string) constant( $constants[ $key ] ) );
 	}
 
+	/**
+	 * L'adresse de la page de réglages, en un seul endroit.
+	 *
+	 * Elle était écrite en toutes lettres à quatre endroits, dont trois
+	 * bandeaux d'alerte. Déplacer le menu les aurait tous menés à une page
+	 * inexistante, et rien ne l'aurait dit avant qu'on clique.
+	 */
+	public static function url() {
+		return admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT
+			. '&page=' . self::PAGE_SLUG );
+	}
+
+	/**
+	 * Les réglages entrent dans le menu du plugin, et non sous « Réglages ».
+	 *
+	 * Ils vivaient sous les réglages généraux de WordPress : pour y aller il
+	 * fallait passer par la liste des extensions, ou se souvenir d'une entrée
+	 * noyée parmi vingt autres. Le plugin a déjà son menu dans la barre — la
+	 * liste des notices reçues —, et c'est là qu'on les cherche.
+	 */
 	public function add_menu() {
-		add_options_page(
+		add_submenu_page(
+			'edit.php?post_type=' . Notice_Archeomed_File::CPT,
 			'Formulaire des notices d’archéologie médiévale',
-			// Le libellé du menu tient dans une colonne étroite : le nom
-			// complet s'y replierait sur trois lignes.
-			'Notices d\'archéologie médiévale',
+			'Réglages',
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -312,6 +368,55 @@ class Notice_Archeomed_Settings {
 				? $input['protection'] : 'locale';
 		}
 
+		// — L'iconographie —
+		if ( isset( $input['numero'] ) ) {
+			// Le numéro ouvre des noms de fichiers : il suit la même règle
+			// qu'eux, sans quoi il ferait entrer par la porte ce que le
+			// nettoyage chasse par la fenêtre.
+			$out['numero'] = Notice_Archeomed_Nommage::assainir( $input['numero'] );
+		}
+		if ( isset( $input['nom_modele'] ) ) {
+			$modele = trim( sanitize_text_field( $input['nom_modele'] ) );
+			// Un modèle sans « {n} » donnerait le même nom à trois
+			// illustrations, dont deux s'écraseraient sans bruit.
+			if ( '' === $modele || false === strpos( $modele, '{n}' ) ) {
+				add_settings_error(
+					self::OPTION_NAME, 'nom_modele',
+					'Le modèle de nom doit contenir « {n} », le rang de la figure : sans lui, deux illustrations d’une même notice porteraient le même nom. L’ancien modèle a été conservé.',
+					'error'
+				);
+			} else {
+				$out['nom_modele'] = $modele;
+			}
+		}
+		// Des bornes, et non une confiance : un « 0 » en largeur donnerait une
+		// image vide, un « 20000 » épuiserait la mémoire du serveur.
+		foreach ( array(
+			'br_largeur'       => array( 200, 4000 ),
+			'br_dpi'           => array( 72, 300 ),
+			'br_qualite'       => array( 40, 100 ),
+			'br_poids'         => array( 50, 20480 ),
+			'br_tolerance'     => array( 0, 50 ),
+			'hr_photo_dpi'     => array( 150, 1200 ),
+			'hr_photo_qualite' => array( 40, 100 ),
+			'hr_trait_dpi'     => array( 150, 2400 ),
+			'hr_trait_qualite' => array( 40, 100 ),
+		) as $clef => $bornes ) {
+			if ( ! isset( $input[ $clef ] ) ) {
+				continue;
+			}
+			$valeur = (int) $input[ $clef ];
+			$out[ $clef ] = max( $bornes[0], min( $bornes[1], $valeur ) );
+		}
+		// Les cases à cocher ne s'envoient pas quand elles sont vides : leur
+		// absence est la réponse « non », pourvu que le formulaire les ait
+		// bien présentées — d'où le témoin caché.
+		if ( isset( $input['icono_presente'] ) ) {
+			$out['hr_photo_jpeg']    = empty( $input['hr_photo_jpeg'] ) ? 0 : 1;
+			$out['hr_trait_jpeg']    = empty( $input['hr_trait_jpeg'] ) ? 0 : 1;
+			$out['garder_originaux'] = empty( $input['garder_originaux'] ) ? 0 : 1;
+		}
+
 		return $out;
 	}
 
@@ -352,6 +457,154 @@ class Notice_Archeomed_Settings {
 		// Tout autre code signifie que la clé a été acceptée et que seul le
 		// jeton de test a été rejeté, ce qui est le résultat attendu.
 		return array( 'ok' => true, 'message' => 'La clé secrète est reconnue par Cloudflare.' );
+	}
+
+	/**
+	 * À quoi ressemblera un nom, avec les réglages en cours.
+	 *
+	 * Un modèle à jetons ne se lit pas : on le comprend en voyant ce qu'il
+	 * produit. L'exemple se recalcule à chaque affichage de la page.
+	 */
+	public static function exemple_de_nom() {
+		return Notice_Archeomed_Nommage::construire(
+			self::get( 'nom_modele' ),
+			array(
+				'numero'   => self::get( 'numero' ),
+				'rubrique' => 2,
+				'commune'  => 'Aix-en-Provence',
+				'annee'    => '2024',
+				'n'        => 1,
+			),
+			'jpg'
+		);
+	}
+
+	/**
+	 * Ce dont le plugin a besoin, et ce que l'hébergement lui donne.
+	 *
+	 * On bâtissait au pari : personne ne savait si Imagick était là, ni quelle
+	 * taille de fichier le serveur laissait passer. Chaque ligne dit donc
+	 * trois choses — ce qu'il faut, ce qu'il y a, et ce qui manque — plutôt
+	 * qu'une valeur brute qu'il faudrait aller comparer ailleurs.
+	 *
+	 * Rien n'est modifié ici : on regarde, on ne touche pas.
+	 */
+	public static function etat_du_serveur() {
+		$lignes = array();
+
+		$ligne = function ( $quoi, $requis, $constate, $suffit, $pourquoi )
+			use ( &$lignes ) {
+			$lignes[] = array(
+				'quoi'     => $quoi,
+				'requis'   => $requis,
+				'constate' => $constate,
+				'etat'     => $suffit ? 'ok' : 'manque',
+				// Pour une extension, l'écart n'est pas un nombre : elle est
+				// là ou elle n'y est pas.
+				'ecart'    => $suffit ? '' : 'à installer',
+				'pourquoi' => $pourquoi,
+			);
+		};
+
+		// — Les extensions —
+		$zip = class_exists( 'ZipArchive' );
+		$ligne( 'ZipArchive', 'présente', $zip ? 'présente' : 'absente', $zip,
+			'Sans elle, la notice part en RTF au lieu du DOCX, et aucun paquet de numéro ne peut être assemblé.' );
+
+		$magick = extension_loaded( 'imagick' ) && class_exists( 'Imagick' );
+		$ligne( 'Imagick', 'présente', $magick ? 'présente' : 'absente', $magick,
+			'Seule à lire le TIFF, donc seule à fabriquer les basses définitions à partir des aperçus intégrés aux EPS.' );
+
+		$gd = extension_loaded( 'gd' );
+		$ligne( 'GD', 'présente', $gd ? 'présente' : 'absente', $gd,
+			'Repli d\'Imagick pour le JPEG et le PNG. Elle ne lit pas le TIFF.' );
+
+		$finfo = function_exists( 'finfo_open' );
+		$ligne( 'finfo', 'présente', $finfo ? 'présente' : 'absente', $finfo,
+			'Reconnaît le type réel d\'un fichier déposé, quelle que soit son extension.' );
+
+		// — Les formats qu'Imagick veut bien traiter —
+		if ( $magick ) {
+			foreach ( array(
+				'TIFF' => 'Les aperçus intégrés aux EPS sont des TIFF : c\'est par eux que passent les basses définitions.',
+				'JPEG' => 'Le format des illustrations livrées à la mise en page.',
+				'PNG'  => 'Fréquent pour les dessins au trait.',
+			) as $format => $pourquoi ) {
+				$su = (array) Imagick::queryFormats( $format );
+				$ligne( 'Imagick : ' . $format, 'accepté',
+					! empty( $su ) ? 'accepté' : 'refusé', ! empty( $su ), $pourquoi );
+			}
+			// PDF et EPS passent par Ghostscript, que la politique
+			// d'ImageMagick désactive d'origine depuis « ImageTragick ». On le
+			// signale sans le réclamer : le plugin sait s'en passer.
+			$ps = (array) Imagick::queryFormats( 'PDF' );
+			$lignes[] = array(
+				'quoi'     => 'Imagick : PDF et EPS',
+				'requis'   => 'facultatif',
+				'constate' => ! empty( $ps ) ? 'accepté' : 'refusé',
+				'etat'     => 'note',
+				'ecart'    => '',
+				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. Le plugin s\'en passe : il tire la basse définition de l\'aperçu intégré à l\'EPS, et garde l\'original en haute définition.',
+			);
+		}
+
+		// — Ce que PHP laisse passer —
+		$octets = function ( $valeur ) {
+			return (int) wp_convert_hr_to_bytes( (string) $valeur );
+		};
+		foreach ( array(
+			'upload_max_filesize' => array( 25 * MB_IN_BYTES,
+				'Taille d\'un fichier déposé. En deçà, les grandes illustrations sont refusées avant même que le plugin les voie.' ),
+			'post_max_size'       => array( 25 * MB_IN_BYTES,
+				'Taille de tout l\'envoi. Elle doit dépasser celle d\'un fichier seul, sinon le dépôt entier est rejeté.' ),
+			'memory_limit'        => array( 256 * MB_IN_BYTES,
+				'Redimensionner une grande image demande de la tenir en mémoire décompressée.' ),
+		) as $clef => $attendu ) {
+			$brut = ini_get( $clef );
+			$val  = $octets( $brut );
+			// « -1 » vaut sans limite, et c'est le cas de memory_limit sur
+			// certains hébergements : ce n'est pas un manque.
+			$suffit = ( -1 === (int) $brut ) || ( $val >= $attendu[0] );
+			$lignes[] = array(
+				'quoi'     => $clef,
+				'requis'   => size_format( $attendu[0] ),
+				'constate' => ( -1 === (int) $brut ) ? 'sans limite' : size_format( $val ),
+				'etat'     => $suffit ? 'ok' : 'manque',
+				'ecart'    => $suffit ? '' : size_format( $attendu[0] - $val ) . ' de plus',
+				'pourquoi' => $attendu[1],
+			);
+		}
+
+		$duree  = (int) ini_get( 'max_execution_time' );
+		$assez  = ( 0 === $duree ) || ( $duree >= 120 );
+		$lignes[] = array(
+			'quoi'     => 'max_execution_time',
+			'requis'   => '120 s',
+			'constate' => 0 === $duree ? 'sans limite' : $duree . ' s',
+			'etat'     => $assez ? 'ok' : 'manque',
+			'ecart'    => $assez ? '' : ( 120 - $duree ) . ' s de plus',
+			'pourquoi' => 'Assembler un paquet redimensionne des dizaines d\'images à la suite.',
+		);
+
+		$fichiers = (int) ini_get( 'max_file_uploads' );
+		$ligne( 'max_file_uploads', '3', $fichiers ? (string) $fichiers : 'inconnu',
+			$fichiers >= 3,
+			'Une notice porte jusqu\'à trois illustrations.' );
+
+		// — Le planificateur —
+		$cron_coupe = defined( 'DISABLE_WP_CRON' ) && constant( 'DISABLE_WP_CRON' );
+		$lignes[] = array(
+			'quoi'     => 'Planificateur WordPress',
+			'requis'   => 'actif',
+			'constate' => $cron_coupe ? 'désactivé (DISABLE_WP_CRON)' : 'actif',
+			'etat'     => $cron_coupe ? 'note' : 'ok',
+			'ecart'    => '',
+			'pourquoi' => $cron_coupe
+				? 'Coupé, il faut une tâche système qui appelle wp-cron.php, faute de quoi la file d\'attente ne part jamais.'
+				: 'C\'est lui qui expédie les notices mises en file.',
+		);
+
+		return $lignes;
 	}
 
 	public function render_page() {
@@ -647,6 +900,163 @@ class Notice_Archeomed_Settings {
 					</tr>
 				</table>
 
+				<h2>Iconographie</h2>
+				<p class="description" style="max-width:46em">
+					Ce qui gouverne le dossier <code>icono</code> d’un numéro : le nom
+					des fichiers, et les deux définitions qu’on en tire — la basse,
+					posée en lien dans le document Word, et la haute, qui part à la
+					mise en page.
+				</p>
+				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[icono_presente]" value="1">
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="na_numero">Numéro en préparation</label></th>
+						<td>
+							<input type="text" id="na_numero" class="regular-text" style="max-width:12em"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[numero]"
+								value="<?php echo esc_attr( self::get( 'numero' ) ); ?>"
+								placeholder="AM55">
+							<p class="description">Il ouvre le nom de chaque illustration. Laissé vide, le nom commence au rang de la rubrique.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_nom_modele">Modèle de nom</label></th>
+						<td>
+							<input type="text" id="na_nom_modele" class="large-text"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[nom_modele]"
+								value="<?php echo esc_attr( self::get( 'nom_modele' ) ); ?>">
+							<p class="description">
+								Jetons admis :
+								<?php
+								$jetons = array();
+								foreach ( self::JETONS_DE_NOM as $jeton => $quoi ) {
+									$jetons[] = '<code>' . esc_html( $jeton ) . '</code> ' . esc_html( $quoi );
+								}
+								echo wp_kses_post( implode( ' ; ', $jetons ) );
+								?>.
+								<br>
+								Ce qui n’est pas un jeton est recopié tel quel, puis tout le nom
+								passe à la règle : pas d’accent, pas d’espace, le souligné pour
+								seul séparateur. <strong><code>{n}</code> est obligatoire</strong> :
+								sans lui, deux illustrations d’une même notice porteraient le même nom.
+								<br>
+								Exemple : <code><?php echo esc_html( self::exemple_de_nom() ); ?></code>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Basse définition (<code>icono/br</code>)</th>
+						<td>
+							<label>Largeur maximale
+								<input type="number" min="200" max="4000" step="10" style="width:7em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_largeur]"
+									value="<?php echo (int) self::get( 'br_largeur' ); ?>"> px</label>
+							&nbsp;&nbsp;
+							<label>Résolution
+								<input type="number" min="72" max="300" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_dpi]"
+									value="<?php echo (int) self::get( 'br_dpi' ); ?>"> dpi</label>
+							&nbsp;&nbsp;
+							<label>Qualité
+								<input type="number" min="40" max="100" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_qualite]"
+									value="<?php echo (int) self::get( 'br_qualite' ); ?>"> %</label>
+							<br><br>
+							<label>Poids maximal
+								<input type="number" min="50" max="20480" step="50" style="width:7em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_poids]"
+									value="<?php echo (int) self::get( 'br_poids' ); ?>"> Ko</label>
+							&nbsp;&nbsp;
+							<label>Tolérance
+								<input type="number" min="0" max="50" step="1" style="width:5em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_tolerance]"
+									value="<?php echo (int) self::get( 'br_tolerance' ); ?>"> %</label>
+							<p class="description">
+								Elle n’est pas destinée à l’impression : elle sert à voir la figure
+								à sa place dans le document. Le poids compte donc autant que la
+								largeur — cent figures liées dans un fascicule, et le dossier
+								devient intransportable.
+								<br>
+								La qualité baisse par paliers jusqu’à ce que le fichier tienne sous
+								le plafond. La tolérance dit jusqu’où descendre sans insister :
+								<?php
+								$plafond = (int) self::get( 'br_poids' );
+								$bas     = (int) round( $plafond * ( 100 - (int) self::get( 'br_tolerance' ) ) / 100 );
+								printf( 'on s’arrête dès que le fichier tient entre %d et %d Ko.',
+									(int) $bas, (int) $plafond );
+								?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Haute définition (<code>icono/hr</code>)<br>
+							<span class="description" style="font-weight:400">photographies</span></th>
+						<td>
+							<label>
+								<input type="checkbox" value="1"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_jpeg]"
+									<?php checked( (int) self::get( 'hr_photo_jpeg' ), 1 ); ?>>
+								Convertir en JPEG
+							</label>
+							&nbsp;&nbsp;
+							<label>Résolution
+								<input type="number" min="150" max="1200" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_dpi]"
+									value="<?php echo (int) self::get( 'hr_photo_dpi' ); ?>"> dpi</label>
+							&nbsp;&nbsp;
+							<label>Qualité
+								<input type="number" min="40" max="100" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_qualite]"
+									value="<?php echo (int) self::get( 'hr_photo_qualite' ); ?>"> %</label>
+							<p class="description">
+								Ce qui arrive en JPEG, TIFF ou PNG. La revue demande
+								10 × 15 cm à 300 dpi au minimum.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Haute définition (<code>icono/hr</code>)<br>
+							<span class="description" style="font-weight:400">dessins au trait et vectoriels</span></th>
+						<td>
+							<label>
+								<input type="checkbox" value="1"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_jpeg]"
+									<?php checked( (int) self::get( 'hr_trait_jpeg' ), 1 ); ?>>
+								Convertir en JPEG
+							</label>
+							&nbsp;&nbsp;
+							<label>Résolution
+								<input type="number" min="150" max="2400" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_dpi]"
+									value="<?php echo (int) self::get( 'hr_trait_dpi' ); ?>"> dpi</label>
+							&nbsp;&nbsp;
+							<label>Qualité
+								<input type="number" min="40" max="100" step="1" style="width:6em"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_qualite]"
+									value="<?php echo (int) self::get( 'hr_trait_qualite' ); ?>"> %</label>
+							<p class="description">
+								Ce qui arrive en PDF, EPS ou AI — c’est le format déposé qui range
+								l’illustration dans l’une ou l’autre famille. La revue demande
+								1200 dpi pour un trait, et <strong>le convertir en JPEG lui ôte
+								justement ce qu’on lui demande</strong> : décoché, l’original est
+								recopié tel quel.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Originaux</th>
+						<td>
+							<label>
+								<input type="checkbox" value="1"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[garder_originaux]"
+									<?php checked( (int) self::get( 'garder_originaux' ), 1 ); ?>>
+								Garder les fichiers d’origine dans <code>icono/originaux</code>
+							</label>
+							<p class="description">Rien de ce que l’auteur a envoyé ne disparaît alors dans une conversion.</p>
+						</td>
+					</tr>
+				</table>
+
 				<?php submit_button( 'Enregistrer les réglages' ); ?>
 			</form>
 
@@ -671,6 +1081,52 @@ class Notice_Archeomed_Settings {
 			}
 			?>
 			<p>Pour appliquer une nouvelle feuille de styles, remplacez <code>modele-metopes.rtf</code> dans le dossier du plugin par un document enregistré au format RTF depuis le gabarit Métopes à jour. Les styles sont reconnus par leur nom : aucune modification du code n'est nécessaire.</p>
+
+			<hr>
+
+			<h2>Ce que l’hébergement offre</h2>
+			<p>Ce tableau ne change rien : il regarde. Chaque ligne dit ce qu’il
+			faut, ce qu’il y a, et ce qui manque — de quoi savoir sur quoi
+			compter, et quoi demander à l’hébergeur.</p>
+			<?php
+			$etat = self::etat_du_serveur();
+			$manques = array_values( array_filter( $etat, function ( $l ) {
+				return 'manque' === $l['etat'];
+			} ) );
+			?>
+			<table class="widefat striped" style="max-width:60em">
+				<thead>
+					<tr>
+						<th style="width:20%">Ce qu’il faut</th>
+						<th style="width:12%">Requis</th>
+						<th style="width:14%">Constaté</th>
+						<th style="width:14%">Écart</th>
+						<th>Pourquoi</th>
+					</tr>
+				</thead>
+				<tbody>
+				<?php foreach ( $etat as $l ) : ?>
+					<tr>
+						<td><strong><?php echo esc_html( $l['quoi'] ); ?></strong></td>
+						<td><?php echo esc_html( $l['requis'] ); ?></td>
+						<td<?php echo 'manque' === $l['etat'] ? ' style="color:#b32d2e;font-weight:600"' : ''; ?>>
+							<?php echo esc_html( $l['constate'] ); ?>
+						</td>
+						<td<?php echo '' !== $l['ecart'] ? ' style="color:#b32d2e"' : ''; ?>>
+							<?php echo '' !== $l['ecart'] ? esc_html( $l['ecart'] ) : '—'; ?>
+						</td>
+						<td class="description"><?php echo esc_html( $l['pourquoi'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<?php if ( empty( $manques ) ) : ?>
+				<p style="color:#2f6b2f"><strong>Rien ne manque.</strong></p>
+			<?php else : ?>
+				<p style="color:#b32d2e"><strong><?php echo (int) count( $manques ); ?>
+				<?php echo 1 === count( $manques ) ? 'point manque' : 'points manquent'; ?>.</strong>
+				Le reste du plugin fonctionne, mais ce qui en dépend restera hors d’atteinte.</p>
+			<?php endif; ?>
 
 			<h2>Utilisation</h2>
 			<p>Insérez le code court <code>[notice_archeomed_pactols]</code> dans la page devant accueillir le formulaire.</p>
