@@ -52,7 +52,7 @@ class Notice_Archeomed_Settings {
 		// Le numéro en préparation ouvre le nom de chaque illustration, comme
 		// la mise en page le fait : « AM55_2_Etiolles_2024_Fig_1.jpg ».
 		'numero'             => '',
-		'nom_modele'         => '{numero}_{rubrique}_{commune}_{annee}_Fig_{n}',
+		'nom_modele'         => '{numero}_{rubrique}_{commune}_{lieu_dit}_{annee}_Fig_{n}',
 		// La basse définition sert au lien posé dans le Word : elle doit se
 		// voir à l'écran, pas s'imprimer. Le poids compte autant que la
 		// largeur — cent figures liées dans un fascicule, et le dossier
@@ -82,6 +82,7 @@ class Notice_Archeomed_Settings {
 		'{numero}'   => 'le numéro en préparation — « AM55 »',
 		'{rubrique}' => 'le rang de la rubrique — « 2 » pour la deuxième',
 		'{commune}'  => 'la commune de la notice',
+		'{lieu_dit}' => 'le lieu-dit — il distingue deux notices d’une même commune',
 		'{annee}'    => 'l’année de l’opération',
 		'{n}'        => 'le rang de la figure dans la notice',
 	);
@@ -387,6 +388,18 @@ class Notice_Archeomed_Settings {
 				);
 			} else {
 				$out['nom_modele'] = $modele;
+				// Deux notices d'une même commune et d'une même année, cela
+				// se voit dans chaque fascicule. Sans « {lieu_dit} » leurs
+				// figures portent le même nom, et l'assemblage doit alors
+				// numéroter d'office — ce qui marche, mais donne des noms
+				// qu'on ne reconnaît plus.
+				if ( false === strpos( $modele, '{lieu_dit}' ) ) {
+					add_settings_error(
+						self::OPTION_NAME, 'nom_modele_lieu',
+						'Le modèle ne contient pas « {lieu_dit} » : deux notices d’une même commune et d’une même année donneraient des noms identiques. L’assemblage les distinguera par un suffixe, mais le lieu-dit se lit mieux.',
+						'warning'
+					);
+				}
 			}
 		}
 		// Des bornes, et non une confiance : un « 0 » en largeur donnerait une
@@ -472,6 +485,7 @@ class Notice_Archeomed_Settings {
 				'numero'   => self::get( 'numero' ),
 				'rubrique' => 2,
 				'commune'  => 'Aix-en-Provence',
+				'lieu_dit' => 'Rue des Chartreux',
 				'annee'    => '2024',
 				'n'        => 1,
 			),

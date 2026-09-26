@@ -238,13 +238,34 @@ Le nom se bâtit sur un modèle réglable, dans **Réglages ▸ Iconographie** :
 | `{numero}` | le numéro en préparation — « AM55 » |
 | `{rubrique}` | le rang de la rubrique — « 2 » pour la deuxième |
 | `{commune}` | la commune de la notice |
+| `{lieu_dit}` | le lieu-dit — il distingue deux notices d'une même commune |
 | `{annee}` | l'année de l'opération |
 | `{n}` | le rang de la figure dans la notice |
 
-Le modèle par défaut, `{numero}_{rubrique}_{commune}_{annee}_Fig_{n}`, donne
-`AM55_2_Aix_en_Provence_2024_Fig_1.jpg`. **`{n}` est obligatoire** : sans lui,
-deux illustrations d'une même notice porteraient le même nom et l'une
-écraserait l'autre sans bruit.
+Le modèle par défaut est
+`{numero}_{rubrique}_{commune}_{lieu_dit}_{annee}_Fig_{n}`.
+
+**`{n}` est obligatoire** : sans lui, deux illustrations d'une même notice
+porteraient le même nom et l'une écraserait l'autre sans bruit.
+
+**`{lieu_dit}` l'est presque.** Deux notices d'une même commune et d'une même
+année, cela se voit dans chaque fascicule — l'AM55 en compte trois paires
+pour la seule rubrique II. Sans le lieu-dit, leurs figures portent le même
+nom. L'assemblage les distingue alors par un suffixe (`…_Fig_1_2.jpg`) et
+l'écrit dans le `lisez-moi`, mais le lieu-dit se lit mieux : les réglages
+avertissent quand il manque.
+
+## Ce que la résolution fait, et ne fait pas
+
+La résolution **s'inscrit, elle ne se fabrique pas**. Porter une image à
+1200 dpi en inventant des pixels l'abîmerait sans rien apporter : le plugin
+enregistre la densité voulue dans le fichier, et c'est elle que la mise en
+page lit pour savoir à quelle taille poser la figure. Le nombre de pixels,
+lui, ne vient que du fichier d'origine.
+
+Une illustration multipage — un PDF de deux pages, un TIFF multi-images — ne
+donne que sa **première vue**. Les charger toutes puis les aplatir les
+superposerait en une bouillie.
 
 ## Les deux définitions
 

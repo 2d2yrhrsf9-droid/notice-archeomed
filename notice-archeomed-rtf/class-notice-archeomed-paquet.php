@@ -24,11 +24,25 @@ class Notice_Archeomed_Paquet {
 	/** Les formats qu'on tient pour des photographies, par opposition au trait. */
 	const MATRICIELS = array( 'jpg', 'jpeg', 'png', 'tif', 'tiff' );
 
+	/**
+	 * Le plafond de poids se compte en kilo-octets.
+	 *
+	 * « 1024 * 1024 » se lit « un méga-octet » chez tout le monde, et vaudrait
+	 * ici un giga-octet. La haute définition n'a pas de plafond : autant le
+	 * dire par un nom plutôt que par un nombre qu'on relira de travers.
+	 */
+	const SANS_PLAFOND = PHP_INT_MAX;
+
 	private $erreurs = array();
 	private $journal = array();
 	// Les fichiers que l'on fabrique en chemin. ZipArchive ne lit ses sources
 	// qu'à la fermeture : les effacer plus tôt donnerait une archive vide.
 	private $temporaires = array();
+	// Les noms déjà posés dans l'archive. Deux notices d'une même commune et
+	// d'une même année donnent le même nom quand le modèle ne porte pas le
+	// lieu-dit : sans ce registre, la seconde figure écrase la première dans
+	// le zip, sans un mot.
+	private $noms_pris = array();
 
 	public function journal() {
 		return $this->journal;
@@ -36,6 +50,28 @@ class Notice_Archeomed_Paquet {
 
 	public function erreurs() {
 		return $this->erreurs;
+	}
+
+	/**
+	 * Un nom qui n'a pas encore servi dans cette archive.
+	 *
+	 * Le modèle devrait suffire à les distinguer — c'est à quoi sert
+	 * « {lieu_dit} ». Mais il se règle à la main, et rien n'empêche de l'en
+	 * priver : le suffixe est le filet, et il se dit dans le lisez-moi pour
+	 * qu'on sache pourquoi un fichier s'appelle « _2 ».
+	 */
+	private function nom_unique( $nom ) {
+		$clef = strtolower( $nom );
+		if ( ! isset( $this->noms_pris[ $clef ] ) ) {
+			$this->noms_pris[ $clef ] = 1;
+			return $nom;
+		}
+		++$this->noms_pris[ $clef ];
+		$suffixe = $nom . '_' . $this->noms_pris[ $clef ];
+		$this->journal[] = $nom . ' : nom déjà pris dans cette rubrique, posé sous « '
+			. $suffixe . ' ». Ajoutez « {lieu_dit} » au modèle de nom pour les distinguer.';
+		$this->noms_pris[ strtolower( $suffixe ) ] = 1;
+		return $suffixe;
 	}
 
 	/**
@@ -69,8 +105,11 @@ class Notice_Archeomed_Paquet {
 		if ( ! is_dir( $dossier ) ) {
 			wp_mkdir_p( $dossier );
 		}
-		$chemin = trailingslashit( $dossier ) . 'notice-archeomed-' . $nom_paquet . '.zip';
-		@unlink( $chemin );
+		// Le nom porte un tirage : deux assemblages simultanés de la même
+		// rubrique se détruisaient l'un l'autre, et le premier téléchargement
+		// arrivait tronqué sans que rien ne le dise.
+		$chemin = trailingslashit( $dossier ) . 'notice-archeomed-' . $nom_paquet
+			. '-' . wp_generate_password( 8, false, false ) . '.zip';
 
 		$zip = new ZipArchive();
 		if ( true !== $zip->open( $chemin, ZipArchive::CREATE | ZipArchive::OVERWRITE ) ) {
@@ -112,11 +151,12 @@ class Notice_Archeomed_Paquet {
 						'numero'   => $numero,
 						'rubrique' => $rang,
 						'commune'  => isset( $d['commune'] ) ? $d['commune'] : '',
+						'lieu_dit' => isset( $d['lieu_dit'] ) ? $d['lieu_dit'] : '',
 						'annee'    => isset( $d['annee'] ) ? $d['annee'] : '',
 						'n'        => $n,
 					)
 				);
-				$this->poser_une_illustration( $zip, $source, $nom, $racine );
+				$this->poser_une_illustration( $zip, $source, $this->nom_unique( $nom ), $racine );
 			}
 		}
 
@@ -146,9 +186,11 @@ class Notice_Archeomed_Paquet {
 			'XML/             vide : c\'est la chaîne qui le remplira',
 			'icono/hr/        la haute définition, pour la mise en page',
 			'icono/br/        la basse définition, appelée en lien par le document',
-			'icono/originaux/ les fichiers tels que les auteurs les ont envoyés',
-			'',
 		);
+		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
+			$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
+		}
+		$lignes[] = '';
 		if ( empty( $this->journal ) && empty( $this->erreurs ) ) {
 			$lignes[] = 'Toutes les illustrations ont été traitées.';
 		} else {
@@ -239,42 +281,80 @@ class Notice_Archeomed_Paquet {
 	 *
 	 * Rend vrai si la cible a été écrite.
 	 */
-	private function reduire( $source, $cible, $largeur, $qualite, $poids_max, $tolerance ) {
+	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance ) {
 		if ( ! class_exists( 'Imagick' ) ) {
 			return false;
 		}
-		$plancher = (int) round( $poids_max * ( 100 - $tolerance ) / 100 );
+		$plancher = ( self::SANS_PLAFOND === $poids_max )
+			? 0 : (int) round( $poids_max * ( 100 - $tolerance ) / 100 );
+		$image = null;
 		try {
 			$image = new Imagick();
-			$image->readImage( $source );
+			// « [0] » demande la première vue seulement. Un PDF de deux pages
+			// ou un TIFF multi-images chargeait toutes ses vues, que
+			// « flattenImages » superposait ensuite en une bouillie : ce
+			// n'est pas la première page qu'on obtenait, c'est leur somme.
+			// Lire la seule vue utile corrige l'image et épargne la mémoire.
+			try {
+				$image->readImage( $source . '[0]' );
+			} catch ( Exception $e ) {
+				$image->clear();
+				$image->readImage( $source );
+			}
+			// Ce qui reste de calques dans cette vue s'aplatit. L'objet
+			// d'origine se libère : sur une centaine d'illustrations, les
+			// abandonner l'un après l'autre finissait par épuiser la mémoire.
+			$plat = $image->flattenImages();
+			if ( $plat instanceof Imagick ) {
+				$image->clear();
+				$image->destroy();
+				$image = $plat;
+			}
 			$image->setImageFormat( 'jpeg' );
-			// Une image animée ou multipage — un TIFF en porte parfois — ne
-			// garde que sa première vue : c'est une figure, pas un film.
-			$image = $image->flattenImages();
 			if ( $image->getImageWidth() > $largeur ) {
 				$image->resizeImage( $largeur, 0, Imagick::FILTER_LANCZOS, 1 );
 			}
+			// La résolution s'inscrit, elle ne se fabrique pas : porter une
+			// image à 1200 dpi en inventant des pixels l'abîmerait sans rien
+			// apporter. On enregistre la densité voulue, et c'est elle que la
+			// mise en page lira pour savoir à quelle taille poser la figure.
+			if ( $dpi > 0 ) {
+				$image->setImageUnits( Imagick::RESOLUTION_PIXELSPERINCH );
+				$image->setImageResolution( $dpi, $dpi );
+			}
+
+			$qualite = max( 40, (int) $qualite );
 			for ( $essai = 0; $essai < 6; $essai++ ) {
-				$image->setImageCompressionQuality( max( 40, $qualite ) );
-				$octets = strlen( $image->getImageBlob() );
-				$ko     = (int) round( $octets / 1024 );
-				if ( $ko <= $poids_max && ( $ko >= $plancher || $qualite <= 40 ) ) {
-					break;
+				$image->setImageCompressionQuality( $qualite );
+				$ko = (int) round( strlen( $image->getImageBlob() ) / 1024 );
+				if ( $ko <= $poids_max ) {
+					break;   // dans la fourchette, ou sans plafond
 				}
-				if ( $ko > $poids_max ) {
-					$qualite -= 10;
-					if ( $qualite < 40 ) {
-						$qualite = 40;
-						break;
-					}
-					continue;
+				if ( $qualite <= 40 ) {
+					break;   // on ne descend pas plus bas
 				}
-				break;   // déjà sous le plancher : inutile de remonter
+				$qualite = max( 40, $qualite - 10 );
+			}
+			// La qualité retenue est posée une dernière fois avant l'écriture :
+			// la boucle pouvait sortir en ayant calculé un palier sans
+			// l'appliquer, et le fichier s'écrivait alors au palier précédent.
+			$image->setImageCompressionQuality( $qualite );
+			// Descendue au plancher sans tenir sous le plafond : le fichier
+			// part quand même, et le lisez-moi le dit plutôt que de laisser
+			// croire que le réglage a été respecté.
+			if ( self::SANS_PLAFOND !== $poids_max && $ko > $poids_max ) {
+				$this->journal[] = basename( $cible ) . ' : ' . $ko . ' Ko après compression, '
+					. 'au-delà du plafond de ' . (int) $poids_max . ' Ko. Qualité descendue à '
+					. $qualite . ' sans y parvenir ; réduisez la largeur maximale.';
 			}
 			$ok = (bool) $image->writeImage( $cible );
 			$image->clear();
+			$image->destroy();
 			return $ok && file_exists( $cible );
 		} catch ( Exception $e ) {
+			if ( $image instanceof Imagick ) {
+				$image->clear();
+			}
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
 			return false;
 		}
@@ -305,8 +385,12 @@ class Notice_Archeomed_Paquet {
 		if ( $en_jpeg && self::imagick_sait( $ext ) ) {
 			$tmp = wp_tempnam( 'na-hr' );
 			$this->temporaires[] = $tmp;
-			if ( $this->reduire( $source, $tmp, 10000,
-				(int) $reglage( 'hr_' . $famille . '_qualite' ), 1024 * 1024, 0 ) ) {
+			// La haute définition ne se rétrécit pas et n'a pas de plafond :
+			// elle part à la mise en page, qui la veut entière.
+			if ( $this->reduire( $source, $tmp, PHP_INT_MAX,
+				(int) $reglage( 'hr_' . $famille . '_qualite' ),
+				(int) $reglage( 'hr_' . $famille . '_dpi' ),
+				self::SANS_PLAFOND, 0 ) ) {
 				$zip->addFile( $tmp, $racine . 'icono/hr/' . $nom_sans_ext . '.jpg' );
 				$pose['hr'] = $nom_sans_ext . '.jpg';
 				$fait_hr    = true;
@@ -342,7 +426,8 @@ class Notice_Archeomed_Paquet {
 			}
 		}
 
-		if ( $this->reduire( $source_br, $tmp_br, $largeur, $qualite, $poids, $tolerance ) ) {
+		if ( $this->reduire( $source_br, $tmp_br, $largeur, $qualite,
+			(int) $reglage( 'br_dpi' ), $poids, $tolerance ) ) {
 			$zip->addFile( $tmp_br, $racine . 'icono/br/' . $nom_sans_ext . '.jpg' );
 			$pose['br'] = $nom_sans_ext . '.jpg';
 		} else {

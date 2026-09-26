@@ -2607,7 +2607,10 @@ class Notice_Archeomed_Pactols {
 		// Ligne 3+ : texte rédigé, terminé par " (responsable…)" collé au point final.
 		$loc_line = esc_html( $commune_dept );
 		if ( '' !== $d['lieu_dit'] ) {
-			$loc_line .= ', <em>' . esc_html( $d['lieu_dit'] ) . '</em>';
+			// Un point sépare, comme dans le document et dans le volume : la
+			// copie de l'auteur et le fichier joint ne doivent pas se
+			// contredire sur la ponctuation d'un titre.
+			$loc_line .= '. <em>' . esc_html( $d['lieu_dit'] ) . '</em>';
 		}
 		$nature_line = 'Nature de l\'opération : ' . esc_html( $d['nature'] );
 		$bloc_resp = ' (' . esc_html( implode( ' ; ', $segments ) ) . ')';
