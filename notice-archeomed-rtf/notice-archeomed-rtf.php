@@ -524,7 +524,8 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html( $erreur ) );
 		}
 
-		$archive = $paquet->emballer( $document, $erreur );
+		$archive = $paquet->emballer( $document,
+			$this->page_de_relecture( $rubrique, $donnees ), $erreur );
 		@unlink( $document );
 		$paquet->nettoyer();
 		if ( '' === $archive ) {
@@ -555,6 +556,118 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html( $erreur ) );
 		}
 		$this->rendre_le_fichier( $chemin, basename( $chemin ) );
+	}
+
+	/**
+	 * La rubrique à lire dans un navigateur, figures comprises.
+	 *
+	 * Un document Word aux images liées montre des cadres vides tant qu'il
+	 * n'est pas ouvert depuis le dossier du paquet — et même alors, Word
+	 * refuse parfois de résoudre un chemin relatif. Fabriquer un PDF côté
+	 * serveur demanderait LibreOffice, qu'un hébergement mutualisé n'a pas.
+	 *
+	 * Une page HTML, elle, ne dépend de rien : on la double-clique, elle
+	 * s'ouvre, les figures sont là. Qui veut un PDF l'imprime depuis son
+	 * navigateur — la feuille de style est faite pour ça.
+	 *
+	 * Elle se bâtit ici, et non dans la classe du paquet, pour tenir ses
+	 * métadonnées des mêmes fonctions que le document : deux mises en forme
+	 * parallèles finiraient par ne plus dire la même chose.
+	 */
+	private function page_de_relecture( $rubrique, $donnees ) {
+		$h = '';
+		foreach ( (array) $donnees as $d ) {
+			if ( ! is_array( $d ) || empty( $d ) ) {
+				continue;
+			}
+			$departement = $this->sans_parentheses( $d['departement'] );
+			$titre = esc_html( $this->lieux_en_ligne( $d ) . ' (' . $departement . ')' );
+			if ( '' !== $d['lieu_dit'] ) {
+				$titre .= '. <em>' . esc_html( $d['lieu_dit'] ) . '</em>';
+			}
+			$h .= '<article><h2>' . $titre . '</h2>';
+
+			$meta = array();
+			$natures = $this->libelles_pactols(
+				isset( $d['nature_items'] ) ? $d['nature_items'] : array() );
+			if ( ! empty( $natures ) ) {
+				$meta[] = "Nature de l'opération : " . implode( ', ', $natures );
+			}
+			$periodes = $this->libelles_pactols(
+				isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(), true );
+			if ( ! empty( $periodes ) ) {
+				$meta[] = 'Période historique : ' . implode( ', ', $periodes );
+			}
+			$meta[] = "Année de l'opération : " . $d['annee'];
+			if ( '' !== $d['num_autorisation'] ) {
+				$meta[] = "Numéro d'autorisation : " . $d['num_autorisation'];
+			}
+			$organismes = $this->organismes_de( $d );
+			if ( ! empty( $organismes ) ) {
+				$meta[] = $this->libelle_organisme( count( $organismes ) )
+					. ' : ' . implode( ', ', $organismes );
+			}
+			$sujets = $this->libelles_pactols(
+				isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
+			if ( ! empty( $sujets ) ) {
+				$meta[] = 'Mots-clés : ' . implode( ', ', $sujets );
+			}
+			$h .= '<p class="meta">' . implode( '<br>', array_map( 'esc_html', $meta ) ) . '</p>';
+
+			// Le texte a déjà traversé « clean_richtext » au dépôt : il ne
+			// porte que huit balises. On le repasse au même tamis plutôt que
+			// de s'en remettre à ce qui est en base.
+			$h .= '<div class="texte">' . $this->clean_richtext( $d['texte_notice'] ) . '</div>';
+
+			foreach ( (array) ( isset( $d['illustrations'] ) ? $d['illustrations'] : array() ) as $item ) {
+				$h .= '<figure>';
+				if ( ! empty( $item['figure']['fichier'] ) ) {
+					$h .= '<img src="' . esc_attr( $item['figure']['fichier'] ) . '" alt="'
+						. esc_attr( $item['titre'] ) . '">';
+				} else {
+					$h .= '<p class="absente">Pas de basse définition pour cette figure.</p>';
+				}
+				$h .= '<figcaption><strong>Fig. ' . (int) $item['rang'] . '</strong>';
+				if ( '' !== $item['titre'] ) {
+					$h .= ' — ' . esc_html( $item['titre'] );
+				}
+				if ( '' !== $item['legende'] ) {
+					$h .= '<br>' . esc_html( $item['legende'] );
+				}
+				if ( '' !== $item['credits'] ) {
+					$h .= '<br><em>' . esc_html( $item['credits'] ) . '</em>';
+				}
+				$h .= '</figcaption></figure>';
+			}
+			$h .= '</article>';
+		}
+
+		return '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+			. '<title>' . esc_html( $rubrique ) . '</title><style>'
+			// Le fond s'écrit : sans lui, un navigateur en thème sombre pose
+			// un canevas noir sous un texte gris foncé, et la page devient
+			// illisible sans que personne ait rien fait de travers.
+			. 'body{font-family:Georgia,serif;max-width:46em;margin:2em auto;padding:0 1.2em;'
+			. 'color:#222;background:#fff;line-height:1.55}'
+			. 'h1{font-size:1.5em;border-bottom:2px solid #8a6d3b;padding-bottom:.3em}'
+			. 'article{margin:2.5em 0;padding-bottom:1.5em;border-bottom:1px solid #ddd}'
+			. 'h2{font-size:1.2em;margin-bottom:.2em}'
+			. '.meta{font-family:Arial,sans-serif;font-size:.82em;color:#555;margin:.2em 0 1em}'
+			. '.texte p{text-align:justify}'
+			. 'figure{margin:1.5em 0;padding:0}'
+			. 'figure img{max-width:100%;height:auto;border:1px solid #ddd}'
+			. 'figcaption{font-family:Arial,sans-serif;font-size:.82em;color:#444;margin-top:.4em}'
+			. '.absente{font-family:Arial,sans-serif;font-size:.82em;color:#b32d2e;'
+			. 'background:#f8e6e6;border:1px solid #b32d2e;padding:.6em .8em}'
+			. '.note{font-family:Arial,sans-serif;font-size:.8em;color:#666;font-style:italic}'
+			// Imprimée, la page devient le PDF qu'on ne peut pas fabriquer sur
+			// le serveur : on évite qu'une figure se coupe entre deux pages.
+			. '@media print{body{max-width:none;margin:0}article,figure{break-inside:avoid}'
+			. '.note{display:none}}'
+			. '</style></head><body>'
+			. '<h1>' . esc_html( $rubrique ) . '</h1>'
+			. '<p class="note">Page de relecture du paquet. Pour un PDF : imprimez depuis le navigateur.</p>'
+			. $h . '</body></html>';
 	}
 
 	/** La saisie de chaque notice d'une liste, dans l'ordre du classement. */
@@ -2948,7 +3061,10 @@ class Notice_Archeomed_Pactols {
 			if ( ! empty( $item['figure']['lien'] )
 				&& method_exists( $doc, 'image_liee' ) ) {
 				$doc->add_raw_paragraph( 'TEI_figure_title', $doc->image_liee(
-					$item['figure']['lien'],
+					// Le document vit dans « style/ » : il remonte d'un cran
+					// pour atteindre l'icono. Sans ce « ../ », le lien ne
+					// résout nulle part et Word pose un cadre vide.
+					'../' . $item['figure']['fichier'],
 					$item['figure']['largeur'],
 					$item['figure']['hauteur'],
 					$item['figure']['dpi'],

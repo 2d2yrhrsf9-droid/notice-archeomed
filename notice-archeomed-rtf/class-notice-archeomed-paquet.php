@@ -169,7 +169,7 @@ class Notice_Archeomed_Paquet {
 	/**
 	 * Emballe l'atelier et le document dans une archive, et rend son chemin.
 	 */
-	public function emballer( $document, &$erreur ) {
+	public function emballer( $document, $relecture, &$erreur ) {
 		$erreur = '';
 		if ( '' === $this->atelier || ! is_dir( $this->atelier ) ) {
 			$erreur = "Aucun dossier de travail à emballer.";
@@ -194,6 +194,9 @@ class Notice_Archeomed_Paquet {
 		// L'atelier tel qu'il est, dossiers vides compris : « XML » doit
 		// exister à l'ouverture, sans quoi on croit à un oubli.
 		$this->verser_le_dossier( $zip, $this->atelier, $racine );
+		if ( '' !== $relecture ) {
+			$zip->addFromString( $racine . 'relecture.html', $relecture );
+		}
 		$zip->addFromString( $racine . 'lisez-moi.txt', $this->lisez_moi() );
 		$zip->close();
 		return file_exists( $chemin ) ? $chemin : '';
@@ -265,6 +268,7 @@ class Notice_Archeomed_Paquet {
 			'XML/             vide : c\'est la chaîne qui le remplira',
 			'icono/hr/        la haute définition, pour la mise en page',
 			'icono/br/        la basse définition, appelée en lien par le document',
+			'relecture.html   la rubrique à lire dans un navigateur, figures comprises',
 		);
 		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
 			$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
@@ -511,11 +515,11 @@ class Notice_Archeomed_Paquet {
 			return null;
 		}
 		return array(
-			// Le chemin est relatif au document, et le document vit dans
-			// « style/ » : il faut remonter d'un cran pour atteindre l'icono.
-			// Écrit sans le « ../ », le lien ne résout nulle part et Word
-			// pose un cadre vide sans dire pourquoi.
-			'lien'    => '../icono/br/' . $nom_sans_ext . '.jpg',
+			// Le chemin est donné depuis la racine du paquet. À chacun d'y
+			// ajouter ce qu'il faut : le document vit dans « style/ » et
+			// remonte d'un cran, la page de relecture est à la racine et
+			// n'ajoute rien.
+			'fichier' => 'icono/br/' . $nom_sans_ext . '.jpg',
 			'largeur' => (int) $mesure[0],
 			'hauteur' => (int) $mesure[1],
 			'dpi'     => $dpi_br,

@@ -278,6 +278,24 @@ largeur donnerait une image vide et un « 20000 » épuiserait le serveur.
 `icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
 a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.
 
+## La page de relecture
+
+Le paquet porte un `relecture.html` : la rubrique entière lue dans un
+navigateur, **figures comprises**. On la double-clique, elle s'ouvre, rien à
+installer.
+
+Elle existe parce qu'un document aux images liées montre des cadres vides
+tant qu'il n'est pas ouvert depuis le dossier du paquet — et que Word résout
+mal les chemins relatifs. Fabriquer un PDF côté serveur demanderait
+LibreOffice, qu'un hébergement mutualisé n'a pas. Qui veut un PDF imprime la
+page depuis son navigateur : la feuille de style empêche qu'une figure se
+coupe entre deux pages.
+
+Elle se bâtit dans la classe du plugin et non dans celle du paquet, pour
+tenir ses métadonnées des mêmes fonctions que le document : deux mises en
+forme parallèles finiraient par ne plus dire la même chose. Une figure sans
+basse définition y paraît en rouge, plutôt qu'en blanc.
+
 ## Le bloc « à supprimer »
 
 Les coordonnées des responsables et l'indexation Pactols avec ses ARK restent
