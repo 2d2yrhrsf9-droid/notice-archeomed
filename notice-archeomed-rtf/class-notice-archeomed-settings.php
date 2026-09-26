@@ -439,6 +439,74 @@ class Notice_Archeomed_Settings {
 	 * si la clé est mauvaise, elle répond « invalid-input-secret ». C'est donc
 	 * un moyen de valider la clé sans avoir à résoudre un défi.
 	 */
+	/**
+	 * Le serveur joint-il GitHub ?
+	 *
+	 * La question n'est pas oiseuse : c'est le même proxy qui empêche de
+	 * joindre Cloudflare, et qui rend Turnstile inutilisable. S'il filtre
+	 * aussi GitHub, un mécanisme de mise à jour par les releases resterait
+	 * muet — le site ne saurait jamais qu'une version existe.
+	 *
+	 * Deux hôtes, car deux étapes : l'API dit quelle version existe,
+	 * « objects.githubusercontent.com » sert le fichier. Un proxy peut
+	 * laisser passer l'une et bloquer l'autre, et la mise à jour
+	 * s'arrêterait au milieu.
+	 *
+	 * Ce qui compte n'est pas le code HTTP mais le fait d'en recevoir un :
+	 * un 403 ou un 404 prouve qu'on a traversé, une erreur de transport
+	 * prouve le contraire.
+	 */
+	private function test_github() {
+		$hotes = array(
+			'api.github.com'               => 'https://api.github.com/',
+			'objects.githubusercontent.com' => 'https://objects.githubusercontent.com/',
+		);
+		$lignes  = array();
+		$joints  = 0;
+		foreach ( $hotes as $nom => $url ) {
+			$reponse = wp_remote_get( $url, array(
+				'timeout'   => 10,
+				'sslverify' => true,
+				// GitHub refuse les requêtes sans agent, et répond alors 403
+				// pour une raison qui n'a rien à voir avec le proxy.
+				'headers'   => array( 'Accept' => 'application/vnd.github+json' ),
+				'user-agent' => 'notice-archeomed',
+			) );
+			if ( is_wp_error( $reponse ) ) {
+				$message = $reponse->get_error_message();
+				$lignes[] = $nom . ' : injoignable — ' . $message;
+				// L'erreur 56 derrière un CONNECT est la signature du proxy
+				// filtrant, celle que Cloudflare renvoie déjà.
+				if ( false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' ) ) {
+					$lignes[] = '    → c’est le proxy de l’hébergement qui refuse la sortie, comme pour Cloudflare.';
+				}
+				continue;
+			}
+			++$joints;
+			$lignes[] = $nom . ' : joint (code HTTP ' . (int) wp_remote_retrieve_response_code( $reponse ) . ').';
+		}
+		$total = count( $hotes );
+		if ( $joints === $total ) {
+			return array(
+				'ok'      => true,
+				'message' => 'GitHub est joignable depuis ce serveur. ' . implode( ' ', $lignes )
+					. ' Une mise à jour servie par les releases est donc possible.',
+			);
+		}
+		if ( 0 === $joints ) {
+			return array(
+				'ok'      => false,
+				'message' => 'GitHub n’est pas joignable. ' . implode( ' ', $lignes )
+					. ' Les mises à jour devront passer par le téléversement de l’archive, comme aujourd’hui.',
+			);
+		}
+		return array(
+			'ok'      => false,
+			'message' => 'GitHub n’est joignable qu’à moitié. ' . implode( ' ', $lignes )
+				. ' Le site saurait qu’une version existe mais ne pourrait pas la télécharger : il faut les deux.',
+		);
+	}
+
 	private function test_secret( $secret ) {
 		if ( '' === trim( $secret ) ) {
 			return array( 'ok' => false, 'message' => 'Aucune clé secrète enregistrée.' );
@@ -630,6 +698,11 @@ class Notice_Archeomed_Settings {
 		if ( isset( $_POST['na_test_turnstile'] ) ) {
 			check_admin_referer( 'na_test_turnstile' );
 			$test_result = $this->test_secret( self::get( 'turnstile_secret' ) );
+		}
+		$test_github = null;
+		if ( isset( $_POST['na_test_github'] ) ) {
+			check_admin_referer( 'na_test_github' );
+			$test_github = $this->test_github();
 		}
 
 		$secret_locked = self::is_locked( 'turnstile_secret' );
@@ -1095,6 +1168,23 @@ class Notice_Archeomed_Settings {
 			}
 			?>
 			<p>Pour appliquer une nouvelle feuille de styles, remplacez <code>modele-metopes.rtf</code> dans le dossier du plugin par un document enregistré au format RTF depuis le gabarit Métopes à jour. Les styles sont reconnus par leur nom : aucune modification du code n'est nécessaire.</p>
+
+			<hr>
+
+			<h2>Sortie vers GitHub</h2>
+			<p style="max-width:46em">Ce test dit si le serveur peut joindre GitHub — l’API
+			qui annonce les versions, et l’hôte qui sert les fichiers. C’est ce dont
+			dépendrait une mise à jour proposée dans « Extensions » plutôt que téléversée
+			à la main. Le même proxy empêche déjà de joindre Cloudflare.</p>
+			<form method="post">
+				<?php wp_nonce_field( 'na_test_github' ); ?>
+				<?php submit_button( 'Tester l’accès à GitHub', 'secondary', 'na_test_github', false ); ?>
+			</form>
+			<?php if ( null !== $test_github ) : ?>
+				<div class="notice notice-<?php echo $test_github['ok'] ? 'success' : 'error'; ?>">
+					<p><?php echo esc_html( $test_github['message'] ); ?></p>
+				</div>
+			<?php endif; ?>
 
 			<hr>
 

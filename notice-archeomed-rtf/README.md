@@ -84,6 +84,32 @@ cURL error 56: Received HTTP code 403 from proxy after CONNECT
 Elle veut dire : demander à l'hébergeur d'ouvrir le flux sortant, et en
 attendant, s'en tenir à la protection locale.
 
+## La sortie vers GitHub
+
+Le même proxy déciderait du sort d'une mise à jour servie depuis GitHub —
+celle qui paraîtrait dans « Extensions » au lieu d'un téléversement à la
+main. Un bouton des réglages le dit, sans rien installer :
+
+**Réglages ▸ Sortie vers GitHub ▸ Tester l'accès à GitHub.**
+
+Il interroge deux hôtes, parce que la mise à jour tient en deux étapes :
+`api.github.com` annonce quelle version existe, `objects.githubusercontent.com`
+sert le fichier. Un proxy peut laisser passer l'un et bloquer l'autre, et la
+mise à jour s'arrêterait au milieu — le site saurait qu'une version existe
+sans pouvoir la prendre.
+
+**Ce qui compte n'est pas le code HTTP mais le fait d'en recevoir un.** L'API
+répond 200, l'hôte des fichiers répond 404 faute d'URL signée : les deux
+prouvent qu'on a traversé. Seule une erreur de transport signe le blocage, et
+le test nomme le proxy quand il la reconnaît.
+
+À savoir si le test passe : WordPress ne compare pas des commits mais des
+**numéros de version**. Il faudrait donc monter le `Version:` de l'en-tête et
+publier une release portant **l'archive produite par `./empaqueter`** — celle
+que GitHub fabrique tout seul a pour racine `notice-archeomed-<version>/` là
+où WordPress attend `notice-archeomed-rtf/`, et le plugin s'installerait à
+côté de lui-même au lieu de se mettre à jour.
+
 La question tirée au sort est scellée par une empreinte déposée dans le
 formulaire, non retenue sur le serveur : une page mise en cache garde donc sa
 question et reste valable. La réponse s'écrit en chiffres ou en toutes
