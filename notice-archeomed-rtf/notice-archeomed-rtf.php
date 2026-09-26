@@ -473,12 +473,11 @@ class Notice_Archeomed_Pactols {
 			@set_time_limit( 300 );
 		}
 
-		$erreur   = '';
-		$document = $this->fabriquer_le_fascicule( $rubrique, $ids, $erreur );
-		if ( '' === $document ) {
-			wp_die( esc_html( $erreur ) );
-		}
-
+		// L'ordre compte. Les illustrations se posent d'abord : c'est en
+		// mesurant les basses définitions produites qu'on sait à quelle taille
+		// le document doit appeler chaque figure. L'inverse obligerait à
+		// deviner les proportions, ou à écrire le document deux fois.
+		$erreur  = '';
 		$notices = array();
 		foreach ( $ids as $id ) {
 			$d = get_post_meta( $id, '_na_donnees', true );
@@ -492,9 +491,42 @@ class Notice_Archeomed_Pactols {
 			);
 		}
 
-		$paquet  = new Notice_Archeomed_Paquet();
-		$archive = $paquet->assembler( $rubrique, $notices, $document, $erreur );
+		$paquet = new Notice_Archeomed_Paquet();
+		$plan   = $paquet->preparer( $rubrique, $notices, $erreur );
+		if ( '' !== $erreur ) {
+			$paquet->nettoyer();
+			wp_die( esc_html( $erreur ) );
+		}
+
+		// Chaque figure reçoit le chemin et la mesure de sa basse définition.
+		$donnees = array();
+		foreach ( $notices as $rang_notice => $notice ) {
+			$d = $notice['d'];
+			if ( isset( $plan[ $rang_notice ] ) && ! empty( $d['illustrations'] ) ) {
+				// Le rang de la légende désigne le fichier de même rang : c'est
+				// la convention de tout le plugin depuis que les illustrations
+				// ont chacune leur ligne, et c'est l'ordre du dépôt qui la
+				// tient. « preparer » signale dans le lisez-moi le jour où les
+				// deux comptes ne coïncident pas.
+				foreach ( $d['illustrations'] as $i => $item ) {
+					$n = (int) $item['rang'];
+					if ( ! empty( $plan[ $rang_notice ][ $n ] ) ) {
+						$d['illustrations'][ $i ]['figure'] = $plan[ $rang_notice ][ $n ];
+					}
+				}
+			}
+			$donnees[] = $d;
+		}
+
+		$document = $this->fabriquer_le_fascicule( $rubrique, $donnees, $erreur );
+		if ( '' === $document ) {
+			$paquet->nettoyer();
+			wp_die( esc_html( $erreur ) );
+		}
+
+		$archive = $paquet->emballer( $document, $erreur );
 		@unlink( $document );
+		$paquet->nettoyer();
 		if ( '' === $archive ) {
 			wp_die( esc_html( '' !== $erreur ? $erreur : "Le paquet n'a pas pu être assemblé." ) );
 		}
@@ -517,11 +549,24 @@ class Notice_Archeomed_Pactols {
 		}
 
 		$erreur = '';
-		$chemin = $this->fabriquer_le_fascicule( $rubrique, $ids, $erreur );
+		$chemin = $this->fabriquer_le_fascicule(
+			$rubrique, $this->donnees_des_notices( $ids ), $erreur );
 		if ( '' === $chemin ) {
 			wp_die( esc_html( $erreur ) );
 		}
 		$this->rendre_le_fichier( $chemin, basename( $chemin ) );
+	}
+
+	/** La saisie de chaque notice d'une liste, dans l'ordre du classement. */
+	private function donnees_des_notices( $ids ) {
+		$donnees = array();
+		foreach ( (array) $ids as $id ) {
+			$d = get_post_meta( $id, '_na_donnees', true );
+			if ( is_array( $d ) && ! empty( $d ) ) {
+				$donnees[] = $d;
+			}
+		}
+		return $donnees;
 	}
 
 	/**
@@ -533,7 +578,7 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Rend le chemin du fichier, ou une chaîne vide en renseignant l'erreur.
 	 */
-	private function fabriquer_le_fascicule( $rubrique, $ids, &$erreur ) {
+	private function fabriquer_le_fascicule( $rubrique, $donnees, &$erreur ) {
 		$erreur = '';
 		$format = class_exists( 'ZipArchive' ) ? 'docx' : 'rtf';
 		$doc    = $this->ouvrir_un_document( $format, $erreur );
@@ -547,8 +592,7 @@ class Notice_Archeomed_Pactols {
 		$doc->add_paragraph( 'Title', array( array(
 			'text' => $this->titre_de_rubrique( $rubrique ) ) ) );
 		$famille_en_cours = null;
-		foreach ( $ids as $id ) {
-			$d = get_post_meta( $id, '_na_donnees', true );
+		foreach ( (array) $donnees as $d ) {
 			if ( ! is_array( $d ) || empty( $d ) ) {
 				continue;
 			}
@@ -2895,6 +2939,22 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => self::figure_ouvrante() ) ) );
 			$titre = 'Fig. ' . (int) $item['rang']
 				. ( '' !== $item['titre'] ? ' : ' . $item['titre'] : '' );
+			// L'image, appelée en lien depuis « icono/br », entre le repère
+			// d'ouverture et le titre. Elle n'est pas dans le document : le
+			// paquet la porte à côté, et la mise en page la remplace dans son
+			// dossier sans rouvrir le texte. Hors paquet — le fascicule seul,
+			// la notice d'un auteur — il n'y a pas de figure à appeler, et le
+			// bloc reste ce qu'il était.
+			if ( ! empty( $item['figure']['lien'] )
+				&& method_exists( $doc, 'image_liee' ) ) {
+				$doc->add_raw_paragraph( 'TEI_figure_title', $doc->image_liee(
+					$item['figure']['lien'],
+					$item['figure']['largeur'],
+					$item['figure']['hauteur'],
+					$item['figure']['dpi'],
+					$titre
+				) );
+			}
 			$doc->add_paragraph( 'TEI_figure_title', array( array( 'text' => $titre ) ) );
 			if ( '' !== $item['legende'] ) {
 				$doc->add_paragraph( 'TEI_figure_caption',

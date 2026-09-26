@@ -35,14 +35,16 @@ class Notice_Archeomed_Paquet {
 
 	private $erreurs = array();
 	private $journal = array();
-	// Les fichiers que l'on fabrique en chemin. ZipArchive ne lit ses sources
-	// qu'à la fermeture : les effacer plus tôt donnerait une archive vide.
-	private $temporaires = array();
 	// Les noms déjà posés dans l'archive. Deux notices d'une même commune et
 	// d'une même année donnent le même nom quand le modèle ne porte pas le
 	// lieu-dit : sans ce registre, la seconde figure écrase la première dans
 	// le zip, sans un mot.
 	private $noms_pris = array();
+	private $atelier    = '';
+	private $nom_paquet = '';
+	private $rubrique   = '';
+	private $rang       = 0;
+	private $comptes    = array( 'notices' => 0, 'illustrations' => 0 );
 
 	public function journal() {
 		return $this->journal;
@@ -87,28 +89,97 @@ class Notice_Archeomed_Paquet {
 	 * auteurs devant le formulaire, non la rédaction devant sa liste. Un
 	 * paquet demandé à la main peut faire attendre celui qui l'a demandé.
 	 */
-	public function assembler( $rubrique, $notices, $document, &$erreur ) {
+	public function preparer( $rubrique, $notices, &$erreur ) {
 		$erreur = '';
 		if ( ! class_exists( 'ZipArchive' ) ) {
 			$erreur = "L'extension ZipArchive est absente de cet hébergement : le paquet ne peut pas être assemblé.";
-			return '';
+			return array();
 		}
-		$rang   = self::rang_de_rubrique( $rubrique );
-		$numero = Notice_Archeomed_Settings::get( 'numero' );
-		$modele = Notice_Archeomed_Settings::get( 'nom_modele' );
+		$this->rubrique = $rubrique;
+		$this->rang     = self::rang_de_rubrique( $rubrique );
+		$numero         = Notice_Archeomed_Settings::get( 'numero' );
+		$modele         = Notice_Archeomed_Settings::get( 'nom_modele' );
 
-		$nom_paquet = Notice_Archeomed_Nommage::assainir(
-			( '' !== $numero ? $numero . '_' : '' ) . $rang . '_'
+		$this->nom_paquet = Notice_Archeomed_Nommage::assainir(
+			( '' !== $numero ? $numero . '_' : '' ) . $this->rang . '_'
 			. preg_replace( '/^[IVX]+\.\s*/u', '', $rubrique ), 'paquet' );
 
-		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
-		if ( ! is_dir( $dossier ) ) {
-			wp_mkdir_p( $dossier );
+		// L'atelier : un dossier de travail où les fichiers se posent avant
+		// d'être emballés. Il faut qu'ils existent pour de bon avant que le
+		// document soit écrit — c'est en les mesurant qu'on sait à quelle
+		// taille poser chaque figure.
+		$this->atelier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/'
+			. 'atelier-' . wp_generate_password( 10, false, false );
+		foreach ( array( 'style', 'XML', 'icono/hr', 'icono/br' ) as $d ) {
+			wp_mkdir_p( $this->atelier . '/' . $d );
+		}
+		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
+			wp_mkdir_p( $this->atelier . '/icono/originaux' );
+		}
+		if ( ! is_dir( $this->atelier ) ) {
+			$erreur = "Le dossier de travail n'a pas pu être créé.";
+			return array();
+		}
+
+		$plan = array();
+		foreach ( (array) $notices as $rang_notice => $notice ) {
+			$d = isset( $notice['d'] ) ? $notice['d'] : array();
+			if ( empty( $d ) ) {
+				continue;
+			}
+			++$this->comptes['notices'];
+			$fichiers   = isset( $notice['illustrations'] ) ? (array) $notice['illustrations'] : array();
+			// Les légendes et les fichiers se répondent par leur rang. Quand
+			// leurs nombres diffèrent — un fichier déposé sans légende, une
+			// légende sans fichier —, l'appariement se décale en silence : on
+			// le dit plutôt que de laisser croire à une figure bien posée.
+			$legendes = isset( $notice['d']['illustrations'] )
+				? count( (array) $notice['d']['illustrations'] ) : 0;
+			if ( $legendes !== count( $fichiers ) ) {
+				$this->journal[] = ( isset( $notice['d']['commune'] ) ? $notice['d']['commune'] : 'Notice' )
+					. ' : ' . count( $fichiers ) . ' fichier(s) pour ' . $legendes
+					. ' légende(s). Les figures sont appariées par leur rang — vérifiez qu\'elles se correspondent.';
+			}
+			$figures    = array();
+			$n          = 0;
+			foreach ( $fichiers as $source ) {
+				if ( ! file_exists( $source ) ) {
+					continue;
+				}
+				++$n;
+				++$this->comptes['illustrations'];
+				$nom = $this->nom_unique( Notice_Archeomed_Nommage::construire(
+					$modele,
+					array(
+						'numero'   => $numero,
+						'rubrique' => $this->rang,
+						'commune'  => isset( $d['commune'] ) ? $d['commune'] : '',
+						'lieu_dit' => isset( $d['lieu_dit'] ) ? $d['lieu_dit'] : '',
+						'annee'    => isset( $d['annee'] ) ? $d['annee'] : '',
+						'n'        => $n,
+					)
+				) );
+				$figures[ $n ] = $this->poser_une_illustration( $source, $nom );
+			}
+			$plan[ $rang_notice ] = $figures;
+		}
+		return $plan;
+	}
+
+	/**
+	 * Emballe l'atelier et le document dans une archive, et rend son chemin.
+	 */
+	public function emballer( $document, &$erreur ) {
+		$erreur = '';
+		if ( '' === $this->atelier || ! is_dir( $this->atelier ) ) {
+			$erreur = "Aucun dossier de travail à emballer.";
+			return '';
 		}
 		// Le nom porte un tirage : deux assemblages simultanés de la même
 		// rubrique se détruisaient l'un l'autre, et le premier téléchargement
 		// arrivait tronqué sans que rien ne le dise.
-		$chemin = trailingslashit( $dossier ) . 'notice-archeomed-' . $nom_paquet
+		$chemin = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/'
+			. 'notice-archeomed-' . $this->nom_paquet
 			. '-' . wp_generate_password( 8, false, false ) . '.zip';
 
 		$zip = new ZipArchive();
@@ -116,71 +187,79 @@ class Notice_Archeomed_Paquet {
 			$erreur = "Création de l'archive impossible.";
 			return '';
 		}
-		$racine = $nom_paquet . '/';
-		// Les dossiers vides se déclarent : sans cela, « XML » n'existerait
-		// pas à l'ouverture et l'on croirait à un oubli.
-		foreach ( array( 'style', 'XML', 'icono', 'icono/hr', 'icono/br' ) as $d ) {
-			$zip->addEmptyDir( $racine . $d );
-		}
-		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
-			$zip->addEmptyDir( $racine . 'icono/originaux' );
-		}
-
+		$racine = $this->nom_paquet . '/';
 		if ( '' !== $document && file_exists( $document ) ) {
-			$zip->addFile( $document, $racine . 'style/' . $nom_paquet . '.docx' );
+			$zip->addFile( $document, $racine . 'style/' . $this->nom_paquet . '.docx' );
 		}
+		// L'atelier tel qu'il est, dossiers vides compris : « XML » doit
+		// exister à l'ouverture, sans quoi on croit à un oubli.
+		$this->verser_le_dossier( $zip, $this->atelier, $racine );
+		$zip->addFromString( $racine . 'lisez-moi.txt', $this->lisez_moi() );
+		$zip->close();
+		return file_exists( $chemin ) ? $chemin : '';
+	}
 
-		$comptes = array( 'notices' => 0, 'illustrations' => 0 );
-		foreach ( (array) $notices as $notice ) {
-			$d = isset( $notice['d'] ) ? $notice['d'] : array();
-			if ( empty( $d ) ) {
+	/** Recopie un dossier dans l'archive, récursivement. */
+	private function verser_le_dossier( $zip, $dossier, $prefixe ) {
+		$entrees = @scandir( $dossier );
+		if ( false === $entrees ) {
+			return;
+		}
+		$vide = true;
+		foreach ( $entrees as $e ) {
+			if ( '.' === $e || '..' === $e ) {
 				continue;
 			}
-			++$comptes['notices'];
-			$fichiers = isset( $notice['illustrations'] ) ? (array) $notice['illustrations'] : array();
-			$n = 0;
-			foreach ( $fichiers as $source ) {
-				if ( ! file_exists( $source ) ) {
-					continue;
-				}
-				++$n;
-				++$comptes['illustrations'];
-				$nom = Notice_Archeomed_Nommage::construire(
-					$modele,
-					array(
-						'numero'   => $numero,
-						'rubrique' => $rang,
-						'commune'  => isset( $d['commune'] ) ? $d['commune'] : '',
-						'lieu_dit' => isset( $d['lieu_dit'] ) ? $d['lieu_dit'] : '',
-						'annee'    => isset( $d['annee'] ) ? $d['annee'] : '',
-						'n'        => $n,
-					)
-				);
-				$this->poser_une_illustration( $zip, $source, $this->nom_unique( $nom ), $racine );
+			$vide = false;
+			$chemin = $dossier . '/' . $e;
+			if ( is_dir( $chemin ) ) {
+				$this->verser_le_dossier( $zip, $chemin, $prefixe . $e . '/' );
+			} else {
+				$zip->addFile( $chemin, $prefixe . $e );
 			}
 		}
-
-		$zip->addFromString( $racine . 'lisez-moi.txt',
-			$this->lisez_moi( $rubrique, $comptes ) );
-		$zip->close();
-
-		foreach ( $this->temporaires as $t ) {
-			@unlink( $t );
+		if ( $vide ) {
+			$zip->addEmptyDir( rtrim( $prefixe, '/' ) );
 		}
-		$this->temporaires = array();
-		return file_exists( $chemin ) ? $chemin : '';
+	}
+
+	/** Efface le dossier de travail une fois l'archive servie. */
+	public function nettoyer() {
+		if ( '' !== $this->atelier && is_dir( $this->atelier ) ) {
+			$this->effacer_le_dossier( $this->atelier );
+		}
+		$this->atelier = '';
+	}
+
+	private function effacer_le_dossier( $dossier ) {
+		$entrees = @scandir( $dossier );
+		if ( false === $entrees ) {
+			return;
+		}
+		foreach ( $entrees as $e ) {
+			if ( '.' === $e || '..' === $e ) {
+				continue;
+			}
+			$chemin = $dossier . '/' . $e;
+			if ( is_dir( $chemin ) ) {
+				$this->effacer_le_dossier( $chemin );
+			} else {
+				@unlink( $chemin );
+			}
+		}
+		@rmdir( $dossier );
 	}
 
 	/**
 	 * Ce que le paquet contient, et ce qu'il n'a pas pu faire.
 	 */
-	private function lisez_moi( $rubrique, $comptes ) {
+	private function lisez_moi() {
 		$lignes = array(
-			'Paquet de la rubrique : ' . $rubrique,
+			'Paquet de la rubrique : ' . $this->rubrique,
 			'Assemblé le ' . date_i18n( 'j F Y à H:i' ),
 			'',
-			(int) $comptes['notices'] . ' notice(s), '
-				. (int) $comptes['illustrations'] . ' illustration(s).',
+			(int) $this->comptes['notices'] . ' notice(s), '
+				. (int) $this->comptes['illustrations'] . ' illustration(s).',
 			'',
 			'style/           le document Word de la rubrique, aux styles Métopes',
 			'XML/             vide : c\'est la chaîne qui le remplira',
@@ -366,39 +445,32 @@ class Notice_Archeomed_Paquet {
 	 * « originaux » garde le fichier tel que l'auteur l'a envoyé. « hr » part
 	 * à la mise en page, « br » sert au lien posé dans le document.
 	 */
-	private function poser_une_illustration( $zip, $source, $nom_sans_ext, $racine ) {
+	private function poser_une_illustration( $source, $nom_sans_ext ) {
 		$ext     = strtolower( pathinfo( $source, PATHINFO_EXTENSION ) );
 		$photo   = in_array( $ext, self::MATRICIELS, true );
 		$reglage = function ( $clef ) {
 			return Notice_Archeomed_Settings::get( $clef );
 		};
-		$pose = array( 'hr' => '', 'br' => '' );
 
 		if ( (int) $reglage( 'garder_originaux' ) ) {
-			$zip->addFile( $source, $racine . 'icono/originaux/' . $nom_sans_ext . '.' . $ext );
+			@copy( $source, $this->atelier . '/icono/originaux/' . $nom_sans_ext . '.' . $ext );
 		}
 
 		// — La haute définition —
 		$famille = $photo ? 'photo' : 'trait';
 		$en_jpeg = (int) $reglage( 'hr_' . $famille . '_jpeg' );
 		$fait_hr = false;
-		if ( $en_jpeg && self::imagick_sait( $ext ) ) {
-			$tmp = wp_tempnam( 'na-hr' );
-			$this->temporaires[] = $tmp;
+		if ( $en_jpeg ) {
+			$cible = $this->atelier . '/icono/hr/' . $nom_sans_ext . '.jpg';
 			// La haute définition ne se rétrécit pas et n'a pas de plafond :
 			// elle part à la mise en page, qui la veut entière.
-			if ( $this->reduire( $source, $tmp, PHP_INT_MAX,
+			$fait_hr = $this->reduire( $source, $cible, PHP_INT_MAX,
 				(int) $reglage( 'hr_' . $famille . '_qualite' ),
 				(int) $reglage( 'hr_' . $famille . '_dpi' ),
-				self::SANS_PLAFOND, 0 ) ) {
-				$zip->addFile( $tmp, $racine . 'icono/hr/' . $nom_sans_ext . '.jpg' );
-				$pose['hr'] = $nom_sans_ext . '.jpg';
-				$fait_hr    = true;
-			}
+				self::SANS_PLAFOND, 0 );
 		}
 		if ( ! $fait_hr ) {
-			$zip->addFile( $source, $racine . 'icono/hr/' . $nom_sans_ext . '.' . $ext );
-			$pose['hr'] = $nom_sans_ext . '.' . $ext;
+			@copy( $source, $this->atelier . '/icono/hr/' . $nom_sans_ext . '.' . $ext );
 			if ( $en_jpeg ) {
 				$this->journal[] = $nom_sans_ext . '.' . $ext
 					. ' : haute définition non convertie (format illisible sur ce serveur), original recopié.';
@@ -406,15 +478,8 @@ class Notice_Archeomed_Paquet {
 		}
 
 		// — La basse définition —
-		$largeur   = (int) $reglage( 'br_largeur' );
-		$qualite   = (int) $reglage( 'br_qualite' );
-		$poids     = (int) $reglage( 'br_poids' );
-		$tolerance = (int) $reglage( 'br_tolerance' );
-		$tmp_br    = wp_tempnam( 'na-br' );
-		$this->temporaires[] = $tmp_br;
-		$source_br = $source;
+		$source_br  = $source;
 		$provisoire = '';
-
 		// Un vectoriel ne se rastérise pas ici : on prend l'aperçu que le
 		// fichier porte en lui.
 		if ( 'eps' === $ext ) {
@@ -425,18 +490,35 @@ class Notice_Archeomed_Paquet {
 				$source_br = $provisoire;
 			}
 		}
-
-		if ( $this->reduire( $source_br, $tmp_br, $largeur, $qualite,
-			(int) $reglage( 'br_dpi' ), $poids, $tolerance ) ) {
-			$zip->addFile( $tmp_br, $racine . 'icono/br/' . $nom_sans_ext . '.jpg' );
-			$pose['br'] = $nom_sans_ext . '.jpg';
-		} else {
-			$this->journal[] = $nom_sans_ext . '.' . $ext
-				. ' : pas de basse définition (Imagick absente ou format illisible). Le lien du document restera vide.';
-		}
+		$cible_br = $this->atelier . '/icono/br/' . $nom_sans_ext . '.jpg';
+		$dpi_br   = (int) $reglage( 'br_dpi' );
+		$fait_br  = $this->reduire( $source_br, $cible_br,
+			(int) $reglage( 'br_largeur' ), (int) $reglage( 'br_qualite' ),
+			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ) );
 		if ( '' !== $provisoire ) {
 			@unlink( $provisoire );
 		}
-		return $pose;
+		if ( ! $fait_br ) {
+			$this->journal[] = $nom_sans_ext . '.' . $ext
+				. ' : pas de basse définition (Imagick absente ou format illisible). Le document ne posera pas cette figure.';
+			return null;
+		}
+
+		// La mesure du fichier produit, et non celle qu'on aurait calculée :
+		// c'est elle qui dira au document à quelle taille poser la figure.
+		$mesure = @getimagesize( $cible_br );
+		if ( false === $mesure ) {
+			return null;
+		}
+		return array(
+			// Le chemin est relatif au document, et le document vit dans
+			// « style/ » : il faut remonter d'un cran pour atteindre l'icono.
+			// Écrit sans le « ../ », le lien ne résout nulle part et Word
+			// pose un cadre vide sans dire pourquoi.
+			'lien'    => '../icono/br/' . $nom_sans_ext . '.jpg',
+			'largeur' => (int) $mesure[0],
+			'hauteur' => (int) $mesure[1],
+			'dpi'     => $dpi_br,
+		);
 	}
 }

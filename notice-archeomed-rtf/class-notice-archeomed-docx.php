@@ -64,6 +64,13 @@ class Notice_Archeomed_DOCX {
 	private $links = array();
 
 	/**
+	 * Identifiant de relation => chemin de l'image liée, relatif au document.
+	 *
+	 * @var array
+	 */
+	private $images = array();
+
+	/**
 	 * Message d'erreur éventuel.
 	 *
 	 * @var string
@@ -99,6 +106,12 @@ class Notice_Archeomed_DOCX {
 	 * le volet des styles, puis « Sélectionner toutes les occurrences ». Tout
 	 * le bloc se prend d'un coup, et se supprime d'une touche.
 	 */
+	// L'unité de Word pour les longueurs : 914 400 unités par pouce.
+	const EMU_PAR_POUCE = 914400;
+	// La largeur utile d'une page du gabarit, à la louche : A4 moins ses
+	// marges. Une figure plus large déborde de la justification.
+	const LARGEUR_UTILE_EMU = 5486400;   // 6 pouces, soit 15,24 cm
+
 	const STYLE_A_SUPPRIMER = 'à supprimer';
 	const ID_A_SUPPRIMER    = 'naasupprimer';
 
@@ -288,6 +301,61 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
+	 * Une image liée, posée dans le fil du texte.
+	 *
+	 * Le fichier n'entre pas dans le document : le paquet le porte dans
+	 * « icono/br » et le document le désigne par un chemin relatif. C'est
+	 * ainsi que la mise en page travaille — l'image se remplace dans son
+	 * dossier sans rouvrir le texte — et c'est ce qui évite d'embarquer cent
+	 * figures dans un fichier qu'on s'échange par courriel.
+	 *
+	 * La taille se donne en pixels et en points par pouce ; elle se convertit
+	 * en EMU, l'unité de Word — 914 400 par pouce. Au-delà de la largeur utile
+	 * de la page, l'image est réduite en gardant ses proportions : une figure
+	 * plus large que la justification déborderait sans que rien ne le dise.
+	 *
+	 * Rend le XML d'un run, à passer à « add_raw_paragraph ».
+	 */
+	public function image_liee( $cible, $largeur_px, $hauteur_px, $dpi = 96, $titre = '' ) {
+		$largeur_px = max( 1, (int) $largeur_px );
+		$hauteur_px = max( 1, (int) $hauteur_px );
+		$dpi        = $dpi > 0 ? (int) $dpi : 96;
+
+		$cx = (int) round( $largeur_px / $dpi * self::EMU_PAR_POUCE );
+		$cy = (int) round( $hauteur_px / $dpi * self::EMU_PAR_POUCE );
+		if ( $cx > self::LARGEUR_UTILE_EMU ) {
+			$cy = (int) round( $cy * self::LARGEUR_UTILE_EMU / $cx );
+			$cx = self::LARGEUR_UTILE_EMU;
+		}
+		$cx = max( 1, $cx );
+		$cy = max( 1, $cy );
+
+		$rid                  = 'rIdNAimg' . ( count( $this->images ) + 1 );
+		$this->images[ $rid ] = $cible;
+		$id                   = 1000 + count( $this->images );
+		$nom                  = '' !== $titre ? $titre : basename( $cible );
+
+		return '<w:r><w:drawing>'
+			. '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+			. '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/>'
+			. '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '"/>'
+			. '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+			. '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+			. '<pic:pic>'
+			. '<pic:nvPicPr><pic:cNvPr id="' . $id . '" name="' . self::esc( $nom ) . '"/>'
+			. '<pic:cNvPicPr/></pic:nvPicPr>'
+			// « r:link » et non « r:embed » : l'image est désignée, non incluse.
+			. '<pic:blipFill><a:blip r:link="' . $rid . '"/>'
+			. '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+			. '<pic:spPr><a:xfrm><a:off x="0" y="0"/>'
+			. '<a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm>'
+			. '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+			. '</pic:pic></a:graphicData></a:graphic>'
+			. '</wp:inline></w:drawing></w:r>';
+	}
+
+	/**
 	 * Construit un lien hypertexte. La relation est enregistrée pour être
 	 * écrite dans document.xml.rels au moment de l'assemblage.
 	 */
@@ -446,7 +514,13 @@ class Notice_Archeomed_DOCX {
 	 */
 	private function document_xml( $sect_pr ) {
 		$ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
-			. ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+			. ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+			// Les trois espaces de noms du dessin. Sans eux, Word refuse
+			// d'ouvrir le document au lieu d'ignorer les images : une balise
+			// dont le préfixe n'est pas déclaré rend le XML invalide.
+			. ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+			. ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+			. ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
 		return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 			. '<w:document ' . $ns . '><w:body>'
 			. implode( '', $this->body )
@@ -477,6 +551,16 @@ class Notice_Archeomed_DOCX {
 			$new .= '<Relationship Id="' . self::esc( $rid ) . '"'
 				. ' Type="' . $hyperlink_type . '"'
 				. ' Target="' . self::esc( $url ) . '"'
+				. ' TargetMode="External"/>';
+		}
+		// Les images liées : le fichier n'entre pas dans le document, il est
+		// désigné à côté de lui. C'est ce que la chaîne attend — l'icono vit
+		// dans son dossier, le document l'appelle.
+		$image_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+		foreach ( $this->images as $rid => $cible ) {
+			$new .= '<Relationship Id="' . self::esc( $rid ) . '"'
+				. ' Type="' . $image_type . '"'
+				. ' Target="' . self::esc( $cible ) . '"'
 				. ' TargetMode="External"/>';
 		}
 		return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
