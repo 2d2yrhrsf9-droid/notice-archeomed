@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.15
+ * Version: 3.16
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-nommage.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-paquet.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-maj.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
@@ -29,6 +30,16 @@ $notice_archeomed_file = new Notice_Archeomed_File();
 add_filter( 'cron_schedules', array( 'Notice_Archeomed_File', 'ajouter_intervalle' ) );
 register_activation_hook( __FILE__, array( 'Notice_Archeomed_File', 'activer' ) );
 register_deactivation_hook( __FILE__, array( 'Notice_Archeomed_File', 'desactiver' ) );
+
+/**
+ * Le guetteur de mises à jour, créé une fois et gardé sous la main.
+ *
+ * La page de réglages s'en sert pour dire quelle version est publiée : en
+ * fabriquer une seconde y enregistrerait ses filtres une deuxième fois, et
+ * WordPress verrait la mise à jour annoncée en double.
+ */
+global $notice_archeomed_maj;
+$notice_archeomed_maj = new Notice_Archeomed_MiseAJour( __FILE__ );
 
 /**
  * Lien « Réglages » directement depuis la liste des extensions.

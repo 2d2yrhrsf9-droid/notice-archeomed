@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.15
+# Formulaire des notices d’archéologie médiévale — version 3.16
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -83,6 +83,37 @@ cURL error 56: Received HTTP code 403 from proxy after CONNECT
 
 Elle veut dire : demander à l'hébergeur d'ouvrir le flux sortant, et en
 attendant, s'en tenir à la protection locale.
+
+## Les mises à jour depuis GitHub
+
+Le plugin ne vit pas dans le répertoire de WordPress : sans mécanisme, chaque
+correction se téléverse à la main. Renseignez le dépôt dans **Réglages ▸
+Mises à jour**, et les nouvelles versions paraissent dans **Extensions**
+comme pour n'importe quelle autre.
+
+Deux choses ne se devinent pas.
+
+**WordPress compare des numéros de version, pas des commits.** Une correction
+poussée sans monter le `Version:` de l'en-tête reste invisible — et c'est
+heureux : on ne veut pas qu'un travail en cours s'annonce comme une mise à
+jour sur le site de la revue. Le cycle est donc : commiter, monter le numéro,
+publier une release.
+
+**L'archive de la release doit avoir la bonne racine.** Celle que GitHub
+fabrique tout seul s'ouvre sur `depot-3.16/` là où WordPress attend
+`notice-archeomed-rtf/` : le plugin s'installerait à côté de lui-même au lieu
+de se mettre à jour. Il faut donc **joindre à la release l'archive produite
+par `./empaqueter`**. Le plugin la cherche par son nom, `notice-archeomed-rtf.zip`,
+et **refuse d'annoncer une mise à jour** s'il ne la trouve pas : mieux vaut
+un silence qu'une installation cassée. La page de réglages le dit en rouge.
+
+Le dépôt s'écrit `compte/depot`. Un jeton n'est nécessaire que s'il est
+privé ; il n'est envoyé qu'aux hôtes de GitHub, jamais ailleurs.
+
+GitHub n'est interrogé qu'une fois toutes les six heures : WordPress vérifie
+les mises à jour souvent, et sans cette réserve le site appellerait l'API des
+dizaines de fois par jour pour une réponse qui ne change pas. Enregistrer les
+réglages vide la réserve, de quoi voir une release sans attendre.
 
 ## La sortie vers GitHub
 

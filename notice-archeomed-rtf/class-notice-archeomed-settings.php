@@ -75,6 +75,13 @@ class Notice_Archeomed_Settings {
 		// Les originaux, gardés à côté : rien de ce que l'auteur a envoyé ne
 		// doit disparaître dans une conversion.
 		'garder_originaux'   => 1,
+
+		// — Les mises à jour —
+		// Rien n'est renseigné par défaut : le dépôt se nomme à l'installation,
+		// et tant qu'il ne l'est pas le mécanisme reste muet.
+		'maj_github'         => 0,
+		'github_depot'       => '',
+		'github_jeton'       => '',
 	);
 
 	/** Les jetons admis dans le modèle de nom, et ce qu'ils valent. */
@@ -367,6 +374,32 @@ class Notice_Archeomed_Settings {
 			$out['protection'] = in_array(
 				$input['protection'], array( 'locale', 'turnstile', 'les_deux' ), true )
 				? $input['protection'] : 'locale';
+		}
+
+		// — Les mises à jour —
+		if ( isset( $input['maj_presente'] ) ) {
+			$out['maj_github'] = empty( $input['maj_github'] ) ? 0 : 1;
+		}
+		if ( isset( $input['github_depot'] ) ) {
+			$depot = trim( sanitize_text_field( $input['github_depot'] ) );
+			if ( '' === $depot || preg_match( '#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $depot ) ) {
+				$out['github_depot'] = $depot;
+			} else {
+				add_settings_error(
+					self::OPTION_NAME, 'github_depot',
+					'Le dépôt s’écrit « compte/depot », sans adresse complète ni barre finale. L’ancienne valeur a été conservée.',
+					'error'
+				);
+			}
+		}
+		// Le jeton ne se remplace que si l'on en fournit un : enregistrer la
+		// page sans y toucher ne doit pas l'effacer, le champ étant vide à
+		// l'affichage comme tout secret.
+		if ( isset( $input['github_jeton'] ) && '' !== trim( $input['github_jeton'] ) ) {
+			$out['github_jeton'] = sanitize_text_field( $input['github_jeton'] );
+		}
+		if ( ! empty( $input['effacer_jeton'] ) ) {
+			$out['github_jeton'] = '';
 		}
 
 		// — L'iconographie —
@@ -983,6 +1016,88 @@ class Notice_Archeomed_Settings {
 									«&nbsp;Notices Archéomed&nbsp;» le dira en s'allongeant.
 								<?php endif; ?>
 							</p>
+						</td>
+					</tr>
+				</table>
+
+				<h2>Mises à jour</h2>
+				<p class="description" style="max-width:46em">
+					Le plugin ne vit pas dans le répertoire de WordPress : sans cela, chaque
+					correction se téléverse à la main. Renseignez le dépôt, et les nouvelles
+					versions paraîtront dans <strong>Extensions</strong> comme pour n’importe
+					quelle autre. Testez d’abord la sortie vers GitHub, plus bas : derrière
+					le proxy d’un hébergement institutionnel, le site peut ne pas y accéder.
+				</p>
+				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_presente]" value="1">
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row">Proposer les mises à jour</th>
+						<td>
+							<label>
+								<input type="checkbox" value="1"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_github]"
+									<?php checked( (int) self::get( 'maj_github' ), 1 ); ?>>
+								Interroger GitHub et annoncer les versions plus récentes
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_depot">Dépôt</label></th>
+						<td>
+							<input type="text" id="na_depot" class="regular-text"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_depot]"
+								value="<?php echo esc_attr( self::get( 'github_depot' ) ); ?>"
+								placeholder="compte/depot">
+							<p class="description">
+								Sous la forme <code>compte/depot</code>, sans adresse complète.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_jeton">Jeton d’accès</label></th>
+						<td>
+							<input type="password" id="na_jeton" class="regular-text" autocomplete="new-password"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_jeton]"
+								placeholder="<?php echo '' !== trim( self::get( 'github_jeton' ) ) ? 'enregistré — laissez vide pour le garder' : 'inutile si le dépôt est public'; ?>">
+							<?php if ( '' !== trim( self::get( 'github_jeton' ) ) ) : ?>
+								<p><label><input type="checkbox" value="1"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_jeton]"> Effacer le jeton enregistré</label></p>
+							<?php endif; ?>
+							<p class="description">
+								Nécessaire seulement si le dépôt est privé. Il n’est envoyé qu’aux
+								hôtes de GitHub, jamais ailleurs.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">État</th>
+						<td>
+							<?php
+							// L'instance créée au chargement du plugin, et non une
+							// seconde : en fabriquer une ici enregistrerait ses
+							// filtres une deuxième fois.
+							global $notice_archeomed_maj;
+							$release = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
+								? $notice_archeomed_maj->derniere_release() : array();
+							$installee = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
+								? $notice_archeomed_maj->version() : '';
+							?>
+							<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
+							<?php if ( empty( $release['version'] ) ) : ?>
+								<p class="description">Aucune version publiée n’a pu être lue — dépôt non renseigné, mécanisme éteint, ou GitHub injoignable.</p>
+							<?php else : ?>
+								<p>Dernière version publiée : <code><?php echo esc_html( $release['version'] ); ?></code></p>
+								<?php if ( empty( $release['propre'] ) ) : ?>
+									<p style="color:#b32d2e"><strong>La release ne porte pas d’archive <code>notice-archeomed-rtf.zip</code>.</strong>
+									Celle que GitHub fabrique seul s’ouvre sur le mauvais dossier et installerait le plugin
+									à côté de lui-même : la mise à jour n’est donc pas proposée. Joignez à la release
+									l’archive produite par <code>./empaqueter</code>.</p>
+								<?php elseif ( version_compare( $release['version'], $installee, '>' ) ) : ?>
+									<p style="color:#2f6b2f"><strong>Une mise à jour est disponible</strong> — elle paraît dans « Extensions ».</p>
+								<?php else : ?>
+									<p class="description">Le site est à jour.</p>
+								<?php endif; ?>
+							<?php endif; ?>
 						</td>
 					</tr>
 				</table>
