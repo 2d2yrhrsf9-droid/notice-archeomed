@@ -1088,7 +1088,7 @@ class Notice_Archeomed_Settings {
 							<?php else : ?>
 								<p>Dernière version publiée : <code><?php echo esc_html( $release['version'] ); ?></code></p>
 								<?php if ( empty( $release['propre'] ) ) : ?>
-									<p style="color:#b32d2e"><strong>La release ne porte pas d’archive <code>notice-archeomed-rtf.zip</code>.</strong>
+									<p style="color:#b32d2e"><strong>La release ne porte pas d’archive <code>notice-archeomed.zip</code>.</strong>
 									Celle que GitHub fabrique seul s’ouvre sur le mauvais dossier et installerait le plugin
 									à côté de lui-même : la mise à jour n’est donc pas proposée. Joignez à la release
 									l’archive produite par <code>./empaqueter</code>.</p>

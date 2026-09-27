@@ -21,9 +21,9 @@ import zipfile
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent
-MODELE = RACINE / "notice-archeomed-rtf" / "modele-metopes.docx"
+MODELE = RACINE / "notice-archeomed" / "modele-metopes.docx"
 REFERENCE = RACINE / "reference" / "stylage_notice.docx"
-CODE = RACINE / "notice-archeomed-rtf" / "notice-archeomed-rtf.php"
+CODE = RACINE / "notice-archeomed" / "notice-archeomed.php"
 
 
 def styles_dun_docx(chemin):

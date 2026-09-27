@@ -14,7 +14,7 @@ Shortcode : `[notice_archeomed_pactols]`
 ## Installation
 
 1. Extensions > Ajouter > Téléverser une extension
-2. Choisir `notice-archeomed-rtf.zip`, installer, puis activer.
+2. Choisir `notice-archeomed.zip`, installer, puis activer.
 
 ## Mettre à jour — sans rien supprimer
 
@@ -101,9 +101,9 @@ publier une release.
 
 **L'archive de la release doit avoir la bonne racine.** Celle que GitHub
 fabrique tout seul s'ouvre sur `depot-3.16/` là où WordPress attend
-`notice-archeomed-rtf/` : le plugin s'installerait à côté de lui-même au lieu
+`notice-archeomed/` : le plugin s'installerait à côté de lui-même au lieu
 de se mettre à jour. Il faut donc **joindre à la release l'archive produite
-par `./empaqueter`**. Le plugin la cherche par son nom, `notice-archeomed-rtf.zip`,
+par `./empaqueter`**. Le plugin la cherche par son nom, `notice-archeomed.zip`,
 et **refuse d'annoncer une mise à jour** s'il ne la trouve pas : mieux vaut
 un silence qu'une installation cassée. La page de réglages le dit en rouge.
 
@@ -138,7 +138,7 @@ le test nomme le proxy quand il la reconnaît.
 **numéros de version**. Il faudrait donc monter le `Version:` de l'en-tête et
 publier une release portant **l'archive produite par `./empaqueter`** — celle
 que GitHub fabrique tout seul a pour racine `notice-archeomed-<version>/` là
-où WordPress attend `notice-archeomed-rtf/`, et le plugin s'installerait à
+où WordPress attend `notice-archeomed/`, et le plugin s'installerait à
 côté de lui-même au lieu de se mettre à jour.
 
 La question tirée au sort est scellée par une empreinte déposée dans le
@@ -214,7 +214,7 @@ de réglages et laisser la constante indéfinie.
 
 | Fichier | Rôle |
 |---|---|
-| `notice-archeomed-rtf.php` | Plugin principal : formulaire, contrôles, envoi |
+| `notice-archeomed.php` | Plugin principal : formulaire, contrôles, envoi |
 | `class-notice-archeomed-docx.php` | Générateur du DOCX stylé |
 | `modele-metopes.docx` | Gabarit Métopes au format DOCX (styles + mise en page) |
 | `class-notice-archeomed-settings.php` | Page de réglages (Réglages > Notice Archéomed) |

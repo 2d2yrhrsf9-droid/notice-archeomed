@@ -5,11 +5,11 @@
 # premier niveau est le dossier de l'extension, et rien d'autre.
 set -eu
 RACINE=$(cd "$(dirname "$0")" && pwd)
-CIBLE="$RACINE/notice-archeomed-rtf.zip"
+CIBLE="$RACINE/notice-archeomed.zip"
 
 rm -f "$CIBLE"
 cd "$RACINE"
-zip -q -r "$CIBLE" notice-archeomed-rtf \
+zip -q -r "$CIBLE" notice-archeomed \
     -x '*.DS_Store' -x '__MACOSX/*'
 echo "Archive écrite : $CIBLE"
 unzip -l "$CIBLE" | sed -n '4,$p' | sed '$d;$d'

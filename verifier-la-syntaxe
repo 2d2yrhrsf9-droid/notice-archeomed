@@ -10,7 +10,7 @@ parenthèse ou une apostrophe restée ouverte.
 Il sait sortir des balises PHP : le HTML, le CSS et le JavaScript des pages
 portent des accolades qui ne le regardent pas.
 
-    ./verifier-la-syntaxe notice-archeomed-rtf/*.php
+    ./verifier-la-syntaxe notice-archeomed/*.php
 
 Rend 1 si quelque chose cloche. Un passage vert ne dispense pas d'installer
 sur un site d'essai avant la production.

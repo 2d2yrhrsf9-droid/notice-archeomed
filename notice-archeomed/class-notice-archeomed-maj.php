@@ -22,7 +22,7 @@
  *
  * **L'archive de la release doit avoir la bonne racine.** Celle que GitHub
  * fabrique tout seul s'ouvre sur « depot-3.16/ » là où WordPress attend
- * « notice-archeomed-rtf/ » : le plugin s'installerait à côté de lui-même
+ * « notice-archeomed/ » : le plugin s'installerait à côté de lui-même
  * au lieu de se mettre à jour. Il faut joindre à la release l'archive
  * produite par « ./empaqueter ». La classe cherche donc un fichier joint
  * avant de se rabattre sur l'archive automatique, et le dit quand elle n'en
@@ -38,7 +38,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Notice_Archeomed_MiseAJour {
 
 	/** Le nom que doit porter l'archive jointe à la release. */
-	const ARCHIVE = 'notice-archeomed-rtf.zip';
+	const ARCHIVE = 'notice-archeomed.zip';
 
 	/**
 	 * Six heures entre deux interrogations.
@@ -49,8 +49,8 @@ class Notice_Archeomed_MiseAJour {
 	 */
 	const DUREE_RESERVE = 21600;
 
-	private $fichier;   // « notice-archeomed-rtf/notice-archeomed-rtf.php »
-	private $dossier;   // « notice-archeomed-rtf »
+	private $fichier;   // « notice-archeomed/notice-archeomed.php »
+	private $dossier;   // « notice-archeomed »
 	private $chemin;    // le chemin absolu, pour lire l'en-tête
 	private $version = '';
 

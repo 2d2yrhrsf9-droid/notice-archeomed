@@ -2,13 +2,13 @@
 
 Plugin WordPress du formulaire de soumission des notices d'opération pour la
 Chronique d'*Archéologie médiévale*. Le code du plugin est dans
-`notice-archeomed-rtf/` ; sa documentation d'usage y est restée, c'est elle
+`notice-archeomed/` ; sa documentation d'usage y est restée, c'est elle
 qu'on lit pour installer et régler.
 
 ## Vérifier avant d'installer
 
 ```sh
-./verifier-la-syntaxe notice-archeomed-rtf/*.php
+./verifier-la-syntaxe notice-archeomed/*.php
 ```
 
 Il n'y a pas de PHP sur le poste où ce plugin s'écrit : « php -l » n'est pas
@@ -35,5 +35,5 @@ compare aussi à celui-ci ; sans ce dossier, il travaille avec le gabarit seul.
 ./empaqueter
 ```
 
-Écrit `notice-archeomed-rtf.zip` à la racine, prêt pour
+Écrit `notice-archeomed.zip` à la racine, prêt pour
 « Extensions ▸ Ajouter ▸ Téléverser une extension ».
