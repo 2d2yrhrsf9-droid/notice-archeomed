@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.16
+ * Version: 3.17
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -170,6 +170,15 @@ class Notice_Archeomed_Pactols {
 	const PACTOLS_PLACE_THESO_ID    = 'th17'; // API Pactols_Lieux (th17 en minuscules)
 	const PACTOLS_FIELD_COUNT       = 10;
 	private $turnstile_error = 'turnstile';
+	/**
+	 * Ce que le serveur de courriel a répondu la dernière fois qu'il a refusé.
+	 *
+	 * « wp_mail » rend faux et se tait : la raison ne vit que dans un crochet
+	 * qu'il faut écouter. Sans elle, une notice en échec ne dit rien de plus
+	 * que « cinq tentatives sans succès », et l'on cherche dans les journaux
+	 * du serveur ce que le plugin pouvait retenir.
+	 */
+	private $derniere_erreur_mail = '';
 	private $rubriques = array(
 		'I. Constructions et habitats civils',
 		'II. Constructions et habitats ecclésiastiques',
@@ -236,6 +245,8 @@ class Notice_Archeomed_Pactols {
 		// L'expédition ne dépend pas de l'affichage du formulaire : elle a
 		// lieu sur des requêtes où aucune page de la revue n'est rendue.
 		$this->brancher_la_file();
+		add_action( 'wp_mail_failed', array( $this, 'retenir_l_erreur_mail' ) );
+		add_action( 'admin_post_na_feuille', array( $this, 'deposer_la_feuille' ) );
 		add_action( 'admin_post_na_document', array( $this, 'telecharger_le_document' ) );
 		add_action( 'admin_post_na_fascicule', array( $this, 'telecharger_le_fascicule' ) );
 		add_action( 'admin_post_na_paquet', array( $this, 'telecharger_le_paquet' ) );
@@ -1263,6 +1274,12 @@ class Notice_Archeomed_Pactols {
 			.na-form .na-intro { background: #f4f4f0; border-left: 3px solid #8a6d3b; padding: 12px 16px; font-size: 14px; margin-bottom: 8px; }
 			.na-form .na-intro.na-spaced { margin-top: 28px; }
 			.na-form #na-editor { height: 260px; background: #fff; }
+			/* Le thème de la revue donne aux paragraphes une couleur qui,
+			   dans l'éditeur, rendait le texte saisi gris pâle sur blanc.
+			   On la reprend : ce qu'on écrit se lit en noir. */
+			.na-form #na-editor .ql-editor,
+			.na-form #na-editor .ql-editor p { color: #111; }
+			.na-form #na-editor .ql-editor.ql-blank::before { color: #888; }
 			.na-form .na-wordcount { font-size: 13px; color: #555; margin-top: 4px; }
 			.na-form .na-wordcount.na-out { color: #b00; font-weight: 600; }
 			.na-form .na-submit { margin-top: 24px; padding: 12px 28px; font-size: 16px; background: #8a6d3b; color: #fff; border: 0; cursor: pointer; }
@@ -1307,6 +1324,18 @@ class Notice_Archeomed_Pactols {
 			.na-form .na-puzzle-rejouer { background: none; border: 0; padding: 0; margin-top: 2px;
 				color: #2271b1; text-decoration: underline; cursor: pointer; font-size: 13px; }
 			.na-form .na-question.na-fait { border-color: #4a8a4a; }
+			/* L'envoi d'une notice prend plusieurs secondes — le document se
+			   fabrique, les illustrations montent. Sans rien à l'écran, on
+			   croit que le bouton n'a pas pris et l'on clique encore. */
+			.na-form .na-envoi { display: none; margin-top: 14px; }
+			.na-form .na-envoi.na-visible { display: block; }
+			.na-form .na-envoi-piste { height: 6px; background: #ececec;
+				border-radius: 3px; overflow: hidden; }
+			.na-form .na-envoi-barre { height: 100%; width: 35%; background: #8a6d3b;
+				border-radius: 3px; animation: na-va-et-vient 1.4s ease-in-out infinite; }
+			@keyframes na-va-et-vient { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+			.na-form .na-envoi-mot { font-size: 14px; color: #555; margin-top: 8px; }
+			.na-form .na-submit[disabled] { opacity: .6; cursor: progress; }
 			.na-form .na-suggestions,
 			.na-form .na-pactols-suggestions { position: absolute; z-index: 50; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: 0; max-height: 380px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 			.na-form .na-suggestions li,
@@ -1540,6 +1569,12 @@ class Notice_Archeomed_Pactols {
 				</div>
 			<?php endif; ?>
 			<button type="submit" name="notice_archeomed_envoi" value="1" class="na-submit">Envoyer la notice</button>
+			<div class="na-envoi" id="na-envoi" role="status" aria-live="polite">
+				<div class="na-envoi-piste"><div class="na-envoi-barre"></div></div>
+				<p class="na-envoi-mot">Envoi en cours — le document se fabrique et les
+				illustrations montent. Cela peut prendre quelques instants ; ne fermez pas
+				cette page et ne cliquez pas une seconde fois.</p>
+			</div>
 		</form>
 		<script>
 		document.addEventListener('DOMContentLoaded', function () {
@@ -2205,6 +2240,24 @@ class Notice_Archeomed_Pactols {
 				var html = quill.root.innerHTML;
 				var b64 = btoa(unescape(encodeURIComponent(html)));
 				document.getElementById('na-texte-notice').value = 'b64:' + b64;
+				// Tous les contrôles sont passés : la page part pour de bon.
+				// On le montre, et l'on bloque le bouton — un second clic
+				// déposerait la notice deux fois.
+				var envoi = document.getElementById('na-envoi');
+				if (envoi) { envoi.classList.add('na-visible'); }
+				var bouton = document.querySelector('.na-submit');
+				if (bouton) {
+					bouton.disabled = true;
+					bouton.textContent = 'Envoi en cours…';
+				}
+				// Le bouton désactivé n'est plus envoyé avec le formulaire :
+				// son nom porte la valeur que le serveur attend, et il faut
+				// donc la poster autrement.
+				var relais = document.createElement('input');
+				relais.type = 'hidden';
+				relais.name = 'notice_archeomed_envoi';
+				relais.value = '1';
+				this.appendChild(relais);
 			});
 		});
 		</script>
@@ -2865,13 +2918,146 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Reçoit une nouvelle feuille de style Métopes.
+	 *
+	 * On la contrôle avant de la poser : un DOCX est une archive, et une
+	 * archive qui ne porte pas de feuille de styles n'est pas un gabarit —
+	 * l'accepter priverait la revue de tous ses styles au dépôt suivant, et
+	 * l'on ne s'en apercevrait qu'à la relecture.
+	 */
+	public function deposer_la_feuille() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_feuille' );
+		$retour = Notice_Archeomed_Settings::url();
+
+		if ( ! empty( $_POST['na_feuille_retirer'] ) ) {
+			foreach ( array( self::DOCX_TEMPLATE, self::RTF_TEMPLATE ) as $nom ) {
+				$depot = wp_upload_dir();
+				if ( empty( $depot['error'] ) ) {
+					@unlink( trailingslashit( $depot['basedir'] ) . 'notice-archeomed/' . $nom );
+				}
+			}
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'retiree', $retour ) );
+			exit;
+		}
+
+		if ( empty( $_FILES['na_feuille'] ) || UPLOAD_ERR_OK !== $_FILES['na_feuille']['error'] ) {
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'vide', $retour ) );
+			exit;
+		}
+		$source = $_FILES['na_feuille']['tmp_name'];
+		$nom    = sanitize_file_name( $_FILES['na_feuille']['name'] );
+		$ext    = strtolower( (string) pathinfo( $nom, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $ext, array( 'docx', 'rtf' ), true ) || ! is_uploaded_file( $source ) ) {
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'format', $retour ) );
+			exit;
+		}
+		if ( 'docx' === $ext && ! $this->feuille_docx_valide( $source ) ) {
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'invalide', $retour ) );
+			exit;
+		}
+		$depot = wp_upload_dir();
+		if ( ! empty( $depot['error'] ) ) {
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'ecriture', $retour ) );
+			exit;
+		}
+		$dossier = trailingslashit( $depot['basedir'] ) . 'notice-archeomed';
+		wp_mkdir_p( $dossier );
+		$cible = trailingslashit( $dossier )
+			. ( 'docx' === $ext ? self::DOCX_TEMPLATE : self::RTF_TEMPLATE );
+		if ( ! @move_uploaded_file( $source, $cible ) ) {
+			wp_safe_redirect( add_query_arg( 'na_feuille', 'ecriture', $retour ) );
+			exit;
+		}
+		wp_safe_redirect( add_query_arg( 'na_feuille', 'posee', $retour ) );
+		exit;
+	}
+
+	/** Un DOCX qui porte bien une feuille de styles, et non n'importe quel zip. */
+	private function feuille_docx_valide( $chemin ) {
+		if ( ! class_exists( 'ZipArchive' ) ) {
+			return true;   // sans ZipArchive on ne sait pas juger : on laisse passer
+		}
+		$zip = new ZipArchive();
+		if ( true !== $zip->open( $chemin ) ) {
+			return false;
+		}
+		$styles = $zip->getFromName( 'word/styles.xml' );
+		$zip->close();
+		return is_string( $styles ) && false !== strpos( $styles, '<w:style' );
+	}
+
+	/**
+	 * Le chemin de la feuille de style à employer, déposée ou livrée.
+	 *
+	 * Une feuille déposée depuis l'administration ne peut pas vivre dans le
+	 * dossier du plugin : **la mise à jour suivante l'effacerait**, puisqu'on
+	 * remplace ce dossier en entier. Elle va donc dans les téléversements,
+	 * à côté des illustrations conservées, où rien ne la menace.
+	 *
+	 * Celle du plugin reste le repli : un dépôt raté ou un fichier effacé ne
+	 * doit pas priver la revue de ses styles.
+	 */
+	public static function feuille_de_style( $format ) {
+		$nom = ( 'docx' === $format ) ? self::DOCX_TEMPLATE : self::RTF_TEMPLATE;
+		$depot = wp_upload_dir();
+		if ( empty( $depot['error'] ) ) {
+			$depose = trailingslashit( $depot['basedir'] ) . 'notice-archeomed/' . $nom;
+			if ( file_exists( $depose ) && filesize( $depose ) > 0 ) {
+				return $depose;
+			}
+		}
+		return plugin_dir_path( __FILE__ ) . $nom;
+	}
+
+	/**
+	 * Ce qu'on sait de la feuille en service : d'où elle vient, et de quand.
+	 */
+	public static function etat_de_la_feuille( $format = 'docx' ) {
+		$chemin = self::feuille_de_style( $format );
+		$depose = false !== strpos( $chemin, 'uploads' )
+			|| false === strpos( $chemin, plugin_dir_path( __FILE__ ) );
+		$etat = array(
+			'chemin'  => $chemin,
+			'deposee' => $depose,
+			'presente' => file_exists( $chemin ),
+			'poids'   => file_exists( $chemin ) ? filesize( $chemin ) : 0,
+			'posee'   => file_exists( $chemin ) ? filemtime( $chemin ) : 0,
+			'modifiee' => '',
+			'styles'  => 0,
+		);
+		if ( ! $etat['presente'] || 'docx' !== $format || ! class_exists( 'ZipArchive' ) ) {
+			return $etat;
+		}
+		// La date que Word inscrit dans le document : c'est elle qui date la
+		// feuille elle-même, non le moment où on l'a posée sur le serveur.
+		$zip = new ZipArchive();
+		if ( true !== $zip->open( $chemin ) ) {
+			return $etat;
+		}
+		$props = $zip->getFromName( 'docProps/core.xml' );
+		if ( is_string( $props ) && preg_match( '#<dcterms:modified[^>]*>([^<]+)<#', $props, $m ) ) {
+			$etat['modifiee'] = $m[1];
+		}
+		$styles = $zip->getFromName( 'word/styles.xml' );
+		if ( is_string( $styles ) ) {
+			$etat['styles'] = preg_match_all( '#<w:style\b#', $styles );
+		}
+		$zip->close();
+		return $etat;
+	}
+
+	/**
 	 * Ouvre un document au gabarit Métopes, DOCX ou RTF selon l'hébergement.
 	 */
 	private function ouvrir_un_document( $format, &$erreur = '' ) {
 		$erreur = '';
-		$doc = ( 'docx' === $format )
-			? new Notice_Archeomed_DOCX( plugin_dir_path( __FILE__ ) . self::DOCX_TEMPLATE )
-			: new Notice_Archeomed_RTF( plugin_dir_path( __FILE__ ) . self::RTF_TEMPLATE );
+		$modele = self::feuille_de_style( $format );
+		$doc    = ( 'docx' === $format )
+			? new Notice_Archeomed_DOCX( $modele )
+			: new Notice_Archeomed_RTF( $modele );
 		if ( ! $doc->is_ready() ) {
 			$erreur = $doc->get_error();
 			return null;
@@ -3566,7 +3752,8 @@ class Notice_Archeomed_Pactols {
 	 * la rédaction est parti : c'est lui qui compte, les copies sont un
 	 * agrément.
 	 */
-	public function expedier( $d, $notice, $produits, $document = '' ) {
+	public function expedier( $d, $notice, $produits, $document = '', &$pourquoi = '' ) {
+		$pourquoi = '';
 		$wrap_open  = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">';
 		$wrap_close = '</div></body></html>';
 
@@ -3590,7 +3777,9 @@ class Notice_Archeomed_Pactols {
 		// partir nulle part.
 		$pour_la_redaction = $this->destinataires_des_notices();
 		if ( empty( $pour_la_redaction ) ) {
-			error_log( 'Notice Archeomed: aucun destinataire pour les notices, envoi ajourné.' );
+			$pourquoi = 'Aucun destinataire ne reçoit les notices. Réglages ▸ Qui reçoit quoi : '
+				. 'cochez « Notices » pour au moins une adresse.';
+			error_log( 'Notice Archeomed: ' . $pourquoi );
 			return false;
 		}
 		$redaction = $pour_la_redaction[0];
@@ -3602,7 +3791,15 @@ class Notice_Archeomed_Pactols {
 		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $notice . $wrap_close,
 			$headers, $existants );
 		if ( ! $sent ) {
-			error_log( 'Notice Archeomed: wp_mail failed for ' . implode( ', ', $pour_la_redaction ) );
+			// « wp_mail » rend faux sans dire pourquoi. Le crochet
+			// « wp_mail_failed » porte l'erreur de PHPMailer — la vraie
+			// raison, celle qu'on cherchait dans les journaux du serveur.
+			$pourquoi = 'Le serveur de courriel a refusé l’envoi vers '
+				. implode( ', ', $pour_la_redaction ) . '.';
+			if ( '' !== $this->derniere_erreur_mail ) {
+				$pourquoi .= ' ' . $this->derniere_erreur_mail;
+			}
+			error_log( 'Notice Archeomed: ' . $pourquoi );
 			return false;
 		}
 
@@ -3667,6 +3864,13 @@ class Notice_Archeomed_Pactols {
 		return true;
 	}
 
+	/** Retient ce que le serveur de courriel a répondu, pour le dire plus haut. */
+	public function retenir_l_erreur_mail( $erreur ) {
+		if ( is_wp_error( $erreur ) ) {
+			$this->derniere_erreur_mail = trim( (string) $erreur->get_error_message() );
+		}
+	}
+
 	/**
 	 * Ce que le planificateur appelle : une notice inscrite, à expédier.
 	 */
@@ -3683,14 +3887,15 @@ class Notice_Archeomed_Pactols {
 			$this->file()->marquer( $id, 'echec', 'Notice illisible en réserve.' );
 			return;
 		}
-		if ( $this->expedier( $d, $notice, $produits, $document ) ) {
+		$pourquoi = '';
+		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
 			$this->file()->marquer( $id, 'envoyee' );
 			// Les illustrations restent, le document s'efface : l'un ne se
 			// redemande pas à son auteur, l'autre se refabrique.
 			$this->archiver_les_illustrations( $id, $produits, $document );
 			return;
 		}
-		$this->file()->compter_un_essai( $id );
+		$this->file()->compter_un_essai( $id, $pourquoi );
 	}
 
 	/**

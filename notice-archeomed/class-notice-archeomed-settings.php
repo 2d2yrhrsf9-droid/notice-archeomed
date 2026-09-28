@@ -59,7 +59,6 @@ class Notice_Archeomed_Settings {
 		// devient intransportable.
 		'br_largeur'         => 1000,
 		'br_dpi'             => 96,
-		'br_qualite'         => 82,
 		'br_poids'           => 1024,   // en kilo-octets
 		'br_tolerance'       => 15,     // en pour-cent, sous le plafond
 		// La haute définition part à la mise en page, et elle ne se règle pas
@@ -440,7 +439,6 @@ class Notice_Archeomed_Settings {
 		foreach ( array(
 			'br_largeur'       => array( 200, 4000 ),
 			'br_dpi'           => array( 72, 300 ),
-			'br_qualite'       => array( 40, 100 ),
 			'br_poids'         => array( 50, 20480 ),
 			'br_tolerance'     => array( 0, 50 ),
 			'hr_photo_dpi'     => array( 150, 1200 ),
@@ -1159,11 +1157,6 @@ class Notice_Archeomed_Settings {
 									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_dpi]"
 									value="<?php echo (int) self::get( 'br_dpi' ); ?>"> dpi</label>
 							&nbsp;&nbsp;
-							<label>Qualité
-								<input type="number" min="40" max="100" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_qualite]"
-									value="<?php echo (int) self::get( 'br_qualite' ); ?>"> %</label>
-							<br><br>
 							<label>Poids maximal
 								<input type="number" min="50" max="20480" step="50" style="width:7em"
 									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_poids]"
@@ -1179,8 +1172,10 @@ class Notice_Archeomed_Settings {
 								largeur — cent figures liées dans un fascicule, et le dossier
 								devient intransportable.
 								<br>
-								La qualité baisse par paliers jusqu’à ce que le fichier tienne sous
-								le plafond. La tolérance dit jusqu’où descendre sans insister :
+								<strong>La qualité ne se règle pas</strong> : le plugin part de la
+								meilleure et ne la baisse que si le fichier dépasse le plafond,
+								par paliers, en s’arrêtant au premier qui tient. La tolérance dit
+								jusqu’où descendre sans insister :
 								<?php
 								$plafond = (int) self::get( 'br_poids' );
 								$bas     = (int) round( $plafond * ( 100 - (int) self::get( 'br_tolerance' ) ) / 100 );
@@ -1273,16 +1268,79 @@ class Notice_Archeomed_Settings {
 
 			<hr>
 
-			<h2>Mise en page</h2>
+			<h2>Feuille de style Métopes</h2>
 			<?php
-			$modele = plugin_dir_path( __FILE__ ) . 'modele-metopes.rtf';
-			if ( file_exists( $modele ) ) {
-				echo '<p>Modèle de styles Métopes : <strong>présent</strong> (' . esc_html( size_format( filesize( $modele ) ) ) . ').</p>';
-			} else {
-				echo '<p style="color:#b32d2e;"><strong>Le fichier <code>modele-metopes.rtf</code> est introuvable.</strong> Les notices continueront d\'être transmises par courriel, mais sans la pièce jointe RTF.</p>';
+			$messages = array(
+				'posee'    => array( 'success', 'La nouvelle feuille de style est en service.' ),
+				'retiree'  => array( 'success', 'La feuille déposée a été retirée : celle livrée avec le plugin reprend la main.' ),
+				'vide'     => array( 'error', 'Aucun fichier n’a été reçu.' ),
+				'format'   => array( 'error', 'Seuls les fichiers .docx et .rtf sont acceptés.' ),
+				'invalide' => array( 'error', 'Ce document ne porte pas de feuille de styles : ce n’est pas un gabarit Métopes. Rien n’a été changé.' ),
+				'ecriture' => array( 'error', 'Le fichier n’a pas pu être écrit dans le dossier des téléversements.' ),
+			);
+			$retour = isset( $_GET['na_feuille'] ) ? sanitize_key( wp_unslash( $_GET['na_feuille'] ) ) : '';
+			if ( isset( $messages[ $retour ] ) ) {
+				echo '<div class="notice notice-' . esc_attr( $messages[ $retour ][0] ) . '"><p>'
+					. esc_html( $messages[ $retour ][1] ) . '</p></div>';
 			}
+			$feuille = Notice_Archeomed_Pactols::etat_de_la_feuille( 'docx' );
 			?>
-			<p>Pour appliquer une nouvelle feuille de styles, remplacez <code>modele-metopes.rtf</code> dans le dossier du plugin par un document enregistré au format RTF depuis le gabarit Métopes à jour. Les styles sont reconnus par leur nom : aucune modification du code n'est nécessaire.</p>
+			<table class="widefat striped" style="max-width:46em">
+				<tbody>
+					<tr><td style="width:36%"><strong>En service</strong></td>
+						<td><?php echo $feuille['deposee']
+							? 'feuille déposée depuis cette page'
+							: 'feuille livrée avec le plugin'; ?></td></tr>
+					<?php if ( $feuille['presente'] ) : ?>
+						<tr><td><strong>Date du document</strong></td>
+							<td><?php echo '' !== $feuille['modifiee']
+								? esc_html( mysql2date( 'j F Y', str_replace( array( 'T', 'Z' ), array( ' ', '' ), $feuille['modifiee'] ) ) )
+								: '<span class="description">non renseignée dans le fichier</span>'; ?></td></tr>
+						<tr><td><strong>Posée sur le serveur le</strong></td>
+							<td><?php echo esc_html( date_i18n( 'j F Y à H:i', $feuille['posee'] ) ); ?></td></tr>
+						<tr><td><strong>Styles déclarés</strong></td>
+							<td><?php echo (int) $feuille['styles'] > 0
+								? (int) $feuille['styles'] : '<span class="description">illisible sans ZipArchive</span>'; ?></td></tr>
+						<tr><td><strong>Poids</strong></td>
+							<td><?php echo esc_html( size_format( $feuille['poids'] ) ); ?></td></tr>
+					<?php else : ?>
+						<tr><td colspan="2" style="color:#b32d2e"><strong>Aucune feuille de style trouvée.</strong>
+						Les notices partiront sans document mis en forme.</td></tr>
+					<?php endif; ?>
+				</tbody>
+			</table>
+
+			<p class="description" style="max-width:46em;margin-top:10px">
+				Quand Métopes fait évoluer sa feuille, déposez ici le nouveau gabarit :
+				inutile d’aller dans le dossier du plugin. Les styles sont reconnus par
+				leur nom, aucune modification du code n’est nécessaire.
+				<br>
+				<strong>La feuille déposée vit dans les téléversements, non dans le plugin</strong> —
+				une mise à jour de l’extension remplace son dossier en entier et
+				effacerait un gabarit qu’on y aurait posé.
+			</p>
+
+			<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="na_feuille">
+				<?php wp_nonce_field( 'na_feuille' ); ?>
+				<p>
+					<input type="file" name="na_feuille" accept=".docx,.rtf">
+					<?php submit_button( 'Déposer cette feuille', 'secondary', '', false ); ?>
+				</p>
+				<?php if ( $feuille['deposee'] ) : ?>
+					<p>
+						<label><input type="checkbox" name="na_feuille_retirer" value="1">
+						Retirer la feuille déposée et revenir à celle du plugin</label>
+						<?php submit_button( 'Appliquer', 'secondary small', '', false ); ?>
+					</p>
+				<?php endif; ?>
+			</form>
+
+			<p class="description">
+				Après tout changement de gabarit, passez <code>./verifier-les-styles</code> :
+				un style disparu ne provoque aucune erreur, le paragraphe sort simplement
+				en Normal et l’on ne s’en aperçoit qu’à la relecture.
+			</p>
 
 			<hr>
 

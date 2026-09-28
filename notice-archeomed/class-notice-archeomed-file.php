@@ -76,6 +76,7 @@ class Notice_Archeomed_File {
 		add_action( 'add_meta_boxes_' . self::CPT, array( $this, 'poser_la_fiche' ) );
 		add_action( 'do_meta_boxes', array( $this, 'ecarter_les_intrus' ), 99 );
 		add_action( 'admin_post_na_expedier_maintenant', array( $this, 'expedier_maintenant' ) );
+		add_action( 'admin_post_na_reessayer', array( $this, 'reessayer' ) );
 	}
 
 	/**
@@ -270,6 +271,35 @@ class Notice_Archeomed_File {
 	 * Le bouton « Expédier maintenant » de l'administration, pour le jour où
 	 * le planificateur de WordPress est désactivé sur l'hébergement.
 	 */
+	/**
+	 * Remet une notice en échec dans la file.
+	 *
+	 * Après cinq refus, une notice restait bloquée pour toujours : la relance
+	 * générale ne reprend que celles en attente. Or l'échec vient le plus
+	 * souvent de ce qui se répare — une adresse oubliée, un serveur de
+	 * courriel indisponible une heure. Une fois la cause levée, il faut
+	 * pouvoir redemander l'envoi sans que l'auteur redépose sa notice.
+	 *
+	 * Le compteur repart à zéro : ce sont cinq nouvelles chances, non la
+	 * sixième d'une série perdue.
+	 */
+	public function reessayer() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
+		check_admin_referer( 'na_reessayer_' . $id );
+		if ( ! $id || self::CPT !== get_post_type( $id ) ) {
+			wp_die( esc_html__( 'Notice inconnue.', 'notice-archeomed' ) );
+		}
+		update_post_meta( $id, '_na_essais', 0 );
+		update_post_meta( $id, '_na_etat', 'en_attente' );
+		delete_post_meta( $id, '_na_erreur' );
+		$this->programmer( $id );
+		wp_safe_redirect( add_query_arg( 'na_relancee', '1', get_edit_post_link( $id, '' ) ) );
+		exit;
+	}
+
 	public function expedier_maintenant() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
@@ -368,6 +398,23 @@ class Notice_Archeomed_File {
 		$erreur = (string) get_post_meta( $post->ID, '_na_erreur', true );
 		if ( '' !== $erreur ) {
 			echo '<p style="color:#b32d2e"><strong>' . esc_html( $erreur ) . '</strong></p>';
+		}
+		// Une notice en échec ne repart pas d'elle-même : la relance générale
+		// ne reprend que celles en attente. Le bouton la remet dans la file,
+		// une fois la cause du refus levée.
+		if ( 'echec' === (string) get_post_meta( $post->ID, '_na_etat', true ) ) {
+			$relance = wp_nonce_url(
+				add_query_arg(
+					array( 'action' => 'na_reessayer', 'post' => (int) $post->ID ),
+					admin_url( 'admin-post.php' )
+				),
+				'na_reessayer_' . (int) $post->ID
+			);
+			echo '<p><a class="button" href="' . esc_url( $relance ) . '">'
+				. esc_html__( 'Réessayer l’envoi', 'notice-archeomed' ) . '</a></p>';
+			echo '<p class="description">'
+				. esc_html__( 'Corrigez d’abord ce que l’erreur signale — le plus souvent une adresse de destinataire. Le compteur repart à zéro.', 'notice-archeomed' )
+				. '</p>';
 		}
 
 		$this->afficher_les_illustrations( $post );
@@ -530,8 +577,8 @@ class Notice_Archeomed_File {
 			$liens[] = '<a href="' . esc_url( $url ) . '" title="'
 				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
 		}
-		$vues['na_fascicules'] = '<span style="display:block;margin:8px 0 4px">'
-			. '<strong>' . esc_html__( 'Fascicule à relire :', 'notice-archeomed' )
+		$vues['na_fascicules'] = '<span style="display:block;margin:8px 0 2px">'
+			. '<strong>' . esc_html__( 'Fascicule en Word stylé :', 'notice-archeomed' )
 			. '</strong> ' . implode( ' · ', $liens ) . '</span>';
 
 		// Le paquet complet, à côté du fascicule seul : le même document, plus
@@ -550,7 +597,7 @@ class Notice_Archeomed_File {
 				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
 		}
 		$vues['na_paquets'] = '<span style="display:block;margin:0 0 8px">'
-			. '<strong>' . esc_html__( 'Paquet Métopes (zip) :', 'notice-archeomed' )
+			. '<strong>' . esc_html__( 'Dossier Métopes (zip) :', 'notice-archeomed' )
 			. '</strong> ' . implode( ' · ', $paquets )
 			. ' <span class="description">'
 			. esc_html__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' )
@@ -669,13 +716,21 @@ class Notice_Archeomed_File {
 	/**
 	 * Compte un essai et dit s'il faut en tenter d'autres.
 	 */
-	public function compter_un_essai( $id ) {
+	public function compter_un_essai( $id, $pourquoi = '' ) {
 		$essais = (int) get_post_meta( $id, '_na_essais', true ) + 1;
 		update_post_meta( $id, '_na_essais', $essais );
 		// On rend la notice à la file : la prise ne vaut que le temps d'un essai.
 		update_post_meta( $id, '_na_etat', 'en_attente' );
+		// La raison du dernier refus se garde dès le premier essai : attendre
+		// le cinquième, c'est laisser vingt minutes sans rien dire à qui
+		// regarde la liste.
+		if ( '' !== $pourquoi ) {
+			update_post_meta( $id, '_na_erreur', $pourquoi );
+		}
 		if ( $essais >= self::ESSAIS_MAX ) {
-			$this->marquer( $id, 'echec', 'Cinq tentatives d’envoi sans succès.' );
+			$this->marquer( $id, 'echec', '' !== $pourquoi
+				? 'Cinq tentatives sans succès. ' . $pourquoi
+				: 'Cinq tentatives d’envoi sans succès.' );
 			return false;
 		}
 		// Espacement croissant : une panne de serveur de courriel dure

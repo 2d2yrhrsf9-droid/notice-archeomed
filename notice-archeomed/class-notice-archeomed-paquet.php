@@ -33,6 +33,20 @@ class Notice_Archeomed_Paquet {
 	 */
 	const SANS_PLAFOND = PHP_INT_MAX;
 
+	/**
+	 * La qualité dont part une basse définition, et le plancher où elle
+	 * s'arrête.
+	 *
+	 * Elle ne se règle plus : on veut la meilleure image que le plafond de
+	 * poids admette, et c'est au plugin de la chercher, non à qui dépose une
+	 * notice de deviner un pourcentage. Les paliers de huit points laissent
+	 * huit essais entre le haut et le bas — assez fins pour ne pas sacrifier
+	 * vingt points de qualité quand deux suffisaient.
+	 */
+	const QUALITE_HAUTE   = 92;
+	const QUALITE_PLANCHER = 40;
+	const QUALITE_PALIER   = 8;
+
 	private $erreurs = array();
 	private $journal = array();
 	// Les noms déjà posés dans l'archive. Deux notices d'une même commune et
@@ -406,17 +420,19 @@ class Notice_Archeomed_Paquet {
 				$image->setImageResolution( $dpi, $dpi );
 			}
 
-			$qualite = max( 40, (int) $qualite );
-			for ( $essai = 0; $essai < 6; $essai++ ) {
+			// On part du haut et l'on descend : le premier palier qui tient
+			// sous le plafond est le meilleur que le plafond admette.
+			$qualite = max( self::QUALITE_PLANCHER, (int) $qualite );
+			for ( $essai = 0; $essai < 10; $essai++ ) {
 				$image->setImageCompressionQuality( $qualite );
 				$ko = (int) round( strlen( $image->getImageBlob() ) / 1024 );
 				if ( $ko <= $poids_max ) {
 					break;   // dans la fourchette, ou sans plafond
 				}
-				if ( $qualite <= 40 ) {
+				if ( $qualite <= self::QUALITE_PLANCHER ) {
 					break;   // on ne descend pas plus bas
 				}
-				$qualite = max( 40, $qualite - 10 );
+				$qualite = max( self::QUALITE_PLANCHER, $qualite - self::QUALITE_PALIER );
 			}
 			// La qualité retenue est posée une dernière fois avant l'écriture :
 			// la boucle pouvait sortir en ayant calculé un palier sans
@@ -497,7 +513,7 @@ class Notice_Archeomed_Paquet {
 		$cible_br = $this->atelier . '/icono/br/' . $nom_sans_ext . '.jpg';
 		$dpi_br   = (int) $reglage( 'br_dpi' );
 		$fait_br  = $this->reduire( $source_br, $cible_br,
-			(int) $reglage( 'br_largeur' ), (int) $reglage( 'br_qualite' ),
+			(int) $reglage( 'br_largeur' ), self::QUALITE_HAUTE,
 			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ) );
 		if ( '' !== $provisoire ) {
 			@unlink( $provisoire );
