@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.28
+ * Version: 3.29
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -22,6 +22,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-pactols.php';
 
 new Notice_Archeomed_Settings();
 
@@ -464,6 +465,7 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html__( 'Cette notice ne porte pas de saisie exploitable.',
 				'notice-archeomed' ) );
 		}
+		$d = $this->poser_les_formes_preferees( $id, $d );
 		$erreur = '';
 		$chemin = $this->build_rtf_file( $d, $erreur,
 			class_exists( 'ZipArchive' ) ? 'docx' : 'rtf' );
@@ -523,7 +525,8 @@ class Notice_Archeomed_Pactols {
 				continue;
 			}
 			$notices[] = array(
-				'd'             => $d,
+				'id'            => $id,
+				'd'             => $this->poser_les_formes_preferees( $id, $d ),
 				'illustrations' => array_values( array_filter(
 					(array) get_post_meta( $id, '_na_illustrations', true ), 'file_exists' ) ),
 			);
@@ -554,6 +557,23 @@ class Notice_Archeomed_Pactols {
 				}
 			}
 			$donnees[] = $d;
+		}
+
+		// Les blocs d'index, un fichier par notice sous « XML/indexation ».
+		// C'est le seul endroit du dossier qui parle à la chaîne plutôt qu'à
+		// un lecteur : ce qu'il contient se colle, il ne se relit pas.
+		foreach ( $notices as $notice ) {
+			if ( empty( $notice['id'] ) ) {
+				continue;
+			}
+			$xml = $this->indexation_de( $notice['id'], $notice['d'] );
+			if ( '' === $xml ) {
+				continue;
+			}
+			$paquet->poser_une_indexation(
+				Notice_Archeomed_Nommage::assainir(
+					trim( $notice['d']['commune'] . '-' . $notice['d']['lieu_dit'] ) ),
+				$xml );
 		}
 
 		$document = $this->fabriquer_le_fascicule( $rubrique, $donnees, $erreur );
@@ -732,7 +752,7 @@ class Notice_Archeomed_Pactols {
 		foreach ( (array) $ids as $id ) {
 			$d = get_post_meta( $id, '_na_donnees', true );
 			if ( is_array( $d ) && ! empty( $d ) ) {
-				$donnees[] = $d;
+				$donnees[] = $this->poser_les_formes_preferees( $id, $d );
 			}
 		}
 		return $donnees;
@@ -1469,6 +1489,11 @@ class Notice_Archeomed_Pactols {
 			.na-form .na-pactols-field label { display: inline-block; width: 24px; margin: 0 4px 0 0; font-weight: 600; color: #555; }
 			.na-form .na-pactols-field input[type=text] { width: calc(100% - 34px); }
 			.na-form .na-pactols-selected { border-color: #4a8a4a !important; background: #f6fff6; }
+			.na-form .na-pactols-avis { margin: .35em 0 0; font-size: .9em; color: #8a5a00;
+				background: #fff8e8; border-left: 3px solid #d79b2a; padding: .4em .6em; }
+			.na-form .na-pactols-remplacer { margin-left: .4em; font-size: .95em;
+				background: #fff; border: 1px solid #d79b2a; border-radius: 3px;
+				padding: .15em .5em; cursor: pointer; color: #8a5a00; }
 			.na-form .na-pactols-warning { color: #b00; font-size: 13px; display: none; margin-top: 8px; }
 			@media (max-width: 800px) {
 				.na-form .na-half,
@@ -1887,6 +1912,75 @@ class Notice_Archeomed_Pactols {
 					})
 					.catch(function () { return []; });
 			}
+			// Un terme retiré du thésaurus s'indexe dans le vide : la chaîne
+			// refuse de l'enrichir, et le mot-clé reste nu sans que personne
+			// l'ait vu passer. L'autocomplétion les propose comme les autres —
+			// elle ne rend qu'une étiquette et un identifiant. On va donc le
+			// demander, une fois, au moment où quelqu'un choisit.
+			//
+			// La vérification ne bloque rien : le terme est déjà posé quand
+			// elle part, et si Pactols ne répond pas, le dépôt suit son cours.
+			function verifierLeConcept(field, item, type) {
+				var zone = field.querySelector('[data-pactols-avis]');
+				if (zone) { zone.remove(); }
+				if (!item.idConcept) { return; }
+				var theso = (type === 'place') ? 'th17' : 'TH_1';
+				var url = 'https://pactols.frantiq.fr/openapi/v1/concept/'
+					+ encodeURIComponent(theso) + '/' + encodeURIComponent(item.idConcept);
+				fetch(url, { headers: { 'Accept': 'application/json' } })
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(function (data) {
+						if (!data || !data[item.ark]) { return; }
+						var n = data[item.ark];
+						var dep = n['http://www.w3.org/2002/07/owl#deprecated'];
+						if (!dep || !dep.length) { return; }
+						var rep = n['http://purl.org/dc/terms/isReplacedBy'];
+						poserUnAvis(field, item, type, rep && rep.length ? rep[0].value : '');
+					})
+					.catch(function () {});
+			}
+			// L'avis nomme le remplaçant et propose de le prendre : signaler un
+			// terme mort sans dire par quoi le remplacer laisse le travail
+			// entier à qui dépose.
+			function poserUnAvis(field, item, type, remplacant) {
+				var zone = document.createElement('p');
+				zone.setAttribute('data-pactols-avis', '1');
+				zone.className = 'na-pactols-avis';
+				zone.textContent = '« ' + item.label + ' » a été retiré du thésaurus Pactols.';
+				field.appendChild(zone);
+				if (!remplacant) { return; }
+				var theso = (type === 'place') ? 'th17' : 'TH_1';
+				var seg = remplacant.split('/').pop();
+				fetch('https://pactols.frantiq.fr/openapi/v1/concept/'
+						+ encodeURIComponent(theso) + '/' + encodeURIComponent(seg),
+					{ headers: { 'Accept': 'application/json' } })
+					.then(function (r) { return r.ok ? r.json() : null; })
+					.then(function (data) {
+						if (!data || !data[remplacant]) { return; }
+						var labels = data[remplacant]['http://www.w3.org/2004/02/skos/core#prefLabel'] || [];
+						var fr = '';
+						var id = data[remplacant]['http://purl.org/dc/terms/identifier'];
+						labels.forEach(function (l) { if (l.lang === 'fr') { fr = l.value; } });
+						if (!fr) { return; }
+						zone.textContent = '« ' + item.label + ' » a été retiré du thésaurus Pactols. Il est remplacé par « ' + fr + ' ». ';
+						var b = document.createElement('button');
+						b.type = 'button';
+						b.className = 'na-pactols-remplacer';
+						b.textContent = 'Prendre « ' + fr + ' »';
+						b.addEventListener('click', function () {
+							var neuf = { label: fr, ark: remplacant,
+								idConcept: (id && id.length) ? id[0].value : '', fullpath: '' };
+							var input = field.querySelector('.na-pactols-input');
+							var hidden = field.querySelector('.na-pactols-hidden');
+							input.value = fr;
+							input.classList.add('na-pactols-selected');
+							hidden.value = JSON.stringify(neuf);
+							zone.remove();
+						});
+						zone.appendChild(b);
+					})
+					.catch(function () {});
+			}
 			function renderPactolsSuggestions(field, items, type) {
 				var box = field.querySelector('.na-pactols-suggestions');
 				var input = field.querySelector('.na-pactols-input');
@@ -1914,6 +2008,7 @@ class Notice_Archeomed_Pactols {
 						hidden.value = JSON.stringify(item);
 						box.innerHTML = '';
 						box.style.display = 'none';
+						verifierLeConcept(field, item, type);
 					});
 					box.appendChild(li);
 				});
@@ -2692,6 +2787,96 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Rend du XML brut, à passer à « add_raw_paragraph ».
 	 */
+	/**
+	 * La graphie sous laquelle un terme paraît dans le volume.
+	 *
+	 * La forme préférée s'imprime telle que le thésaurus la donne : c'est lui
+	 * qui sait où vont les majuscules — « Moyen Âge », « église ». La recasser
+	 * reviendrait à défaire ce qu'on est allé chercher. Faute de résolution,
+	 * la règle de la revue s'applique à la saisie, comme avant.
+	 *
+	 * Une seule fonction pour le texte et pour le bloc d'index : ce dernier
+	 * porte la graphie du texte en « term type="orig" », et deux calculs
+	 * séparés finiraient par diverger sans que rien ne le signale.
+	 */
+	private function graphie_imprimee( $item, $capitale = false ) {
+		if ( ! empty( $item['prefLabel'] ) ) {
+			return trim( (string) $item['prefLabel'] );
+		}
+		$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+		return $capitale ? $this->capitale_initiale( $label ) : $this->bas_de_casse( $label );
+	}
+
+	/**
+	 * Les blocs d'index d'une notice, prêts à coller dans le XML de Métopes.
+	 *
+	 * La chaîne attend, sous chaque paragraphe indexé, l'arbre des concepts du
+	 * plus général au terme choisi, avec leurs étiquettes dans toutes les
+	 * langues. Le composer à la main demande d'ouvrir le moteur d'indexation,
+	 * de chercher le terme, de recopier son code — pour chaque mot-clé de
+	 * chaque notice, trois cents fois par an.
+	 *
+	 * Or l'auteur a déjà choisi le concept, et nous en tenons l'identifiant
+	 * depuis le dépôt. Il n'y a donc rien à chercher : le bloc se calcule.
+	 *
+	 * Rend une chaîne vide s'il n'y a rien à indexer.
+	 */
+	private function indexation_de( $id, $d ) {
+		$termes = get_post_meta( (int) $id, '_na_pactols', true );
+		if ( ! is_array( $termes ) || empty( $termes ) ) {
+			// Notice déposée avant que les termes ne se résolvent, ou
+			// résolution manquée : le dossier est demandé à la main, il peut
+			// attendre le thésaurus.
+			$termes = $this->resoudre_les_termes( $id, $d );
+		}
+		if ( empty( $termes ) ) {
+			return '';
+		}
+		// Le style du paragraphe qui portera le bloc, et le nom d'index que la
+		// chaîne attend dedans. « pactols:Lieux » suit la forme des deux
+		// autres ; il se corrige d'un remplacement si la chaîne en nomme un
+		// autre.
+		$zones = array(
+			array( 'nature_items',           'archeoCHR_fieldwork_method',             'pactols:Sujets',      false ),
+			array( 'pactols_periods_items',  'archeoCHR_keywords_subjects:chronology', 'pactols:Chronologie', true ),
+			array( 'pactols_subjects_items', 'archeoCHR_keywords_subjects',            'pactols:Sujets',      false ),
+			array( 'pactols_places_items',   'archeoCHR_keywords_subjects',            'pactols:Lieux',       true ),
+		);
+		$corps = '';
+		foreach ( $zones as $zone ) {
+			list( $clef, $rend, $index_name, $capitale ) = $zone;
+			$blocs = '';
+			foreach ( (array) ( isset( $d[ $clef ] ) ? $d[ $clef ] : array() ) as $item ) {
+				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
+				if ( '' === $ark || empty( $termes[ $ark ] ) ) {
+					continue;
+				}
+				$bloc = Notice_Archeomed_Pactols::index_tei(
+					$this->graphie_imprimee( $item, $capitale ),
+					$termes[ $ark ], $index_name );
+				if ( '' !== $bloc ) {
+					$blocs .= "\n      " . $bloc;
+				}
+			}
+			if ( '' !== $blocs ) {
+				$corps .= "\n   <zone rend=\"" . esc_attr( $rend ) . "\">"
+					. $blocs . "\n   </zone>";
+			}
+		}
+		if ( '' === $corps ) {
+			return '';
+		}
+		$premier = reset( $termes );
+		$lu_le   = ( is_array( $premier ) && ! empty( $premier['lu_le'] ) ) ? $premier['lu_le'] : '';
+		$titre   = trim( $d['commune'] . ' ' . $d['lieu_dit'] );
+		return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+			. '<!-- Blocs d\'index Pactols calculés depuis les identifiants choisis au dépôt.' . "\n"
+			. '     Chaque « zone » nomme le style du paragraphe où son contenu se colle. -->' . "\n"
+			. '<indexation xmlns="http://www.tei-c.org/ns/1.0" notice="' . esc_attr( $titre ) . '"'
+			. ( '' !== $lu_le ? ' lu-le="' . esc_attr( $lu_le ) . '"' : '' ) . '>'
+			. $corps . "\n" . '</indexation>' . "\n";
+	}
+
 	private function termes_pactols_lies( $doc, $items, $capitale = false ) {
 		$morceaux = array();
 		foreach ( (array) $items as $item ) {
@@ -2699,8 +2884,7 @@ class Notice_Archeomed_Pactols {
 			if ( '' === $label ) {
 				continue;
 			}
-			$label = $capitale ? $this->capitale_initiale( $label )
-				: $this->bas_de_casse( $label );
+			$label = $this->graphie_imprimee( $item, $capitale );
 			// Sans ARK — une notice d'avant les identifiants, ou un terme
 			// saisi sans sélection — le mot reste du texte ordinaire.
 			$morceaux[] = ! empty( $item['ark'] )
@@ -3523,6 +3707,41 @@ class Notice_Archeomed_Pactols {
 			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 				implode( $doc->plain( ', ' ), $parts ) );
 		}
+
+		// De quel millésime du thésaurus viennent ces identifiants.
+		//
+		// Pactols bouge : un concept se déprécie, une forme préférée change.
+		// Deux notices déposées à six mois d'écart peuvent donc porter des
+		// identifiants qui ne se valent plus, et rien ne le dirait. La date de
+		// lecture est peu de chose à écrire et c'est elle qui permettra, le
+		// jour où un terme surprendra, de savoir ce qu'on avait sous les yeux.
+		if ( ! empty( $d['pactols_lu_le'] ) ) {
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
+				array( 'text' => 'Indexation Pactols lue le ' . $d['pactols_lu_le'] . '.' ),
+			) );
+		}
+
+		// Les termes que le thésaurus a retirés.
+		//
+		// Le formulaire en avertit désormais l'auteur au moment où il choisit,
+		// mais les notices déjà déposées n'ont pas eu cet avis, et un concept
+		// peut se déprécier après coup. La chaîne refuse d'indexer sur un
+		// terme mort : sans cette ligne, le mot-clé resterait nu et personne
+		// ne saurait pourquoi.
+		$morts = array();
+		foreach ( array_keys( $this->zones_pactols() ) as $clef ) {
+			foreach ( (array) ( isset( $d[ $clef ] ) ? $d[ $clef ] : array() ) as $item ) {
+				if ( ! empty( $item['deprecie'] ) && ! empty( $item['label'] ) ) {
+					$morts[] = $item['label'];
+				}
+			}
+		}
+		if ( ! empty( $morts ) ) {
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
+				array( 'text' => 'Retirés du thésaurus Pactols, à reprendre avant indexation : ', 'b' => true ),
+				array( 'text' => implode( ', ', array_unique( $morts ) ) . '.' ),
+			) );
+		}
 	}
 
 	/**
@@ -4288,6 +4507,12 @@ class Notice_Archeomed_Pactols {
 				update_post_meta( $id, '_na_fichiers', $produits );
 			}
 		}
+		// Le thésaurus se consulte ici, et nulle part ailleurs : c'est le seul
+		// moment où personne n'attend devant un écran. Ce qu'il dit sert au
+		// fascicule, au dossier et aux blocs d'index — pas au courriel, qui
+		// part avec la saisie telle qu'elle a été faite.
+		$this->resoudre_les_termes( $id, $d );
+
 		$pourquoi = '';
 		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
 			$this->file()->marquer( $id, 'envoyee' );
@@ -4463,6 +4688,85 @@ class Notice_Archeomed_Pactols {
 	 * avec ses seules légendes. Une figure manquante ne fait pas perdre une
 	 * notice.
 	 */
+	/**
+	 * Les quatre zones de la saisie qui portent des termes du thésaurus, avec
+	 * le thésaurus dont chacune relève.
+	 */
+	private function zones_pactols() {
+		return array(
+			'nature_items'           => self::PACTOLS_SUBJECT_THESO_ID,
+			'pactols_periods_items'  => self::PACTOLS_PERIOD_THESO_ID,
+			'pactols_subjects_items' => self::PACTOLS_SUBJECT_THESO_ID,
+			'pactols_places_items'   => self::PACTOLS_PLACE_THESO_ID,
+		);
+	}
+
+	/**
+	 * Demande à Pactols ce qu'il sait des termes d'une notice, et le garde.
+	 *
+	 * Hors de la requête de l'auteur : une dizaine d'appels au thésaurus n'a
+	 * rien à faire devant quelqu'un qui dépose. C'est le planificateur qui
+	 * appelle, après l'envoi, et la réserve d'un mois fait que la centaine de
+	 * notices d'une campagne ne coûte qu'une poignée d'appels.
+	 */
+	private function resoudre_les_termes( $id, $d ) {
+		$termes = array();
+		foreach ( $this->zones_pactols() as $clef => $theso ) {
+			$items = isset( $d[ $clef ] ) ? (array) $d[ $clef ] : array();
+			foreach ( $items as $item ) {
+				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
+				if ( '' === $ark || isset( $termes[ $ark ] ) ) {
+					continue;
+				}
+				$concept = Notice_Archeomed_Pactols::resoudre( $ark,
+					isset( $item['idConcept'] ) ? $item['idConcept'] : '', $theso );
+				if ( is_array( $concept ) ) {
+					$termes[ $ark ] = $concept;
+				}
+			}
+		}
+		if ( ! empty( $termes ) ) {
+			update_post_meta( $id, '_na_pactols', $termes );
+		}
+		return $termes;
+	}
+
+	/**
+	 * Pose sur chaque terme la forme préférée du thésaurus, et la date à
+	 * laquelle elle a été lue.
+	 *
+	 * L'autocomplétion rend l'étiquette qui a répondu à la frappe, qui est
+	 * souvent une variante — « Eglise copte » pour « église copte ». Le volume
+	 * imprime la forme préférée, et la saisie de l'auteur reste intacte
+	 * dessous : c'est elle qui vaut si le thésaurus n'a pas répondu.
+	 */
+	private function poser_les_formes_preferees( $id, $d ) {
+		$termes = get_post_meta( (int) $id, '_na_pactols', true );
+		if ( ! is_array( $termes ) || empty( $termes ) ) {
+			return $d;
+		}
+		foreach ( array_keys( $this->zones_pactols() ) as $clef ) {
+			if ( empty( $d[ $clef ] ) ) {
+				continue;
+			}
+			foreach ( (array) $d[ $clef ] as $i => $item ) {
+				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
+				if ( '' === $ark || empty( $termes[ $ark ] ) ) {
+					continue;
+				}
+				if ( ! empty( $termes[ $ark ]['prefLabel'] ) ) {
+					$d[ $clef ][ $i ]['prefLabel'] = $termes[ $ark ]['prefLabel'];
+				}
+				$d[ $clef ][ $i ]['deprecie'] = ! empty( $termes[ $ark ]['deprecie'] );
+			}
+		}
+		$premier = reset( $termes );
+		if ( is_array( $premier ) && ! empty( $premier['lu_le'] ) ) {
+			$d['pactols_lu_le'] = $premier['lu_le'];
+		}
+		return $d;
+	}
+
 	private function fabriquer_les_apercus( $illustrations, $d ) {
 		$dossier = $this->dossier_des_illustrations();
 		if ( '' === $dossier || ! class_exists( 'Imagick' )

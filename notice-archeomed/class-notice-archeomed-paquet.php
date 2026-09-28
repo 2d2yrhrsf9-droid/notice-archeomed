@@ -291,6 +291,10 @@ class Notice_Archeomed_Paquet {
 			'',
 			'style/           le document Word de la rubrique, aux styles Métopes',
 			'XML/             vide : c\'est la chaîne qui le remplira',
+			'XML/indexation/  les blocs d\'index Pactols, un fichier par notice.',
+			'                 Chaque « zone » nomme le style du paragraphe où',
+			'                 son contenu se colle. Les concepts viennent des',
+			'                 identifiants choisis au dépôt : rien n\'a été deviné.',
 			'icono/hr/        la haute définition, pour la mise en page',
 			'icono/br/        la basse définition, appelée en lien par le document',
 			'relecture.html   la rubrique à lire dans un navigateur, figures comprises',
@@ -474,6 +478,23 @@ class Notice_Archeomed_Paquet {
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
 			return false;
 		}
+	}
+
+	/**
+	 * Pose dans le dossier un fichier d'indexation, à côté du XML.
+	 *
+	 * Rend le nom retenu, ou une chaîne vide si l'atelier n'est pas ouvert.
+	 */
+	public function poser_une_indexation( $nom_sans_ext, $xml ) {
+		if ( '' === $this->atelier || ! is_dir( $this->atelier ) ) {
+			return '';
+		}
+		$dossier = $this->atelier . '/XML/indexation';
+		if ( ! is_dir( $dossier ) ) {
+			wp_mkdir_p( $dossier );
+		}
+		$nom = $this->nom_unique( $nom_sans_ext ) . '.xml';
+		return ( false !== @file_put_contents( $dossier . '/' . $nom, $xml ) ) ? $nom : '';
 	}
 
 	/**
