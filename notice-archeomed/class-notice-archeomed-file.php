@@ -608,6 +608,53 @@ class Notice_Archeomed_File {
 	/**
 	 * Les notices d'une rubrique, dans l'ordre où elles seront relues.
 	 */
+	/**
+	 * Les notices d'autres rubriques qui renvoient vers celle-ci.
+	 *
+	 * Un renvoi s'imprimait en tête de la notice qui le porte, dans sa propre
+	 * rubrique — là où il ne sert à personne : c'est le préparateur de l'autre
+	 * rubrique qui doit savoir qu'une notice le concerne, et il ne l'apprenait
+	 * qu'en lisant le fascicule voisin. On le range donc où il est utile, à sa
+	 * place alphabétique.
+	 *
+	 * Les renvois vivent dans la saisie et non dans une métadonnée à part :
+	 * les lire ici évite une migration, et vaut pour les notices anciennes
+	 * comme pour les neuves. Le coût est de quelques centaines de lectures sur
+	 * une action demandée à la main, qui en fait bien davantage par ailleurs.
+	 */
+	public function renvois_vers( $rubrique ) {
+		$ids = get_posts(
+			array(
+				'post_type'      => self::CPT,
+				'post_status'    => 'private',
+				'posts_per_page' => 500,
+				'fields'         => 'ids',
+				'meta_key'       => '_na_classement',
+				'orderby'        => 'meta_value',
+				'order'          => 'ASC',
+			)
+		);
+		$out = array();
+		foreach ( $ids as $id ) {
+			$d = get_post_meta( $id, '_na_donnees', true );
+			if ( ! is_array( $d ) || empty( $d ) ) {
+				continue;
+			}
+			// Une notice ne se renvoie pas à elle-même : sa rubrique
+			// principale la porte déjà.
+			if ( isset( $d['rubrique_principale'] ) && $rubrique === $d['rubrique_principale'] ) {
+				continue;
+			}
+			foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
+				if ( isset( $d[ $champ ] ) && $rubrique === $d[ $champ ] ) {
+					$out[] = $d;
+					break;
+				}
+			}
+		}
+		return $out;
+	}
+
 	public function notices_de_la_rubrique( $rubrique ) {
 		return get_posts(
 			array(

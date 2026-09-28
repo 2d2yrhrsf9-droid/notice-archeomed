@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.26
+ * Version: 3.27
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -739,6 +739,41 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Une ligne de renvoi, à la place alphabétique de la notice qu'elle
+	 * désigne.
+	 *
+	 * « Thue et Mue (Calvados). Rue de Reviers — Voir dans la rubrique
+	 * Constructions et habitats ecclésiastiques. » Le lieu porte son ARK comme
+	 * ailleurs, de sorte qu'un renvoi s'indexe aussi bien qu'une notice.
+	 */
+	private function poser_un_renvoi( $doc, $d ) {
+		$departement = $this->sans_parentheses( $d['departement'] );
+		$lieux       = $this->lieux_de( $d );
+		$morceaux    = array();
+		foreach ( $lieux as $lieu ) {
+			$morceaux[] = ( '' !== $lieu['ark'] )
+				? $doc->hyperlink( $lieu['ark'], $lieu['nom'] )
+				: $doc->plain( $lieu['nom'] );
+		}
+		$contenu = ! empty( $morceaux )
+			? implode( $doc->plain( ', ' ), $morceaux )
+			: $doc->plain( $this->lieux_en_ligne( $d ) );
+		if ( '' !== trim( $departement ) ) {
+			$contenu .= $doc->plain( ' (' . $departement . ')' );
+		}
+		if ( '' !== $d['lieu_dit'] ) {
+			$contenu .= $doc->plain( '. ' )
+				. $this->run_xml( $doc, array( 'text' => $d['lieu_dit'], 'i' => true ) );
+		}
+		$contenu .= $doc->plain( ' — Voir dans la rubrique ' )
+			. $this->run_xml( $doc, array(
+				'text' => $this->rubrique_sans_numero( $d['rubrique_principale'] ),
+				'i'    => true ) )
+			. $doc->plain( '.' );
+		$doc->add_raw_paragraph( 'Normal', $contenu );
+	}
+
+	/**
 	 * Le document d'une rubrique, assemblé une fois pour deux usages.
 	 *
 	 * Le fascicule le sert seul ; le paquet le range dans « style ». Deux
@@ -760,18 +795,44 @@ class Notice_Archeomed_Pactols {
 		// notices arrivent déjà dans cet ordre, le classement les y a mises.
 		$doc->add_paragraph( 'Title', array( array(
 			'text' => $this->titre_de_rubrique( $rubrique ) ) ) );
-		$famille_en_cours = null;
+		// Les notices de la rubrique, et les renvois que d'autres lui font :
+		// les uns et les autres se rangent ensemble, par sous-rubrique puis
+		// par commune. Un renvoi glissé à sa place alphabétique se voit ; posé
+		// en bloc à la fin, il s'oublie.
+		$entrees = array();
 		foreach ( (array) $donnees as $d ) {
 			if ( ! is_array( $d ) || empty( $d ) ) {
 				continue;
 			}
-			$famille = $this->titre_de_famille( $d );
+			$entrees[] = array( 'quoi' => 'notice', 'd' => $d, 'clef' => $this->classement_de( $d ) );
+		}
+		foreach ( $this->file()->renvois_vers( $rubrique ) as $d ) {
+			// Le renvoi se classe dans la sous-rubrique de la notice qui le
+			// porte : c'est la même opération, vue d'une autre rubrique.
+			$entrees[] = array( 'quoi' => 'renvoi', 'd' => $d, 'clef' => $this->classement_de( $d ) );
+		}
+		usort( $entrees, function ( $a, $b ) {
+			// La clef porte le rang de rubrique en tête ; ici toutes les
+			// entrées ne sont pas de la même, et c'est la sous-rubrique puis
+			// la commune qui comptent.
+			$sa = substr( $a['clef'], strpos( $a['clef'], '|' ) + 1 );
+			$sb = substr( $b['clef'], strpos( $b['clef'], '|' ) + 1 );
+			return strcmp( $sa, $sb );
+		} );
+
+		$famille_en_cours = null;
+		foreach ( $entrees as $entree ) {
+			$famille = $this->titre_de_famille( $entree['d'] );
 			if ( $famille !== $famille_en_cours ) {
 				$doc->add_paragraph( 'TEI_Titre 1+rubrique',
 					array( array( 'text' => $famille ) ) );
 				$famille_en_cours = $famille;
 			}
-			$this->remplir_le_document( $doc, $d, false );
+			if ( 'renvoi' === $entree['quoi'] ) {
+				$this->poser_un_renvoi( $doc, $entree['d'] );
+				continue;
+			}
+			$this->remplir_le_document( $doc, $entree['d'], false );
 		}
 
 		$tmp_dir = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
@@ -3198,24 +3259,13 @@ class Notice_Archeomed_Pactols {
 				'text' => $this->titre_de_famille( $d ) ) ) );
 		}
 
-		// 3. Renvois vers d'autres rubriques, en Normal. La rubrique principale
-		// n'est pas rappelée ici : elle figure déjà en titre de la notice.
-		foreach ( array( $d['renvoi_1'], $d['renvoi_2'] ) as $renvoi ) {
-			if ( '' === $renvoi ) {
-				continue;
-			}
-			$runs = array(
-				array( 'text' => 'Rubrique secondaire : ', 'b' => true ),
-				array( 'text' => $renvoi . ' => ' . $commune_dept . ( '' !== $d['lieu_dit'] ? ', ' : '' ) ),
-			);
-			if ( '' !== $d['lieu_dit'] ) {
-				$runs[] = array( 'text' => $d['lieu_dit'], 'i' => true );
-			}
-			$runs[] = array( 'text' => ' — Voir dans la rubrique ' );
-			// La rubrique de renvoi est citée sans son numéro et en italique.
-			$runs[] = array( 'text' => $this->rubrique_sans_numero( $d['rubrique_principale'] ), 'i' => true );
-			$doc->add_paragraph( 'Normal', $runs );
-		}
+		// 3. Les renvois ne s'impriment plus ici.
+		//
+		// Ils paraissaient en tête de la notice qui les porte, dans sa propre
+		// rubrique — là où ils ne servent à personne : c'est le préparateur de
+		// l'autre rubrique qui doit savoir qu'une notice le concerne. Le
+		// fascicule de la rubrique visée les range désormais à leur place
+		// alphabétique, parmi ses propres notices.
 
 		// 4. Titre de la notice : « Commune (département). Lieu-dit » —
 		// un point sépare, et non une virgule, comme la revue le compose.
@@ -3267,6 +3317,19 @@ class Notice_Archeomed_Pactols {
 			$doc->add_raw_paragraph( 'TEI_archeoCHR_fieldwork_method',
 				$doc->plain( "Nature de l'opération : " )
 					. implode( $doc->plain( ', ' ), $natures ) );
+		}
+
+		// Les lieux autres que celui de la notice, sous le titre : ils
+		// n'avaient de place que dans le bloc d'indexation, avec leur ARK en
+		// clair. Portés ici, ils se lisent et gardent leur identifiant en
+		// lien, comme les autres termes indexés.
+		$autres_lieux = $this->termes_pactols_lies( $doc,
+			isset( $d['pactols_places_items'] ) ? $d['pactols_places_items'] : array(),
+			true );
+		if ( ! empty( $autres_lieux ) ) {
+			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects',
+				$doc->plain( 1 === count( $autres_lieux ) ? 'Autre lieu : ' : 'Autres lieux : ' )
+					. implode( $doc->plain( ', ' ), $autres_lieux ) );
 		}
 
 		$periodes = $this->termes_pactols_lies( $doc,
@@ -3335,8 +3398,10 @@ class Notice_Archeomed_Pactols {
 			// ouvrir le volet des styles.
 			$doc->add_paragraph( 'TEI_figure_start',
 				array( array( 'text' => self::figure_ouvrante() ) ) );
+			// « Fig. 1 Vue générale » et non « Fig. 1 : Vue générale » : c'est
+			// ainsi que la revue compose ses légendes.
 			$titre = 'Fig. ' . (int) $item['rang']
-				. ( '' !== $item['titre'] ? ' : ' . $item['titre'] : '' );
+				. ( '' !== $item['titre'] ? ' ' . $item['titre'] : '' );
 			// L'image, appelée en lien depuis « icono/br », entre le repère
 			// d'ouverture et le titre. Elle n'est pas dans le document : le
 			// paquet la porte à côté, et la mise en page la remplace dans son
