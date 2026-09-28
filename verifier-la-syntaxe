@@ -3,85 +3,187 @@
 
 Il n'y a ni PHP, ni Docker, ni Homebrew sur le poste où ce plugin s'écrit :
 « php -l » n'est pas jouable. Ce contrôle ne le remplace pas — il ne connaît
-ni la grammaire du langage ni ses fonctions —, mais il attrape la faute qui
-arrive vraiment quand on modifie un fichier par morceaux : une accolade, une
-parenthèse ou une apostrophe restée ouverte.
-
-Il sait sortir des balises PHP : le HTML, le CSS et le JavaScript des pages
-portent des accolades qui ne le regardent pas.
+ni la grammaire du langage ni ses fonctions —, mais il attrape les fautes qui
+arrivent vraiment quand on modifie un fichier par morceaux.
 
     ./verifier-la-syntaxe notice-archeomed/*.php
 
-Rend 1 si quelque chose cloche. Un passage vert ne dispense pas d'installer
-sur un site d'essai avant la production.
+Rend 1 si quelque chose cloche. **Un passage vert ne dispense pas d'installer
+sur un site d'essai avant la production.**
+
+## Ce qu'il attrape, et pourquoi
+
+La version précédente comptait les délimiteurs sans lire ce qu'elle
+traversait. Elle a laissé passer une erreur fatale bien réelle — une
+apostrophe française dans une chaîne à guillemets simples,
+« 'Formulaire des notices d'archéologie' » — en affichant un vert
+rassurant. La chaîne s'y refermait à « d' », le reste devenait du code, et
+les guillemets égarés se réappariaient plus loin dans le fichier : la pile
+retombait juste, le compte était bon, et le plugin ne chargeait pas.
+
+D'où un analyseur qui traverse le code comme PHP le lit :
+
+- il entre et sort des balises PHP — le HTML, la CSS et le JavaScript des
+  pages portent des accolades qui ne le regardent pas ;
+- il saute les commentaires, de ligne comme de bloc ;
+- il traverse les chaînes en respectant l'échappement, et **signale celle à
+  guillemets simples qui franchit une fin de ligne** : c'est la signature de
+  l'apostrophe égarée. À guillemets doubles il se tait, une requête SQL sur
+  plusieurs lignes étant un idiome ordinaire — un filet qui crie au loup ne
+  se lit plus ;
+- il saute les heredocs et nowdocs ;
+- il équilibre parenthèses, crochets et accolades **en vérifiant qu'ils se
+  correspondent**, et non seulement qu'ils sont en nombre égal.
+
+Ce qu'il ne sait toujours pas faire : la grammaire. Un appel à une fonction
+qui n'existe pas, un argument de trop, une méthode statique appelée comme une
+autre — rien de tout cela ne se voit ici.
 """
 
-import sys, pathlib
+import sys
+import pathlib
 
-def verifier(chemin):
-    s = pathlib.Path(chemin).read_text(encoding='utf-8')
-    i, n = 0, len(s)
-    pile, ligne = [], 1
-    fautes = []
+FERMANTS = {')': '(', ']': '[', '}': '{'}
+
+
+def analyser(source):
+    """Rend la liste des fautes : (ligne, ce qui cloche)."""
+    i, n, ligne = 0, len(source), 1
+    dans_php = False
+    pile, fautes = [], []
+
     while i < n:
-        c = s[i]
-        # Hors des balises PHP, tout est du texte : le HTML, le CSS et le
-        # JavaScript y portent des accolades qui ne nous regardent pas.
-        if c == '?' and s.startswith('?>', i):
-            j = s.find('<?php', i)
-            if j < 0:
-                j = s.find('<?=', i)
-            if j < 0:
-                break
-            ligne += s.count('\n', i, j)
-            i = j + 5
-            continue
-        if c == '\n':
-            ligne += 1; i += 1; continue
-        if c == '/' and i + 1 < n and s[i+1] == '/':
-            while i < n and s[i] != '\n': i += 1
-            continue
-        if c == '#' and not (i + 1 < n and s[i+1] == '['):
-            while i < n and s[i] != '\n': i += 1
-            continue
-        if c == '/' and i + 1 < n and s[i+1] == '*':
-            j = s.find('*/', i + 2)
-            if j < 0: fautes.append((ligne, "commentaire non refermé")); break
-            ligne += s.count('\n', i, j); i = j + 2; continue
-        if c in '"\'':
-            q, i = c, i + 1
-            while i < n:
-                if s[i] == '\\': i += 2; continue
-                if s[i] == '\n': ligne += 1
-                if s[i] == q: break
-                i += 1
-            i += 1; continue
-        if c == '<' and s.startswith('<<<', i):
-            fin = s.find('\n', i)
-            marque = s[i+3:fin].strip().strip('"\'')
-            j = s.find('\n' + marque, fin)
-            if j < 0: j = s.find(marque, fin)
-            ligne += s.count('\n', i, j); i = j + len(marque); continue
-        if c in '({[':
-            pile.append((c, ligne))
-        elif c in ')}]':
-            paires = {')': '(', '}': '{', ']': '['}
-            if not pile or pile[-1][0] != paires[c]:
-                fautes.append((ligne, f"« {c} » sans ouvrant correspondant")); break
-            pile.pop()
-        i += 1
-    for ouvrant, l in pile:
-        fautes.append((l, f"« {ouvrant} » jamais refermé"))
-    return fautes
+        c = source[i]
 
-sortie = 0
-for chemin in sys.argv[1:]:
-    fautes = verifier(chemin)
-    nom = pathlib.Path(chemin).name
-    if fautes:
-        sortie = 1
-        for l, quoi in fautes[:5]:
-            print(f"  ✗ {nom}:{l} — {quoi}")
-    else:
-        print(f"  ✓ {nom}")
-sys.exit(sortie)
+        if c == '\n':
+            ligne += 1
+            i += 1
+            continue
+
+        # — Hors des balises, tout est du texte —
+        if not dans_php:
+            ouvertures = [p for p in (source.find('<?php', i), source.find('<?=', i)) if p >= 0]
+            if not ouvertures:
+                break
+            j = min(ouvertures)
+            ligne += source.count('\n', i, j)
+            i = j + (5 if source.startswith('<?php', j) else 3)
+            dans_php = True
+            continue
+
+        if source.startswith('?>', i):
+            dans_php = False
+            i += 2
+            continue
+
+        # — Les commentaires —
+        if source.startswith('//', i) or c == '#':
+            j = source.find('\n', i)
+            i = j if j >= 0 else n
+            continue
+        if source.startswith('/*', i):
+            j = source.find('*/', i + 2)
+            if j < 0:
+                fautes.append((ligne, 'commentaire /* jamais fermé'))
+                break
+            ligne += source.count('\n', i, j)
+            i = j + 2
+            continue
+
+        # — Heredoc et nowdoc —
+        if source.startswith('<<<', i):
+            fin_ligne = source.find('\n', i)
+            if fin_ligne < 0:
+                break
+            marqueur = source[i + 3:fin_ligne].strip().strip('"\'')
+            j = source.find('\n' + marqueur, fin_ligne)
+            if j < 0:
+                fautes.append((ligne, f'heredoc « {marqueur} » jamais fermé'))
+                break
+            ligne += source.count('\n', i, j)
+            i = j + len(marqueur) + 1
+            continue
+
+        # — Les chaînes —
+        if c in ("'", '"'):
+            depart = ligne
+            j = i + 1
+            while j < n:
+                if source[j] == '\\':
+                    j += 2
+                    continue
+                if source[j] == '\n':
+                    ligne += 1
+                if source[j] == c:
+                    break
+                j += 1
+            if j >= n:
+                fautes.append((depart, f'chaîne ouverte par {c} et jamais fermée'))
+                break
+            # Une chaîne à guillemets doubles qui court sur plusieurs lignes
+            # est un idiome ordinaire — une requête SQL, un bloc de HTML. À
+            # guillemets simples, en revanche, c'est presque toujours une
+            # apostrophe française qui a refermé la chaîne trop tôt.
+            if ligne != depart and c == "'":
+                fautes.append((
+                    depart,
+                    f'chaîne simple traversant {ligne - depart} fin(s) de ligne — '
+                    f'apostrophe non échappée ?'
+                ))
+            i = j + 1
+            continue
+
+        # — Les délimiteurs —
+        if c in '([{':
+            pile.append((c, ligne))
+            i += 1
+            continue
+        if c in ')]}':
+            if not pile:
+                fautes.append((ligne, f'« {c} » sans ouvrant'))
+                i += 1
+                continue
+            ouvrant, ligne_ouvrante = pile.pop()
+            if ouvrant != FERMANTS[c]:
+                fautes.append((
+                    ligne,
+                    f'« {c} » ferme un « {ouvrant} » ouvert ligne {ligne_ouvrante}'
+                ))
+            i += 1
+            continue
+
+        i += 1
+
+    for ouvrant, ligne_ouvrante in pile:
+        fautes.append((ligne_ouvrante, f'« {ouvrant} » jamais fermé'))
+
+    return sorted(fautes)
+
+
+def main(chemins):
+    if not chemins:
+        print(__doc__.strip().split('\n\n')[2].strip())
+        return 1
+    ennuis = 0
+    for chemin in chemins:
+        fichier = pathlib.Path(chemin)
+        if not fichier.is_file():
+            print(f'  ? {fichier.name} — introuvable')
+            ennuis += 1
+            continue
+        fautes = analyser(fichier.read_text(encoding='utf-8'))
+        if not fautes:
+            print(f'  ✓ {fichier.name}')
+            continue
+        ennuis += len(fautes)
+        print(f'  ✗ {fichier.name}')
+        for ligne, quoi in fautes:
+            print(f'      ligne {ligne} : {quoi}')
+    if ennuis:
+        print(f'\n{ennuis} faute(s). Le fichier ne chargera pas.')
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
