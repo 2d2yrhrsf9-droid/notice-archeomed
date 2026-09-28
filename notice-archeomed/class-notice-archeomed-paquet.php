@@ -288,7 +288,13 @@ class Notice_Archeomed_Paquet {
 			$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
 		}
 		$lignes[] = '';
-		if ( empty( $this->journal ) && empty( $this->erreurs ) ) {
+		if ( 0 === (int) $this->comptes['illustrations'] ) {
+			// « Toutes les illustrations ont été traitées » quand il n'y en a
+			// aucune se lit comme une réussite : on cherche alors pourquoi le
+			// dossier est vide, au lieu de savoir qu'il n'y avait rien.
+			$lignes[] = 'Aucune illustration dans cette rubrique : les dossiers '
+				. 'icono sont donc vides, et c’est normal.';
+		} elseif ( empty( $this->journal ) && empty( $this->erreurs ) ) {
 			$lignes[] = 'Toutes les illustrations ont été traitées.';
 		} else {
 			$lignes[] = 'Ce qui n\'a pas pu être fait :';

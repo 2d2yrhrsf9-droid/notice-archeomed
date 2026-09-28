@@ -295,8 +295,20 @@ class Notice_Archeomed_File {
 		update_post_meta( $id, '_na_essais', 0 );
 		update_post_meta( $id, '_na_etat', 'en_attente' );
 		delete_post_meta( $id, '_na_erreur' );
-		$this->programmer( $id );
-		wp_safe_redirect( add_query_arg( 'na_relancee', '1', get_edit_post_link( $id, '' ) ) );
+		// On envoie sur-le-champ plutôt que d'inscrire un rendez-vous. Le
+		// planificateur de WordPress attend la requête suivante, et une seule
+		// notice en attente ne déclenche rien : le bouton « Expédier
+		// maintenant » ne paraît qu'à partir de cinq. Qui presse « Réessayer »
+		// veut savoir tout de suite, et c'est à ce moment-là que la raison
+		// d'un refus a le plus de valeur.
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 120 );
+		}
+		do_action( self::HOOK_UNE, $id );
+		$etat = (string) get_post_meta( $id, '_na_etat', true );
+		wp_safe_redirect( add_query_arg( 'na_relancee',
+			'envoyee' === $etat ? 'partie' : 'refusee',
+			get_edit_post_link( $id, '' ) ) );
 		exit;
 	}
 
@@ -360,6 +372,17 @@ class Notice_Archeomed_File {
 	}
 
 	public function afficher_le_suivi( $post ) {
+		// Le retour d'un « Réessayer » : dit sur-le-champ si la notice est
+		// partie, plutôt que de laisser lire un état et deviner.
+		$relance = isset( $_GET['na_relancee'] ) ? sanitize_key( wp_unslash( $_GET['na_relancee'] ) ) : '';
+		if ( 'partie' === $relance ) {
+			echo '<div class="notice notice-success"><p>'
+				. esc_html__( 'La notice est partie.', 'notice-archeomed' ) . '</p></div>';
+		} elseif ( 'refusee' === $relance ) {
+			echo '<div class="notice notice-error"><p>'
+				. esc_html__( 'L’envoi a de nouveau été refusé — la raison est indiquée plus bas.', 'notice-archeomed' )
+				. '</p></div>';
+		}
 		$lignes = array(
 			__( 'État', 'notice-archeomed' )      => (string) get_post_meta( $post->ID, '_na_etat', true ),
 			__( 'Référence', 'notice-archeomed' ) => (string) get_post_meta( $post->ID, '_na_reference', true ),
@@ -399,10 +422,14 @@ class Notice_Archeomed_File {
 		if ( '' !== $erreur ) {
 			echo '<p style="color:#b32d2e"><strong>' . esc_html( $erreur ) . '</strong></p>';
 		}
-		// Une notice en échec ne repart pas d'elle-même : la relance générale
-		// ne reprend que celles en attente. Le bouton la remet dans la file,
-		// une fois la cause du refus levée.
-		if ( 'echec' === (string) get_post_meta( $post->ID, '_na_etat', true ) ) {
+		// Le bouton paraît pour tout ce qui n'est pas parti — en échec comme en
+		// attente. Réservé au seul échec, il disparaissait précisément quand
+		// on en avait besoin : une notice en attente ne repart pas d'elle-même
+		// si le planificateur tarde, et la relance générale ne s'offre qu'à
+		// partir de cinq notices. On se retrouvait sans aucun moyen de la
+		// faire partir.
+		$etat_actuel = (string) get_post_meta( $post->ID, '_na_etat', true );
+		if ( 'envoyee' !== $etat_actuel ) {
 			$relance = wp_nonce_url(
 				add_query_arg(
 					array( 'action' => 'na_reessayer', 'post' => (int) $post->ID ),
@@ -410,10 +437,13 @@ class Notice_Archeomed_File {
 				),
 				'na_reessayer_' . (int) $post->ID
 			);
-			echo '<p><a class="button" href="' . esc_url( $relance ) . '">'
-				. esc_html__( 'Réessayer l’envoi', 'notice-archeomed' ) . '</a></p>';
+			$libelle = ( 'echec' === $etat_actuel )
+				? __( 'Réessayer l’envoi', 'notice-archeomed' )
+				: __( 'Expédier maintenant', 'notice-archeomed' );
+			echo '<p><a class="button button-primary" href="' . esc_url( $relance ) . '">'
+				. esc_html( $libelle ) . '</a></p>';
 			echo '<p class="description">'
-				. esc_html__( 'Corrigez d’abord ce que l’erreur signale — le plus souvent une adresse de destinataire. Le compteur repart à zéro.', 'notice-archeomed' )
+				. esc_html__( 'L’envoi a lieu immédiatement, sans attendre le planificateur, et la réponse du serveur s’affiche ici. En cas d’échec, corrigez ce que l’erreur signale avant de recommencer : le compteur repart à zéro.', 'notice-archeomed' )
 				. '</p>';
 		}
 
@@ -577,10 +607,6 @@ class Notice_Archeomed_File {
 			$liens[] = '<a href="' . esc_url( $url ) . '" title="'
 				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
 		}
-		$vues['na_fascicules'] = '<span style="display:block;margin:8px 0 2px">'
-			. '<strong>' . esc_html__( 'Fascicule en Word stylé :', 'notice-archeomed' )
-			. '</strong> ' . implode( ' · ', $liens ) . '</span>';
-
 		// Le paquet complet, à côté du fascicule seul : le même document, plus
 		// les illustrations rangées aux dossiers de Métopes.
 		$paquets = array();
@@ -596,12 +622,23 @@ class Notice_Archeomed_File {
 			$paquets[] = '<a href="' . esc_url( $url ) . '" title="'
 				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
 		}
-		$vues['na_paquets'] = '<span style="display:block;margin:0 0 8px">'
-			. '<strong>' . esc_html__( 'Dossier Métopes (zip) :', 'notice-archeomed' )
-			. '</strong> ' . implode( ' · ', $paquets )
-			. ' <span class="description">'
-			. esc_html__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' )
-			. '</span></span>';
+		// Les deux lignes tiennent dans une seule entrée. WordPress sépare les
+		// vues par une barre verticale : posées séparément, elles recevaient
+		// ce séparateur entre elles et l'alignement sautait. Un seul bloc, une
+		// grille à deux colonnes, et les intitulés s'alignent pour de bon.
+		$ligne = function ( $intitule, $liens, $apres = '' ) {
+			return '<span style="display:table-row">'
+				. '<strong style="display:table-cell;padding:1px 10px 1px 0;white-space:nowrap">'
+				. esc_html( $intitule ) . '</strong>'
+				. '<span style="display:table-cell">' . implode( ' · ', $liens )
+				. ( '' !== $apres ? ' <span class="description">' . esc_html( $apres ) . '</span>' : '' )
+				. '</span></span>';
+		};
+		$vues['na_dossiers'] = '<span style="display:table;margin:8px 0">'
+			. $ligne( __( 'Fascicule en Word stylé :', 'notice-archeomed' ), $liens )
+			. $ligne( __( 'Dossier Métopes (zip) :', 'notice-archeomed' ), $paquets,
+				__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' ) )
+			. '</span>';
 		return $vues;
 	}
 
