@@ -246,6 +246,7 @@ class Notice_Archeomed_Pactols {
 		// lieu sur des requêtes où aucune page de la revue n'est rendue.
 		$this->brancher_la_file();
 		add_action( 'wp_mail_failed', array( $this, 'retenir_l_erreur_mail' ) );
+		add_action( 'phpmailer_init', array( $this, 'acheminer_par_smtp' ) );
 		add_action( 'admin_post_na_feuille', array( $this, 'deposer_la_feuille' ) );
 		add_action( 'admin_post_na_document', array( $this, 'telecharger_le_document' ) );
 		add_action( 'admin_post_na_fascicule', array( $this, 'telecharger_le_fascicule' ) );
@@ -609,32 +610,48 @@ class Notice_Archeomed_Pactols {
 			}
 			$h .= '<article><h2>' . $titre . '</h2>';
 
+			// Les mêmes termes qu'au document, portant les mêmes ARK : la page
+			// sert aussi à vérifier les liens d'un clic, ce qu'un Word aux
+			// liens externes ne permet pas commodément.
+			$lier = function ( $items, $capitale = false ) {
+				$out = array();
+				foreach ( (array) $items as $item ) {
+					$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+					if ( '' === $label ) {
+						continue;
+					}
+					$label = $capitale ? $this->capitale_initiale( $label )
+						: $this->bas_de_casse( $label );
+					$out[] = ! empty( $item['ark'] )
+						? '<a href="' . esc_url( $item['ark'] ) . '">' . esc_html( $label ) . '</a>'
+						: esc_html( $label );
+				}
+				return $out;
+			};
 			$meta = array();
-			$natures = $this->libelles_pactols(
-				isset( $d['nature_items'] ) ? $d['nature_items'] : array() );
+			$natures = $lier( isset( $d['nature_items'] ) ? $d['nature_items'] : array() );
 			if ( ! empty( $natures ) ) {
-				$meta[] = "Nature de l'opération : " . implode( ', ', $natures );
+				$meta[] = esc_html( "Nature de l'opération : " ) . implode( ', ', $natures );
 			}
-			$periodes = $this->libelles_pactols(
+			$periodes = $lier(
 				isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(), true );
 			if ( ! empty( $periodes ) ) {
-				$meta[] = 'Période historique : ' . implode( ', ', $periodes );
+				$meta[] = esc_html( 'Période historique : ' ) . implode( ', ', $periodes );
 			}
-			$meta[] = "Année de l'opération : " . $d['annee'];
+			$meta[] = esc_html( "Année de l'opération : " . $d['annee'] );
 			if ( '' !== $d['num_autorisation'] ) {
-				$meta[] = "Numéro d'autorisation : " . $d['num_autorisation'];
+				$meta[] = esc_html( "Numéro d'autorisation : " . $d['num_autorisation'] );
 			}
 			$organismes = $this->organismes_de( $d );
 			if ( ! empty( $organismes ) ) {
-				$meta[] = $this->libelle_organisme( count( $organismes ) )
-					. ' : ' . implode( ', ', $organismes );
+				$meta[] = esc_html( $this->libelle_organisme( count( $organismes ) )
+					. ' : ' . implode( ', ', $organismes ) );
 			}
-			$sujets = $this->libelles_pactols(
-				isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
+			$sujets = $lier( isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
 			if ( ! empty( $sujets ) ) {
-				$meta[] = 'Mots-clés : ' . implode( ', ', $sujets );
+				$meta[] = esc_html( 'Mots-clés : ' ) . implode( ', ', $sujets );
 			}
-			$h .= '<p class="meta">' . implode( '<br>', array_map( 'esc_html', $meta ) ) . '</p>';
+			$h .= '<p class="meta">' . implode( '<br>', $meta ) . '</p>';
 
 			// Le texte a déjà traversé « clean_richtext » au dépôt : il ne
 			// porte que huit balises. On le repasse au même tamis plutôt que
@@ -675,6 +692,8 @@ class Notice_Archeomed_Pactols {
 			. 'article{margin:2.5em 0;padding-bottom:1.5em;border-bottom:1px solid #ddd}'
 			. 'h2{font-size:1.2em;margin-bottom:.2em}'
 			. '.meta{font-family:Arial,sans-serif;font-size:.82em;color:#555;margin:.2em 0 1em}'
+			. '.meta a{color:#555;text-decoration:none;border-bottom:1px dotted #aaa}'
+			. '.meta a:hover{color:#8a6d3b;border-bottom-color:#8a6d3b}'
 			. '.texte p{text-align:justify}'
 			. 'figure{margin:1.5em 0;padding:0}'
 			. 'figure img{max-width:100%;height:auto;border:1px solid #ddd}'
@@ -2582,6 +2601,39 @@ class Notice_Archeomed_Pactols {
 		return mb_strtoupper( mb_substr( $libelle, 0, 1 ) ) . mb_substr( $libelle, 1 );
 	}
 
+	/**
+	 * Une liste de termes Pactols, chacun portant son ARK en lien.
+	 *
+	 * L'identifiant paraissait en clair, entre crochets, dans un bloc
+	 * d'indexation au bas de la notice : illisible pour qui lit la revue, et
+	 * une masse à supprimer pour qui prépare le XML. Porté par le terme
+	 * lui-même, il ne se voit pas, il ne gêne personne, et il suit le mot
+	 * qu'il désigne.
+	 *
+	 * C'est aussi un pari sur la chaîne : un lien vers un ARK est une
+	 * indexation en puissance, que Métopes saura peut-être transformer en
+	 * balise sans qu'on ait à tenir deux listes.
+	 *
+	 * Rend du XML brut, à passer à « add_raw_paragraph ».
+	 */
+	private function termes_pactols_lies( $doc, $items, $capitale = false ) {
+		$morceaux = array();
+		foreach ( (array) $items as $item ) {
+			$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+			if ( '' === $label ) {
+				continue;
+			}
+			$label = $capitale ? $this->capitale_initiale( $label )
+				: $this->bas_de_casse( $label );
+			// Sans ARK — une notice d'avant les identifiants, ou un terme
+			// saisi sans sélection — le mot reste du texte ordinaire.
+			$morceaux[] = ! empty( $item['ark'] )
+				? $doc->hyperlink( $item['ark'], $label )
+				: $doc->plain( $label );
+		}
+		return $morceaux;
+	}
+
 	/** Les libellés d'une liste d'items Pactols, dans la casse voulue. */
 	private function libelles_pactols( $items, $capitale = false ) {
 		$out = array();
@@ -3152,12 +3204,31 @@ class Notice_Archeomed_Pactols {
 
 		// 4. Titre de la notice : « Commune (département). Lieu-dit » —
 		// un point sépare, et non une virgule, comme la revue le compose.
-		$titre = array( array( 'text' => $commune_dept ) );
-		if ( '' !== $d['lieu_dit'] ) {
-			$titre[] = array( 'text' => '. ' );
-			$titre[] = array( 'text' => $d['lieu_dit'], 'i' => true );
+		//
+		// Chaque lieu porte son ARK en lien, comme les autres termes indexés.
+		// C'est la seule place où la commune paraît dans la notice imprimée :
+		// la lier ici évite de la répéter plus bas pour son seul identifiant.
+		$lieux_titre = $this->lieux_de( $d );
+		$titre = '';
+		if ( ! empty( $lieux_titre ) ) {
+			$morceaux = array();
+			foreach ( $lieux_titre as $lieu ) {
+				$morceaux[] = ( '' !== $lieu['ark'] )
+					? $doc->hyperlink( $lieu['ark'], $lieu['nom'] )
+					: $doc->plain( $lieu['nom'] );
+			}
+			$titre = implode( $doc->plain( ', ' ), $morceaux );
+			if ( '' !== trim( $departement ) ) {
+				$titre .= $doc->plain( ' (' . $departement . ')' );
+			}
+		} else {
+			$titre = $doc->plain( $commune_dept );
 		}
-		$doc->add_paragraph( 'TEI_Titre 2+notice', $titre );
+		if ( '' !== $d['lieu_dit'] ) {
+			$titre .= $doc->plain( '. ' )
+				. $this->run_xml( $doc, array( 'text' => $d['lieu_dit'], 'i' => true ) );
+		}
+		$doc->add_raw_paragraph( 'TEI_Titre 2+notice', $titre );
 
 		// 4 bis à 5. Les métadonnées de l'opération, telles qu'elles
 		// s'impriment désormais dans la notice.
@@ -3169,26 +3240,27 @@ class Notice_Archeomed_Pactols {
 		// casse de la revue — Pactols pour les natures, capitale initiale
 		// pour les périodes. Le bloc détaillé reste en dessous, à supprimer
 		// d'un bloc quand on prépare le XML.
-		$natures = $this->libelles_pactols(
+		$natures = $this->termes_pactols_lies( $doc,
 			isset( $d['nature_items'] ) ? $d['nature_items'] : array() );
 		if ( empty( $natures ) && '' !== $d['nature'] ) {
 			// Une notice d'avant les identifiants : le libellé seul.
-			$natures = array_map( array( $this, 'bas_de_casse' ),
-				array_filter( array_map( 'trim', explode( ',', $d['nature'] ) ) ) );
+			foreach ( array_filter( array_map( 'trim', explode( ',', $d['nature'] ) ) ) as $nu ) {
+				$natures[] = $doc->plain( $this->bas_de_casse( $nu ) );
+			}
 		}
 		if ( ! empty( $natures ) ) {
-			$doc->add_paragraph( 'TEI_archeoCHR_fieldwork_method',
-				array( array( 'text' => "Nature de l'opération : "
-					. implode( ', ', $natures ) ) ) );
+			$doc->add_raw_paragraph( 'TEI_archeoCHR_fieldwork_method',
+				$doc->plain( "Nature de l'opération : " )
+					. implode( $doc->plain( ', ' ), $natures ) );
 		}
 
-		$periodes = $this->libelles_pactols(
+		$periodes = $this->termes_pactols_lies( $doc,
 			isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(),
 			true );
 		if ( ! empty( $periodes ) ) {
-			$doc->add_paragraph( 'TEI_archeoCHR_keywords_subjects:chronology',
-				array( array( 'text' => 'Période historique : '
-					. implode( ', ', $periodes ) ) ) );
+			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects:chronology',
+				$doc->plain( 'Période historique : ' )
+					. implode( $doc->plain( ', ' ), $periodes ) );
 		}
 
 		$doc->add_paragraph(
@@ -3211,11 +3283,12 @@ class Notice_Archeomed_Pactols {
 		}
 		// Les sujets Pactols, en clair et sans identifiant : ce sont eux que
 		// la revue imprime sous le nom de « mots-clés ».
-		$sujets = $this->libelles_pactols(
+		$sujets = $this->termes_pactols_lies( $doc,
 			isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
 		if ( ! empty( $sujets ) ) {
-			$doc->add_paragraph( 'TEI_archeoCHR_keywords_subjects',
-				array( array( 'text' => 'Mots-clés : ' . implode( ', ', $sujets ) ) ) );
+			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects',
+				$doc->plain( 'Mots-clés : ' )
+					. implode( $doc->plain( ', ' ), $sujets ) );
 		}
 
 		// 6. Texte de la notice, un paragraphe par <p>, avec le bloc responsable
@@ -3318,46 +3391,24 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 
-		// 10. Indexation Pactols : libellé suivi de l'ARK cliquable.
-		$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => 'Indexation', 'b' => true ) ) );
-
-		$lieux = $this->lieux_de( $d );
-		if ( ! empty( $lieux ) ) {
-			// Chaque lieu porte son identifiant : c'est la partie chère de la
-			// saisie — quelqu'un est allé la chercher dans un thésaurus — et
-			// elle doit survivre au document.
-			$contenu = $this->run_xml( $doc, array(
-				'text' => 1 === count( $lieux ) ? 'Lieu :' : 'Lieux :', 'b' => true ) );
-			$morceaux = array();
-			foreach ( $lieux as $lieu ) {
-				$part = $doc->plain( $lieu['nom'] );
-				if ( '' !== $lieu['ark'] ) {
-					$part .= $doc->plain( ' [' )
-						. $doc->hyperlink( $lieu['ark'], $this->ark_id( $lieu['ark'] ) )
-						. $doc->plain( ']' );
-				}
-				$morceaux[] = $part;
-			}
-			$contenu .= $doc->plain( ' ' ) . implode( $doc->plain( ', ' ), $morceaux );
-			if ( '' !== trim( $departement ) ) {
-				$contenu .= $doc->plain( ' (' . $departement . ')' );
-			}
-			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $contenu );
-		}
-
-		$blocs = array(
-			'Mots-clés Pactols, période historique' => $d['pactols_periods_items'],
-			'Mots-clés Pactols, sujets'             => $d['pactols_subjects_items'],
-			'Mots-clés Pactols, lieux autres'              => $d['pactols_places_items'],
-			"Nature de l'opération"                 => $d['nature_items'],
-		);
-		foreach ( $blocs as $titre_bloc => $items ) {
-			if ( empty( $items ) ) {
-				continue;
-			}
-			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => $titre_bloc . ' :', 'b' => true ) ) );
+		// 10. Ce que le texte ne porte pas.
+		//
+		// L'indexation reprenait tout : natures, périodes, sujets, lieux,
+		// chacun suivi de son ARK entre crochets. Depuis que ces termes
+		// portent leur identifiant en lien dans le texte, les répéter ici
+		// n'ajoutait rien et allongeait d'autant ce qu'il faut supprimer pour
+		// préparer le XML.
+		//
+		// Ne restent que les lieux autres que celui de la notice : ils n'ont
+		// nulle part où paraître dans le corps, et leur identifiant est la
+		// partie chère de la saisie — quelqu'un est allé la chercher dans un
+		// thésaurus.
+		$autres = isset( $d['pactols_places_items'] ) ? (array) $d['pactols_places_items'] : array();
+		if ( ! empty( $autres ) ) {
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
+				array( array( 'text' => 'Lieux autres que celui de la notice :', 'b' => true ) ) );
 			$parts = array();
-			foreach ( $items as $item ) {
+			foreach ( $autres as $item ) {
 				$part = $doc->plain( $item['label'] );
 				if ( ! empty( $item['ark'] ) ) {
 					$part .= $doc->plain( ' [' )
@@ -3368,7 +3419,8 @@ class Notice_Archeomed_Pactols {
 				}
 				$parts[] = $part;
 			}
-			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, implode( $doc->plain( ', ' ), $parts ) );
+			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
+				implode( $doc->plain( ', ' ), $parts ) );
 		}
 	}
 
@@ -3677,6 +3729,16 @@ class Notice_Archeomed_Pactols {
 		if ( $this->envoi_differe() ) {
 			$id = $this->file()->deposer( $d, $notice, $produits, $document, $reference );
 			if ( $id ) {
+				// Les illustrations gagnent leur place définitive dès
+				// maintenant, et la file retient ces chemins-là : c'est eux
+				// que le courriel joindra, et eux que le dossier Métopes
+				// trouvera même si le courriel ne part jamais.
+				$gardees = $this->archiver_les_illustrations( $id, $illustrations );
+				$fichiers = $gardees;
+				if ( '' !== $document ) {
+					$fichiers[] = $document;
+				}
+				update_post_meta( $id, '_na_fichiers', $fichiers );
 				$this->record_send( $d['resp_email'] );
 				$this->file()->programmer( $id );
 				$this->redirect_result( true );
@@ -3864,6 +3926,90 @@ class Notice_Archeomed_Pactols {
 		return true;
 	}
 
+	/**
+	 * Fait passer les courriels par un relais SMTP plutôt que par « mail() ».
+	 *
+	 * Sur un hébergement où la fonction mail() de PHP n'est pas configurée —
+	 * désactivée, ou sans agent de transport derrière —, PHPMailer répond
+	 * « Impossible d'instancier la fonction mail » et aucune notice ne part
+	 * jamais. Un relais SMTP contourne la question sans rien demander à
+	 * personne.
+	 *
+	 * On ne touche à rien tant que le mode n'est pas choisi : une
+	 * installation dont le courriel fonctionne n'a aucune raison de changer
+	 * de chemin.
+	 */
+	public function acheminer_par_smtp( $phpmailer ) {
+		if ( 'smtp' !== Notice_Archeomed_Settings::get( 'envoi_mode' ) ) {
+			return;
+		}
+		$hote = trim( (string) Notice_Archeomed_Settings::get( 'smtp_hote' ) );
+		if ( '' === $hote ) {
+			return;   // mode choisi mais relais non nommé : on ne casse rien
+		}
+		$phpmailer->isSMTP();
+		$phpmailer->Host = $hote;
+		$phpmailer->Port = (int) Notice_Archeomed_Settings::get( 'smtp_port' );
+
+		$chiffrement = Notice_Archeomed_Settings::get( 'smtp_chiffrement' );
+		if ( 'aucun' === $chiffrement ) {
+			$phpmailer->SMTPSecure  = '';
+			$phpmailer->SMTPAutoTLS = false;
+		} else {
+			$phpmailer->SMTPSecure = $chiffrement;
+		}
+
+		$utilisateur = trim( (string) Notice_Archeomed_Settings::get( 'smtp_utilisateur' ) );
+		$motdepasse  = (string) Notice_Archeomed_Settings::get( 'smtp_motdepasse' );
+		if ( '' !== $utilisateur ) {
+			$phpmailer->SMTPAuth = true;
+			$phpmailer->Username = $utilisateur;
+			$phpmailer->Password = $motdepasse;
+		} else {
+			// Un relais institutionnel accepte souvent ses propres machines
+			// sans authentification : l'exiger ferait échouer ce qui marche.
+			$phpmailer->SMTPAuth = false;
+		}
+
+		// L'expéditeur doit appartenir au domaine que le relais accepte,
+		// sans quoi il refuse le message pour usurpation.
+		$expediteur = trim( (string) Notice_Archeomed_Settings::get( 'smtp_expediteur' ) );
+		if ( is_email( $expediteur ) ) {
+			$nom = trim( (string) Notice_Archeomed_Settings::get( 'smtp_nom' ) );
+			$phpmailer->setFrom( $expediteur, '' !== $nom ? $nom : '', false );
+		}
+	}
+
+	/**
+	 * Envoie un courriel d'essai, et rend ce que le serveur a répondu.
+	 *
+	 * Sans lui, éprouver l'acheminement demandait de déposer une notice et
+	 * d'attendre le planificateur — puis de lire une fiche pour savoir ce qui
+	 * s'était passé. Ici la réponse est immédiate.
+	 */
+	public function tester_l_envoi( $destinataire ) {
+		if ( ! is_email( $destinataire ) ) {
+			return array( 'ok' => false, 'message' => 'Adresse d’essai non valide.' );
+		}
+		$this->derniere_erreur_mail = '';
+		$parti = wp_mail(
+			$destinataire,
+			'Essai d’acheminement — notices d’archéologie médiévale',
+			'<html><body><p>Si vous lisez ceci, le site sait poster une lettre : '
+				. 'les notices partiront.</p></body></html>',
+			array( 'Content-Type: text/html; charset=UTF-8' )
+		);
+		if ( $parti ) {
+			return array( 'ok' => true, 'message' => 'Le courriel est parti vers '
+				. $destinataire . '. S’il n’arrive pas, la cause est en aval : '
+				. 'filtrage, ou message classé indésirable.' );
+		}
+		return array( 'ok' => false, 'message' => 'Le serveur a refusé l’envoi. '
+			. ( '' !== $this->derniere_erreur_mail
+				? $this->derniere_erreur_mail
+				: 'Aucune raison n’a été donnée.' ) );
+	}
+
 	/** Retient ce que le serveur de courriel a répondu, pour le dire plus haut. */
 	public function retenir_l_erreur_mail( $erreur ) {
 		if ( is_wp_error( $erreur ) ) {
@@ -3887,12 +4033,38 @@ class Notice_Archeomed_Pactols {
 			$this->file()->marquer( $id, 'echec', 'Notice illisible en réserve.' );
 			return;
 		}
+		// Rattrapage des notices déposées avant que l'archivage ne se sépare
+		// de l'envoi : leurs illustrations attendent encore au répertoire
+		// temporaire, et rien ne les rangerait si le courriel ne partait
+		// jamais. On les range maintenant, une fois pour toutes.
+		$deja = (array) get_post_meta( $id, '_na_illustrations', true );
+		if ( empty( $deja ) && ! empty( $produits ) ) {
+			$a_ranger = array();
+			foreach ( $produits as $fichier ) {
+				if ( '' !== $document && $fichier === $document ) {
+					continue;   // le document se refabrique, il ne s'archive pas
+				}
+				$a_ranger[] = $fichier;
+			}
+			if ( ! empty( $a_ranger ) ) {
+				$gardees  = $this->archiver_les_illustrations( $id, $a_ranger );
+				$produits = $gardees;
+				if ( '' !== $document ) {
+					$produits[] = $document;
+				}
+				update_post_meta( $id, '_na_fichiers', $produits );
+			}
+		}
 		$pourquoi = '';
 		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
 			$this->file()->marquer( $id, 'envoyee' );
-			// Les illustrations restent, le document s'efface : l'un ne se
-			// redemande pas à son auteur, l'autre se refabrique.
-			$this->archiver_les_illustrations( $id, $produits, $document );
+			// Les illustrations sont déjà rangées depuis le dépôt : il ne
+			// reste qu'à effacer le document, qui se refabrique à la demande
+			// et n'a aucune raison d'encombrer le répertoire temporaire.
+			if ( '' !== $document && file_exists( $document ) ) {
+				@unlink( $document );
+				delete_post_meta( $id, '_na_document' );
+			}
 			return;
 		}
 		$this->file()->compter_un_essai( $id, $pourquoi );
@@ -4021,24 +4193,36 @@ class Notice_Archeomed_Pactols {
 	 * l'archiver reviendrait à figer une mise en forme que la feuille de
 	 * styles fera évoluer.
 	 */
-	private function archiver_les_illustrations( $id, $produits, $document ) {
+	/**
+	 * Range les illustrations à demeure, sans attendre que le courriel parte.
+	 *
+	 * Elles l'attendaient : l'archivage suivait l'envoi réussi. Un serveur de
+	 * courriel indisponible emportait donc tout — la notice échouait, et ses
+	 * illustrations restaient au répertoire temporaire, invisibles du dossier
+	 * Métopes et promises à la purge. On croyait la conversion en cause quand
+	 * c'était la poste.
+	 *
+	 * Ce que l'auteur a envoyé se garde parce qu'il l'a envoyé, non parce
+	 * qu'un courriel a abouti. Les deux n'ont rien à voir, et les lier faisait
+	 * dépendre le plus précieux — un fichier qu'on ne redemande pas — du plus
+	 * fragile.
+	 *
+	 * Rend les chemins définitifs, ceux-là mêmes que le courriel joindra.
+	 */
+	private function archiver_les_illustrations( $id, $illustrations ) {
 		$dossier = $this->dossier_des_illustrations();
+		if ( '' === $dossier ) {
+			// Pas de dossier de dépôt : on laisse au répertoire temporaire,
+			// où la purge les garde un mois sous leur nom « garde ».
+			return array_values( array_filter( (array) $illustrations, 'file_exists' ) );
+		}
 		$gardees = array();
-		foreach ( (array) $produits as $fichier ) {
+		foreach ( (array) $illustrations as $fichier ) {
 			if ( ! file_exists( $fichier ) ) {
 				continue;
 			}
-			if ( '' !== $document && $fichier === $document ) {
-				@unlink( $fichier );
-				continue;
-			}
-			if ( '' === $dossier ) {
-				continue;   // pas de dossier : on laisse au répertoire temporaire
-			}
 			$cible = $dossier . (int) $id . '-' . basename( $fichier );
-			if ( @rename( $fichier, $cible ) ) {
-				$gardees[] = $cible;
-			}
+			$gardees[] = @rename( $fichier, $cible ) ? $cible : $fichier;
 		}
 		if ( $id ) {
 			update_post_meta( $id, '_na_illustrations', $gardees );

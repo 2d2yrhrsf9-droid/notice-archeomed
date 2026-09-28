@@ -78,6 +78,20 @@ class Notice_Archeomed_Settings {
 		// — Les mises à jour —
 		// Rien n'est renseigné par défaut : le dépôt se nomme à l'installation,
 		// et tant qu'il ne l'est pas le mécanisme reste muet.
+		// — L'acheminement du courriel —
+		// « php » s'en remet à la fonction mail() du serveur ; « smtp » passe
+		// par un relais. Sur un hébergement où mail() n'est pas configurée,
+		// PHPMailer répond « Impossible d'instancier la fonction mail » et
+		// aucune notice ne part jamais.
+		'envoi_mode'         => 'php',
+		'smtp_hote'          => '',
+		'smtp_port'          => 587,
+		'smtp_chiffrement'   => 'tls',
+		'smtp_utilisateur'   => '',
+		'smtp_motdepasse'    => '',
+		'smtp_expediteur'    => '',
+		'smtp_nom'           => '',
+
 		'maj_github'         => 0,
 		'github_depot'       => '',
 		'github_jeton'       => '',
@@ -373,6 +387,44 @@ class Notice_Archeomed_Settings {
 			$out['protection'] = in_array(
 				$input['protection'], array( 'locale', 'turnstile', 'les_deux' ), true )
 				? $input['protection'] : 'locale';
+		}
+
+		// — L'acheminement —
+		if ( isset( $input['envoi_mode'] ) ) {
+			$out['envoi_mode'] = ( 'smtp' === $input['envoi_mode'] ) ? 'smtp' : 'php';
+		}
+		if ( isset( $input['smtp_hote'] ) ) {
+			$out['smtp_hote'] = trim( sanitize_text_field( $input['smtp_hote'] ) );
+		}
+		if ( isset( $input['smtp_port'] ) ) {
+			$out['smtp_port'] = max( 1, min( 65535, (int) $input['smtp_port'] ) );
+		}
+		if ( isset( $input['smtp_chiffrement'] ) ) {
+			$out['smtp_chiffrement'] = in_array( $input['smtp_chiffrement'],
+				array( 'aucun', 'tls', 'ssl' ), true ) ? $input['smtp_chiffrement'] : 'tls';
+		}
+		if ( isset( $input['smtp_utilisateur'] ) ) {
+			$out['smtp_utilisateur'] = trim( sanitize_text_field( $input['smtp_utilisateur'] ) );
+		}
+		// Comme la clé Turnstile : un champ laissé vide ne doit pas effacer
+		// ce qui est enregistré, le mot de passe ne s'affichant jamais.
+		if ( isset( $input['smtp_motdepasse'] ) && '' !== trim( $input['smtp_motdepasse'] ) ) {
+			$out['smtp_motdepasse'] = (string) $input['smtp_motdepasse'];
+		}
+		if ( ! empty( $input['effacer_motdepasse'] ) ) {
+			$out['smtp_motdepasse'] = '';
+		}
+		if ( isset( $input['smtp_expediteur'] ) ) {
+			$adresse = sanitize_email( $input['smtp_expediteur'] );
+			if ( '' === trim( $input['smtp_expediteur'] ) || is_email( $adresse ) ) {
+				$out['smtp_expediteur'] = is_email( $adresse ) ? $adresse : '';
+			} else {
+				add_settings_error( self::OPTION_NAME, 'smtp_expediteur',
+					'L’adresse d’expédition n’est pas valide. L’ancienne a été conservée.', 'error' );
+			}
+		}
+		if ( isset( $input['smtp_nom'] ) ) {
+			$out['smtp_nom'] = trim( sanitize_text_field( $input['smtp_nom'] ) );
 		}
 
 		// — Les mises à jour —
@@ -730,6 +782,17 @@ class Notice_Archeomed_Settings {
 			check_admin_referer( 'na_test_turnstile' );
 			$test_result = $this->test_secret( self::get( 'turnstile_secret' ) );
 		}
+		$test_envoi = null;
+		if ( isset( $_POST['na_test_envoi'] ) ) {
+			check_admin_referer( 'na_test_envoi' );
+			$vers = isset( $_POST['na_essai_vers'] )
+				? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
+			// L'instance créée en fin de fichier principal.
+			global $notice_archeomed_plugin;
+			$test_envoi = ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols )
+				? $notice_archeomed_plugin->tester_l_envoi( $vers )
+				: array( 'ok' => false, 'message' => 'Le plugin n’est pas chargé.' );
+		}
 		$test_github = null;
 		if ( isset( $_POST['na_test_github'] ) ) {
 			check_admin_referer( 'na_test_github' );
@@ -1013,6 +1076,88 @@ class Notice_Archeomed_Settings {
 									hébergement et qu'aucune tâche système ne le remplace — la liste
 									«&nbsp;Notices Archéomed&nbsp;» le dira en s'allongeant.
 								<?php endif; ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+
+				<h2>Acheminement du courriel</h2>
+				<p class="description" style="max-width:46em">
+					Tout le plugin en dépend : une notice qui ne part pas reste en file, puis
+					échoue. Si le serveur répond <em>« Impossible d’instancier la fonction
+					mail »</em>, c’est que <code>mail()</code> n’est pas configurée sur cet
+					hébergement — un relais SMTP contourne la question.
+				</p>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row">Par quoi les courriels passent</th>
+						<td>
+							<?php $mode = self::get( 'envoi_mode' ); ?>
+							<label style="display:block;margin-bottom:6px">
+								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
+									value="php" <?php checked( 'smtp' !== $mode ); ?>>
+								La fonction <code>mail()</code> du serveur <strong>(par défaut)</strong>
+							</label>
+							<label style="display:block">
+								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
+									value="smtp" <?php checked( 'smtp' === $mode ); ?>>
+								Un relais SMTP
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_smtp_hote">Relais SMTP</label></th>
+						<td>
+							<input type="text" id="na_smtp_hote" class="regular-text"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_hote]"
+								value="<?php echo esc_attr( self::get( 'smtp_hote' ) ); ?>"
+								placeholder="smtp.exemple.fr">
+							&nbsp;port
+							<input type="number" min="1" max="65535" style="width:6em"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_port]"
+								value="<?php echo (int) self::get( 'smtp_port' ); ?>">
+							&nbsp;
+							<?php $chif = self::get( 'smtp_chiffrement' ); ?>
+							<select name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_chiffrement]">
+								<option value="tls" <?php selected( 'tls', $chif ); ?>>STARTTLS (587)</option>
+								<option value="ssl" <?php selected( 'ssl', $chif ); ?>>SSL (465)</option>
+								<option value="aucun" <?php selected( 'aucun', $chif ); ?>>aucun chiffrement (25)</option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_smtp_user">Authentification</label></th>
+						<td>
+							<input type="text" id="na_smtp_user" class="regular-text"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_utilisateur]"
+								value="<?php echo esc_attr( self::get( 'smtp_utilisateur' ) ); ?>"
+								placeholder="identifiant — laissez vide si le relais n’en demande pas">
+							<p>
+								<input type="password" class="regular-text" autocomplete="new-password"
+									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_motdepasse]"
+									placeholder="<?php echo '' !== (string) self::get( 'smtp_motdepasse' ) ? 'enregistré — laissez vide pour le garder' : 'mot de passe'; ?>">
+								<?php if ( '' !== (string) self::get( 'smtp_motdepasse' ) ) : ?>
+									<label style="margin-left:8px"><input type="checkbox" value="1"
+										name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_motdepasse]"> effacer</label>
+								<?php endif; ?>
+							</p>
+							<p class="description">Un relais institutionnel accepte souvent ses propres machines sans identifiant.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na_smtp_from">Adresse d’expédition</label></th>
+						<td>
+							<input type="email" id="na_smtp_from" class="regular-text"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_expediteur]"
+								value="<?php echo esc_attr( self::get( 'smtp_expediteur' ) ); ?>"
+								placeholder="notices@exemple.fr">
+							<input type="text" class="regular-text" style="max-width:16em"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_nom]"
+								value="<?php echo esc_attr( self::get( 'smtp_nom' ) ); ?>"
+								placeholder="nom affiché">
+							<p class="description">
+								Elle doit appartenir au domaine que le relais accepte, sans quoi il
+								refusera le message pour usurpation.
 							</p>
 						</td>
 					</tr>
@@ -1341,6 +1486,27 @@ class Notice_Archeomed_Settings {
 				un style disparu ne provoque aucune erreur, le paragraphe sort simplement
 				en Normal et l’on ne s’en aperçoit qu’à la relecture.
 			</p>
+
+			<hr>
+
+			<h2>Essai d’envoi</h2>
+			<p style="max-width:46em">Ce bouton envoie un courriel et rapporte ce que le
+			serveur a répondu — sans déposer de notice ni attendre le planificateur.
+			Enregistrez d’abord les réglages ci-dessus.</p>
+			<form method="post">
+				<?php wp_nonce_field( 'na_test_envoi' ); ?>
+				<p>
+					<input type="email" name="na_essai_vers" class="regular-text"
+						value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>"
+						placeholder="adresse d’essai">
+					<?php submit_button( 'Envoyer un courriel d’essai', 'secondary', 'na_test_envoi', false ); ?>
+				</p>
+			</form>
+			<?php if ( null !== $test_envoi ) : ?>
+				<div class="notice notice-<?php echo $test_envoi['ok'] ? 'success' : 'error'; ?>">
+					<p><?php echo esc_html( $test_envoi['message'] ); ?></p>
+				</div>
+			<?php endif; ?>
 
 			<hr>
 
