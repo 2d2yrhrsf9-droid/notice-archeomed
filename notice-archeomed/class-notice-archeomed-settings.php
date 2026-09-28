@@ -1226,8 +1226,10 @@ class Notice_Archeomed_Settings {
 								? $notice_archeomed_maj->version() : '';
 							?>
 							<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
-							<?php if ( empty( $release['version'] ) ) : ?>
-								<p class="description">Aucune version publiée n’a pu être lue — dépôt non renseigné, mécanisme éteint, ou GitHub injoignable.</p>
+							<?php if ( ! empty( $release['echec'] ) ) : ?>
+								<p style="color:#b32d2e"><strong><?php echo esc_html( $release['echec'] ); ?></strong></p>
+							<?php elseif ( empty( $release['version'] ) ) : ?>
+								<p class="description">Aucune version publiée n’a pu être lue — dépôt non renseigné, ou mécanisme éteint.</p>
 							<?php else : ?>
 								<p>Dernière version publiée : <code><?php echo esc_html( $release['version'] ); ?></code></p>
 								<?php if ( empty( $release['propre'] ) ) : ?>

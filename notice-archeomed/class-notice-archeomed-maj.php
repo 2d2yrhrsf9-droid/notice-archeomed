@@ -143,16 +143,39 @@ class Notice_Archeomed_MiseAJour {
 				'headers'    => array( 'Accept' => 'application/vnd.github+json' ),
 			)
 		);
-		if ( is_wp_error( $reponse ) || 200 !== (int) wp_remote_retrieve_response_code( $reponse ) ) {
-			// Une panne de réseau ne se met pas en réserve pour six heures :
-			// on retente au prochain passage, mais pas tout de suite.
-			set_transient( 'na_maj_release', array(), 900 );
-			return array();
+		// Ce que GitHub répond se retient : « rien à dire » envoyait chercher
+		// un proxy là où le dépôt était simplement privé.
+		if ( is_wp_error( $reponse ) ) {
+			$echec = array( 'echec' => 'GitHub n’a pas répondu : '
+				. $reponse->get_error_message() );
+			set_transient( 'na_maj_release', $echec, 900 );
+			return $echec;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $reponse );
+		if ( 200 !== $code ) {
+			$jeton = '' !== trim( (string) Notice_Archeomed_Settings::get( 'github_jeton' ) );
+			$dit = 'GitHub a répondu ' . $code . '.';
+			if ( 404 === $code ) {
+				$dit .= $jeton
+					? ' Dépôt, release ou jeton introuvable : vérifiez le nom du dépôt et les droits du jeton.'
+					: ' Ce dépôt est privé, ou n’a pas encore de release publiée.'
+						. ' Un dépôt privé demande un jeton d’accès ; un dépôt public n’en demande pas.';
+			} elseif ( 401 === $code || 403 === $code ) {
+				$dit .= ' Accès refusé : le jeton est absent, expiré, ou sans droit de lecture sur ce dépôt.';
+			}
+			$echec = array( 'echec' => $dit );
+			// Une panne ne se met pas en réserve pour six heures : on retente
+			// au prochain passage, mais pas tout de suite.
+			set_transient( 'na_maj_release', $echec, 900 );
+			return $echec;
 		}
 		$corps = json_decode( wp_remote_retrieve_body( $reponse ), true );
 		if ( ! is_array( $corps ) || empty( $corps['tag_name'] ) ) {
-			set_transient( 'na_maj_release', array(), 900 );
-			return array();
+			$echec = array( 'echec' => 'GitHub a répondu sans nommer de version : '
+				. 'aucune release publiée, ou seulement des brouillons et des préversions, '
+				. 'que « releases/latest » ne montre pas.' );
+			set_transient( 'na_maj_release', $echec, 900 );
+			return $echec;
 		}
 
 		// « v3.16 » comme « 3.16 » : c'est le nombre qui compte.
