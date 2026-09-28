@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.25
+ * Version: 3.26
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4039,6 +4039,77 @@ class Notice_Archeomed_Pactols {
 		$resultats[] = $this->poster_un_essai(
 			'comme une notice : tout à la fois', $liste, true, true );
 		return $resultats;
+	}
+
+	/**
+	 * Refait l'envoi d'une notice précise, pièce par pièce.
+	 *
+	 * Les essais génériques passaient tous, y compris « tout à la fois » :
+	 * ce n'est donc pas la forme de l'envoi qui pèche, mais la matière de
+	 * cette notice-là. On reprend donc ses propres éléments — son sujet, son
+	 * corps, son en-tête de réponse, ses pièces jointes — et on les ajoute un
+	 * à un jusqu'à ce que le serveur refuse.
+	 *
+	 * Rien n'est envoyé à la rédaction : tout part vers l'adresse d'essai.
+	 */
+	public function diagnostiquer_la_notice( $id, $vers ) {
+		$d = get_post_meta( (int) $id, '_na_donnees', true );
+		if ( ! is_array( $d ) || empty( $d ) ) {
+			return array( array( 'ok' => false, 'etape' => 'notice',
+				'message' => 'Saisie illisible en réserve.' ) );
+		}
+		if ( ! is_email( $vers ) ) {
+			return array( array( 'ok' => false, 'etape' => 'adresse',
+				'message' => 'Adresse d’essai non valide.' ) );
+		}
+		$notice   = (string) get_post_meta( (int) $id, '_na_notice', true );
+		$produits = array_values( array_filter(
+			(array) get_post_meta( (int) $id, '_na_fichiers', true ), 'file_exists' ) );
+
+		$sujet = 'Notice Archéomed - ' . $d['commune'] . ' (' . $d['departement'] . ')';
+		$sujet = str_replace( array( "\r", "\n" ), ' ', $sujet );
+		$corps = '<html><body><div>' . $notice . '</div></body></html>';
+		$resp  = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
+		$reply = '';
+		if ( is_email( $d['resp_email'] ) ) {
+			$sans = str_replace( array( "\r", "\n", '<', '>' ), '', $resp );
+			$reply = 'Reply-To: ' . $sans . ' <' . $d['resp_email'] . '>';
+		}
+
+		$base = array( 'Content-Type: text/html; charset=UTF-8' );
+		$out  = array();
+		$out[] = $this->poster_brut( 'le sujet réel, corps court',
+			$vers, $sujet, '<html><body><p>Essai.</p></body></html>', $base, array() );
+		$out[] = $this->poster_brut( 'le corps réel (' . size_format( strlen( $corps ) ) . ')',
+			$vers, $sujet, $corps, $base, array() );
+		if ( '' !== $reply ) {
+			$out[] = $this->poster_brut( 'l’en-tête de réponse : ' . $reply,
+				$vers, $sujet, $corps, array_merge( $base, array( $reply ) ), array() );
+		}
+		foreach ( $produits as $rang => $fichier ) {
+			$out[] = $this->poster_brut(
+				'pièce jointe ' . ( $rang + 1 ) . ' : ' . basename( $fichier )
+					. ' (' . size_format( filesize( $fichier ) ) . ')',
+				$vers, $sujet, $corps,
+				'' !== $reply ? array_merge( $base, array( $reply ) ) : $base,
+				array_slice( $produits, 0, $rang + 1 ) );
+		}
+		if ( empty( $produits ) ) {
+			$out[] = array( 'ok' => true, 'etape' => 'pièces jointes',
+				'message' => 'aucune — rien à joindre pour cette notice' );
+		}
+		return $out;
+	}
+
+	/** Un envoi, tel quel, sans rien ajouter ni retrancher. */
+	private function poster_brut( $etape, $vers, $sujet, $corps, $entetes, $jointes ) {
+		$this->derniere_erreur_mail = '';
+		$parti = wp_mail( $vers, $sujet, $corps, $entetes, $jointes );
+		return $parti
+			? array( 'ok' => true, 'etape' => $etape, 'message' => 'parti' )
+			: array( 'ok' => false, 'etape' => $etape,
+				'message' => 'refusé — ' . ( '' !== $this->derniere_erreur_mail
+					? $this->derniere_erreur_mail : 'aucune raison donnée' ) );
 	}
 
 	/**

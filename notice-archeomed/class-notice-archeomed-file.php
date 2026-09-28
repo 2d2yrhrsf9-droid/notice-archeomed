@@ -77,6 +77,7 @@ class Notice_Archeomed_File {
 		add_action( 'do_meta_boxes', array( $this, 'ecarter_les_intrus' ), 99 );
 		add_action( 'admin_post_na_expedier_maintenant', array( $this, 'expedier_maintenant' ) );
 		add_action( 'admin_post_na_reessayer', array( $this, 'reessayer' ) );
+		add_action( 'admin_post_na_diagnostic', array( $this, 'diagnostiquer' ) );
 	}
 
 	/**
@@ -312,6 +313,30 @@ class Notice_Archeomed_File {
 		exit;
 	}
 
+	/**
+	 * Refait l'envoi de cette notice pièce par pièce, vers l'adresse de
+	 * l'utilisateur en cours, et garde le résultat pour l'afficher.
+	 */
+	public function diagnostiquer() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
+		check_admin_referer( 'na_diagnostic_' . $id );
+		if ( ! $id || self::CPT !== get_post_type( $id ) ) {
+			wp_die( esc_html__( 'Notice inconnue.', 'notice-archeomed' ) );
+		}
+		$plugin = $this->plugin();
+		$lignes = ( null !== $plugin )
+			? $plugin->diagnostiquer_la_notice( $id, wp_get_current_user()->user_email )
+			: array();
+		// Le résultat vit le temps d'un aller-retour : il n'a pas à encombrer
+		// la notice, et il sera faux dès qu'on aura corrigé la cause.
+		set_transient( 'na_diagnostic_' . $id, $lignes, 300 );
+		wp_safe_redirect( add_query_arg( 'na_diagnostic', '1', get_edit_post_link( $id, '' ) ) );
+		exit;
+	}
+
 	public function expedier_maintenant() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
@@ -437,6 +462,13 @@ class Notice_Archeomed_File {
 				),
 				'na_reessayer_' . (int) $post->ID
 			);
+			$diag = wp_nonce_url(
+				add_query_arg(
+					array( 'action' => 'na_diagnostic', 'post' => (int) $post->ID ),
+					admin_url( 'admin-post.php' )
+				),
+				'na_diagnostic_' . (int) $post->ID
+			);
 			$libelle = ( 'echec' === $etat_actuel )
 				? __( 'Réessayer l’envoi', 'notice-archeomed' )
 				: __( 'Expédier maintenant', 'notice-archeomed' );
@@ -445,6 +477,21 @@ class Notice_Archeomed_File {
 			echo '<p class="description">'
 				. esc_html__( 'L’envoi a lieu immédiatement, sans attendre le planificateur, et la réponse du serveur s’affiche ici. En cas d’échec, corrigez ce que l’erreur signale avant de recommencer : le compteur repart à zéro.', 'notice-archeomed' )
 				. '</p>';
+			echo '<p><a class="button" href="' . esc_url( $diag ) . '">'
+				. esc_html__( 'Diagnostiquer l’envoi de cette notice', 'notice-archeomed' ) . '</a>';
+			echo ' <span class="description">'
+				. esc_html__( 'Refait l’envoi vers votre propre adresse, en ajoutant un à un les éléments de cette notice : sujet, corps, en-tête de réponse, pièces jointes. La première ligne rouge nomme ce qui le fait échouer. Rien ne part à la rédaction.', 'notice-archeomed' )
+				. '</span></p>';
+			$lignes = get_transient( 'na_diagnostic_' . (int) $post->ID );
+			if ( is_array( $lignes ) && ! empty( $lignes ) ) {
+				echo '<table class="widefat striped" style="max-width:52em"><tbody>';
+				foreach ( $lignes as $l ) {
+					echo '<tr><td style="width:44%">' . esc_html( $l['etape'] ) . '</td>'
+						. '<td style="color:' . ( $l['ok'] ? '#2f6b2f' : '#b32d2e' ) . '">'
+						. esc_html( $l['message'] ) . '</td></tr>';
+				}
+				echo '</tbody></table>';
+			}
 		}
 
 		$this->afficher_les_illustrations( $post );
