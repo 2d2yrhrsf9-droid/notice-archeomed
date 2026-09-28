@@ -782,7 +782,12 @@ class Notice_Archeomed_Settings {
 			check_admin_referer( 'na_test_turnstile' );
 			$test_result = $this->test_secret( self::get( 'turnstile_secret' ) );
 		}
-		if ( isset( $_POST['na_chercher_maj'] ) ) {
+		// Un lien plutôt qu'un bouton : l'état des mises à jour se lit dans le
+		// tableau des réglages, donc à l'intérieur du formulaire principal.
+		// Un formulaire dans un formulaire n'existe pas en HTML — le
+		// navigateur en abandonne un, et le jeton de sécurité partait sans
+		// son formulaire : « le lien que vous avez suivi a expiré ».
+		if ( isset( $_GET['na_chercher_maj'] ) ) {
 			check_admin_referer( 'na_chercher_maj' );
 			global $notice_archeomed_maj;
 			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
@@ -1241,15 +1246,17 @@ class Notice_Archeomed_Settings {
 								? $notice_archeomed_maj->version() : '';
 							?>
 							<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
-							<form method="post" style="margin:8px 0">
-								<?php wp_nonce_field( 'na_chercher_maj' ); ?>
-								<?php submit_button( 'Chercher une mise à jour maintenant', 'secondary small', 'na_chercher_maj', false ); ?>
+							<p style="margin:8px 0">
+								<a class="button button-secondary" href="<?php
+									echo esc_url( wp_nonce_url(
+										add_query_arg( 'na_chercher_maj', '1', self::url() ),
+										'na_chercher_maj' ) ); ?>">Chercher une mise à jour maintenant</a>
 								<span class="description" style="margin-left:8px">
 									GitHub n’est interrogé qu’une fois toutes les six heures, et
 									WordPress garde sa propre réserve jusqu’à douze heures. Ce
 									bouton vide les deux.
 								</span>
-							</form>
+							</p>
 							<?php if ( ! empty( $release['echec'] ) ) : ?>
 								<p style="color:#b32d2e"><strong><?php echo esc_html( $release['echec'] ); ?></strong></p>
 							<?php elseif ( empty( $release['version'] ) ) : ?>
