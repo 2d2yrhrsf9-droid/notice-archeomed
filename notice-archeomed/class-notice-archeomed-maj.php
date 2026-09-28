@@ -68,8 +68,17 @@ class Notice_Archeomed_MiseAJour {
 			array( $this, 'oublier' ) );
 	}
 
+	/**
+	 * Oublie ce qu'on croyait savoir, des deux côtés.
+	 *
+	 * Vider notre seule réserve ne suffisait pas : WordPress garde la sienne,
+	 * celle des mises à jour disponibles, jusqu'à douze heures. Une release
+	 * publiée entre-temps restait donc invisible, et l'on cherchait le défaut
+	 * dans le mécanisme alors qu'il n'y en avait pas.
+	 */
 	public function oublier() {
 		delete_transient( 'na_maj_release' );
+		delete_site_transient( 'update_plugins' );
 	}
 
 	/**

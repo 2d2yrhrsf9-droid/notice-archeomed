@@ -782,6 +782,13 @@ class Notice_Archeomed_Settings {
 			check_admin_referer( 'na_test_turnstile' );
 			$test_result = $this->test_secret( self::get( 'turnstile_secret' ) );
 		}
+		if ( isset( $_POST['na_chercher_maj'] ) ) {
+			check_admin_referer( 'na_chercher_maj' );
+			global $notice_archeomed_maj;
+			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
+				$notice_archeomed_maj->oublier();
+			}
+		}
 		$test_envoi = null;
 		if ( isset( $_POST['na_test_envoi'] ) ) {
 			check_admin_referer( 'na_test_envoi' );
@@ -1226,6 +1233,15 @@ class Notice_Archeomed_Settings {
 								? $notice_archeomed_maj->version() : '';
 							?>
 							<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
+							<form method="post" style="margin:8px 0">
+								<?php wp_nonce_field( 'na_chercher_maj' ); ?>
+								<?php submit_button( 'Chercher une mise à jour maintenant', 'secondary small', 'na_chercher_maj', false ); ?>
+								<span class="description" style="margin-left:8px">
+									GitHub n’est interrogé qu’une fois toutes les six heures, et
+									WordPress garde sa propre réserve jusqu’à douze heures. Ce
+									bouton vide les deux.
+								</span>
+							</form>
 							<?php if ( ! empty( $release['echec'] ) ) : ?>
 								<p style="color:#b32d2e"><strong><?php echo esc_html( $release['echec'] ); ?></strong></p>
 							<?php elseif ( empty( $release['version'] ) ) : ?>

@@ -1,0 +1,59 @@
+# Publie une release dès qu'une étiquette de version est poussée.
+#
+# Le dépôt n'est pas dans le répertoire de WordPress : pour qu'une correction
+# parvienne au site, il faut une release portant l'archive d'installation.
+# La fabriquer et la déposer à la main, c'est cinq gestes dans une interface,
+# et autant d'occasions de joindre la mauvaise archive ou d'oublier le
+# fichier — auquel cas le plugin se tait, à juste titre, et l'on cherche
+# pourquoi.
+#
+# Ici, « git push --tags » suffit. L'archive est fabriquée par le même
+# « ./empaqueter » que sur le poste de travail : c'est la garantie qu'elle a
+# la racine « notice-archeomed/ » que WordPress attend, et non celle que
+# GitHub produirait seul, qui installerait le plugin à côté de lui-même.
+
+name: Publier une release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    permissions:
+      # Le jeton fourni par GitHub suffit à créer une release : aucune clé à
+      # déposer dans les secrets du dépôt.
+      contents: write
+
+    steps:
+      - name: Prendre le code de l'étiquette
+        uses: actions/checkout@v4
+
+      - name: Vérifier la syntaxe avant de publier
+        run: ./verifier-la-syntaxe notice-archeomed/*.php
+
+      - name: Vérifier que l'étiquette dit la même version que le plugin
+        run: |
+          set -eu
+          ENTETE=$(sed -n 's/^ \* Version: *//p' notice-archeomed/notice-archeomed.php | head -1)
+          ETIQUETTE="${GITHUB_REF_NAME#v}"
+          echo "en-tête : $ENTETE — étiquette : $ETIQUETTE"
+          if [ "$ENTETE" != "$ETIQUETTE" ]; then
+            echo "::error::L'étiquette $GITHUB_REF_NAME ne correspond pas au « Version: $ENTETE » de l'en-tête."
+            echo "WordPress compare les numéros de l'en-tête : publier ces deux-là ferait annoncer une version que l'archive ne porte pas."
+            exit 1
+          fi
+
+      - name: Fabriquer l'archive
+        run: ./empaqueter
+
+      - name: Publier la release avec son archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" notice-archeomed.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "$(git log -1 --pretty=%B)"
