@@ -2,11 +2,13 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.23
+ * Version: 3.24
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
  * Text Domain: notice-archeomed
+ *
+ * Le document produit suit la feuille de styles Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr).
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -4004,23 +4006,78 @@ class Notice_Archeomed_Pactols {
 		if ( ! is_email( $destinataire ) ) {
 			return array( 'ok' => false, 'message' => 'Adresse d’essai non valide.' );
 		}
-		$this->derniere_erreur_mail = '';
-		$parti = wp_mail(
-			$destinataire,
-			'Essai d’acheminement — notices d’archéologie médiévale',
-			'<html><body><p>Si vous lisez ceci, le site sait poster une lettre : '
-				. 'les notices partiront.</p></body></html>',
-			array( 'Content-Type: text/html; charset=UTF-8' )
-		);
-		if ( $parti ) {
-			return array( 'ok' => true, 'message' => 'Le courriel est parti vers '
-				. $destinataire . '. S’il n’arrive pas, la cause est en aval : '
-				. 'filtrage, ou message classé indésirable.' );
+		return $this->poster_un_essai( 'simple', array( $destinataire ) );
+	}
+
+	/**
+	 * Refait l'envoi d'une notice, élément par élément, pour voir lequel
+	 * le fait tomber.
+	 *
+	 * Un essai nu partait quand une notice était refusée : la cause n'était
+	 * donc ni le serveur ni la fonction mail(), mais l'un des quatre écarts
+	 * entre les deux envois — plusieurs destinataires, un en-tête Reply-To
+	 * bâti avec le nom de l'auteur, une pièce jointe, un corps en HTML long.
+	 * Les essayer un à un dit lequel, au lieu de chercher à l'aveugle.
+	 */
+	public function essais_successifs() {
+		$liste = $this->destinataires_des_notices();
+		if ( empty( $liste ) ) {
+			return array( array( 'ok' => false, 'etape' => 'destinataires',
+				'message' => 'Aucun destinataire ne reçoit les notices.' ) );
 		}
-		return array( 'ok' => false, 'message' => 'Le serveur a refusé l’envoi. '
-			. ( '' !== $this->derniere_erreur_mail
-				? $this->derniere_erreur_mail
-				: 'Aucune raison n’a été donnée.' ) );
+		$resultats = array();
+		$resultats[] = $this->poster_un_essai(
+			'un seul destinataire', array( $liste[0] ) );
+		if ( count( $liste ) > 1 ) {
+			$resultats[] = $this->poster_un_essai(
+				'tous les destinataires (' . count( $liste ) . ')', $liste );
+		}
+		$resultats[] = $this->poster_un_essai(
+			'avec un en-tête Reply-To', array( $liste[0] ), true );
+		$resultats[] = $this->poster_un_essai(
+			'avec une pièce jointe', array( $liste[0] ), false, true );
+		$resultats[] = $this->poster_un_essai(
+			'comme une notice : tout à la fois', $liste, true, true );
+		return $resultats;
+	}
+
+	/**
+	 * Un envoi d'essai, avec ou sans les éléments qui distinguent une notice.
+	 */
+	private function poster_un_essai( $etape, $vers, $reply_to = false, $piece_jointe = false ) {
+		$this->derniere_erreur_mail = '';
+		$entetes = array( 'Content-Type: text/html; charset=UTF-8' );
+		if ( $reply_to ) {
+			$utilisateur = wp_get_current_user();
+			$nom = trim( $utilisateur->display_name );
+			$entetes[] = 'Reply-To: ' . $nom . ' <' . $utilisateur->user_email . '>';
+		}
+		$jointes = array();
+		if ( $piece_jointe ) {
+			// Une vraie pièce jointe, fabriquée pour l'essai et effacée après :
+			// c'est son existence qui change le chemin de PHPMailer, non sa
+			// taille.
+			$fichier = wp_tempnam( 'na-essai' );
+			file_put_contents( $fichier, "Pièce jointe d'essai.\r\n" );
+			$jointes[] = $fichier;
+		}
+		$parti = wp_mail(
+			$vers,
+			'Essai d’acheminement (' . $etape . ') — notices d’archéologie médiévale',
+			'<html><body><p>Essai : ' . esc_html( $etape ) . '.</p></body></html>',
+			$entetes,
+			$jointes
+		);
+		foreach ( $jointes as $f ) {
+			@unlink( $f );
+		}
+		if ( $parti ) {
+			return array( 'ok' => true, 'etape' => $etape,
+				'message' => 'parti vers ' . implode( ', ', $vers ) );
+		}
+		return array( 'ok' => false, 'etape' => $etape,
+			'message' => 'refusé — ' . ( '' !== $this->derniere_erreur_mail
+				? $this->derniere_erreur_mail : 'aucune raison donnée' ) );
 	}
 
 	/** Retient ce que le serveur de courriel a répondu, pour le dire plus haut. */

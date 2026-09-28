@@ -232,9 +232,6 @@ class Notice_Archeomed_MiseAJour {
 		if ( empty( $release['propre'] ) ) {
 			return $transient;
 		}
-		if ( ! version_compare( $release['version'], $this->version(), '>' ) ) {
-			return $transient;
-		}
 		$objet = (object) array(
 			'slug'        => $this->dossier,
 			'plugin'      => $this->fichier,
@@ -243,10 +240,23 @@ class Notice_Archeomed_MiseAJour {
 			'url'         => $release['adresse'],
 			'tested'      => get_bloginfo( 'version' ),
 		);
-		if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
-			$transient->response = array();
+		// Deux listes, et il faut figurer dans l'une ou l'autre. WordPress
+		// n'offre la case « mises à jour automatiques » qu'aux extensions
+		// qu'il connaît : celles qui ont une version en attente, et celles
+		// qu'il sait à jour. N'alimenter que la première laissait la nôtre
+		// hors de la colonne, avec « non disponibles pour cette extension ».
+		if ( version_compare( $release['version'], $this->version(), '>' ) ) {
+			if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
+				$transient->response = array();
+			}
+			$transient->response[ $this->fichier ] = $objet;
+			unset( $transient->no_update[ $this->fichier ] );
+			return $transient;
 		}
-		$transient->response[ $this->fichier ] = $objet;
+		if ( ! isset( $transient->no_update ) || ! is_array( $transient->no_update ) ) {
+			$transient->no_update = array();
+		}
+		$transient->no_update[ $this->fichier ] = $objet;
 		return $transient;
 	}
 

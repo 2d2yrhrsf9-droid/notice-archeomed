@@ -1,6 +1,6 @@
 <?php
 /**
- * Générateur de fichier DOCX stylé Métopes pour les notices Archéomed.
+ * Générateur de fichier DOCX stylé Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr) pour les notices Archéomed.
  *
  * Même principe que le générateur RTF : on ne recrée pas la feuille de
  * styles. On lit le modèle « modele-metopes.docx » livré avec le plugin,

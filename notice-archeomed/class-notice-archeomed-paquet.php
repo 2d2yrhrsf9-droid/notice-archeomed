@@ -1,6 +1,6 @@
 <?php
 /**
- * Le paquet d'une rubrique, aux dossiers de Métopes.
+ * Le paquet d'une rubrique, aux dossiers de Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr).
  *
  * La rédaction recevait un document Word par rubrique, et les illustrations
  * une par une depuis la fiche de chaque notice : à elle de les rassembler, de

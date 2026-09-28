@@ -789,6 +789,14 @@ class Notice_Archeomed_Settings {
 				$notice_archeomed_maj->oublier();
 			}
 		}
+		$essais_successifs = null;
+		if ( isset( $_POST['na_essais_successifs'] ) ) {
+			check_admin_referer( 'na_test_envoi' );
+			global $notice_archeomed_plugin;
+			if ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols ) {
+				$essais_successifs = $notice_archeomed_plugin->essais_successifs();
+			}
+		}
 		$test_envoi = null;
 		if ( isset( $_POST['na_test_envoi'] ) ) {
 			check_admin_referer( 'na_test_envoi' );
@@ -1432,6 +1440,11 @@ class Notice_Archeomed_Settings {
 			<hr>
 
 			<h2>Feuille de style Métopes</h2>
+			<p class="description" style="max-width:46em">
+				<a href="https://www.metopes.fr" target="_blank" rel="noopener">Métopes</a> —
+				chaîne d’édition XML créée par le Pôle document numérique et l’infrastructure
+				Métopes de l’université de Caen Normandie.
+			</p>
 			<?php
 			$messages = array(
 				'posee'    => array( 'success', 'La nouvelle feuille de style est en service.' ),
@@ -1519,7 +1532,30 @@ class Notice_Archeomed_Settings {
 						placeholder="adresse d’essai">
 					<?php submit_button( 'Envoyer un courriel d’essai', 'secondary', 'na_test_envoi', false ); ?>
 				</p>
+				<p>
+					<?php submit_button( 'Refaire l’envoi d’une notice, étape par étape', 'secondary', 'na_essais_successifs', false ); ?>
+					<span class="description" style="margin-left:8px">
+						Quand un essai simple part mais qu’une notice est refusée, celui-ci
+						dit lequel des écarts en est la cause : plusieurs destinataires, un
+						en-tête Reply-To, une pièce jointe.
+					</span>
+				</p>
 			</form>
+			<?php if ( is_array( $essais_successifs ) ) : ?>
+				<table class="widefat striped" style="max-width:52em;margin-bottom:12px">
+					<tbody>
+					<?php foreach ( $essais_successifs as $e ) : ?>
+						<tr>
+							<td style="width:34%"><strong><?php echo esc_html( $e['etape'] ); ?></strong></td>
+							<td style="color:<?php echo $e['ok'] ? '#2f6b2f' : '#b32d2e'; ?>">
+								<?php echo esc_html( $e['message'] ); ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p class="description">La première ligne en rouge nomme ce qui fait échouer l’envoi.</p>
+			<?php endif; ?>
 			<?php if ( null !== $test_envoi ) : ?>
 				<div class="notice notice-<?php echo $test_envoi['ok'] ? 'success' : 'error'; ?>">
 					<p><?php echo esc_html( $test_envoi['message'] ); ?></p>

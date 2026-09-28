@@ -1,6 +1,6 @@
 <?php
 /**
- * Générateur de fichier RTF stylé Métopes — le repli, non la voie normale.
+ * Générateur de fichier RTF stylé Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr) — le repli, non la voie normale.
  *
  * **La feuille de styles de référence est « modele-metopes.docx »**, et le
  * document joint à chaque notice est un DOCX : c'est lui que la rédaction

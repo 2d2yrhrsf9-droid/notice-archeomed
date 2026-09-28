@@ -1,8 +1,8 @@
-# Formulaire des notices d’archéologie médiévale — version 3.23
+# Formulaire des notices d’archéologie médiévale — version 3.24
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
-accompagné d'un fichier **DOCX** portant la feuille de styles Métopes,
+accompagné d'un fichier **DOCX** portant la feuille de styles Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr),
 prêt à être relu puis versé dans la chaîne XML.
 
 Si l'extension PHP ZipArchive est absente de l'hébergement, le plugin

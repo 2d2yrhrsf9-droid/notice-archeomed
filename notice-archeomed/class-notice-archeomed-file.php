@@ -608,7 +608,7 @@ class Notice_Archeomed_File {
 				. esc_attr( $rubrique ) . '">' . esc_html( $court ) . '</a>';
 		}
 		// Le paquet complet, à côté du fascicule seul : le même document, plus
-		// les illustrations rangées aux dossiers de Métopes.
+		// les illustrations rangées aux dossiers de Métopes (chaîne d'édition XML créée par le Pôle document numérique et l'infrastructure Métopes de l'université de Caen Normandie, https://www.metopes.fr).
 		$paquets = array();
 		foreach ( $rubriques as $rubrique ) {
 			$url = wp_nonce_url(
