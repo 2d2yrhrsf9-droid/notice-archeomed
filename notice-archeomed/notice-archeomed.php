@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.27
+ * Version: 3.28
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3408,7 +3408,12 @@ class Notice_Archeomed_Pactols {
 			// dossier sans rouvrir le texte. Hors paquet — le fascicule seul,
 			// la notice d'un auteur — il n'y a pas de figure à appeler, et le
 			// bloc reste ce qu'il était.
-			if ( ! empty( $item['figure']['lien'] )
+			// « fichier » est la clef que le plan du dossier écrit. On testait
+			// « lien », que rien ne pose : la branche n'a jamais été prise, et
+			// le document du dossier n'a jamais porté une figure. Une clef
+			// inventée ne casse rien — elle ne fait rien, ce qui se voit plus
+			// tard et coûte plus cher.
+			if ( ! empty( $item['figure']['fichier'] )
 				&& method_exists( $doc, 'image_liee' ) ) {
 				$doc->add_raw_paragraph( 'TEI_figure_title', $doc->image_liee(
 					// Le document vit dans « style/ » : il remonte d'un cran
@@ -3420,6 +3425,22 @@ class Notice_Archeomed_Pactols {
 					$item['figure']['dpi'],
 					$titre
 				) );
+			} elseif ( ! empty( $item['figure']['apercu'] )
+				&& method_exists( $doc, 'image_incluse' ) ) {
+				// Hors dossier, le document part seul : il porte donc ses
+				// figures. Le lien du dossier reste préférable quand il y en
+				// a un — la mise en page remplace alors l'image sans rouvrir
+				// le texte — mais un lien qui ne mène nulle part ne vaut rien.
+				$dessin = $doc->image_incluse(
+					$item['figure']['apercu'],
+					$item['figure']['largeur'],
+					$item['figure']['hauteur'],
+					$item['figure']['dpi'],
+					$titre
+				);
+				if ( '' !== $dessin ) {
+					$doc->add_raw_paragraph( 'TEI_figure_title', $dessin );
+				}
 			}
 			$doc->add_paragraph( 'TEI_figure_title', array( array( 'text' => $titre ) ) );
 			if ( '' !== $item['legende'] ) {
@@ -3761,6 +3782,12 @@ class Notice_Archeomed_Pactols {
 		// rédaction. C'est rapide — quelques dizaines de millisecondes — et
 		// cela reste donc dans la requête de l'auteur : il vaut mieux qu'il
 		// sache tout de suite si son document n'a pas pu être fabriqué.
+		// Les figures que le document emportera. Elles se fabriquent avant lui,
+		// puisqu'il les porte : le Word envoyé par courriel voyage seul, sans
+		// dossier d'icono à côté de lui où aller chercher une image.
+		$apercus = $this->fabriquer_les_apercus( $attachments, $d );
+		$d       = $this->attacher_les_apercus( $d, $apercus );
+
 		$rtf_error = '';
 		// Format de la pièce jointe : DOCX par défaut, RTF en repli si
 		// l'extension ZipArchive est absente de l'hébergement.
@@ -4362,7 +4389,18 @@ class Notice_Archeomed_Pactols {
 		if ( '' === $dossier ) {
 			return;
 		}
-		foreach ( (array) get_post_meta( $id, '_na_illustrations', true ) as $chemin ) {
+		$a_effacer = (array) get_post_meta( $id, '_na_illustrations', true );
+		// Les aperçus incorporés aux documents vivent dans le même dossier et
+		// n'ont pas d'autre usage : ils partent avec la notice.
+		$d = get_post_meta( $id, '_na_donnees', true );
+		if ( is_array( $d ) && ! empty( $d['illustrations'] ) ) {
+			foreach ( $d['illustrations'] as $item ) {
+				if ( ! empty( $item['figure']['apercu'] ) ) {
+					$a_effacer[] = $item['figure']['apercu'];
+				}
+			}
+		}
+		foreach ( $a_effacer as $chemin ) {
 			if ( is_string( $chemin ) && 0 === strpos( $chemin, $dossier ) && is_file( $chemin ) ) {
 				@unlink( $chemin );
 			}
@@ -4415,6 +4453,58 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Rend les chemins définitifs, ceux-là mêmes que le courriel joindra.
 	 */
+	/**
+	 * Fabrique un aperçu par illustration, et rend leur mesure par rang.
+	 *
+	 * Le rang de la légende désigne le fichier de même rang : c'est la
+	 * convention de tout le plugin, et c'est l'ordre du dépôt qui la tient.
+	 *
+	 * Sans Imagick, il n'y a pas d'aperçu et le document sort comme avant,
+	 * avec ses seules légendes. Une figure manquante ne fait pas perdre une
+	 * notice.
+	 */
+	private function fabriquer_les_apercus( $illustrations, $d ) {
+		$dossier = $this->dossier_des_illustrations();
+		if ( '' === $dossier || ! class_exists( 'Imagick' )
+			|| empty( $d['illustrations'] ) ) {
+			return array();
+		}
+		$fichiers = array_values( (array) $illustrations );
+		$paquet   = new Notice_Archeomed_Paquet();
+		$apercus  = array();
+		foreach ( (array) $d['illustrations'] as $item ) {
+			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+			if ( $rang < 1 || ! isset( $fichiers[ $rang - 1 ] )
+				|| ! file_exists( $fichiers[ $rang - 1 ] ) ) {
+				continue;
+			}
+			$cible  = $dossier . 'apercu-' . wp_generate_password( 10, false, false ) . '.jpg';
+			$mesure = $paquet->apercu_du_document( $fichiers[ $rang - 1 ], $cible );
+			if ( is_array( $mesure ) ) {
+				$apercus[ $rang ] = $mesure;
+			}
+		}
+		return $apercus;
+	}
+
+	/**
+	 * Pose les aperçus sur les légendes de la saisie, pour que le document
+	 * les trouve. Le dossier Métopes écrase ensuite cette clef par la sienne :
+	 * là où l'icono est à côté du texte, c'est le lien qui vaut.
+	 */
+	private function attacher_les_apercus( $d, $apercus ) {
+		if ( empty( $apercus ) || empty( $d['illustrations'] ) ) {
+			return $d;
+		}
+		foreach ( $d['illustrations'] as $i => $item ) {
+			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+			if ( isset( $apercus[ $rang ] ) ) {
+				$d['illustrations'][ $i ]['figure'] = $apercus[ $rang ];
+			}
+		}
+		return $d;
+	}
+
 	private function archiver_les_illustrations( $id, $illustrations ) {
 		$dossier = $this->dossier_des_illustrations();
 		if ( '' === $dossier ) {

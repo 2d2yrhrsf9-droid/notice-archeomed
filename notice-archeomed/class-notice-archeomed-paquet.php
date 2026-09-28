@@ -43,6 +43,17 @@ class Notice_Archeomed_Paquet {
 	 * huit essais entre le haut et le bas — assez fins pour ne pas sacrifier
 	 * vingt points de qualité quand deux suffisaient.
 	 */
+	/**
+	 * L'aperçu incorporé au document envoyé par courriel.
+	 *
+	 * Il n'a pas à valoir la basse définition du dossier : celle-là part à la
+	 * mise en page, celui-ci sert à voir. Mille pixels et cent cinquante
+	 * kilo-octets donnent une figure lisible à l'écran et à l'impression de
+	 * bureau, et trois illustrations n'ajoutent pas un demi-méga au courriel.
+	 */
+	const LARGEUR_APERCU = 1000;
+	const POIDS_APERCU   = 150;
+
 	const QUALITE_HAUTE   = 92;
 	const QUALITE_PLANCHER = 40;
 	const QUALITE_PALIER   = 8;
@@ -463,6 +474,52 @@ class Notice_Archeomed_Paquet {
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
 			return false;
 		}
+	}
+
+	/**
+	 * Fabrique l'aperçu qu'un document emportera avec lui, et rend sa mesure.
+	 *
+	 * Séparé des deux définitions du dossier, et volontairement : celles-là
+	 * obéissent aux réglages de la rédaction, qui les veut au format et au
+	 * poids de la mise en page. Celui-ci n'a qu'un devoir, tenir dans un
+	 * courriel. Les lier aurait fait qu'un réglage de mise en page décide du
+	 * poids d'une pièce jointe.
+	 *
+	 * Rend null si l'image n'a pas pu être lue : le document se fabrique
+	 * quand même, sans cette figure.
+	 */
+	public function apercu_du_document( $source, $cible ) {
+		$provisoire = '';
+		$ext        = strtolower( pathinfo( (string) $source, PATHINFO_EXTENSION ) );
+		// Un vectoriel ne se rastérise pas ici : on prend l'aperçu que le
+		// fichier porte en lui, comme pour la basse définition du dossier.
+		if ( 'eps' === $ext ) {
+			$apercu = self::apercu_eps( $source );
+			if ( '' === $apercu ) {
+				return null;
+			}
+			$provisoire = wp_tempnam( 'na-apercu' );
+			file_put_contents( $provisoire, $apercu );
+			$source = $provisoire;
+		}
+		$fait = $this->reduire( $source, $cible, self::LARGEUR_APERCU,
+			self::QUALITE_HAUTE, 96, self::POIDS_APERCU, 10 );
+		if ( '' !== $provisoire ) {
+			@unlink( $provisoire );
+		}
+		if ( ! $fait ) {
+			return null;
+		}
+		$mesure = @getimagesize( $cible );
+		if ( false === $mesure ) {
+			return null;
+		}
+		return array(
+			'apercu'  => $cible,
+			'largeur' => (int) $mesure[0],
+			'hauteur' => (int) $mesure[1],
+			'dpi'     => 96,
+		);
 	}
 
 	/**

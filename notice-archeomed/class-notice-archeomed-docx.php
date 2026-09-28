@@ -71,6 +71,17 @@ class Notice_Archeomed_DOCX {
 	private $images = array();
 
 	/**
+	 * Identifiant de relation => image incorporée { nom, ext, octets }.
+	 *
+	 * Les octets entrent dans le fichier, sous « word/media ». C'est ce qu'il
+	 * faut quand le document voyage seul — en pièce jointe d'un courriel, il
+	 * n'a aucun dossier à côté de lui où aller chercher une figure.
+	 *
+	 * @var array
+	 */
+	private $medias = array();
+
+	/**
 	 * Message d'erreur éventuel.
 	 *
 	 * @var string
@@ -317,6 +328,79 @@ class Notice_Archeomed_DOCX {
 	 * Rend le XML d'un run, à passer à « add_raw_paragraph ».
 	 */
 	public function image_liee( $cible, $largeur_px, $hauteur_px, $dpi = 96, $titre = '' ) {
+		$rid                  = $this->prochain_rid();
+		$this->images[ $rid ] = $cible;
+		return $this->dessin( $rid, $largeur_px, $hauteur_px, $dpi,
+			'' !== $titre ? $titre : basename( $cible ), true );
+	}
+
+	/**
+	 * Une image incorporée : ses octets entrent dans le fichier.
+	 *
+	 * Le lien de « image_liee » ne résout que si l'icono est à côté du
+	 * document, ce qui n'est vrai que dans le dossier. Le document envoyé par
+	 * courriel, lui, part seul : Word y posait un cadre vide, et l'auteur
+	 * croyait ses illustrations perdues. Il porte donc ses figures avec lui —
+	 * une basse définition, la même que celle du dossier, qui n'alourdit pas
+	 * la pièce jointe au-delà du raisonnable.
+	 *
+	 * Rend une chaîne vide si le fichier est illisible : une figure manquante
+	 * vaut mieux qu'un document que Word refuse d'ouvrir.
+	 */
+	public function image_incluse( $chemin, $largeur_px, $hauteur_px, $dpi = 96, $titre = '' ) {
+		$chemin = (string) $chemin;
+		$ext    = strtolower( pathinfo( $chemin, PATHINFO_EXTENSION ) );
+		if ( '' === self::type_image( $ext ) || ! is_readable( $chemin ) ) {
+			return '';
+		}
+		$octets = @file_get_contents( $chemin );
+		if ( false === $octets || '' === $octets ) {
+			return '';
+		}
+		$rid = $this->prochain_rid();
+		// Le préfixe « na- » écarte le risque d'écraser une image du gabarit :
+		// « media/image1.jpg » est le nom que Word donne aux siennes.
+		$this->medias[ $rid ] = array(
+			'nom'    => 'media/na-' . count( $this->medias ) . '.' . $ext,
+			'ext'    => $ext,
+			'octets' => $octets,
+		);
+		return $this->dessin( $rid, $largeur_px, $hauteur_px, $dpi,
+			'' !== $titre ? $titre : basename( $chemin ), false );
+	}
+
+	/**
+	 * Un identifiant de relation qui n'a pas encore servi. Les deux registres
+	 * se comptent ensemble : deux relations de même nom, et Word ouvre le
+	 * document sur une figure de travers.
+	 */
+	private function prochain_rid() {
+		return 'rIdNAimg' . ( count( $this->images ) + count( $this->medias ) + 1 );
+	}
+
+	/**
+	 * Le type MIME d'une extension d'image, ou une chaîne vide si l'extension
+	 * n'est pas de celles qu'un DOCX sait porter.
+	 */
+	private static function type_image( $ext ) {
+		$types = array(
+			'jpg'  => 'image/jpeg',
+			'jpeg' => 'image/jpeg',
+			'png'  => 'image/png',
+			'gif'  => 'image/gif',
+			'tif'  => 'image/tiff',
+			'tiff' => 'image/tiff',
+		);
+		$ext = strtolower( (string) $ext );
+		return isset( $types[ $ext ] ) ? $types[ $ext ] : '';
+	}
+
+	/**
+	 * Le dessin proprement dit, commun aux deux manières de poser une image.
+	 * Seul l'attribut du « blip » les sépare : « r:link » désigne un fichier
+	 * voisin, « r:embed » un fichier que le document porte.
+	 */
+	private function dessin( $rid, $largeur_px, $hauteur_px, $dpi, $nom, $lie ) {
 		$largeur_px = max( 1, (int) $largeur_px );
 		$hauteur_px = max( 1, (int) $hauteur_px );
 		$dpi        = $dpi > 0 ? (int) $dpi : 96;
@@ -330,10 +414,7 @@ class Notice_Archeomed_DOCX {
 		$cx = max( 1, $cx );
 		$cy = max( 1, $cy );
 
-		$rid                  = 'rIdNAimg' . ( count( $this->images ) + 1 );
-		$this->images[ $rid ] = $cible;
-		$id                   = 1000 + count( $this->images );
-		$nom                  = '' !== $titre ? $titre : basename( $cible );
+		$id = 1000 + count( $this->images ) + count( $this->medias );
 
 		return '<w:r><w:drawing>'
 			. '<wp:inline distT="0" distB="0" distL="0" distR="0">'
@@ -345,8 +426,10 @@ class Notice_Archeomed_DOCX {
 			. '<pic:pic>'
 			. '<pic:nvPicPr><pic:cNvPr id="' . $id . '" name="' . self::esc( $nom ) . '"/>'
 			. '<pic:cNvPicPr/></pic:nvPicPr>'
-			// « r:link » et non « r:embed » : l'image est désignée, non incluse.
-			. '<pic:blipFill><a:blip r:link="' . $rid . '"/>'
+			// « r:link » désigne l'image sans l'inclure ; « r:embed » la prend
+			// dans le fichier. Le dossier veut la première, le courriel la
+			// seconde.
+			. '<pic:blipFill><a:blip ' . ( $lie ? 'r:link' : 'r:embed' ) . '="' . $rid . '"/>'
 			. '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
 			. '<pic:spPr><a:xfrm><a:off x="0" y="0"/>'
 			. '<a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm>'
@@ -487,6 +570,9 @@ class Notice_Archeomed_DOCX {
 				continue; // Régénérés ci-dessous.
 			}
 			$contenu = $src->getFromIndex( $i );
+			if ( '[Content_Types].xml' === $name && is_string( $contenu ) ) {
+				$contenu = $this->types_de_contenu( $contenu );
+			}
 			if ( 'word/styles.xml' === $name && is_string( $contenu ) ) {
 				// Le style d'effacement entre ici, juste avant la fermeture.
 				// Si la balise manquait, on laisse la feuille telle quelle
@@ -502,11 +588,48 @@ class Notice_Archeomed_DOCX {
 		}
 		$src->close();
 
+		foreach ( $this->medias as $media ) {
+			$dest->addFromString( 'word/' . $media['nom'], $media['octets'] );
+		}
 		$dest->addFromString( 'word/document.xml', $this->document_xml( $sect ) );
 		$dest->addFromString( 'word/_rels/document.xml.rels', $this->rels_xml( $rels_src ) );
 		$dest->close();
 
 		return $path;
+	}
+
+	/**
+	 * Déclare au manifeste les extensions des images incorporées.
+	 *
+	 * Un DOCX qui porte un fichier dont le type n'est pas déclaré est refusé
+	 * par Word — non pas dégradé, refusé. Le gabarit déclare déjà les siennes
+	 * s'il a des images ; on n'ajoute que ce qui manque.
+	 */
+	private function types_de_contenu( $xml ) {
+		$ajouts = '';
+		$vus    = array();
+		foreach ( $this->medias as $media ) {
+			$ext = $media['ext'];
+			if ( isset( $vus[ $ext ] ) ) {
+				continue;
+			}
+			$vus[ $ext ] = true;
+			if ( preg_match( '#<Default\b[^>]*Extension="' . preg_quote( $ext, '#' ) . '"#i', $xml ) ) {
+				continue;
+			}
+			$ajouts .= '<Default Extension="' . self::esc( $ext ) . '"'
+				. ' ContentType="' . self::type_image( $ext ) . '"/>';
+		}
+		if ( '' === $ajouts ) {
+			return $xml;
+		}
+		$pos = strrpos( $xml, '</Types>' );
+		if ( false === $pos ) {
+			// Manifeste inattendu : on le laisse intact plutôt que d'écrire
+			// un XML bancal, quitte à perdre les figures.
+			return $xml;
+		}
+		return substr( $xml, 0, $pos ) . $ajouts . substr( $xml, $pos );
 	}
 
 	/**
@@ -562,6 +685,14 @@ class Notice_Archeomed_DOCX {
 				. ' Type="' . $image_type . '"'
 				. ' Target="' . self::esc( $cible ) . '"'
 				. ' TargetMode="External"/>';
+		}
+		// Les images incorporées : le fichier est dans le document, et la
+		// cible se lit depuis « word/ ». Pas de « TargetMode », qui ferait
+		// chercher au dehors ce qui est au dedans.
+		foreach ( $this->medias as $rid => $media ) {
+			$new .= '<Relationship Id="' . self::esc( $rid ) . '"'
+				. ' Type="' . $image_type . '"'
+				. ' Target="' . self::esc( $media['nom'] ) . '"/>';
 		}
 		return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 			. '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
