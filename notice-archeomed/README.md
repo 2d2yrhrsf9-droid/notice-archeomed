@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.22
+# Formulaire des notices d’archéologie médiévale — version 3.23
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -32,8 +32,16 @@ de contenu. Une manœuvre inutilement inquiétante.
 Les réglages et les notices vivent dans la base, jamais dans les fichiers de
 l'extension : une mise à jour ne les touche pas.
 
-Le plugin refuse de s'activer si `modele-metopes.rtf` manque : sans lui, le
-RTF ne peut pas être produit.
+**La feuille de styles de référence est `modele-metopes.docx`.** C'est elle
+que le plugin emploie, et le document joint à chaque notice est un DOCX.
+
+Le plugin refuse de s'activer si ce gabarit manque : sans lui, aucun document
+ne peut être mis en forme.
+
+`modele-metopes.rtf` en est le pendant dans l'autre format — mêmes styles,
+mêmes noms. Il ne sert que sur un hébergement dépourvu de l'extension
+ZipArchive, sans laquelle un DOCX, qui est une archive zip, ne peut pas se
+fabriquer. Son absence ne se signale donc que là où il servirait.
 
 ## La protection anti-robot
 
@@ -219,8 +227,9 @@ de réglages et laisser la constante indéfinie.
 | `modele-metopes.docx` | Gabarit Métopes au format DOCX (styles + mise en page) |
 | `class-notice-archeomed-settings.php` | Page de réglages (Réglages > Notice Archéomed) |
 | `class-notice-archeomed-file.php` | La file d'attente : inscription, expédition différée, reprises |
-| `class-notice-archeomed-rtf.php` | Générateur du RTF stylé |
-| `modele-metopes.rtf` | Feuille de styles Métopes (en-tête seul, sans contenu) |
+| `class-notice-archeomed-rtf.php` | Générateur du RTF stylé — le repli |
+| `modele-metopes.docx` | **Feuille de styles Métopes de référence** |
+| `modele-metopes.rtf` | La même feuille dans l'autre format, pour le repli |
 | `.htaccess`, `index.php` | Empêchent le téléchargement direct et le listage du dossier |
 
 ## Le surlignement des styles
@@ -251,9 +260,12 @@ styles sont désignés **par leur nom**, le numéro (`\s231`…) étant résolu 
 la volée en lisant la table des styles du modèle.
 
 Conséquence pratique : quand Métopes fait évoluer sa feuille de styles, vous
-remplacez `modele-metopes.rtf` par un export du nouveau modèle et rien
-d'autre. Pour produire ce fichier, ouvrez un document appliquant le nouveau
-gabarit et enregistrez-le au format RTF sous ce nom.
+déposez le nouveau gabarit depuis **Réglages ▸ Feuille de style Métopes**, et
+rien d'autre — les styles sont reconnus par leur nom.
+
+Le `.docx` est celui qui compte. Si l'hébergement n'a pas ZipArchive, pensez
+à fournir aussi le `.rtf` : ouvrez un document appliquant le nouveau gabarit
+et enregistrez-le au format RTF.
 
 Un style qui aurait disparu du modèle ne provoque pas d'erreur : le
 paragraphe concerné sort en Normal et se repère à la relecture.

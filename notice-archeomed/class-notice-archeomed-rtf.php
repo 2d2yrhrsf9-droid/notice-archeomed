@@ -1,6 +1,17 @@
 <?php
 /**
- * Générateur de fichier RTF stylé Métopes pour les notices Archéomed.
+ * Générateur de fichier RTF stylé Métopes — le repli, non la voie normale.
+ *
+ * **La feuille de styles de référence est « modele-metopes.docx »**, et le
+ * document joint à chaque notice est un DOCX : c'est lui que la rédaction
+ * reçoit et que la chaîne Métopes traite. Ce générateur-ci ne sert que sur un
+ * hébergement dépourvu de l'extension ZipArchive, sans laquelle un DOCX — qui
+ * est une archive zip — ne peut pas se fabriquer. Le RTF permet alors de
+ * livrer tout de même un document stylé plutôt que rien.
+ *
+ * « modele-metopes.rtf » est donc l'exact pendant du gabarit DOCX, enregistré
+ * dans l'autre format : mêmes styles, mêmes noms. Les deux se remplacent
+ * ensemble quand Métopes fait évoluer sa feuille.
  *
  * Principe : on ne réinvente pas la feuille de styles. On lit le fichier
  * modèle « modele-metopes.rtf » livré avec le plugin, on en extrait l'en-tête

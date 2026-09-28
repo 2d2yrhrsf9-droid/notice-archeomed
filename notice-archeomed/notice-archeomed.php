@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.22
+ * Version: 3.23
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -55,18 +55,22 @@ add_filter(
 );
 
 /**
- * Contrôle à l'activation : sans le modèle RTF, la génération est impossible.
- * On refuse l'activation plutôt que de laisser le plugin échouer en silence
- * au moment de la première soumission.
+ * Contrôle à l'activation : sans gabarit, aucun document ne se fabrique.
+ *
+ * C'est « modele-metopes.docx » qui porte la feuille de styles de référence,
+ * et c'est lui que le plugin emploie : le document joint à chaque notice est
+ * un DOCX. Le contrôle portait sur le RTF, qui n'est qu'un repli — on
+ * refusait donc l'activation pour l'absence du second tout en laissant
+ * disparaître le premier sans rien dire.
  */
 register_activation_hook(
 	__FILE__,
 	function () {
-		$modele = plugin_dir_path( __FILE__ ) . 'modele-metopes.rtf';
+		$modele = plugin_dir_path( __FILE__ ) . 'modele-metopes.docx';
 		if ( ! file_exists( $modele ) ) {
 			deactivate_plugins( plugin_basename( __FILE__ ) );
 			wp_die(
-				esc_html__( 'Le fichier modele-metopes.rtf est absent du dossier du plugin. Ce modèle porte la feuille de styles Métopes : sans lui, le RTF ne peut pas être produit.', 'notice-archeomed' ),
+				esc_html__( 'Le fichier modele-metopes.docx est absent du dossier du plugin. Ce gabarit porte la feuille de styles Métopes de référence : sans lui, aucun document ne peut être mis en forme.', 'notice-archeomed' ),
 				esc_html__( 'Activation impossible', 'notice-archeomed' ),
 				array( 'back_link' => true )
 			);
@@ -84,9 +88,18 @@ add_action(
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-		if ( ! file_exists( plugin_dir_path( __FILE__ ) . 'modele-metopes.rtf' ) ) {
+		// Le gabarit de référence d'abord : c'est lui qui met les notices en
+		// forme. Le RTF ensuite, et son absence ne se signale pas de la même
+		// façon — elle ne se paie que sur un hébergement dépourvu de
+		// ZipArchive, où le DOCX ne peut pas se fabriquer.
+		if ( ! file_exists( plugin_dir_path( __FILE__ ) . 'modele-metopes.docx' ) ) {
 			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
-				. esc_html__( 'le fichier modele-metopes.rtf est introuvable. Les notices continueront d\'être transmises par courriel, mais sans la pièce jointe RTF.', 'notice-archeomed' )
+				. esc_html__( 'le gabarit modele-metopes.docx est introuvable. Il porte la feuille de styles Métopes de référence : les notices partiront sans document mis en forme.', 'notice-archeomed' )
+				. '</p></div>';
+		}
+		if ( ! file_exists( plugin_dir_path( __FILE__ ) . 'modele-metopes.rtf' ) && ! class_exists( 'ZipArchive' ) ) {
+			echo '<div class="notice notice-warning"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
+				. esc_html__( 'cet hébergement n’a pas l’extension ZipArchive, le document doit donc se fabriquer en RTF — et le gabarit modele-metopes.rtf est introuvable.', 'notice-archeomed' )
 				. '</p></div>';
 		}
 		// Sans clé secrète, Turnstile rejette toutes les soumissions. On ne le
