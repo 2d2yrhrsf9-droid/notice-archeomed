@@ -150,7 +150,7 @@ na_verifier( '' === get_post_meta( $epuisee, '_na_pactols_apres', true ),
 	'une notice qui a épuisé ses essais ne revient pas d\'elle-même' );
 $plus_tard = time() + 3000;
 update_post_meta( $epuisee, '_na_pactols_apres', $plus_tard );
-$quand = na_appel( $plugin, 'relancer_la_resolution', array( $epuisee ) );
+$quand = na_appel( $plugin, 'relancer_la_resolution', array( $epuisee, $saisie ) );
 na_verifier( $plus_tard === $quand && '' === get_post_meta( $epuisee, '_na_pactols_essais', true ),
 	'la relance remet les essais à zéro sans avancer une reprise déjà fixée', $quand );
 
