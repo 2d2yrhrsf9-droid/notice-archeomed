@@ -65,6 +65,12 @@ class Notice_Archeomed_Paquet {
 	// lieu-dit : sans ce registre, la seconde figure écrase la première dans
 	// le zip, sans un mot.
 	private $noms_pris = array();
+	// Les fichiers d'indexation ont leur propre registre. Ils se nomment
+	// d'après la commune et le lieu-dit, sans passer par le modèle de nom des
+	// illustrations : les mêler aurait fait conseiller, en cas de collision,
+	// d'ajouter « {lieu_dit} » à un modèle que ces fichiers n'ont jamais
+	// consulté — un conseil que rien n'aurait pu suivre.
+	private $noms_indexation = array();
 	private $atelier    = '';
 	private $nom_paquet = '';
 	private $rubrique   = '';
@@ -493,7 +499,21 @@ class Notice_Archeomed_Paquet {
 		if ( ! is_dir( $dossier ) ) {
 			wp_mkdir_p( $dossier );
 		}
-		$nom = $this->nom_unique( $nom_sans_ext ) . '.xml';
+		$clef = strtolower( $nom_sans_ext );
+		if ( isset( $this->noms_indexation[ $clef ] ) ) {
+			++$this->noms_indexation[ $clef ];
+			$suffixe = $nom_sans_ext . '_' . $this->noms_indexation[ $clef ];
+			$this->journal[] = $nom_sans_ext . '.xml : deux notices de cette rubrique'
+				. ' portent la même commune et le même lieu-dit ; la seconde est posée'
+				. ' sous « ' . $suffixe . ' ». Les deux fichiers sont bons, mais rien'
+				. ' dans leur nom ne dit à quelle notice ils vont : ouvrez-les pour'
+				. ' les distinguer.';
+			$nom_sans_ext = $suffixe;
+			$this->noms_indexation[ strtolower( $suffixe ) ] = 1;
+		} else {
+			$this->noms_indexation[ $clef ] = 1;
+		}
+		$nom = $nom_sans_ext . '.xml';
 		return ( false !== @file_put_contents( $dossier . '/' . $nom, $xml ) ) ? $nom : '';
 	}
 

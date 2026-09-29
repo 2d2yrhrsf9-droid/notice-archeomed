@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.34
+ * Version: 3.35
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -543,14 +543,25 @@ class Notice_Archeomed_Pactols {
 		$donnees = array();
 		foreach ( $notices as $rang_notice => $notice ) {
 			$d = $notice['d'];
-			if ( isset( $plan[ $rang_notice ] ) && ! empty( $d['illustrations'] ) ) {
+			if ( ! empty( $d['illustrations'] ) ) {
 				// Le rang de la légende désigne le fichier de même rang : c'est
 				// la convention de tout le plugin depuis que les illustrations
 				// ont chacune leur ligne, et c'est l'ordre du dépôt qui la
 				// tient. « preparer » signale dans le lisez-moi le jour où les
 				// deux comptes ne coïncident pas.
+				//
+				// La figure se vide d'abord. La saisie porte depuis le dépôt
+				// l'aperçu fabriqué pour le courriel, et il n'a rien à faire
+				// ici : le dossier appelle ses images dans « icono/br », où la
+				// mise en page les remplace. Quand la basse définition n'a pas
+				// pu se faire — Imagick absente, format illisible —, le
+				// lisez-moi annonce que le document ne posera pas cette
+				// figure ; s'il en posait une, tirée d'un aperçu de mille
+				// pixels que personne ne peut remplacer dans le dossier, le
+				// lisez-moi mentirait et la mise en page partirait avec.
 				foreach ( $d['illustrations'] as $i => $item ) {
 					$n = (int) $item['rang'];
+					$d['illustrations'][ $i ]['figure'] = array();
 					if ( ! empty( $plan[ $rang_notice ][ $n ] ) ) {
 						$d['illustrations'][ $i ]['figure'] = $plan[ $rang_notice ][ $n ];
 					}
@@ -2841,10 +2852,19 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function indexation_de( $id, $d ) {
 		$termes = get_post_meta( (int) $id, '_na_pactols', true );
-		if ( ! is_array( $termes ) || empty( $termes ) ) {
-			// Notice déposée avant que les termes ne se résolvent, ou
-			// résolution manquée : le dossier est demandé à la main, il peut
-			// attendre le thésaurus.
+		if ( ! is_array( $termes ) ) {
+			$termes = array();
+		}
+		// On redemande dès qu'il manque un terme, et non seulement quand il
+		// n'y en a aucun.
+		//
+		// Une coupure de huit secondes sur un seul appel, au moment de l'envoi,
+		// et ce terme-là manquait pour toujours : la réserve n'était pas vide,
+		// donc rien ne la reprenait, et le mot-clé disparaissait de l'index
+		// sans un mot. Le dossier est demandé à la main, il peut attendre le
+		// thésaurus ; et un terme que Pactols refuse obstinément ne coûte
+		// qu'un appel par heure, la réserve retenant aussi les échecs.
+		if ( $this->des_termes_manquent( $d, $termes ) ) {
 			$termes = $this->resoudre_les_termes( $id, $d );
 		}
 		if ( empty( $termes ) ) {
@@ -4748,7 +4768,11 @@ class Notice_Archeomed_Pactols {
 	 * notices d'une campagne ne coûte qu'une poignée d'appels.
 	 */
 	private function resoudre_les_termes( $id, $d ) {
-		$termes = array();
+		// On repart de ce qui est déjà su. Un terme résolu ne se redemande pas :
+		// sa date de lecture dit de quel millésime du thésaurus il vient, et la
+		// redemander la ferait glisser sans qu'on l'ait voulu.
+		$deja   = get_post_meta( (int) $id, '_na_pactols', true );
+		$termes = is_array( $deja ) ? $deja : array();
 		foreach ( $this->zones_pactols() as $clef => $theso ) {
 			$items = isset( $d[ $clef ] ) ? (array) $d[ $clef ] : array();
 			foreach ( $items as $item ) {
@@ -4767,6 +4791,21 @@ class Notice_Archeomed_Pactols {
 			update_post_meta( $id, '_na_pactols', $termes );
 		}
 		return $termes;
+	}
+
+	/**
+	 * Un terme de la saisie porte-t-il un ARK que la réserve ignore ?
+	 */
+	private function des_termes_manquent( $d, $termes ) {
+		foreach ( array_keys( $this->zones_pactols() ) as $clef ) {
+			foreach ( (array) ( isset( $d[ $clef ] ) ? $d[ $clef ] : array() ) as $item ) {
+				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
+				if ( '' !== $ark && empty( $termes[ $ark ] ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
