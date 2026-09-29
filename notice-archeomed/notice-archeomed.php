@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.32
+ * Version: 3.33
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3741,29 +3741,14 @@ class Notice_Archeomed_Pactols {
 		// n'ajoutait rien et allongeait d'autant ce qu'il faut supprimer pour
 		// préparer le XML.
 		//
-		// Ne restent que les lieux autres que celui de la notice : ils n'ont
-		// nulle part où paraître dans le corps, et leur identifiant est la
-		// partie chère de la saisie — quelqu'un est allé la chercher dans un
-		// thésaurus.
-		$autres = isset( $d['pactols_places_items'] ) ? (array) $d['pactols_places_items'] : array();
-		if ( ! empty( $autres ) ) {
-			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
-				array( array( 'text' => 'Lieux autres que celui de la notice :', 'b' => true ) ) );
-			$parts = array();
-			foreach ( $autres as $item ) {
-				$part = $doc->plain( $item['label'] );
-				if ( ! empty( $item['ark'] ) ) {
-					$part .= $doc->plain( ' [' )
-						. $doc->hyperlink( $item['ark'], $this->ark_id( $item['ark'] ) )
-						. $doc->plain( ']' );
-				} elseif ( ! empty( $item['idConcept'] ) ) {
-					$part .= $doc->plain( ' [ID concept : ' . $item['idConcept'] . ']' );
-				}
-				$parts[] = $part;
-			}
-			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
-				implode( $doc->plain( ', ' ), $parts ) );
-		}
+		// Les lieux autres que celui de la notice y sont restés un temps de
+		// plus, faute d'avoir où paraître dans le corps. Ils paraissent
+		// maintenant sous le titre, avec leur identifiant en lien comme les
+		// autres termes : les garder ici en ferait un doublon, et le bloc à
+		// supprimer n'a pas à répéter ce que la notice imprime.
+		//
+		// Ne subsistent donc que deux notes, qui ne sont pas de l'indexation
+		// mais des avis à la rédaction.
 
 		// De quel millésime du thésaurus viennent ces identifiants.
 		//
@@ -3799,17 +3784,6 @@ class Notice_Archeomed_Pactols {
 				array( 'text' => implode( ', ', array_unique( $morts ) ) . '.' ),
 			) );
 		}
-	}
-
-	/**
-	 * Renvoie la seule partie identifiante d'un ARK, pour l'affichage du lien.
-	 */
-	private function ark_id( $ark_uri ) {
-		$ark_uri = trim( (string) $ark_uri );
-		if ( preg_match( '#ark:/(.+)$#', $ark_uri, $m ) ) {
-			return $m[1];
-		}
-		return $ark_uri;
 	}
 
 	/**

@@ -570,6 +570,21 @@ class Notice_Archeomed_DOCX {
 				continue; // Régénérés ci-dessous.
 			}
 			$contenu = $src->getFromIndex( $i );
+			// Le gabarit garde le chemin du modèle Word auquel il était
+			// attaché quand quelqu'un l'a enregistré : un chemin absolu sur
+			// un poste, avec un nom d'utilisateur et un compte d'hébergement.
+			// Il était recopié tel quel dans chaque document produit — donc
+			// envoyé à chaque auteur — et il ne sert à rien : la machine qu'il
+			// désigne n'est celle de personne d'autre. Il s'ôte ici plutôt
+			// qu'à la main dans le gabarit, qui se remplace à neuf à chaque
+			// évolution de la feuille et le rapporterait.
+			if ( 'word/settings.xml' === $name && is_string( $contenu ) ) {
+				$contenu = preg_replace( '#<w:attachedTemplate\b[^>]*/>#', '', $contenu );
+			}
+			if ( 'word/_rels/settings.xml.rels' === $name && is_string( $contenu ) ) {
+				$contenu = preg_replace(
+					'#<Relationship\b[^>]*attachedTemplate[^>]*/>#', '', $contenu );
+			}
 			if ( '[Content_Types].xml' === $name && is_string( $contenu ) ) {
 				$contenu = $this->types_de_contenu( $contenu );
 			}
