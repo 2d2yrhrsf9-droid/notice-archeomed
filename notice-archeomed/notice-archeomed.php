@@ -34,6 +34,7 @@ add_filter( 'cron_schedules', array( 'Notice_Archeomed_File', 'ajouter_intervall
 register_activation_hook( __FILE__, array( 'Notice_Archeomed_File', 'activer' ) );
 register_deactivation_hook( __FILE__, array( 'Notice_Archeomed_File', 'desactiver' ) );
 register_deactivation_hook( __FILE__, array( 'Notice_Archeomed_Pactols', 'desactiver' ) );
+register_activation_hook( __FILE__, array( 'Notice_Archeomed_Pactols', 'activer' ) );
 
 /**
  * Le guetteur de mises à jour, créé une fois et gardé sous la main.
@@ -568,8 +569,8 @@ class Notice_Archeomed_Pactols {
 			if ( $manquants > 0 ) {
 				$termes_manquants += $manquants;
 				++$notices_en_attente;
-				$prochaine_lecture = $prochaine_lecture
-					? min( $prochaine_lecture, $prochaine ) : $prochaine;
+				// La plus tardive : c'est après elle que le dossier sera complet.
+				$prochaine_lecture = max( $prochaine_lecture, $prochaine );
 			}
 			if ( '' === $xml ) {
 				continue;
@@ -588,7 +589,7 @@ class Notice_Archeomed_Pactols {
 		if ( $termes_manquants > 0 ) {
 			$quand = ( $prochaine_lecture <= time() + 2 * MINUTE_IN_SECONDS )
 				? 'dans les minutes qui viennent'
-				: 'vers ' . wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
+				: 'd\'ici ' . wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
 					$prochaine_lecture );
 			$paquet->noter( sprintf(
 				'XML/indexation : %d terme(s) du thésaurus, dans %d notice(s), ne sont pas'
@@ -4220,6 +4221,7 @@ class Notice_Archeomed_Pactols {
 			array( $this, 'expedier_de_la_file' ), 10, 1 );
 		add_action( self::HOOK_TERMES,
 			array( $this, 'resoudre_en_tache' ), 10, 1 );
+		add_action( 'admin_init', array( $this, 'reveiller_la_file' ) );
 	}
 
 	/**
@@ -4882,15 +4884,30 @@ class Notice_Archeomed_Pactols {
 		if ( ! $id ) {
 			return;
 		}
-		if ( '' === (string) get_post_meta( $id, '_na_pactols_apres', true )
-			&& (int) get_post_meta( $id, '_na_pactols_essais', true ) < self::ESSAIS_TERMES ) {
-			if ( null === $d ) {
-				$d = get_post_meta( $id, '_na_donnees', true );
-			}
-			update_post_meta( $id, '_na_pactols_apres',
-				$this->premier_examen_utile( is_array( $d ) ? $d : array() ) );
+		if ( null === $d ) {
+			$d = get_post_meta( $id, '_na_donnees', true );
 		}
-		$this->assurer_la_tache();
+		$d      = is_array( $d ) ? $d : array();
+		$termes = $this->termes_connus( $id );
+		// Rien à chercher, ou plus d'essai à faire : ni attente, ni tâche.
+		// Chaque notice envoyée passait par ici, avec ou sans terme du
+		// thésaurus, et réservait un passage qui ne faisait que la retirer.
+		if ( empty( $this->termes_manquants( $d, $termes ) )
+			|| (int) get_post_meta( $id, '_na_pactols_essais', true ) >= self::ESSAIS_TERMES ) {
+			return;
+		}
+		$apres = (int) get_post_meta( $id, '_na_pactols_apres', true );
+		if ( ! $apres ) {
+			$apres = $this->premier_examen_utile( $d, $termes );
+			update_post_meta( $id, '_na_pactols_apres', $apres );
+		}
+		$this->assurer_la_tache( $apres );
+	}
+
+	/** Les termes d'une notice que la réserve connaît déjà. */
+	private function termes_connus( $id ) {
+		$termes = get_post_meta( (int) $id, '_na_pactols', true );
+		return is_array( $termes ) ? $termes : array();
 	}
 
 	/**
@@ -4902,15 +4919,43 @@ class Notice_Archeomed_Pactols {
 	 * gâcherait un essai en promettant à la rédaction une relance qui n'en
 	 * est pas une.
 	 */
-	private function premier_examen_utile( $d ) {
+	private function premier_examen_utile( $d, $termes ) {
 		$quand = time() + MINUTE_IN_SECONDS;
-		foreach ( $this->arks_de( $d ) as $ark => $quoi ) {
-			$echec = Notice_Archeomed_Thesaurus::echec_jusqua( $ark, $quoi['id'], $quoi['theso'] );
+		$arks  = $this->arks_de( $d );
+		// Seuls comptent les termes qui manquent : un terme déjà connu de la
+		// notice n'a pas à la retarder parce qu'il vient d'échouer ailleurs.
+		foreach ( $this->termes_manquants( $d, $termes ) as $ark ) {
+			$echec = Notice_Archeomed_Thesaurus::echec_jusqua( $ark,
+				$arks[ $ark ]['id'], $arks[ $ark ]['theso'] );
 			if ( $echec > 0 ) {
 				$quand = max( $quand, $echec + MINUTE_IN_SECONDS );
 			}
 		}
 		return $quand;
+	}
+
+	/**
+	 * L'heure où le dernier échec hérité sera oublié, si tous les termes qui
+	 * manquent encore portent un échec survenu avant « $depuis » ; zéro sinon.
+	 *
+	 * Un échec hérité est survenu pour une autre notice — parfois dans ce même
+	 * passage, un peu plus tôt. La notice n'a pas interrogé Pactols pour ces
+	 * termes-là, elle a relu la réserve : la compter en échec lui prenait un
+	 * essai qu'elle n'avait pas fait.
+	 */
+	private function oubli_herite( $d, $termes, $depuis ) {
+		$arks  = $this->arks_de( $d );
+		$oubli = 0;
+		foreach ( $this->termes_manquants( $d, $termes ) as $ark ) {
+			$quand = Notice_Archeomed_Thesaurus::echec_depuis( $ark,
+				$arks[ $ark ]['id'], $arks[ $ark ]['theso'] );
+			if ( $quand <= 0 || $quand >= $depuis ) {
+				return 0;
+			}
+			$oubli = max( $oubli, Notice_Archeomed_Thesaurus::echec_jusqua( $ark,
+				$arks[ $ark ]['id'], $arks[ $ark ]['theso'] ) );
+		}
+		return $oubli;
 	}
 
 	/**
@@ -4924,10 +4969,10 @@ class Notice_Archeomed_Pactols {
 	private function relancer_la_resolution( $id, $d ) {
 		$id    = (int) $id;
 		$fixee = (int) get_post_meta( $id, '_na_pactols_apres', true );
-		$apres = max( $fixee, $this->premier_examen_utile( $d ) );
+		$apres = max( $fixee, $this->premier_examen_utile( $d, $this->termes_connus( $id ) ) );
 		delete_post_meta( $id, '_na_pactols_essais' );
 		update_post_meta( $id, '_na_pactols_apres', $apres );
-		$this->assurer_la_tache();
+		$this->assurer_la_tache( $apres );
 		return $apres;
 	}
 
@@ -4937,10 +4982,40 @@ class Notice_Archeomed_Pactols {
 		delete_post_meta( (int) $id, '_na_pactols_essais' );
 	}
 
-	/** La tâche unique existe, ou on la crée pour la minute qui vient. */
-	private function assurer_la_tache() {
-		if ( ! wp_next_scheduled( self::HOOK_TERMES ) ) {
-			wp_schedule_single_event( time() + MINUTE_IN_SECONDS, self::HOOK_TERMES );
+	/**
+	 * La tâche unique passera au plus tard à l'heure dite.
+	 *
+	 * Elle ne vérifiait que son existence. Après un passage où toutes les
+	 * notices avaient échoué, elle était réservée une heure plus tard ; une
+	 * notice déposée entre-temps, à examiner dans la minute, attendait cette
+	 * heure-là. Une tâche prévue trop tard est donc avancée.
+	 */
+	private function assurer_la_tache( $quand = 0 ) {
+		$quand  = max( (int) $quand, time() + MINUTE_IN_SECONDS );
+		$prevue = wp_next_scheduled( self::HOOK_TERMES );
+		if ( $prevue && $prevue <= $quand ) {
+			return;
+		}
+		if ( $prevue ) {
+			wp_clear_scheduled_hook( self::HOOK_TERMES );
+		}
+		wp_schedule_single_event( $quand, self::HOOK_TERMES );
+	}
+
+	/**
+	 * Remet la tâche en route si des notices attendent sans elle — après une
+	 * réactivation, qui l'a effacée, ou si WordPress l'a perdue. Sans cela,
+	 * rien ne la recréait avant le prochain dépôt ou le prochain fascicule.
+	 * La vérification ne coûte qu'une lecture de la liste des tâches ; la
+	 * recherche des notices n'a lieu que si la tâche manque.
+	 */
+	public function reveiller_la_file() {
+		if ( wp_next_scheduled( self::HOOK_TERMES ) ) {
+			return;
+		}
+		$premiere = $this->notices_en_attente( 0, 1 );
+		if ( ! empty( $premiere ) ) {
+			$this->assurer_la_tache( (int) get_post_meta( $premiere[0], '_na_pactols_apres', true ) );
 		}
 	}
 
@@ -4985,8 +5060,13 @@ class Notice_Archeomed_Pactols {
 	 * par la 3.36 : on la verse dans l'attente commune, et l'on continue.
 	 */
 	public function resoudre_en_tache( $ancien = 0 ) {
+		// Une tâche d'une seule notice, laissée par la 3.36 : la notice rejoint
+		// l'attente, et c'est tout. Quarante de ces tâches dues ensemble
+		// lançaient sinon quarante passages de dix secondes dans la même
+		// requête — ce que la tâche unique était venue empêcher.
 		if ( $ancien ) {
 			$this->mettre_en_attente( (int) $ancien );
+			return;
 		}
 		$echeance = microtime( true ) + self::BUDGET_TERMES;
 		if ( ! wp_next_scheduled( self::HOOK_TERMES ) ) {
@@ -4994,6 +5074,7 @@ class Notice_Archeomed_Pactols {
 		}
 
 		$interrompu = false;
+		$premiere   = true;
 		foreach ( $this->notices_en_attente( time(), self::LOT_TERMES ) as $id ) {
 			if ( microtime( true ) > $echeance - 1 ) {
 				$interrompu = true;
@@ -5004,13 +5085,15 @@ class Notice_Archeomed_Pactols {
 				$this->sortir_de_l_attente( $id );
 				continue;
 			}
-			$avant  = get_post_meta( $id, '_na_pactols', true );
+			$avant  = $this->termes_connus( $id );
+			$depuis = microtime( true );
 			$coupe  = false;
 			$termes = $this->resoudre_les_termes( $id, $d, $echeance, $coupe );
 			$issue  = $this->issue_du_passage(
-				count( $this->termes_manquants( $d, is_array( $avant ) ? $avant : array() ) ),
+				count( $this->termes_manquants( $d, $avant ) ),
 				count( $this->termes_manquants( $d, $termes ) ),
-				$coupe );
+				$coupe, $premiere );
+			$premiere = false;
 			if ( 'resolue' === $issue ) {
 				$this->sortir_de_l_attente( $id );
 				continue;
@@ -5019,18 +5102,25 @@ class Notice_Archeomed_Pactols {
 				$interrompu = true;
 				break;
 			}
-			// Un échec, ou une interruption qui n'a rien appris : la notice
-			// compte un essai et passe en fin de file. Elle ne peut plus
-			// occuper la tête à chaque minute.
+			// Un échec, ou une interruption qui n'a rien appris alors que la
+			// notice avait tout le budget : elle passe en fin de file. Elle ne
+			// peut plus occuper la tête à chaque minute.
 			if ( $coupe ) {
 				$interrompu = true;
 			}
-			$essais = (int) get_post_meta( $id, '_na_pactols_essais', true ) + 1;
-			update_post_meta( $id, '_na_pactols_essais', $essais );
-			if ( $essais >= self::ESSAIS_TERMES ) {
-				delete_post_meta( $id, '_na_pactols_apres' );
+			$herite = $this->oubli_herite( $d, $termes, $depuis );
+			if ( $herite > 0 ) {
+				// Tout ce qui manque encore a échoué ailleurs, avant qu'on
+				// l'examine : pas d'essai compté, et l'on attend l'oubli.
+				update_post_meta( $id, '_na_pactols_apres', $herite + MINUTE_IN_SECONDS );
 			} else {
-				update_post_meta( $id, '_na_pactols_apres', time() + self::REPRISE_TERMES );
+				$essais = (int) get_post_meta( $id, '_na_pactols_essais', true ) + 1;
+				update_post_meta( $id, '_na_pactols_essais', $essais );
+				if ( $essais >= self::ESSAIS_TERMES ) {
+					delete_post_meta( $id, '_na_pactols_apres' );
+				} else {
+					update_post_meta( $id, '_na_pactols_apres', time() + self::REPRISE_TERMES );
+				}
 			}
 			if ( $interrompu ) {
 				break;
@@ -5066,14 +5156,17 @@ class Notice_Archeomed_Pactols {
 	 * chaque passage et bloquait celles qui attendaient derrière lui.
 	 *
 	 * Une interruption ne se reprend dans la minute que si le passage a
-	 * appris quelque chose — un terme de moins à trouver. Sinon c'est un
-	 * échec comme un autre : compté, et remis à plus tard.
+	 * appris quelque chose — un terme de moins à trouver —, ou si la notice
+	 * n'a pas eu tout le budget : examinée après d'autres, avec une ou deux
+	 * secondes restantes, elle n'a pas eu sa chance, et la condamner lui
+	 * prenait un essai à chaque passage où elle venait en dernier. Elle sera
+	 * la première du passage suivant. Hors de ces cas, c'est un échec.
 	 */
-	private function issue_du_passage( $manquaient, $manquent, $coupe ) {
+	private function issue_du_passage( $manquaient, $manquent, $coupe, $budget_entier = true ) {
 		if ( 0 === (int) $manquent ) {
 			return 'resolue';
 		}
-		if ( $coupe && (int) $manquent < (int) $manquaient ) {
+		if ( $coupe && ( (int) $manquent < (int) $manquaient || ! $budget_entier ) ) {
 			return 'reprendre';
 		}
 		return 'echec';
@@ -5086,6 +5179,16 @@ class Notice_Archeomed_Pactols {
 	 */
 	public static function desactiver() {
 		wp_unschedule_hook( self::HOOK_TERMES );
+	}
+
+	/**
+	 * À l'activation, un passage dans la minute : il examine ce qui attendait
+	 * pendant la désactivation, ou ne trouve rien et ne se réinscrit pas.
+	 */
+	public static function activer() {
+		if ( ! wp_next_scheduled( self::HOOK_TERMES ) ) {
+			wp_schedule_single_event( time() + MINUTE_IN_SECONDS, self::HOOK_TERMES );
+		}
 	}
 
 	/**

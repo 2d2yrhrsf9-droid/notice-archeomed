@@ -13,7 +13,18 @@ FAUTES=0
 
 essai() {
   attendu=$1; shift
-  if "$CONTROLE" "$@" > /dev/null 2>&1; then obtenu=passe; else obtenu=echoue; fi
+  # « échoue » veut dire : a vu le doublon. Un contrôle qui plante — une
+  # trace Python, une faute sans rapport — sort aussi en erreur, et
+  # passerait pour un contrôle qui a bien jugé. On exige donc son message.
+  sortie=$("$CONTROLE" "$@" 2>&1)
+  code=$?
+  if [ "$code" -eq 0 ]; then
+    obtenu=passe
+  elif printf '%s' "$sortie" | grep -q 'est déclaré dans'; then
+    obtenu=echoue
+  else
+    obtenu="plante ($(printf '%s' "$sortie" | tail -n 1))"
+  fi
   if [ "$obtenu" = "$attendu" ]; then
     echo "  ✓ $attendu : $*"
   else

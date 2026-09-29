@@ -339,17 +339,24 @@ class Notice_Archeomed_Paquet {
 			$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
 		}
 		$lignes[] = '';
-		if ( 0 === (int) $this->comptes['illustrations'] ) {
+		$ennuis = array_merge( $this->journal, $this->erreurs );
+		if ( empty( $ennuis ) ) {
 			// « Toutes les illustrations ont été traitées » quand il n'y en a
 			// aucune se lit comme une réussite : on cherche alors pourquoi le
 			// dossier est vide, au lieu de savoir qu'il n'y avait rien.
-			$lignes[] = 'Aucune illustration dans cette rubrique : les dossiers '
-				. 'icono sont donc vides, et c’est normal.';
-		} elseif ( empty( $this->journal ) && empty( $this->erreurs ) ) {
-			$lignes[] = 'Toutes les illustrations ont été traitées.';
+			$lignes[] = ( 0 === (int) $this->comptes['illustrations'] )
+				? 'Aucune illustration dans cette rubrique : les dossiers icono sont donc vides, et c’est normal.'
+				: 'Toutes les illustrations ont été traitées.';
 		} else {
+			// Zéro illustration posée n'est « normal » que s'il n'y avait rien
+			// à poser. Des légendes sans fichier, un fichier illisible : le
+			// dossier est vide pour une raison, et elle doit se lire — le
+			// lisez-moi disait « c'est normal » et taisait justement celle-là.
+			if ( 0 === (int) $this->comptes['illustrations'] ) {
+				$lignes[] = 'Aucune illustration n’a pu être posée dans les dossiers icono.';
+			}
 			$lignes[] = 'Ce qui n\'a pas pu être fait :';
-			foreach ( array_merge( $this->journal, $this->erreurs ) as $ligne ) {
+			foreach ( $ennuis as $ligne ) {
 				$lignes[] = '  - ' . $ligne;
 			}
 		}

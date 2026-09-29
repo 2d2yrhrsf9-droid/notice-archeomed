@@ -141,8 +141,10 @@ class Notice_Archeomed_Thesaurus {
 			// l'échec. La réserve est commune à toutes les notices : un terme qui
 			// vient d'échouer pour l'une échoue aussi, pour l'heure, pour les
 			// autres.
-			set_transient( $clef, array( 'echec_jusqua' => time() + self::DUREE_ECHEC ),
-				self::DUREE_ECHEC );
+			set_transient( $clef, array(
+				'echec_jusqua' => time() + self::DUREE_ECHEC,
+				'echec_depuis' => microtime( true ),
+			), self::DUREE_ECHEC );
 			return null;
 		}
 
@@ -276,6 +278,23 @@ class Notice_Archeomed_Thesaurus {
 			return (int) $connu['echec_jusqua'];
 		}
 		return ( 'vide' === $connu ) ? time() + self::DUREE_ECHEC : 0;
+	}
+
+	/**
+	 * L'instant où l'échec retenu pour ce terme s'est produit, ou zéro s'il
+	 * n'y en a pas.
+	 *
+	 * C'est ce qui distingue un échec hérité — survenu pour une autre notice,
+	 * avant qu'on examine celle-ci — d'un échec propre. Faute de connaître
+	 * l'instant d'un échec plus ancien, on le suppose tout frais : il compte
+	 * alors comme propre, ce qui ne coûte au plus qu'un essai.
+	 */
+	public static function echec_depuis( $ark, $id_concept = '', $theso = 'TH_1' ) {
+		$connu = get_transient( self::clef( trim( (string) $ark ), $id_concept, $theso ) );
+		if ( is_array( $connu ) && isset( $connu['echec_depuis'] ) ) {
+			return (float) $connu['echec_depuis'];
+		}
+		return self::est_un_echec( $connu ) ? microtime( true ) : 0.0;
 	}
 
 	/** Un échec en réserve, sous sa forme d'avant la 3.38 ou d'après. */
