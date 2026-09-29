@@ -5521,4 +5521,12 @@ class Notice_Archeomed_Pactols {
 }
 // L'instance est nommée : la file d'attente a besoin du plugin pour calculer
 // le classement d'une notice, et la file naît avant lui.
+// « global », comme pour la mise à jour plus haut. WordPress charge d'ordinaire
+// les extensions dans la portée globale, et la variable l'est d'office ; mais
+// WP-CLI le charge dans une fonction, et elle devenait locale : la file, qui
+// retrouve le plugin par cette variable, ne le trouvait plus et les notices
+// perdaient leur classement. C'est ce qui arriverait le jour où l'hébergement
+// remplace le planificateur de WordPress par « wp cron » — et c'est le site
+// d'essai de la publication, monté par WP-CLI, qui l'a montré.
+global $notice_archeomed_plugin;
 $notice_archeomed_plugin = new Notice_Archeomed_Pactols();

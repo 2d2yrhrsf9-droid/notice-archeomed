@@ -14,7 +14,8 @@
 
 $plugin = isset( $GLOBALS['notice_archeomed_plugin'] ) ? $GLOBALS['notice_archeomed_plugin'] : null;
 if ( ! $plugin instanceof Notice_Archeomed_Pactols ) {
-	WP_CLI::error( "Le plugin n'est pas chargé : aucune instance de Notice_Archeomed_Pactols." );
+	WP_CLI::line( "::error::L'instance du plugin n'est pas globale : \$notice_archeomed_plugin est introuvable." );
+	WP_CLI::halt( 1 );
 }
 
 // « wp eval-file » exécute ce fichier dans une fonction : une variable posée
@@ -35,7 +36,11 @@ function na_verifier( $vrai, $quoi, $obtenu = null ) {
 		return;
 	}
 	++$GLOBALS['na_ratees'];
-	WP_CLI::warning( $quoi . ( null === $obtenu ? '' : ' — obtenu : ' . var_export( $obtenu, true ) ) );
+	// En annotation GitHub : le journal complet d'une exécution demande d'être
+	// connecté, l'annotation se lit sur la page publique de l'exécution.
+	$detail = ( null === $obtenu ) ? '' : ' — obtenu : ' . str_replace( array( "\r", "\n" ), ' ',
+		var_export( $obtenu, true ) );
+	WP_CLI::line( '::error::' . $quoi . $detail );
 }
 
 /** Une notice d'essai, privée comme les vraies. */
