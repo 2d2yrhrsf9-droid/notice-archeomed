@@ -82,11 +82,22 @@ jobs:
     permissions:
       contents: read
     strategy:
+      # Chaque version va au bout : qu'une tombe ne doit pas cacher ce que
+      # les autres auraient dit.
+      fail-fast: false
       matrix:
-        # 7.2, parce que l'en-tête du plugin la promet : l'analyseur ne voit
-        # que la syntaxe, et une fonction qui n'existe qu'en 8 ne se révèle
-        # qu'à l'exécution — sur l'hébergement, en erreur fatale.
-        php: ['7.2', '8.1', '8.3']
+        include:
+          # 7.2, parce que l'en-tête du plugin la promet : l'analyseur ne voit
+          # que la syntaxe, et une fonction propre à PHP 8 ne se révèle qu'à
+          # l'exécution. WordPress 7 exige PHP 7.4 ; un hébergement en 7.2 ne
+          # peut donc avoir que WordPress 6.9 au plus, et c'est avec lui que
+          # la promesse s'éprouve.
+          - php: '7.2'
+            wordpress: '6.9'
+          - php: '8.1'
+            wordpress: 'latest'
+          - php: '8.3'
+            wordpress: 'latest'
     services:
       base:
         image: mariadb:10.11
@@ -102,7 +113,7 @@ jobs:
       - name: Prendre le code
         uses: actions/checkout@v4
 
-      - name: Installer PHP ${{ matrix.php }} et WP-CLI
+      - name: Installer PHP ${{ matrix.php }} et WP-CLI (WordPress ${{ matrix.wordpress }})
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -112,9 +123,12 @@ jobs:
 
       - name: Monter un WordPress d'essai
         run: |
-          set -eu
+          set -Eeu
+          # La commande qui échoue s'annonce : le journal complet demande
+          # d'être connecté, l'annotation se lit sur la page publique.
+          trap 'echo "::error::montage : « $BASH_COMMAND » a échoué (ligne $LINENO)"' ERR
           mkdir -p /tmp/wp && cd /tmp/wp
-          wp core download --quiet
+          wp core download --quiet --version=${{ matrix.wordpress }}
           wp config create --dbname=essai --dbuser=root --dbpass=essai \
             --dbhost=127.0.0.1:3306 --skip-check
           wp config set WP_DEBUG true --raw
