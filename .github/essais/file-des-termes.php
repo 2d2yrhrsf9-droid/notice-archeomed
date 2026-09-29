@@ -262,6 +262,46 @@ na_verifier( (bool) wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),
 	'une notice qui attend sans tâche la voit renaître' );
 na_appel( $plugin, 'sortir_de_l_attente', array( $reveil ) );
 
+WP_CLI::log( 'Le poids du courriel' );
+// Un document léger et deux images de 4 Mo : sous 10 Mo, le document et une
+// image tiennent, la seconde reste sur le site — c'est ce qu'a montré
+// l'hébergement de la revue, où deux images faisaient refuser le message.
+$dossier_essai = trailingslashit( get_temp_dir() ) . 'na-essai-poids';
+wp_mkdir_p( $dossier_essai );
+$doc_essai = $dossier_essai . '/notice.docx';
+$fig1      = $dossier_essai . '/fig1.jpg';
+$fig2      = $dossier_essai . '/fig2.jpg';
+file_put_contents( $doc_essai, str_repeat( 'd', 20 * KB_IN_BYTES ) );
+file_put_contents( $fig1, str_repeat( 'a', 4 * MB_IN_BYTES ) );
+file_put_contents( $fig2, str_repeat( 'b', 4 * MB_IN_BYTES ) );
+$restees = array();
+$joindre = na_appel( $plugin, 'pieces_qui_tiennent',
+	array( array( $fig1, $fig2, $doc_essai ), $doc_essai, 4000, &$restees ) );
+na_verifier( array( $doc_essai, $fig1 ) === $joindre && array( $fig2 ) === $restees,
+	'le document d\'abord, puis ce qui tient ; la seconde image de 4 Mo reste sur le site',
+	array( 'joindre' => array_map( 'basename', $joindre ), 'restees' => array_map( 'basename', $restees ) ) );
+$avis = na_appel( $plugin, 'avis_des_pieces_restees', array( $restees, 123 ) );
+na_verifier( false !== strpos( $avis, 'fig2.jpg' ) && false !== strpos( $avis, 'post=123' ),
+	'le courriel nomme l\'image restée et donne le lien de la notice' );
+foreach ( array( $doc_essai, $fig1, $fig2 ) as $f ) {
+	@unlink( $f );
+}
+@rmdir( $dossier_essai );
+
+WP_CLI::log( 'La note d\'un envoi partiel' );
+$partie = na_notice( $saisie );
+update_post_meta( $partie, '_na_erreur', 'Impossible d’instancier la fonction mail.' );
+$GLOBALS['notice_archeomed_file']->marquer( $partie, 'envoyee', 'Partie sans 1 illustration.' );
+na_verifier( '' === get_post_meta( $partie, '_na_erreur', true )
+	&& 'Partie sans 1 illustration.' === get_post_meta( $partie, '_na_note', true ),
+	'une notice partie perd son ancienne erreur, et garde la note de ce qui manque' );
+wp_delete_post( $partie, true );
+
+WP_CLI::log( 'L\'icône du menu' );
+$icone = na_appel( 'Notice_Archeomed_File', 'icone_du_menu' );
+na_verifier( 0 === strpos( $icone, 'data:image/svg+xml;base64,' ),
+	'le menu porte l\'arc de la revue', substr( $icone, 0, 40 ) );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

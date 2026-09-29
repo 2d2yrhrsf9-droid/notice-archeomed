@@ -4253,8 +4253,10 @@ class Notice_Archeomed_Pactols {
 	 * la rédaction est parti : c'est lui qui compte, les copies sont un
 	 * agrément.
 	 */
-	public function expedier( $d, $notice, $produits, $document = '', &$pourquoi = '' ) {
+	public function expedier( $d, $notice, $produits, $document = '', &$pourquoi = '', $id = 0,
+		&$restees = array() ) {
 		$pourquoi = '';
+		$restees  = array();
 		$wrap_open  = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">';
 		$wrap_close = '</div></body></html>';
 
@@ -4286,11 +4288,26 @@ class Notice_Archeomed_Pactols {
 		$redaction = $pour_la_redaction[0];
 
 		$existants = array_values( array_filter( (array) $produits, 'file_exists' ) );
+		// Ce que le courriel peut porter. Le serveur refuse un message trop
+		// lourd tout entier, et la notice ne partait jamais : deux images de
+		// 4 Mo suffisaient. Pour une notice déposée, dont les illustrations
+		// sont rangées sur le site, on joint ce qui tient et l'on nomme le
+		// reste, avec le lien de la notice où il se télécharge. Sans dépôt —
+		// l'envoi immédiat —, rien n'est rangé nulle part : on joint tout, et
+		// un refus garde la notice de côté plutôt que d'en perdre une figure.
+		$joindre = $existants;
+		if ( $id ) {
+			$joindre = $this->pieces_qui_tiennent( $existants, $document, strlen( $notice ), $restees );
+		}
+		$corps = $notice;
+		if ( ! empty( $restees ) ) {
+			$corps = $this->avis_des_pieces_restees( $restees, $id ) . $notice;
+		}
 		// Un seul envoi pour toute la rédaction : les pièces jointes pèsent
 		// jusqu'à vingt méga-octets, et les répéter par destinataire ferait
 		// payer la liste au poids.
-		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $notice . $wrap_close,
-			$headers, $existants );
+		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
+			$headers, $joindre );
 		if ( ! $sent ) {
 			// « wp_mail » rend faux sans dire pourquoi. Le crochet
 			// « wp_mail_failed » porte l'erreur de PHPMailer — la vraie
@@ -4490,9 +4507,14 @@ class Notice_Archeomed_Pactols {
 		$produits = array_values( array_filter(
 			(array) get_post_meta( (int) $id, '_na_fichiers', true ), 'file_exists' ) );
 
-		$sujet = 'Notice Archéomed - ' . $d['commune'] . ' (' . $d['departement'] . ')';
+		// Marqués comme essais : ils portaient le sujet et le corps de la vraie
+		// notice, et l'essai qui réussissait avec une seule pièce jointe se
+		// prenait pour la notice partie amputée d'une figure.
+		$sujet = '[ESSAI] Notice Archéomed - ' . $d['commune'] . ' (' . $d['departement'] . ')';
 		$sujet = str_replace( array( "\r", "\n" ), ' ', $sujet );
-		$corps = '<html><body><div>' . $notice . '</div></body></html>';
+		$corps = '<html><body><p style="background:#eef;border:1px solid #88a;padding:8px 12px;">'
+			. '<strong>Essai de diagnostic</strong> — ce message n’est pas l’envoi de la notice, '
+			. 'il ne sert qu’à savoir ce que le serveur accepte.</p><div>' . $notice . '</div></body></html>';
 		$resp  = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
 		$reply = '';
 		if ( is_email( $d['resp_email'] ) ) {
@@ -4521,6 +4543,18 @@ class Notice_Archeomed_Pactols {
 		if ( empty( $produits ) ) {
 			$out[] = array( 'ok' => true, 'etape' => 'pièces jointes',
 				'message' => 'aucune — rien à joindre pour cette notice' );
+		} else {
+			// Ce que l'envoi véritable ferait de ces pièces, au poids réglé.
+			$restees  = array();
+			$document = (string) get_post_meta( (int) $id, '_na_document', true );
+			$joindre  = $this->pieces_qui_tiennent( $produits, $document, strlen( $notice ), $restees );
+			$out[]    = array( 'ok' => true, 'etape' => 'l’envoi de la notice',
+				'message' => empty( $restees )
+					? 'joindrait les ' . count( $joindre ) . ' pièces : elles tiennent sous '
+						. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo.'
+					: 'joindrait ' . count( $joindre ) . ' pièce(s) sur ' . count( $produits )
+						. ' et nommerait les autres, restées sur le site : au-delà de '
+						. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo, le serveur refuse le message.' );
 		}
 		return $out;
 	}
@@ -4585,6 +4619,64 @@ class Notice_Archeomed_Pactols {
 	/**
 	 * Ce que le planificateur appelle : une notice inscrite, à expédier.
 	 */
+	/**
+	 * Les pièces que le courriel peut porter sans dépasser le poids réglé.
+	 *
+	 * Le document d'abord : c'est la notice même, et il est léger. Puis les
+	 * illustrations dans l'ordre de leurs figures, tant qu'elles tiennent. Une
+	 * pièce jointe voyage encodée en base 64, soit un tiers de plus, avec une
+	 * fin de ligne tous les soixante-seize caractères ; le corps et les
+	 * en-têtes prennent le reste.
+	 */
+	private function pieces_qui_tiennent( $existants, $document, $poids_du_corps, &$restees ) {
+		$restees = array();
+		// En méga-octets décimaux : le binaire en faisait 10 485 760 octets
+		// pour « 10 Mo », au-dessus des 10 240 000 de Postfix — un message
+		// passait le compte et se faisait refuser quand même.
+		$budget  = (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) * 1000 * 1000
+			- 3 * $poids_du_corps - 64 * KB_IN_BYTES;
+		$ordre   = $existants;
+		if ( '' !== $document && in_array( $document, $existants, true ) ) {
+			$ordre = array_merge( array( $document ),
+				array_values( array_diff( $existants, array( $document ) ) ) );
+		}
+		$joindre = array();
+		$cumul   = 0;
+		foreach ( $ordre as $fichier ) {
+			$encode = (int) ceil( filesize( $fichier ) * 4 / 3 * 78 / 76 );
+			if ( $cumul + $encode <= $budget ) {
+				$joindre[] = $fichier;
+				$cumul    += $encode;
+			} else {
+				$restees[] = $fichier;
+			}
+		}
+		return $joindre;
+	}
+
+	/**
+	 * L'encadré qui ouvre le courriel quand des illustrations sont restées
+	 * sur le site : lesquelles, combien elles pèsent, et où les prendre.
+	 */
+	private function avis_des_pieces_restees( $restees, $id ) {
+		$lignes = array();
+		foreach ( $restees as $fichier ) {
+			$lignes[] = '<li>' . esc_html( basename( $fichier ) ) . ' ('
+				. esc_html( size_format( filesize( $fichier ) ) ) . ')</li>';
+		}
+		$lien = admin_url( 'post.php?post=' . (int) $id . '&action=edit' );
+		return '<div style="background:#fdf6e3;border:2px solid #8a6d3b;padding:14px 18px;margin:0 0 18px;">'
+			. '<strong>' . esc_html( sprintf(
+				_n( '%d illustration n’est pas jointe à ce courriel', '%d illustrations ne sont pas jointes à ce courriel',
+					count( $restees ), 'notice-archeomed' ), count( $restees ) ) )
+			. '</strong> : elles dépasseraient le poids que le serveur de courriel accepte ('
+			. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo).'
+			. '<ul style="margin:8px 0">' . implode( '', $lignes ) . '</ul>'
+			. 'Elles sont conservées sur le site, et se téléchargent depuis la fiche de la notice : '
+			. '<a href="' . esc_url( $lien ) . '">' . esc_html( $lien ) . '</a>. '
+			. 'Elles figurent aussi dans le dossier Métopes de la rubrique.</div>';
+	}
+
 	public function expedier_de_la_file( $id ) {
 		$id = (int) $id;
 		if ( ! $id || ! $this->file()->prendre( $id ) ) {
@@ -4632,8 +4724,14 @@ class Notice_Archeomed_Pactols {
 		$this->mettre_en_attente( $id, $d );
 
 		$pourquoi = '';
-		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
-			$this->file()->marquer( $id, 'envoyee' );
+		$restees  = array();
+		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi, $id, $restees ) ) {
+			// Partie, mais pas entière : la liste le dit, pour qu'on ne croie
+			// pas la rédaction en possession de toutes les figures.
+			$this->file()->marquer( $id, 'envoyee', empty( $restees ) ? '' : sprintf(
+				_n( 'Partie sans %d illustration, trop lourde pour un courriel ; elle reste sur le site.',
+					'Partie sans %d illustrations, trop lourdes pour un courriel ; elles restent sur le site.',
+					count( $restees ), 'notice-archeomed' ), count( $restees ) ) );
 			// Les illustrations sont déjà rangées depuis le dépôt : il ne
 			// reste qu'à effacer le document, qui se refabrique à la demande
 			// et n'a aucune raison d'encombrer le répertoire temporaire.

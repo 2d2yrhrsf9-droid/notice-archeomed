@@ -144,6 +144,18 @@ class Notice_Archeomed_File {
 	}
 
 	/**
+	 * L'icône du menu : un arc en plein cintre, d'une seule couleur, que
+	 * WordPress accorde au thème de l'administration. Si le fichier manque,
+	 * l'icône de document d'avant.
+	 */
+	private static function icone_du_menu() {
+		$svg = @file_get_contents( plugin_dir_path( __FILE__ ) . 'assets/icone-menu.svg' );
+		return ( false !== $svg && '' !== $svg )
+			? 'data:image/svg+xml;base64,' . base64_encode( $svg )
+			: 'dashicons-media-document';
+	}
+
+	/**
 	 * Les notices reçues ne sont pas du contenu public : elles ne s'affichent
 	 * nulle part, ne s'indexent pas, et ne se voient que de l'administration.
 	 */
@@ -166,7 +178,7 @@ class Notice_Archeomed_File {
 				'show_ui'             => true,
 				'show_in_menu'        => true,
 				'show_in_rest'        => false,
-				'menu_icon'           => 'dashicons-media-document',
+				'menu_icon'           => self::icone_du_menu(),
 				'capability_type'     => 'post',
 				'capabilities'        => array( 'create_posts' => 'do_not_allow' ),
 				'map_meta_cap'        => true,
@@ -446,6 +458,10 @@ class Notice_Archeomed_File {
 		$erreur = (string) get_post_meta( $post->ID, '_na_erreur', true );
 		if ( '' !== $erreur ) {
 			echo '<p style="color:#b32d2e"><strong>' . esc_html( $erreur ) . '</strong></p>';
+		}
+		$note = (string) get_post_meta( $post->ID, '_na_note', true );
+		if ( '' !== $note ) {
+			echo '<p style="color:#8a6d3b"><strong>' . esc_html( $note ) . '</strong></p>';
 		}
 		// Le bouton paraît pour tout ce qui n'est pas parti — en échec comme en
 		// attente. Réservé au seul échec, il disparaissait précisément quand
@@ -728,12 +744,21 @@ class Notice_Archeomed_File {
 				. ( '' !== $apres ? ' <span class="description">' . esc_html( $apres ) . '</span>' : '' )
 				. '</span></span>';
 		};
-		$vues['na_dossiers'] = '<span style="display:table;margin:8px 0">'
+		// Le bloc passe en tête, sur sa propre ligne, contre la marge gauche.
+		// WordPress écrit les vues comme une ligne de texte — « Tous | Privées »
+		// — et le bloc, posé à la suite, démarrait après ces liens : sa
+		// seconde ligne se retrouvait décalée sous la première, et rien
+		// n'était aligné à gauche. La règle ci-dessous en fait un bloc à part
+		// entière ; la taille de police nulle efface la barre « | » que
+		// WordPress ajoute après chaque vue, et que le bloc n'a pas à porter.
+		$bloc = '<style>ul.subsubsub li.na_dossiers{display:block;font-size:0;margin:0 0 6px}'
+			. 'ul.subsubsub li.na_dossiers>span{font-size:13px}</style>'
+			. '<span style="display:table;margin:8px 0 0">'
 			. $ligne( __( 'Fascicule en Word stylé :', 'notice-archeomed' ), $liens )
 			. $ligne( __( 'Dossier Métopes (zip) :', 'notice-archeomed' ), $paquets,
 				__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' ) )
 			. '</span>';
-		return $vues;
+		return array( 'na_dossiers' => $bloc ) + $vues;
 	}
 
 	/**
@@ -836,11 +861,22 @@ class Notice_Archeomed_File {
 
 	public function marquer( $id, $etat, $erreur = '' ) {
 		update_post_meta( $id, '_na_etat', $etat );
+		if ( 'envoyee' === $etat ) {
+			// Une notice partie n'a plus d'erreur : la raison d'un échec
+			// ancien restait affichée en rouge sur sa fiche, comme si elle
+			// n'était jamais partie. Ce qui accompagne un envoi réussi — des
+			// illustrations restées sur le site — est une note, non une erreur.
+			delete_post_meta( $id, '_na_erreur' );
+			if ( '' !== $erreur ) {
+				update_post_meta( $id, '_na_note', $erreur );
+			} else {
+				delete_post_meta( $id, '_na_note' );
+			}
+			update_post_meta( $id, '_na_envoyee_le', current_time( 'mysql' ) );
+			return;
+		}
 		if ( '' !== $erreur ) {
 			update_post_meta( $id, '_na_erreur', $erreur );
-		}
-		if ( 'envoyee' === $etat ) {
-			update_post_meta( $id, '_na_envoyee_le', current_time( 'mysql' ) );
 		}
 	}
 
@@ -1056,6 +1092,10 @@ class Notice_Archeomed_File {
 			return;
 		}
 		echo esc_html( $mot );
+		$note = (string) get_post_meta( $id, '_na_note', true );
+		if ( '' !== $note ) {
+			echo '<br><span class="description" style="color:#8a6d3b">' . esc_html( $note ) . '</span>';
+		}
 	}
 
 	/**

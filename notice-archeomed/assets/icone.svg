@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Archéologie médiévale — formulaire des notices</title>
+  <rect width="256" height="256" rx="30" fill="#f3ead7"/>
+  <!-- Un arc en plein cintre, claveaux alternés : un portail roman. -->
+  <path d="M38.0 134.0 A90 90 0 0 1 43.4 103.2 L71.6 113.5 A60 60 0 0 0 68.0 134.0 Z" fill="#8b5a3c" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M43.4 103.2 A90 90 0 0 1 59.1 76.1 L82.0 95.4 A60 60 0 0 0 71.6 113.5 Z" fill="#b7825a" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M59.1 76.1 A90 90 0 0 1 83.0 56.1 L98.0 82.0 A60 60 0 0 0 82.0 95.4 Z" fill="#8b5a3c" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M83.0 56.1 A90 90 0 0 1 112.4 45.4 L117.6 74.9 A60 60 0 0 0 98.0 82.0 Z" fill="#b7825a" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M112.4 45.4 A90 90 0 0 1 143.6 45.4 L138.4 74.9 A60 60 0 0 0 117.6 74.9 Z" fill="#8b5a3c" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M143.6 45.4 A90 90 0 0 1 173.0 56.1 L158.0 82.0 A60 60 0 0 0 138.4 74.9 Z" fill="#b7825a" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M173.0 56.1 A90 90 0 0 1 196.9 76.1 L174.0 95.4 A60 60 0 0 0 158.0 82.0 Z" fill="#8b5a3c" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M196.9 76.1 A90 90 0 0 1 212.6 103.2 L184.4 113.5 A60 60 0 0 0 174.0 95.4 Z" fill="#b7825a" stroke="#f3ead7" stroke-width="2.5"/>
+  <path d="M212.6 103.2 A90 90 0 0 1 218.0 134.0 L188.0 134.0 A60 60 0 0 0 184.4 113.5 Z" fill="#8b5a3c" stroke="#f3ead7" stroke-width="2.5"/>
+  <rect x="38" y="134" width="30" height="80" fill="#8b5a3c"/>
+  <rect x="188" y="134" width="30" height="80" fill="#8b5a3c"/>
+  <rect x="38" y="134" width="30" height="7" fill="#6e452d"/>
+  <rect x="188" y="134" width="30" height="7" fill="#6e452d"/>
+  <rect x="28" y="214" width="200" height="12" rx="3" fill="#5a3e28"/>
+  <!-- Les initiales de la revue, sous la voûte. -->
+  <text x="128" y="197" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="58" font-weight="700" fill="#3b2a1d" letter-spacing="2">AM</text>
+</svg>

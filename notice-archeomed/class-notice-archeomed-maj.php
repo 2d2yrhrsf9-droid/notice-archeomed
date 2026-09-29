@@ -244,6 +244,12 @@ class Notice_Archeomed_MiseAJour {
 			'package'     => $release['paquet'],
 			'url'         => $release['adresse'],
 			'tested'      => get_bloginfo( 'version' ),
+			// L'icône des écrans de mise à jour : sans elle, WordPress pose un
+			// carré gris anonyme à côté du nom, et l'on cherche lequel c'est.
+			'icons'       => array(
+				'svg'     => plugins_url( 'assets/icone.svg', $this->chemin ),
+				'default' => plugins_url( 'assets/icone.svg', $this->chemin ),
+			),
 		);
 		// Deux listes, et il faut figurer dans l'une ou l'autre. WordPress
 		// n'offre la case « mises à jour automatiques » qu'aux extensions

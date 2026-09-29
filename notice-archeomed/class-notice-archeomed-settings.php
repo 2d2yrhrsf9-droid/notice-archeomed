@@ -91,6 +91,11 @@ class Notice_Archeomed_Settings {
 		'smtp_motdepasse'    => '',
 		'smtp_expediteur'    => '',
 		'smtp_nom'           => '',
+		// Le poids qu'un courriel peut atteindre, pièces jointes encodées
+		// comprises, en méga-octets. Dix : c'est la limite de Postfix par
+		// défaut, et celle qu'a montrée l'hébergement de la revue — une image
+		// de 4 Mo passait, deux étaient refusées.
+		'poids_courriel'     => 10,
 
 		'maj_github'         => 0,
 		'github_depot'       => '',
@@ -395,6 +400,9 @@ class Notice_Archeomed_Settings {
 		}
 		if ( isset( $input['smtp_hote'] ) ) {
 			$out['smtp_hote'] = trim( sanitize_text_field( $input['smtp_hote'] ) );
+		}
+		if ( isset( $input['poids_courriel'] ) ) {
+			$out['poids_courriel'] = max( 1, min( 100, (int) $input['poids_courriel'] ) );
 		}
 		if ( isset( $input['smtp_port'] ) ) {
 			$out['smtp_port'] = max( 1, min( 65535, (int) $input['smtp_port'] ) );
@@ -1187,6 +1195,22 @@ class Notice_Archeomed_Settings {
 							<p class="description">
 								Elle doit appartenir au domaine que le relais accepte, sans quoi il
 								refusera le message pour usurpation.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="na-poids-courriel">Poids maximal d’un courriel</label></th>
+						<td>
+							<input type="number" id="na-poids-courriel" min="1" max="100" style="width:6em"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[poids_courriel]"
+								value="<?php echo esc_attr( (int) self::get( 'poids_courriel' ) ); ?>"> Mo
+							<p class="description">
+								Au-delà, le serveur de courriel refuse le message entier — et la notice
+								ne part pas. Le courriel de la rédaction joint alors ce qui tient, le
+								document d’abord, et nomme les illustrations restées sur le site, avec
+								le lien de la notice où elles se téléchargent. Une pièce jointe grossit
+								d’un tiers en voyageant : 10 Mo de courriel, c’est environ 7 Mo de
+								fichiers. Un relais SMTP accepte souvent davantage.
 							</p>
 						</td>
 					</tr>
