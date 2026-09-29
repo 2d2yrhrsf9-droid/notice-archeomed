@@ -144,9 +144,9 @@ class Notice_Archeomed_File {
 	}
 
 	/**
-	 * L'icône du menu : un arc en plein cintre, d'une seule couleur, que
-	 * WordPress accorde au thème de l'administration. Si le fichier manque,
-	 * l'icône de document d'avant.
+	 * L'icône du menu : les initiales de la revue, dans l'italique de son
+	 * titre, d'une seule couleur que WordPress accorde au thème de
+	 * l'administration. Si le fichier manque, l'icône de document d'avant.
 	 */
 	private static function icone_du_menu() {
 		$svg = @file_get_contents( plugin_dir_path( __FILE__ ) . 'assets/icone-menu.svg' );
