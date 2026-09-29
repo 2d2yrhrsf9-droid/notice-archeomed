@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.33
+ * Version: 3.34
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -22,7 +22,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
-require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-pactols.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php';
 
 new Notice_Archeomed_Settings();
 
@@ -2869,7 +2869,7 @@ class Notice_Archeomed_Pactols {
 				if ( '' === $ark || empty( $termes[ $ark ] ) ) {
 					continue;
 				}
-				$bloc = Notice_Archeomed_Pactols::index_tei(
+				$bloc = Notice_Archeomed_Thesaurus::index_tei(
 					$this->graphie_imprimee( $item, $capitale ),
 					$termes[ $ark ], $index_name );
 				if ( '' !== $bloc ) {
@@ -4756,7 +4756,7 @@ class Notice_Archeomed_Pactols {
 				if ( '' === $ark || isset( $termes[ $ark ] ) ) {
 					continue;
 				}
-				$concept = Notice_Archeomed_Pactols::resoudre( $ark,
+				$concept = Notice_Archeomed_Thesaurus::resoudre( $ark,
 					isset( $item['idConcept'] ) ? $item['idConcept'] : '', $theso );
 				if ( is_array( $concept ) ) {
 					$termes[ $ark ] = $concept;

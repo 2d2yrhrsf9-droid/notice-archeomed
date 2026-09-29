@@ -40,6 +40,7 @@ qui n'existe pas, un argument de trop, une méthode statique appelée comme une
 autre — rien de tout cela ne se voit ici.
 """
 
+import re
 import sys
 import pathlib
 
@@ -160,18 +161,48 @@ def analyser(source):
     return sorted(fautes)
 
 
+def noms_declares(texte):
+    """Les classes, interfaces et traits qu'un fichier déclare."""
+    return set(
+        re.findall(
+            r'^\s*(?:final\s+|abstract\s+)*(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)',
+            texte,
+            re.M,
+        )
+    )
+
+
+def doublons(fichiers):
+    """Deux fichiers qui déclarent le même nom, et que l'un charge l'autre.
+
+    PHP s'arrête net sur « Cannot declare class … because the name is already
+    in use » : pas une dégradation, un arrêt, et le site avec. Le contrôle ne
+    peut pas exécuter PHP sur ce poste, mais un nom déclaré deux fois se voit
+    sans l'exécuter — et c'est ainsi qu'une classe neuve a un jour pris le nom
+    de la classe principale du plugin, qui le tient de son shortcode.
+    """
+    ou = {}
+    for fichier, texte in fichiers:
+        for nom in noms_declares(texte):
+            ou.setdefault(nom, []).append(fichier.name)
+    return {nom: lieux for nom, lieux in ou.items() if len(lieux) > 1}
+
+
 def main(chemins):
     if not chemins:
         print(__doc__.strip().split('\n\n')[2].strip())
         return 1
     ennuis = 0
+    lus = []
     for chemin in chemins:
         fichier = pathlib.Path(chemin)
         if not fichier.is_file():
             print(f'  ? {fichier.name} — introuvable')
             ennuis += 1
             continue
-        fautes = analyser(fichier.read_text(encoding='utf-8'))
+        texte = fichier.read_text(encoding='utf-8')
+        lus.append((fichier, texte))
+        fautes = analyser(texte)
         if not fautes:
             print(f'  ✓ {fichier.name}')
             continue
@@ -181,6 +212,16 @@ def main(chemins):
             print(f'      ligne {ligne} : {quoi}')
     if ennuis:
         print(f'\n{ennuis} faute(s). Le fichier ne chargera pas.')
+        return 1
+
+    partages = doublons(lus)
+    if partages:
+        print()
+        for nom, lieux in sorted(partages.items()):
+            print(f'  ✗ « {nom} » est déclaré dans : {", ".join(sorted(lieux))}')
+        print()
+        print('PHP s\'arrête sur un nom déclaré deux fois. Le plugin ne chargera')
+        print('pas, et le site non plus.')
         return 1
     return 0
 

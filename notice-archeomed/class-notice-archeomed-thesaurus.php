@@ -22,6 +22,11 @@
  * s'accepte et s'expédie ensuite ; c'est à l'expédition, hors de sa vue, que
  * les termes se résolvent.
  *
+ * Elle ne s'appelle pas « Pactols » : ce nom est celui de la classe
+ * principale du plugin, qu'il tient du shortcode « notice_archeomed_pactols ».
+ * Deux classes de même nom dans un même chargement, et PHP s'arrête net — le
+ * formulaire avec lui, pour tout le monde.
+ *
  * @package notice-archeomed
  */
 
@@ -29,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Notice_Archeomed_Pactols {
+class Notice_Archeomed_Thesaurus {
 
 	/**
 	 * L'API qui rend un concept entier. Elle n'est pas celle de
