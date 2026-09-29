@@ -4450,6 +4450,75 @@ class Notice_Archeomed_Pactols {
 		return $this->poster_un_essai( 'simple', array( $destinataire ) );
 	}
 
+	/** Les tailles de l'essai de poids, en méga-octets décimaux. */
+	const TAILLES_ESSAI = array( 6, 9, 12, 20 );
+
+	/**
+	 * Un seul message vers l'adresse d'essai, portant une pièce jointe de la
+	 * taille voulue, et ce que le serveur en a dit.
+	 *
+	 * Le diagnostic « étape par étape » enchaîne cinq ou six messages en
+	 * quelques secondes : il ne distingue pas une limite de taille d'une
+	 * limite de cadence. Celui-ci n'envoie qu'un message, et sa seule
+	 * variable est le poids. Deux ou trois essais bornent la limite, et le
+	 * chiffre se donne tel quel à l'hébergeur.
+	 *
+	 * La pièce est un texte lisible : un fichier d'octets au hasard, ou une
+	 * fausse image, se ferait arrêter par un antivirus pour une autre raison
+	 * que son poids, et l'essai mentirait.
+	 */
+	public function essayer_le_poids( $vers, $mo ) {
+		if ( ! is_email( $vers ) ) {
+			return array( 'ok' => false, 'message' => 'Adresse d’essai non valide.' );
+		}
+		$mo      = in_array( (int) $mo, self::TAILLES_ESSAI, true ) ? (int) $mo : self::TAILLES_ESSAI[0];
+		$octets  = $mo * 1000 * 1000;
+		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
+		wp_mkdir_p( $dossier );
+		$fichier = $dossier . '/notice-archeomed-essai-de-poids-' . $mo . '-Mo.txt';
+		$ligne   = "Essai de poids du formulaire des notices : ce fichier ne sert qu'à mesurer ce que le serveur de courriel accepte.\n";
+		$flux    = @fopen( $fichier, 'wb' );
+		if ( ! $flux ) {
+			return array( 'ok' => false, 'message' => 'Le fichier d’essai n’a pas pu être écrit.' );
+		}
+		$bloc  = str_repeat( $ligne, (int) ceil( 64 * KB_IN_BYTES / strlen( $ligne ) ) );
+		$ecrit = 0;
+		while ( $ecrit < $octets ) {
+			$morceau = substr( $bloc, 0, min( strlen( $bloc ), $octets - $ecrit ) );
+			fwrite( $flux, $morceau );
+			$ecrit += strlen( $morceau );
+		}
+		fclose( $flux );
+
+		$encode = (int) ceil( $octets * 4 / 3 * 78 / 76 );
+		$this->derniere_erreur_mail = '';
+		$parti = wp_mail( $vers, '[ESSAI DE POIDS] ' . $mo . ' Mo de pièce jointe',
+			'<html><body><p>Essai de poids du formulaire des notices : ce message porte une pièce '
+				. 'jointe de ' . $mo . ' Mo, soit environ ' . number_format_i18n( $encode / 1000 / 1000, 1 )
+				. ' Mo une fois encodée pour le courriel. S’il vous parvient, le serveur l’a accepté.</p></body></html>',
+			array( 'Content-Type: text/html; charset=UTF-8' ), array( $fichier ) );
+		@unlink( $fichier );
+
+		$resultat = array(
+			'ok'      => (bool) $parti,
+			'mo'      => $mo,
+			'quand'   => current_time( 'mysql' ),
+			'message' => $parti
+				? 'Accepté : ' . $mo . ' Mo de pièce jointe, environ '
+					. number_format_i18n( $encode / 1000 / 1000, 1 ) . ' Mo une fois encodés. '
+					. 'Vérifiez qu’il arrive : le serveur de réception a sa propre limite, et peut refuser plus loin.'
+				: 'Refusé : ' . $mo . ' Mo de pièce jointe, environ '
+					. number_format_i18n( $encode / 1000 / 1000, 1 ) . ' Mo une fois encodés — '
+					. ( '' !== $this->derniere_erreur_mail ? $this->derniere_erreur_mail : 'aucune raison donnée' ),
+		);
+		$historique = get_option( 'na_essais_de_poids', array() );
+		$historique = is_array( $historique ) ? $historique : array();
+		$historique[ $mo ] = $resultat;
+		ksort( $historique );
+		update_option( 'na_essais_de_poids', $historique, false );
+		return $resultat;
+	}
+
 	/**
 	 * Refait l'envoi d'une notice, élément par élément, pour voir lequel
 	 * le fait tomber.

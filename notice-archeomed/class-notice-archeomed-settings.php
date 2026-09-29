@@ -819,6 +819,17 @@ class Notice_Archeomed_Settings {
 				$essais_successifs = $notice_archeomed_plugin->essais_successifs();
 			}
 		}
+		$essai_poids = null;
+		if ( isset( $_POST['na_essai_poids'] ) ) {
+			check_admin_referer( 'na_test_envoi' );
+			$vers = isset( $_POST['na_essai_vers'] )
+				? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
+			$mo   = isset( $_POST['na_poids_essai'] ) ? (int) $_POST['na_poids_essai'] : 0;
+			global $notice_archeomed_plugin;
+			$essai_poids = ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols )
+				? $notice_archeomed_plugin->essayer_le_poids( $vers, $mo )
+				: array( 'ok' => false, 'message' => 'Le plugin n’est pas chargé.' );
+		}
 		$test_envoi = null;
 		if ( isset( $_POST['na_test_envoi'] ) ) {
 			check_admin_referer( 'na_test_envoi' );
@@ -1580,7 +1591,70 @@ class Notice_Archeomed_Settings {
 						en-tête Reply-To, une pièce jointe.
 					</span>
 				</p>
+				<p>
+					<select name="na_poids_essai">
+						<?php foreach ( Notice_Archeomed_Pactols::TAILLES_ESSAI as $mo ) : ?>
+							<option value="<?php echo (int) $mo; ?>"><?php echo (int) $mo; ?> Mo</option>
+						<?php endforeach; ?>
+					</select>
+					<?php submit_button( 'Essai de poids', 'secondary', 'na_essai_poids', false ); ?>
+					<span class="description" style="margin-left:8px">
+						Un seul message, avec une pièce jointe de la taille choisie : il dit
+						jusqu’où le serveur de courriel accepte, sans rien d’autre qui varie.
+					</span>
+				</p>
 			</form>
+			<?php if ( null !== $essai_poids ) : ?>
+				<div class="notice notice-<?php echo $essai_poids['ok'] ? 'success' : 'error'; ?>">
+					<p><?php echo esc_html( $essai_poids['message'] ); ?></p>
+				</div>
+			<?php endif; ?>
+			<?php
+			$poids_essayes = get_option( 'na_essais_de_poids', array() );
+			if ( is_array( $poids_essayes ) && ! empty( $poids_essayes ) ) :
+				$passe_max  = 0;
+				$refus_min  = 0;
+				foreach ( $poids_essayes as $mo => $e ) {
+					if ( ! empty( $e['ok'] ) ) {
+						$passe_max = max( $passe_max, (int) $mo );
+					} elseif ( ! $refus_min || (int) $mo < $refus_min ) {
+						$refus_min = (int) $mo;
+					}
+				}
+				?>
+				<table class="widefat striped" style="max-width:52em;margin-bottom:6px">
+					<thead><tr><th>Pièce jointe</th><th>Réponse du serveur</th><th>Le</th></tr></thead>
+					<tbody>
+					<?php foreach ( $poids_essayes as $mo => $e ) : ?>
+						<tr>
+							<td><strong><?php echo (int) $mo; ?> Mo</strong></td>
+							<td style="color:<?php echo ! empty( $e['ok'] ) ? '#2f6b2f' : '#b32d2e'; ?>">
+								<?php echo ! empty( $e['ok'] ) ? 'accepté' : 'refusé'; ?>
+							</td>
+							<td><?php echo esc_html( mysql2date( 'j F Y à H:i', $e['quand'] ) ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p class="description" style="max-width:52em">
+					<?php
+					if ( $passe_max && $refus_min && $passe_max < $refus_min ) {
+						echo esc_html( sprintf( 'La limite du serveur se situe entre %d et %d Mo de pièces jointes. '
+							. 'C’est le chiffre à donner à l’hébergeur ; et c’est d’après lui que se règle '
+							. '« Poids maximal d’un courriel », plus haut — en comptant un tiers de plus pour l’encodage.',
+							$passe_max, $refus_min ) );
+					} elseif ( $passe_max && ! $refus_min ) {
+						echo esc_html( sprintf( 'Le serveur accepte au moins %d Mo de pièces jointes. '
+							. 'Si le message arrive bien, « Poids maximal d’un courriel » peut être relevé.', $passe_max ) );
+					} elseif ( $refus_min && ! $passe_max ) {
+						echo esc_html( sprintf( 'Le serveur refuse dès %d Mo de pièces jointes : essayez une taille plus petite pour borner la limite.', $refus_min ) );
+					} else {
+						echo esc_html( 'Les essais se contredisent — un poids plus lourd accepté après un plus léger refusé : '
+							. 'la cause n’est peut-être pas le poids. Refaites-les à quelques minutes d’intervalle.' );
+					}
+					?>
+				</p>
+			<?php endif; ?>
 			<?php if ( is_array( $essais_successifs ) ) : ?>
 				<table class="widefat striped" style="max-width:52em;margin-bottom:12px">
 					<tbody>

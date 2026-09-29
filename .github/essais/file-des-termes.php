@@ -297,6 +297,22 @@ na_verifier( '' === get_post_meta( $partie, '_na_erreur', true )
 	'une notice partie perd son ancienne erreur, et garde la note de ce qui manque' );
 wp_delete_post( $partie, true );
 
+WP_CLI::log( 'L\'essai de poids' );
+$refus = $plugin->essayer_le_poids( 'pas-une-adresse', 6 );
+na_verifier( false === $refus['ok'], 'une adresse invalide est refusée avant tout envoi' );
+delete_option( 'na_essais_de_poids' );
+$essai = $plugin->essayer_le_poids( 'essai@example.org', 9 );
+$garde = get_option( 'na_essais_de_poids', array() );
+na_verifier( isset( $garde[9] ) && 9 === $garde[9]['mo'] && is_bool( $garde[9]['ok'] ),
+	'l\'essai garde sa taille et la réponse du serveur, quelle qu\'elle soit', $essai['message'] );
+na_verifier( ! file_exists( trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/notice-archeomed-essai-de-poids-9-Mo.txt' ),
+	'le fichier de 9 Mo ne reste pas sur le serveur' );
+$autre = $plugin->essayer_le_poids( 'essai@example.org', 7 );
+$garde = get_option( 'na_essais_de_poids', array() );
+na_verifier( isset( $garde[6] ) && ! isset( $garde[7] ),
+	'une taille hors de la liste retombe sur la plus petite' );
+delete_option( 'na_essais_de_poids' );
+
 WP_CLI::log( 'L\'icône du menu' );
 $icone = na_appel( 'Notice_Archeomed_File', 'icone_du_menu' );
 na_verifier( 0 === strpos( $icone, 'data:image/svg+xml;base64,' ),
