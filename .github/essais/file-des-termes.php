@@ -192,11 +192,10 @@ foreach ( array(
 	na_verifier( $attendu === $obtenu, $quoi, $obtenu );
 }
 
-WP_CLI::log( 'L\'échec retenu, hérité ou propre' );
+WP_CLI::log( 'L\'échec retenu, et ce qu\'il fait attendre' );
 $clef  = na_appel( 'Notice_Archeomed_Thesaurus', 'clef', array( $a, '', 'TH_1' ) );
 $oubli = time() + 1800;
-$quand = microtime( true ) - 100;
-set_transient( $clef, array( 'echec_jusqua' => $oubli, 'echec_depuis' => $quand ), 1800 );
+set_transient( $clef, array( 'echec_jusqua' => $oubli ), 1800 );
 na_verifier( $oubli === Notice_Archeomed_Thesaurus::echec_jusqua( $a, '', 'TH_1' ),
 	'l\'échec garde l\'heure où il sera oublié' );
 na_verifier( null === Notice_Archeomed_Thesaurus::resoudre( $a, '', 'TH_1' ),
@@ -207,11 +206,11 @@ na_verifier( $premier > $oubli,
 $premier = na_appel( $plugin, 'premier_examen_utile', array( $saisie, array( $a => $concept( $a, '2026-10-01' ) ) ) );
 na_verifier( $premier <= time() + 2 * MINUTE_IN_SECONDS,
 	'un terme déjà connu de la notice ne la retarde pas parce qu\'il a échoué ailleurs', $premier - time() );
-$seul_a = array( 'pactols_subjects_items' => array( array( 'label' => 'église', 'ark' => $a, 'idConcept' => '' ) ) );
-na_verifier( $oubli === na_appel( $plugin, 'oubli_herite', array( $seul_a, array(), microtime( true ) ) ),
-	'un échec survenu avant l\'examen est hérité : on attend son oubli sans compter d\'essai' );
-na_verifier( 0 === na_appel( $plugin, 'oubli_herite', array( $seul_a, array(), $quand - 50 ) ),
-	'un échec survenu pendant l\'examen est propre : il se compte' );
+na_verifier( $oubli + MINUTE_IN_SECONDS === na_appel( $plugin, 'reprise_apres_echec', array( $saisie, array() ) ),
+	'après un échec, on reprend une minute après son oubli, qu\'on l\'ait vécu ou relu' );
+$reprise = na_appel( $plugin, 'reprise_apres_echec', array( $saisie, array( $a => $concept( $a, '2026-10-01' ) ) ) );
+na_verifier( $reprise >= time() + Notice_Archeomed_Pactols::REPRISE_TERMES - 5,
+	'sans échec retenu pour ce qui manque — un terme interrompu —, le délai ordinaire', $reprise - time() );
 set_transient( $clef, 'vide', 1800 );
 na_verifier( Notice_Archeomed_Thesaurus::echec_jusqua( $a, '', 'TH_1' ) > time()
 	&& null === Notice_Archeomed_Thesaurus::resoudre( $a, '', 'TH_1' ),
@@ -233,6 +232,26 @@ $texte = na_appel( $paquet, 'lisez_moi' );
 na_verifier( false === strpos( $texte, 'c’est normal' )
 	&& false !== strpos( $texte, '0 fichier(s) pour 2 légende(s)' ),
 	'des légendes sans fichier ne se lisent pas « c\'est normal »' );
+
+WP_CLI::log( 'Un fichier reçu puis perdu' );
+$paquet = new Notice_Archeomed_Paquet();
+$erreur = '';
+$paquet->preparer( 'I. Constructions et habitats civils', array( array(
+	'id'            => 0,
+	'd'             => array( 'commune' => 'Caen', 'lieu_dit' => 'Château', 'annee' => '2026',
+		'illustrations' => array( array( 'rang' => 1, 'titre' => 'Vue' ) ) ),
+	'illustrations' => array( '/tmp/na-essai-fichier-absent.jpg' ),
+) ), $erreur );
+$texte = na_appel( $paquet, 'lisez_moi' );
+na_verifier( false !== strpos( $texte, 'introuvable sur le serveur' )
+	&& false === strpos( $texte, 'c’est normal' ),
+	'le lisez-moi dit qu\'un fichier reçu manque, au lieu de « c\'est normal »', '' === $erreur ? null : $erreur );
+$paquet->nettoyer();
+
+WP_CLI::log( 'Les instances, globales même sous WP-CLI' );
+na_verifier( isset( $GLOBALS['notice_archeomed_file'] )
+	&& $GLOBALS['notice_archeomed_file'] instanceof Notice_Archeomed_File,
+	'la file est globale : le plugin ne bâtit pas une seconde file aux crochets doublés' );
 
 WP_CLI::log( 'Le réveil de la file' );
 $reveil = na_notice( $saisie );

@@ -205,6 +205,11 @@ class Notice_Archeomed_Paquet {
 			$n          = 0;
 			foreach ( $fichiers as $source ) {
 				if ( ! file_exists( $source ) ) {
+					// Un fichier reçu puis perdu — effacé du serveur, purgé —
+					// s'écartait sans un mot : le lisez-moi disait alors qu'il
+					// n'y avait « aucune illustration, et c'est normal ».
+					$this->journal[] = basename( (string) $source )
+						. ' : fichier reçu mais introuvable sur le serveur ; la figure manque au dossier.';
 					continue;
 				}
 				++$n;

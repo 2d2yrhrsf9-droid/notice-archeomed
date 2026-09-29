@@ -83,7 +83,10 @@ jobs:
       contents: read
     strategy:
       matrix:
-        php: ['8.1', '8.3']
+        # 7.2, parce que l'en-tête du plugin la promet : l'analyseur ne voit
+        # que la syntaxe, et une fonction qui n'existe qu'en 8 ne se révèle
+        # qu'à l'exécution — sur l'hébergement, en erreur fatale.
+        php: ['7.2', '8.1', '8.3']
     services:
       base:
         image: mariadb:10.11

@@ -51,6 +51,9 @@ class Notice_Archeomed_Thesaurus {
 	const NAAN = '26678/';
 	const BASE_ARK = 'https://ark.frantiq.fr/ark:/';
 
+	/** Ce qu'on accorde à un appel, en secondes, quand rien ne presse. */
+	const DELAI = 8;
+
 	/** Un mois : le thésaurus bouge moins vite qu'une campagne. */
 	const DUREE = MONTH_IN_SECONDS;
 
@@ -75,8 +78,10 @@ class Notice_Archeomed_Thesaurus {
 		if ( '' === $ark && '' === $id_concept ) {
 			return null;
 		}
-		$clef  = self::clef( $ark, $id_concept, $theso );
-		$connu = get_transient( $clef );
+		$clef    = self::clef( $ark, $id_concept, $theso );
+		$connu   = get_transient( $clef );
+		$ecourte = false;
+		$coupe   = false;
 		if ( self::est_un_echec( $connu ) ) {
 			return null;   // échec récent : on n'insiste pas à chaque page
 		}
@@ -102,7 +107,8 @@ class Notice_Archeomed_Thesaurus {
 			if ( self::reste( $echeance ) < 1 ) {
 				return null;
 			}
-			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance );
+			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance, $coupe );
+			$ecourte = $ecourte || $coupe;
 			$id   = self::valeur( $seul, $ark, self::DCT . 'identifier' );
 			if ( '' !== $id ) {
 				set_transient( self::clef_id( $ark ), $id, self::DUREE );
@@ -118,7 +124,8 @@ class Notice_Archeomed_Thesaurus {
 			if ( self::reste( $echeance ) < 1 ) {
 				return null;
 			}
-			$graphe = self::appeler( 'concept/' . $theso . '/' . rawurlencode( $id ) . '/expansion?way=top', $echeance );
+			$graphe = self::appeler( 'concept/' . $theso . '/' . rawurlencode( $id ) . '/expansion?way=top', $echeance, $coupe );
+			$ecourte = $ecourte || $coupe;
 			if ( is_array( $graphe ) && ! empty( $graphe ) ) {
 				$chemin = self::remonter( $graphe, $ark );
 				$noeud  = isset( $graphe[ $ark ] ) ? $graphe[ $ark ] : null;
@@ -128,8 +135,17 @@ class Notice_Archeomed_Thesaurus {
 			if ( self::reste( $echeance ) < 1 ) {
 				return null;
 			}
-			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance );
+			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance, $coupe );
+			$ecourte = $ecourte || $coupe;
 			$noeud = ( is_array( $seul ) && isset( $seul[ $ark ] ) ) ? $seul[ $ark ] : null;
+		}
+		if ( null === $noeud && $ecourte ) {
+			// Un appel dont l'échéance a raccourci le délai n'a pas échoué : on
+			// l'a interrompu. Le retenir comme une panne d'une heure bloquait
+			// ce terme pour toutes les notices, à cause d'une seconde qu'on ne
+			// lui avait pas laissée — et la reprise promise à la notice venue
+			// en fin de passage relisait cette fausse panne au lieu d'appeler.
+			return null;
 		}
 		if ( null === $noeud ) {
 			// Une panne de réseau ne se met pas en réserve pour un mois : une
@@ -141,10 +157,8 @@ class Notice_Archeomed_Thesaurus {
 			// l'échec. La réserve est commune à toutes les notices : un terme qui
 			// vient d'échouer pour l'une échoue aussi, pour l'heure, pour les
 			// autres.
-			set_transient( $clef, array(
-				'echec_jusqua' => time() + self::DUREE_ECHEC,
-				'echec_depuis' => microtime( true ),
-			), self::DUREE_ECHEC );
+			set_transient( $clef, array( 'echec_jusqua' => time() + self::DUREE_ECHEC ),
+				self::DUREE_ECHEC );
 			return null;
 		}
 
@@ -280,23 +294,6 @@ class Notice_Archeomed_Thesaurus {
 		return ( 'vide' === $connu ) ? time() + self::DUREE_ECHEC : 0;
 	}
 
-	/**
-	 * L'instant où l'échec retenu pour ce terme s'est produit, ou zéro s'il
-	 * n'y en a pas.
-	 *
-	 * C'est ce qui distingue un échec hérité — survenu pour une autre notice,
-	 * avant qu'on examine celle-ci — d'un échec propre. Faute de connaître
-	 * l'instant d'un échec plus ancien, on le suppose tout frais : il compte
-	 * alors comme propre, ce qui ne coûte au plus qu'un essai.
-	 */
-	public static function echec_depuis( $ark, $id_concept = '', $theso = 'TH_1' ) {
-		$connu = get_transient( self::clef( trim( (string) $ark ), $id_concept, $theso ) );
-		if ( is_array( $connu ) && isset( $connu['echec_depuis'] ) ) {
-			return (float) $connu['echec_depuis'];
-		}
-		return self::est_un_echec( $connu ) ? microtime( true ) : 0.0;
-	}
-
 	/** Un échec en réserve, sous sa forme d'avant la 3.38 ou d'après. */
 	private static function est_un_echec( $connu ) {
 		return 'vide' === $connu || ( is_array( $connu ) && isset( $connu['echec_jusqua'] ) );
@@ -325,7 +322,7 @@ class Notice_Archeomed_Thesaurus {
 	 */
 	private static function reste( $echeance ) {
 		if ( $echeance <= 0 ) {
-			return 8;
+			return self::DELAI;
 		}
 		return (int) floor( $echeance - microtime( true ) );
 	}
@@ -340,17 +337,25 @@ class Notice_Archeomed_Thesaurus {
 	 * Un appel à l'API, rendu en tableau.
 	 *
 	 * L'en-tête « Accept » n'est pas une politesse : sans lui, l'API répond
-	 * 500. Le délai est court — la rédaction attend devant sa liste, et mieux
-	 * vaut un index manquant qu'une page qui ne rend jamais la main.
+	 * 500. Le délai est court — la tâche qui appelle a un budget, et mieux
+	 * vaut un index manquant qu'une requête coupée par l'hébergement.
+	 *
+	 * « $coupe » dit si l'appel a épuisé un délai que l'échéance avait
+	 * raccourci : il n'a pas échoué, on ne lui a pas laissé le temps. Une
+	 * erreur rendue aussitôt par Pactols, elle, reste une panne, même en fin
+	 * de budget.
 	 */
-	private static function appeler( $chemin, $echeance = 0 ) {
+	private static function appeler( $chemin, $echeance = 0, &$coupe = false ) {
+		$delai   = max( 1, min( self::DELAI, self::reste( $echeance ) ) );
+		$debut   = microtime( true );
 		$reponse = wp_remote_get(
 			self::BASE . $chemin,
 			array(
-				'timeout' => max( 1, min( 8, self::reste( $echeance ) ) ),
+				'timeout' => $delai,
 				'headers' => array( 'Accept' => 'application/json' ),
 			)
 		);
+		$coupe = $delai < self::DELAI && microtime( true ) - $debut >= $delai - 0.5;
 		if ( is_wp_error( $reponse ) ) {
 			error_log( 'Notice Archeomed: Pactols ' . $chemin . ' : ' . $reponse->get_error_message() );
 			return null;
