@@ -60,6 +60,9 @@ jobs:
           set -eu
           for f in notice-archeomed/*.php; do php -l "$f"; done
 
+      - name: Le contrôle des doublons tranche juste
+        run: .github/essais/verifier-les-doublons
+
   # Le site d'essai que la revue n'a pas.
   #
   # « Un passage vert ne dispense pas d'installer sur un site d'essai avant

@@ -2857,7 +2857,7 @@ class Notice_Archeomed_Pactols {
 		// demander et que ses essais d'hier ne disent rien de Pactols
 		// aujourd'hui.
 		$manquants = count( $this->termes_manquants( $d, $termes ) );
-		$prochaine = ( $manquants > 0 ) ? $this->relancer_la_resolution( $id ) : 0;
+		$prochaine = ( $manquants > 0 ) ? $this->relancer_la_resolution( $id, $d ) : 0;
 		if ( empty( $termes ) ) {
 			return '';
 		}
@@ -4617,7 +4617,7 @@ class Notice_Archeomed_Pactols {
 		// thésaurus : il part avec la saisie telle qu'elle a été faite. Ce que
 		// le thésaurus dit sert au fascicule, au dossier et aux blocs d'index,
 		// qui peuvent attendre une minute.
-		$this->mettre_en_attente( $id );
+		$this->mettre_en_attente( $id, $d );
 
 		$pourquoi = '';
 		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
@@ -4877,16 +4877,40 @@ class Notice_Archeomed_Pactols {
 	 * Une notice qui a épuisé ses essais n'y retourne pas : seul un
 	 * téléchargement du dossier, geste explicite, la relance.
 	 */
-	private function mettre_en_attente( $id ) {
+	private function mettre_en_attente( $id, $d = null ) {
 		$id = (int) $id;
 		if ( ! $id ) {
 			return;
 		}
 		if ( '' === (string) get_post_meta( $id, '_na_pactols_apres', true )
 			&& (int) get_post_meta( $id, '_na_pactols_essais', true ) < self::ESSAIS_TERMES ) {
-			update_post_meta( $id, '_na_pactols_apres', time() + MINUTE_IN_SECONDS );
+			if ( null === $d ) {
+				$d = get_post_meta( $id, '_na_donnees', true );
+			}
+			update_post_meta( $id, '_na_pactols_apres',
+				$this->premier_examen_utile( is_array( $d ) ? $d : array() ) );
 		}
 		$this->assurer_la_tache();
+	}
+
+	/**
+	 * La première heure à laquelle examiner une notice sert à quelque chose.
+	 *
+	 * Dans la minute, sauf si l'un de ses termes vient d'échouer — pour elle
+	 * ou pour une autre notice, la réserve du thésaurus étant commune. Tant
+	 * que cet échec n'est pas oublié, l'examiner ne ferait que le relire, et
+	 * gâcherait un essai en promettant à la rédaction une relance qui n'en
+	 * est pas une.
+	 */
+	private function premier_examen_utile( $d ) {
+		$quand = time() + MINUTE_IN_SECONDS;
+		foreach ( $this->arks_de( $d ) as $ark => $quoi ) {
+			$echec = Notice_Archeomed_Thesaurus::echec_jusqua( $ark, $quoi['id'], $quoi['theso'] );
+			if ( $echec > 0 ) {
+				$quand = max( $quand, $echec + MINUTE_IN_SECONDS );
+			}
+		}
+		return $quand;
 	}
 
 	/**
@@ -4897,10 +4921,10 @@ class Notice_Archeomed_Pactols {
 	 * Pactols vient d'échouer, l'examiner dans la minute relirait l'échec en
 	 * réserve et gâcherait un essai.
 	 */
-	private function relancer_la_resolution( $id ) {
+	private function relancer_la_resolution( $id, $d ) {
 		$id    = (int) $id;
 		$fixee = (int) get_post_meta( $id, '_na_pactols_apres', true );
-		$apres = max( $fixee, time() + MINUTE_IN_SECONDS );
+		$apres = max( $fixee, $this->premier_examen_utile( $d ) );
 		delete_post_meta( $id, '_na_pactols_essais' );
 		update_post_meta( $id, '_na_pactols_apres', $apres );
 		$this->assurer_la_tache();
@@ -4980,16 +5004,26 @@ class Notice_Archeomed_Pactols {
 				$this->sortir_de_l_attente( $id );
 				continue;
 			}
+			$avant  = get_post_meta( $id, '_na_pactols', true );
 			$coupe  = false;
 			$termes = $this->resoudre_les_termes( $id, $d, $echeance, $coupe );
-			if ( empty( $this->termes_manquants( $d, $termes ) ) ) {
+			$issue  = $this->issue_du_passage(
+				count( $this->termes_manquants( $d, is_array( $avant ) ? $avant : array() ) ),
+				count( $this->termes_manquants( $d, $termes ) ),
+				$coupe );
+			if ( 'resolue' === $issue ) {
 				$this->sortir_de_l_attente( $id );
 				continue;
 			}
-			if ( $coupe ) {
-				// Pas un échec : le temps manquait. La notice reste due.
+			if ( 'reprendre' === $issue ) {
 				$interrompu = true;
 				break;
+			}
+			// Un échec, ou une interruption qui n'a rien appris : la notice
+			// compte un essai et passe en fin de file. Elle ne peut plus
+			// occuper la tête à chaque minute.
+			if ( $coupe ) {
+				$interrompu = true;
 			}
 			$essais = (int) get_post_meta( $id, '_na_pactols_essais', true ) + 1;
 			update_post_meta( $id, '_na_pactols_essais', $essais );
@@ -4997,6 +5031,9 @@ class Notice_Archeomed_Pactols {
 				delete_post_meta( $id, '_na_pactols_apres' );
 			} else {
 				update_post_meta( $id, '_na_pactols_apres', time() + self::REPRISE_TERMES );
+			}
+			if ( $interrompu ) {
+				break;
 			}
 		}
 
@@ -5016,6 +5053,30 @@ class Notice_Archeomed_Pactols {
 			wp_schedule_single_event( max( $prochain, time() + MINUTE_IN_SECONDS ),
 				self::HOOK_TERMES );
 		}
+	}
+
+	/**
+	 * Ce qu'un passage a fait d'une notice : « resolue », « reprendre » ou
+	 * « echec ».
+	 *
+	 * Une interruption ne comptait jamais comme un essai, et la notice restait
+	 * due. Un terme trop lent pour tenir dans le budget était donc repris à
+	 * chaque minute, sans fin : il ne s'épuisait jamais, et comme la file
+	 * sert d'abord la notice la plus ancienne, il occupait tout le budget de
+	 * chaque passage et bloquait celles qui attendaient derrière lui.
+	 *
+	 * Une interruption ne se reprend dans la minute que si le passage a
+	 * appris quelque chose — un terme de moins à trouver. Sinon c'est un
+	 * échec comme un autre : compté, et remis à plus tard.
+	 */
+	private function issue_du_passage( $manquaient, $manquent, $coupe ) {
+		if ( 0 === (int) $manquent ) {
+			return 'resolue';
+		}
+		if ( $coupe && (int) $manquent < (int) $manquaient ) {
+			return 'reprendre';
+		}
+		return 'echec';
 	}
 
 	/**
@@ -5045,7 +5106,7 @@ class Notice_Archeomed_Pactols {
 		// passage dans un fascicule, sans rien coûter à celui qui le demande.
 		$manquants = count( $this->termes_manquants( $d, $termes ) );
 		if ( $manquants > 0 ) {
-			$this->mettre_en_attente( $id );
+			$this->mettre_en_attente( $id, $d );
 			$d['pactols_manquants'] = $manquants;
 		}
 		if ( empty( $termes ) ) {

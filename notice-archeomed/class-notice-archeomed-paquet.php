@@ -71,6 +71,11 @@ class Notice_Archeomed_Paquet {
 	// d'ajouter « {lieu_dit} » à un modèle que ces fichiers n'ont jamais
 	// consulté — un conseil que rien n'aurait pu suivre.
 	private $noms_indexation = array();
+	// Ce que le dossier dit de lui-même hors des illustrations : l'indexation,
+	// ses fichiers. Ces avis avaient leur place dans le journal des images, si
+	// bien qu'une rubrique sans illustration les taisait — le lisez-moi y
+	// annonçait qu'il n'y avait rien d'anormal, et sautait tout le reste.
+	private $notes = array();
 	private $atelier    = '';
 	private $nom_paquet = '';
 	private $rubrique   = '';
@@ -129,7 +134,7 @@ class Notice_Archeomed_Paquet {
 	 * s'y lire, qu'il vienne des images ou d'ailleurs.
 	 */
 	public function noter( $ligne ) {
-		$this->journal[] = (string) $ligne;
+		$this->notes[] = (string) $ligne;
 	}
 
 	/**
@@ -348,6 +353,15 @@ class Notice_Archeomed_Paquet {
 				$lignes[] = '  - ' . $ligne;
 			}
 		}
+		// Les avis sur le reste du dossier, qu'il y ait des illustrations ou
+		// non.
+		if ( ! empty( $this->notes ) ) {
+			$lignes[] = '';
+			$lignes[] = 'À savoir aussi :';
+			foreach ( $this->notes as $ligne ) {
+				$lignes[] = '  - ' . $ligne;
+			}
+		}
 		return implode( "\r\n", $lignes );
 	}
 
@@ -526,7 +540,7 @@ class Notice_Archeomed_Paquet {
 		}
 		$libre = self::nom_libre( $nom_sans_ext, $this->noms_indexation );
 		if ( $libre !== $nom_sans_ext ) {
-			$this->journal[] = $nom_sans_ext . '.xml : deux notices de cette rubrique'
+			$this->notes[] = $nom_sans_ext . '.xml : deux notices de cette rubrique'
 				. ' portent la même commune et le même lieu-dit ; la suivante est posée'
 				. ' sous « ' . $libre . ' ». Les fichiers sont bons, mais rien'
 				. ' dans leur nom ne dit à quelle notice ils vont : ouvrez-les pour'

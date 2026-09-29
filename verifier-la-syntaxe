@@ -181,6 +181,49 @@ DECLARATION = re.compile(
 )
 
 
+OUVRE_BLOC_ALTERNATIF = re.compile(r'\b(if|while|for|foreach|switch|declare)\s*\(')
+FERME_BLOC_ALTERNATIF = re.compile(r'\b(endif|endwhile|endfor|endforeach|endswitch|enddeclare)\b')
+MOTS_RESERVES = {'extends', 'implements'}
+
+
+def profondeurs(code):
+    """La profondeur de chaque position : accolades, et blocs à deux-points.
+
+    « if ( … ) : … endif; » est un bloc comme « if ( … ) { … } », sans une
+    accolade. Une déclaration qui s'y trouve est conditionnelle au même
+    titre, et deux fichiers peuvent la porter sans que PHP s'en plaigne.
+    """
+    ouvertures = set()
+    for m in OUVRE_BLOC_ALTERNATIF.finditer(code):
+        # la parenthèse de la condition, jusqu'à sa fermante
+        i, niveau = m.end() - 1, 0
+        while i < len(code):
+            if code[i] == '(':
+                niveau += 1
+            elif code[i] == ')':
+                niveau -= 1
+                if niveau == 0:
+                    break
+            i += 1
+        j = i + 1
+        while j < len(code) and code[j] in ' \t\n':
+            j += 1
+        if j < len(code) and code[j] == ':':
+            ouvertures.add(j)
+    fermetures = {m.start() for m in FERME_BLOC_ALTERNATIF.finditer(code)}
+
+    out, p = [], 0
+    for i, c in enumerate(code):
+        if i in fermetures:
+            p = max(0, p - 1)
+        out.append(p)
+        if c == '{' or i in ouvertures:
+            p += 1
+        elif c == '}':
+            p = max(0, p - 1)
+    return out
+
+
 def declarations(code):
     """Les classes, interfaces et traits déclarés sans condition, avec leur ligne.
 
@@ -188,23 +231,23 @@ def declarations(code):
     fichier est un doublon comme un autre, et un ensemble l'aurait réduit à
     une seule entrée.
 
-    Seules comptent les déclarations hors de toute accolade. Celle qui se
-    trouve dans un bloc — le plus souvent « if ( ! class_exists( … ) ) » —
-    ne s'exécute qu'à la condition posée, et deux fichiers peuvent la porter
-    sans que PHP s'en plaigne.
+    Seules comptent les déclarations hors de tout bloc — accolades ou
+    « if … : endif ». Celle qui se trouve dans un bloc, le plus souvent
+    « if ( ! class_exists( … ) ) », ne s'exécute qu'à la condition posée.
+    Une classe anonyme, « new class … », n'a pas de nom et ne se compte pas :
+    sans cette garde, « new class extends Base » déclarait une classe
+    nommée « extends ».
     """
-    profondeur = []
-    p = 0
-    for c in code:
-        profondeur.append(p)
-        if c == '{':
-            p += 1
-        elif c == '}':
-            p = max(0, p - 1)
+    profondeur = profondeurs(code)
     out = []
     for m in DECLARATION.finditer(code):
-        if profondeur[m.start()] == 0:
-            out.append((m.group(1), code.count('\n', 0, m.start()) + 1))
+        if profondeur[m.start()] != 0:
+            continue
+        if re.search(r'\bnew\s*$', code[:m.start()]):
+            continue
+        if m.group(1).lower() in MOTS_RESERVES:
+            continue
+        out.append((m.group(1), code.count('\n', 0, m.start()) + 1))
     return out
 
 

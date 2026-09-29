@@ -157,6 +157,43 @@ na_verifier( $plus_tard === $quand && '' === get_post_meta( $epuisee, '_na_pacto
 na_verifier( Notice_Archeomed_Pactols::REPRISE_TERMES > Notice_Archeomed_Thesaurus::DUREE_ECHEC,
 	'la reprise vient après l\'oubli de l\'échec' );
 
+WP_CLI::log( 'L\'issue d\'un passage' );
+foreach ( array(
+	array( 3, 0, false, 'resolue',   'plus rien ne manque : résolue' ),
+	array( 3, 1, true,  'reprendre', 'interrompue après un progrès : reprise dans la minute' ),
+	array( 3, 3, true,  'echec',     'interrompue sans rien apprendre : un échec, compté' ),
+	array( 3, 3, false, 'echec',     'des termes refusés : un échec' ),
+) as $cas ) {
+	list( $avant, $apres, $coupe, $attendu, $quoi ) = $cas;
+	$obtenu = na_appel( $plugin, 'issue_du_passage', array( $avant, $apres, $coupe ) );
+	na_verifier( $attendu === $obtenu, $quoi, $obtenu );
+}
+
+WP_CLI::log( 'L\'échec retenu, et le premier examen utile' );
+$clef = na_appel( 'Notice_Archeomed_Thesaurus', 'clef', array( $a, '', 'TH_1' ) );
+$oubli = time() + 1800;
+set_transient( $clef, array( 'echec_jusqua' => $oubli ), 1800 );
+na_verifier( $oubli === Notice_Archeomed_Thesaurus::echec_jusqua( $a, '', 'TH_1' ),
+	'l\'échec garde l\'heure où il sera oublié' );
+na_verifier( null === Notice_Archeomed_Thesaurus::resoudre( $a, '', 'TH_1' ),
+	'un terme en échec ne s\'interroge pas' );
+$premier = na_appel( $plugin, 'premier_examen_utile', array( $saisie ) );
+na_verifier( $premier > $oubli,
+	'le premier examen vient après l\'oubli de l\'échec, même venu d\'une autre notice', $premier );
+set_transient( $clef, 'vide', 1800 );
+na_verifier( Notice_Archeomed_Thesaurus::echec_jusqua( $a, '', 'TH_1' ) > time()
+	&& null === Notice_Archeomed_Thesaurus::resoudre( $a, '', 'TH_1' ),
+	'un échec posé avant la 3.38 se lit encore comme un échec' );
+delete_transient( $clef );
+
+WP_CLI::log( 'Le lisez-moi d\'une rubrique sans illustration' );
+$paquet = new Notice_Archeomed_Paquet();
+$paquet->noter( 'XML/indexation : un avis d\'essai.' );
+$texte = na_appel( $paquet, 'lisez_moi' );
+na_verifier( false !== strpos( $texte, 'Aucune illustration' )
+	&& false !== strpos( $texte, 'XML/indexation : un avis d\'essai.' ),
+	'l\'avis paraît même quand il n\'y a aucune illustration' );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

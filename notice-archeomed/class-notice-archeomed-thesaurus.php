@@ -75,16 +75,23 @@ class Notice_Archeomed_Thesaurus {
 		if ( '' === $ark && '' === $id_concept ) {
 			return null;
 		}
-		$clef = 'na_pactols_c_' . md5( $ark . '|' . $id_concept . '|' . $theso );
+		$clef  = self::clef( $ark, $id_concept, $theso );
 		$connu = get_transient( $clef );
+		if ( self::est_un_echec( $connu ) ) {
+			return null;   // échec récent : on n'insiste pas à chaque page
+		}
 		if ( is_array( $connu ) ) {
 			return $connu;
 		}
-		if ( 'vide' === $connu ) {
-			return null;   // échec récent : on n'insiste pas à chaque page
-		}
 
+		// L'identifiant numérique trouvé lors d'un passage précédent. Sans lui,
+		// un passage interrompu après ce premier appel le perdait, et le
+		// suivant le redemandait : un terme qui demande trois appels lents ne
+		// progressait jamais d'un passage à l'autre.
 		$id = trim( (string) $id_concept );
+		if ( '' === $id ) {
+			$id = (string) get_transient( self::clef_id( $ark ) );
+		}
 		if ( '' === $id ) {
 			// Sans identifiant numérique — c'est le cas des natures
 			// d'opération, dont la liste est tenue à la main avec leurs seuls
@@ -97,6 +104,9 @@ class Notice_Archeomed_Thesaurus {
 			}
 			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance );
 			$id   = self::valeur( $seul, $ark, self::DCT . 'identifier' );
+			if ( '' !== $id ) {
+				set_transient( self::clef_id( $ark ), $id, self::DUREE );
+			}
 		}
 
 		$chemin = array();
@@ -125,7 +135,14 @@ class Notice_Archeomed_Thesaurus {
 			// Une panne de réseau ne se met pas en réserve pour un mois : une
 			// heure suffit à ne pas marteler l'API, et la notice suivante
 			// réessaiera.
-			set_transient( $clef, 'vide', self::DUREE_ECHEC );
+			// L'échec garde l'heure où il sera oublié : c'est elle qui permet de
+			// dire à la rédaction quand Pactols sera vraiment réinterrogé, au
+			// lieu de promettre « dans quelques minutes » une relecture de
+			// l'échec. La réserve est commune à toutes les notices : un terme qui
+			// vient d'échouer pour l'une échoue aussi, pour l'heure, pour les
+			// autres.
+			set_transient( $clef, array( 'echec_jusqua' => time() + self::DUREE_ECHEC ),
+				self::DUREE_ECHEC );
 			return null;
 		}
 
@@ -243,6 +260,37 @@ class Notice_Archeomed_Thesaurus {
 			return '';
 		}
 		return self::premiere( $reponse[ $ark ], $propriete );
+	}
+
+	/**
+	 * L'heure à laquelle l'échec retenu pour ce terme sera oublié, ou zéro
+	 * s'il n'y a pas d'échec en réserve.
+	 *
+	 * Un échec posé avant la 3.38 n'a pas d'heure ; on le suppose tout frais,
+	 * ce qui ne peut que retarder d'au plus une heure, et seulement la
+	 * première heure qui suit la mise à jour.
+	 */
+	public static function echec_jusqua( $ark, $id_concept = '', $theso = 'TH_1' ) {
+		$connu = get_transient( self::clef( trim( (string) $ark ), $id_concept, $theso ) );
+		if ( is_array( $connu ) && isset( $connu['echec_jusqua'] ) ) {
+			return (int) $connu['echec_jusqua'];
+		}
+		return ( 'vide' === $connu ) ? time() + self::DUREE_ECHEC : 0;
+	}
+
+	/** Un échec en réserve, sous sa forme d'avant la 3.38 ou d'après. */
+	private static function est_un_echec( $connu ) {
+		return 'vide' === $connu || ( is_array( $connu ) && isset( $connu['echec_jusqua'] ) );
+	}
+
+	/** La clef de réserve d'un terme. */
+	private static function clef( $ark, $id_concept, $theso ) {
+		return 'na_pactols_c_' . md5( $ark . '|' . $id_concept . '|' . $theso );
+	}
+
+	/** La clef de réserve de l'identifiant numérique d'un ARK. */
+	private static function clef_id( $ark ) {
+		return 'na_pactols_id_' . md5( (string) $ark );
 	}
 
 	/**

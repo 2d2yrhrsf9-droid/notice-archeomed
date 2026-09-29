@@ -1,0 +1,32 @@
+#!/bin/sh
+# Le contrôle des doublons tranche-t-il juste ?
+#
+# Il a manqué une fois un vrai doublon — la 3.29, qui arrêtait le site — puis,
+# corrigé, s'est mis à voir des doublons où PHP n'en voit pas. Chaque cas
+# ci-dessous en est un qu'il a déjà mal jugé, ou qu'il jugerait mal si l'on
+# retouchait la façon dont il lit le code.
+set -u
+ICI=$(dirname "$0")
+CONTROLE="$ICI/../../verifier-la-syntaxe"
+D="$ICI/doublons"
+FAUTES=0
+
+essai() {
+  attendu=$1; shift
+  if "$CONTROLE" "$@" > /dev/null 2>&1; then obtenu=passe; else obtenu=echoue; fi
+  if [ "$obtenu" = "$attendu" ]; then
+    echo "  ✓ $attendu : $*"
+  else
+    echo "::error::le contrôle des doublons $obtenu là où il devait $attendu : $*"
+    FAUTES=$((FAUTES + 1))
+  fi
+}
+
+essai echoue "$D/echoue-meme-fichier.php"
+essai passe  "$D/passe-js-a.php" "$D/passe-js-b.php"
+essai passe  "$D/passe-garde-a.php" "$D/passe-garde-b.php"
+essai passe  "$D/passe-alternative-a.php" "$D/passe-alternative-b.php"
+essai passe  "$D/passe-anonyme-a.php" "$D/passe-anonyme-b.php"
+essai echoue "$D/echoue-vrai-a.php" "$D/echoue-vrai-b.php"
+
+[ "$FAUTES" -eq 0 ] || exit 1
