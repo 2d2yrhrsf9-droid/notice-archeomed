@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.31
+ * Version: 3.32
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -677,6 +677,14 @@ class Notice_Archeomed_Pactols {
 			if ( '' !== $d['num_autorisation'] ) {
 				$meta[] = esc_html( "Numéro d'autorisation : " . $d['num_autorisation'] );
 			}
+			if ( ! empty( $d['id_patriarche'] ) ) {
+				$meta[] = esc_html( 'Identifiant Patriarche : ' . $d['id_patriarche'] );
+			}
+			if ( ! empty( $d['rapport_lien'] ) ) {
+				$meta[] = esc_html( 'Rapport final : ' ) . '<a href="'
+					. esc_url( $d['rapport_lien'] ) . '">'
+					. esc_html( $d['rapport_lien'] ) . '</a>';
+			}
 			$organismes = $this->organismes_de( $d );
 			if ( ! empty( $organismes ) ) {
 				$meta[] = esc_html( $this->libelle_organisme( count( $organismes ) )
@@ -987,7 +995,7 @@ class Notice_Archeomed_Pactols {
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'annee',
-			'num_autorisation', 'commentaires',
+			'num_autorisation', 'id_patriarche', 'rapport_lien', 'commentaires',
 			'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 		);
 		foreach ( $simples as $champ ) {
@@ -1606,6 +1614,16 @@ class Notice_Archeomed_Pactols {
 			<input type="text" name="annee" required value="<?php echo esc_attr( $this->repris( 'annee' ) ); ?>">
 			<label>Numéro d'autorisation</label>
 			<input type="text" name="num_autorisation" value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
+			<label>Identifiant Patriarche</label>
+			<p class="na-help">Le numéro que porte l’opération dans la base Patriarche
+			du ministère de la Culture, s’il vous est connu. Il ne se confond pas avec
+			le numéro d’autorisation, qui est celui de l’arrêté.</p>
+			<input type="text" name="id_patriarche" value="<?php echo esc_attr( $this->repris( 'id_patriarche' ) ); ?>">
+			<label>Rapport final (lien)</label>
+			<p class="na-help">L’adresse à laquelle le rapport final d’opération se
+			consulte — Dolia, HAL, le site du service régional. Laisser vide s’il
+			n’est pas déposé.</p>
+			<input type="url" name="rapport_lien" placeholder="https://" value="<?php echo esc_attr( $this->repris( 'rapport_lien' ) ); ?>">
 			<label>Organisme porteur de l'opération <span class="na-req">*</span></label>
 			<p class="na-help">L’organisme qui gère administrativement l’opération :
 			l’Inrap, un service archéologique de collectivité, une université, le
@@ -3087,6 +3105,12 @@ class Notice_Archeomed_Pactols {
 		if ( '' !== $d['num_autorisation'] ) {
 			$admin_lines[] = $this->meta_line( 'Numéro d\'autorisation', $d['num_autorisation'] );
 		}
+		if ( ! empty( $d['id_patriarche'] ) ) {
+			$admin_lines[] = $this->meta_line( 'Identifiant Patriarche', $d['id_patriarche'] );
+		}
+		if ( ! empty( $d['rapport_lien'] ) ) {
+			$admin_lines[] = $this->meta_line( 'Rapport final', $d['rapport_lien'] );
+		}
 		$organismes = $this->organismes_de( $d );
 		if ( ! empty( $organismes ) ) {
 			$admin_lines[] = $this->meta_line(
@@ -3535,6 +3559,25 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => "Numéro d'autorisation : " . $d['num_autorisation'] ) )
 			);
 		}
+		// L'identifiant Patriarche partage pour l'instant le style du numéro
+		// d'autorisation — c'est celui que Métopes nomme « Identifiant
+		// Patriarche », et rien d'autre ne lui convient mieux. Les deux
+		// renseignements sont distincts : l'un est un arrêté, l'autre une
+		// entrée dans la base du ministère. Ils sont donc collectés à part,
+		// quitte à ce que la chaîne les distingue plus tard.
+		if ( ! empty( $d['id_patriarche'] ) ) {
+			$doc->add_paragraph(
+				'TEI_archeoCHR_IDpatriarche',
+				array( array( 'text' => 'Identifiant Patriarche : ' . $d['id_patriarche'] ) )
+			);
+		}
+		if ( ! empty( $d['rapport_lien'] ) ) {
+			$doc->add_raw_paragraph(
+				'TEI_archeoCHR_reportlink',
+				$doc->plain( 'Rapport final : ' )
+					. $doc->hyperlink( $d['rapport_lien'], $d['rapport_lien'] )
+			);
+		}
 		$organismes_doc = $this->organismes_de( $d );
 		if ( ! empty( $organismes_doc ) ) {
 			$doc->add_paragraph(
@@ -3950,7 +3993,7 @@ class Notice_Archeomed_Pactols {
 		$d['renvoi_1'] = $this->collect_select( 'renvoi_1', $this->rubriques, false );
 		$d['renvoi_2'] = $this->collect_select( 'renvoi_2', $this->rubriques, false );
 		$text_fields = array(
-			'departement', 'lieu_dit', 'annee', 'num_autorisation',
+			'departement', 'lieu_dit', 'annee', 'num_autorisation', 'id_patriarche',
 			'resp_prenom', 'resp_nom', 'resp_inst',
 			'coresp_prenom', 'coresp_nom', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst',
@@ -3959,10 +4002,17 @@ class Notice_Archeomed_Pactols {
 		foreach ( $text_fields as $f ) {
 			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( wp_unslash( $_POST[ $f ] ) ) : '';
 		}
+		// Le lien du rapport passe par « esc_url_raw » et non par le tamis des
+		// champs de texte : il finit dans un lien hypertexte du document, et
+		// une adresse mal formée y ferait un lien qui ne mène nulle part. Les
+		// schémas sont restreints à ce qu'un rapport peut porter.
+		$d['rapport_lien'] = isset( $_POST['rapport_lien'] )
+			? esc_url_raw( trim( wp_unslash( $_POST['rapport_lien'] ) ), array( 'http', 'https' ) ) : '';
+		$d['rapport_lien'] = $this->limit_string( $d['rapport_lien'], 500 );
 		$d['resp_email'] = isset( $_POST['resp_email'] ) ? sanitize_email( wp_unslash( $_POST['resp_email'] ) ) : '';
 		$d['coresp_email'] = isset( $_POST['coresp_email'] ) ? sanitize_email( wp_unslash( $_POST['coresp_email'] ) ) : '';
 		$d['coauteur_email'] = isset( $_POST['coauteur_email'] ) ? sanitize_email( wp_unslash( $_POST['coauteur_email'] ) ) : '';
-		foreach ( array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'commentaires' => 3000 ) as $field => $max ) {
+		foreach ( array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'id_patriarche' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'commentaires' => 3000 ) as $field => $max ) {
 			$d[ $field ] = $this->limit_string( $d[ $field ], $max );
 		}
 		$d['departement'] = $this->sans_parentheses( $d['departement'] );

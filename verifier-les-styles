@@ -38,6 +38,36 @@ def styles_dun_docx(chemin):
     }
 
 
+def styles_poses(chemin):
+    """Les styles que le document de référence applique réellement.
+
+    À ne pas confondre avec ceux qu'il définit : le modèle Métopes en porte
+    deux cent trente-trois, et les chercher là ne disait rien. C'est ce qui
+    est posé sur un paragraphe ou sur une suite de caractères qui dit le
+    stylage convenu.
+    """
+    with zipfile.ZipFile(chemin) as archive:
+        corps = archive.read("word/document.xml").decode("utf-8")
+        feuille = archive.read("word/styles.xml").decode("utf-8")
+    nom = dict(
+        re.findall(
+            r'<w:style [^>]*w:styleId="([^"]+)".*?<w:name w:val="([^"]*)"',
+            feuille,
+            re.S,
+        )
+    )
+    poses = set(re.findall(r'<w:pStyle w:val="([^"]+)"', corps))
+    poses |= set(re.findall(r'<w:rStyle w:val="([^"]+)"', corps))
+    noms = {nom.get(i, i) for i in poses}
+    # Un paragraphe sans « pStyle » est en Normal ; sans cela, Normal
+    # paraîtrait manquer d'un document qui n'en fait qu'un usage implicite.
+    for paragraphe in re.findall(r"<w:p\b.*?</w:p>", corps, re.S):
+        if "<w:pStyle " not in paragraphe:
+            noms.add("Normal")
+            break
+    return noms
+
+
 def styles_demandes(chemin):
     """Ce que le générateur applique, lu dans le code lui-même."""
     code = chemin.read_text(encoding="utf-8")
@@ -54,20 +84,16 @@ def main():
             return 2
 
     modele = styles_dun_docx(MODELE)
-    reference = styles_dun_docx(REFERENCE) if REFERENCE.is_file() else set()
+    reference = styles_poses(REFERENCE) if REFERENCE.is_file() else set()
     demandes = sorted(styles_demandes(CODE))
 
     manquants = []
     for style in demandes:
-        dans_modele = style in modele
-        note = ""
-        if reference and style not in reference:
-            note = "   (absent du fichier de stylage de référence)"
-        if dans_modele:
-            print(f"  ✓  {style}{note}")
+        if style in modele:
+            print(f"  ✓  {style}")
         else:
             manquants.append(style)
-            print(f"  ✗  {style}   ABSENT DU MODÈLE{note}")
+            print(f"  ✗  {style}   ABSENT DU MODÈLE")
 
     print()
     if manquants:
@@ -75,6 +101,40 @@ def main():
               f"modèle : les paragraphes concernés sortiront en Normal.")
         return 1
     print(f"Les {len(demandes)} styles demandés sont dans le modèle.")
+
+    # Le stylage de référence, et l'écart qui s'y creuse.
+    #
+    # Il est l'étalon : c'est à lui qu'on confronte ce que le code produit. Un
+    # étalon en retard ne dit plus rien — et c'est ce qui est arrivé le jour
+    # où l'on est allé lui demander où va l'image d'une figure, pour
+    # s'apercevoir qu'il ignorait jusqu'au bloc de figure. L'écart se voit
+    # donc ici, et il fait échouer le contrôle : un filet qu'on laisse
+    # vieillir ne rattrape plus rien.
+    if not reference:
+        print()
+        print("Pas de fichier de stylage de référence : l'écart n'est pas mesuré.")
+        return 0
+
+    en_avance = sorted(set(demandes) - reference)
+    inemployes = sorted(reference - set(demandes))
+    if inemployes:
+        print()
+        print("Styles du stylage de référence que le code n'applique jamais :")
+        for style in inemployes:
+            print(f"  ·  {style}")
+    if en_avance:
+        print()
+        print("Styles appliqués par le code et absents du stylage de référence :")
+        for style in en_avance:
+            print(f"  !  {style}")
+        print()
+        print(f"Le stylage de référence a {len(en_avance)} style(s) de retard sur le")
+        print("code. Pour le remettre à jour : dans « Notices reçues », téléchargez")
+        print("le document d'une notice qui porte une illustration, et remplacez")
+        print(f"{REFERENCE.relative_to(RACINE)} par ce fichier.")
+        return 1
+
+    print("Le stylage de référence est à jour.")
     return 0
 
 
