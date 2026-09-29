@@ -144,7 +144,16 @@ jobs:
 
       - name: La file des termes et le reste, éprouvés par PHP
         working-directory: /tmp/wp
-        run: wp eval-file "$GITHUB_WORKSPACE/.github/essais/file-des-termes.php"
+        run: |
+          # Une erreur fatale arrête l'essai avant qu'il ait pu dire quoi que
+          # ce soit : ses dernières lignes sortent alors en annotations, qui
+          # se lisent sans être connecté.
+          if ! wp eval-file "$GITHUB_WORKSPACE/.github/essais/file-des-termes.php" > /tmp/essais.log 2>&1; then
+            cat /tmp/essais.log
+            tail -n 15 /tmp/essais.log | cut -c1-400 | sed 's/^/::error::/'
+            exit 1
+          fi
+          cat /tmp/essais.log
 
       - name: Le plugin se désactive
         working-directory: /tmp/wp
@@ -159,7 +168,7 @@ jobs:
           grep -n "notice-archeomed" "$JOURNAL" | head -50 || true
           if grep -qE "PHP (Fatal|Parse) error" "$JOURNAL"; then
             echo "::error::Erreur fatale au journal de WordPress."
-            grep -E "PHP (Fatal|Parse) error" "$JOURNAL"
+            grep -E "PHP (Fatal|Parse) error" "$JOURNAL" | cut -c1-500 | sed 's/^/::error::/'
             exit 1
           fi
 
