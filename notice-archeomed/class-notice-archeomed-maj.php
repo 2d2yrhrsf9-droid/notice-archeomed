@@ -163,12 +163,17 @@ class Notice_Archeomed_MiseAJour {
 		$code = (int) wp_remote_retrieve_response_code( $reponse );
 		if ( 200 !== $code ) {
 			$jeton = '' !== trim( (string) Notice_Archeomed_Settings::get( 'github_jeton' ) );
-			$dit = 'GitHub a répondu ' . $code . '.';
+			// Le dépôt interrogé se nomme dans le message. Sans lui, un 404
+			// laissait chercher du côté du jeton ou du réseau, quand le champ
+			// portait simplement l'exemple « compte/depot » : l'accès à GitHub
+			// se testait bien, c'est le dépôt qui n'existait pas.
+			$dit = 'GitHub a répondu ' . $code . ' pour le dépôt « ' . $this->depot() . ' ».';
 			if ( 404 === $code ) {
 				$dit .= $jeton
 					? ' Dépôt, release ou jeton introuvable : vérifiez le nom du dépôt et les droits du jeton.'
-					: ' Ce dépôt est privé, ou n’a pas encore de release publiée.'
-						. ' Un dépôt privé demande un jeton d’accès ; un dépôt public n’en demande pas.';
+					: ' Vérifiez d’abord que ce nom est bien celui du dépôt. S’il l’est : le dépôt est'
+						. ' privé, ou n’a pas encore de release publiée — un dépôt privé demande un jeton'
+						. ' d’accès, un dépôt public n’en demande pas.';
 			} elseif ( 401 === $code || 403 === $code ) {
 				$dit .= ' Accès refusé : le jeton est absent, expiré, ou sans droit de lecture sur ce dépôt.';
 			}

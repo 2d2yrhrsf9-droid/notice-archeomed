@@ -433,7 +433,16 @@ class Notice_Archeomed_Settings {
 		}
 		if ( isset( $input['github_depot'] ) ) {
 			$depot = trim( sanitize_text_field( $input['github_depot'] ) );
-			if ( '' === $depot || preg_match( '#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $depot ) ) {
+			if ( 'compte/depot' === strtolower( $depot ) ) {
+				// L'exemple du champ, recopié tel quel : il a la bonne forme,
+				// passait donc la vérification, et GitHub répondait 404 sans
+				// qu'on voie pourquoi.
+				add_settings_error(
+					self::OPTION_NAME, 'github_depot',
+					'« compte/depot » est l’exemple du champ, non un dépôt : indiquez le vrai nom, par exemple « 2d2yrhrsf9-droid/notice-archeomed ». L’ancienne valeur a été conservée.',
+					'error'
+				);
+			} elseif ( '' === $depot || preg_match( '#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $depot ) ) {
 				$out['github_depot'] = $depot;
 			} else {
 				add_settings_error(
