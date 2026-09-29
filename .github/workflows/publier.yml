@@ -14,8 +14,12 @@
 
 name: Publier une release
 
+# Chaque envoi sur main passe l'analyse et le site d'essai : on sait qu'une
+# version est bonne avant de l'étiqueter. Seule une étiquette publie.
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -56,8 +60,110 @@ jobs:
           set -eu
           for f in notice-archeomed/*.php; do php -l "$f"; done
 
-  publier:
+  # Le site d'essai que la revue n'a pas.
+  #
+  # « Un passage vert ne dispense pas d'installer sur un site d'essai avant
+  # la production. » La revue n'a que son site de production, où le
+  # formulaire se teste sur une page cachée — mais une erreur fatale, elle,
+  # n'est pas cachée : elle arrête le site entier. C'est ce qu'a fait la 3.29,
+  # dont chaque fichier était pourtant valide pour PHP pris un à un.
+  #
+  # Ici, un WordPress véritable se monte à chaque fois, avec sa base : le
+  # plugin s'active, le formulaire s'affiche sur une vraie page, la file des
+  # termes est éprouvée par PHP, le plugin se désactive. Le journal de
+  # WordPress ne doit porter aucune erreur fatale. Rien n'interroge Pactols :
+  # la publication ne dépend pas de la santé d'un service tiers.
+  essayer:
     needs: analyser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    services:
+      base:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: essai
+          MARIADB_DATABASE: essai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - name: Prendre le code
+        uses: actions/checkout@v4
+
+      - name: Installer PHP ${{ matrix.php }} et WP-CLI
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, zip, gd
+          tools: wp-cli
+          coverage: none
+
+      - name: Monter un WordPress d'essai
+        run: |
+          set -eu
+          mkdir -p /tmp/wp && cd /tmp/wp
+          wp core download --quiet
+          wp config create --dbname=essai --dbuser=root --dbpass=essai \
+            --dbhost=127.0.0.1:3306 --skip-check
+          wp config set WP_DEBUG true --raw
+          wp config set WP_DEBUG_LOG true --raw
+          wp config set WP_DEBUG_DISPLAY false --raw
+          # Un compte jetable, pour une base qui disparaît avec la machine.
+          wp core install --url=http://127.0.0.1:8080 --title=Essai \
+            --admin_user=essai --admin_password=essai-jetable \
+            --admin_email=essai@example.org --skip-email
+          cp -r "$GITHUB_WORKSPACE/notice-archeomed" wp-content/plugins/
+
+      - name: Le plugin s'active
+        working-directory: /tmp/wp
+        run: wp plugin activate notice-archeomed
+
+      - name: Le formulaire s'affiche sur une page
+        working-directory: /tmp/wp
+        run: |
+          set -eu
+          ID=$(wp post create --post_type=page --post_status=publish \
+            --post_title=Formulaire --post_content='[notice_archeomed_pactols]' --porcelain)
+          php -S 127.0.0.1:8080 > /tmp/serveur.log 2>&1 &
+          sleep 2
+          curl -fsS "http://127.0.0.1:8080/?page_id=$ID" -o /tmp/page.html
+          if ! grep -q 'class="na-form"' /tmp/page.html; then
+            echo "::error::La page ne porte pas le formulaire."
+            head -c 3000 /tmp/page.html
+            exit 1
+          fi
+
+      - name: La file des termes et le reste, éprouvés par PHP
+        working-directory: /tmp/wp
+        run: wp eval-file "$GITHUB_WORKSPACE/.github/essais/file-des-termes.php"
+
+      - name: Le plugin se désactive
+        working-directory: /tmp/wp
+        run: wp plugin deactivate notice-archeomed
+
+      - name: Aucune erreur fatale au journal de WordPress
+        if: always()
+        run: |
+          JOURNAL=/tmp/wp/wp-content/debug.log
+          [ -f "$JOURNAL" ] || { echo "Journal vide."; exit 0; }
+          echo "— ce que le journal dit du plugin :"
+          grep -n "notice-archeomed" "$JOURNAL" | head -50 || true
+          if grep -qE "PHP (Fatal|Parse) error" "$JOURNAL"; then
+            echo "::error::Erreur fatale au journal de WordPress."
+            grep -E "PHP (Fatal|Parse) error" "$JOURNAL"
+            exit 1
+          fi
+
+  publier:
+    # Seule une étiquette publie, et seulement si le site d'essai a tenu.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [analyser, essayer]
     runs-on: ubuntu-latest
     permissions:
       # Le jeton fourni par GitHub suffit à créer une release : aucune clé à

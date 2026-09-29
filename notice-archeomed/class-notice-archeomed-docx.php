@@ -102,9 +102,6 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
-	 * Vérifie le modèle et construit l'index des styles.
-	 */
-	/**
 	 * Le style du bloc que la rédaction ôte avant de passer au XML.
 	 *
 	 * Il n'est pas dans le gabarit Métopes, et il n'y sera pas : ce gabarit
@@ -145,6 +142,9 @@ class Notice_Archeomed_DOCX {
 			. '</w:style>';
 	}
 
+	/**
+	 * Vérifie le modèle et construit l'index des styles.
+	 */
 	private function load_template() {
 		if ( ! class_exists( 'ZipArchive' ) ) {
 			$this->error = "L'extension PHP ZipArchive est requise pour produire un fichier DOCX.";

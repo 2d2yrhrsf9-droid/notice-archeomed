@@ -55,6 +55,13 @@ class Notice_Archeomed_Thesaurus {
 	const DUREE = MONTH_IN_SECONDS;
 
 	/**
+	 * Une heure : ce qu'on retient d'un échec, pour ne pas marteler l'API.
+	 * Nommée parce que la reprise des notices en dépend — elle doit venir
+	 * après, faute de quoi elle relit l'échec au lieu d'interroger.
+	 */
+	const DUREE_ECHEC = HOUR_IN_SECONDS;
+
+	/**
 	 * Ce que vaut un terme, ou null si Pactols n'a pas répondu.
 	 *
 	 * Rend un tableau : l'ARK, la forme préférée française, les étiquettes de
@@ -118,7 +125,7 @@ class Notice_Archeomed_Thesaurus {
 			// Une panne de réseau ne se met pas en réserve pour un mois : une
 			// heure suffit à ne pas marteler l'API, et la notice suivante
 			// réessaiera.
-			set_transient( $clef, 'vide', HOUR_IN_SECONDS );
+			set_transient( $clef, 'vide', self::DUREE_ECHEC );
 			return null;
 		}
 

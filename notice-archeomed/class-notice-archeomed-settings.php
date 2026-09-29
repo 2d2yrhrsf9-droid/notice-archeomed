@@ -517,12 +517,6 @@ class Notice_Archeomed_Settings {
 	}
 
 	/**
-	 * Teste la clé secrète auprès de Cloudflare. On envoie volontairement un
-	 * jeton invalide : si la clé est bonne, l'API répond « invalid-input-response » ;
-	 * si la clé est mauvaise, elle répond « invalid-input-secret ». C'est donc
-	 * un moyen de valider la clé sans avoir à résoudre un défi.
-	 */
-	/**
 	 * Le serveur joint-il GitHub ?
 	 *
 	 * La question n'est pas oiseuse : c'est le même proxy qui empêche de
@@ -590,6 +584,12 @@ class Notice_Archeomed_Settings {
 		);
 	}
 
+	/**
+	 * Teste la clé secrète auprès de Cloudflare. On envoie volontairement un
+	 * jeton invalide : si la clé est bonne, l'API répond « invalid-input-response » ;
+	 * si la clé est mauvaise, elle répond « invalid-input-secret ». C'est donc
+	 * un moyen de valider la clé sans avoir à résoudre un défi.
+	 */
 	private function test_secret( $secret ) {
 		if ( '' === trim( $secret ) ) {
 			return array( 'ok' => false, 'message' => 'Aucune clé secrète enregistrée.' );

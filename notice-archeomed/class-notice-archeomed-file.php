@@ -80,18 +80,6 @@ class Notice_Archeomed_File {
 		add_action( 'admin_post_na_diagnostic', array( $this, 'diagnostiquer' ) );
 	}
 
-	/**
-	 * Les notices reçues ne sont pas du contenu public : elles ne s'affichent
-	 * nulle part, ne s'indexent pas, et ne se voient que de l'administration.
-	 */
-	/**
-	 * Repose les rendez-vous manquants.
-	 *
-	 * Une mise à jour par téléversement ne repasse pas toujours par
-	 * l'activation : sans ce rattrapage, la relance et le récapitulatif
-	 * disparaissaient au premier remplacement de l'extension, et personne ne
-	 * s'en apercevait avant que la file ne s'allonge.
-	 */
 	/** Ce que la version en cours attend d'avoir écrit dans chaque notice. */
 	const ETAT_DES_DONNEES = 2;
 
@@ -141,12 +129,24 @@ class Notice_Archeomed_File {
 		}
 	}
 
+	/**
+	 * Repose les rendez-vous manquants.
+	 *
+	 * Une mise à jour par téléversement ne repasse pas toujours par
+	 * l'activation : sans ce rattrapage, la relance et le récapitulatif
+	 * disparaissaient au premier remplacement de l'extension, et personne ne
+	 * s'en apercevait avant que la file ne s'allonge.
+	 */
 	public function verifier_les_rendez_vous() {
 		if ( ! wp_next_scheduled( self::HOOK_RELANCE ) || ! wp_next_scheduled( self::HOOK_RECAP ) ) {
 			self::activer();
 		}
 	}
 
+	/**
+	 * Les notices reçues ne sont pas du contenu public : elles ne s'affichent
+	 * nulle part, ne s'indexent pas, et ne se voient que de l'administration.
+	 */
 	public function declarer_le_type() {
 		$this->verifier_les_rendez_vous();
 		if ( is_admin() ) {
@@ -269,10 +269,6 @@ class Notice_Archeomed_File {
 	}
 
 	/**
-	 * Le bouton « Expédier maintenant » de l'administration, pour le jour où
-	 * le planificateur de WordPress est désactivé sur l'hébergement.
-	 */
-	/**
 	 * Remet une notice en échec dans la file.
 	 *
 	 * Après cinq refus, une notice restait bloquée pour toujours : la relance
@@ -337,6 +333,10 @@ class Notice_Archeomed_File {
 		exit;
 	}
 
+	/**
+	 * Le bouton « Expédier maintenant » de l'administration, pour le jour où
+	 * le planificateur de WordPress est désactivé sur l'hébergement.
+	 */
 	public function expedier_maintenant() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
@@ -606,9 +606,6 @@ class Notice_Archeomed_File {
 	}
 
 	/**
-	 * Les notices d'une rubrique, dans l'ordre où elles seront relues.
-	 */
-	/**
 	 * Les notices d'autres rubriques qui renvoient vers celle-ci.
 	 *
 	 * Un renvoi s'imprimait en tête de la notice qui le porte, dans sa propre
@@ -655,6 +652,9 @@ class Notice_Archeomed_File {
 		return $out;
 	}
 
+	/**
+	 * Les notices d'une rubrique, dans l'ordre où elles seront relues.
+	 */
 	public function notices_de_la_rubrique( $rubrique ) {
 		return get_posts(
 			array(

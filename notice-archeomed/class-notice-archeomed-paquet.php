@@ -34,16 +34,6 @@ class Notice_Archeomed_Paquet {
 	const SANS_PLAFOND = PHP_INT_MAX;
 
 	/**
-	 * La qualité dont part une basse définition, et le plancher où elle
-	 * s'arrête.
-	 *
-	 * Elle ne se règle plus : on veut la meilleure image que le plafond de
-	 * poids admette, et c'est au plugin de la chercher, non à qui dépose une
-	 * notice de deviner un pourcentage. Les paliers de huit points laissent
-	 * huit essais entre le haut et le bas — assez fins pour ne pas sacrifier
-	 * vingt points de qualité quand deux suffisaient.
-	 */
-	/**
 	 * L'aperçu incorporé au document envoyé par courriel.
 	 *
 	 * Il n'a pas à valoir la basse définition du dossier : celle-là part à la
@@ -54,6 +44,16 @@ class Notice_Archeomed_Paquet {
 	const LARGEUR_APERCU = 1000;
 	const POIDS_APERCU   = 150;
 
+	/**
+	 * La qualité dont part une basse définition, et le plancher où elle
+	 * s'arrête.
+	 *
+	 * Elle ne se règle plus : on veut la meilleure image que le plafond de
+	 * poids admette, et c'est au plugin de la chercher, non à qui dépose une
+	 * notice de deviner un pourcentage. Les paliers de huit points laissent
+	 * huit essais entre le haut et le bas — assez fins pour ne pas sacrifier
+	 * vingt points de qualité quand deux suffisaient.
+	 */
 	const QUALITE_HAUTE   = 92;
 	const QUALITE_PLANCHER = 40;
 	const QUALITE_PALIER   = 8;
