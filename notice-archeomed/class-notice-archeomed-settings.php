@@ -1216,12 +1216,12 @@ class Notice_Archeomed_Settings {
 								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[poids_courriel]"
 								value="<?php echo esc_attr( (int) self::get( 'poids_courriel' ) ); ?>"> Mo
 							<p class="description">
-								Au-delà, le serveur de courriel refuse le message entier — et la notice
-								ne part pas. Le courriel de la rédaction joint alors ce qui tient, le
-								document d’abord, et nomme les illustrations restées sur le site, avec
-								le lien de la notice où elles se téléchargent. Une pièce jointe grossit
-								d’un tiers en voyageant : 10 Mo de courriel, c’est environ 7 Mo de
-								fichiers. Un relais SMTP accepte souvent davantage.
+								Au-delà, le serveur de courriel refuse le message entier. Les illustrations
+								partent en version allégée, qui pèse peu ; ce plafond ne compte que pour
+								un original joint faute de version allégée — au-delà, il reste sur le site
+								et le courriel le nomme, avec le lien de la notice. Une pièce jointe
+								grossit d’un tiers en voyageant. L’« essai de poids », plus bas, mesure
+								ce que le serveur accepte.
 							</p>
 						</td>
 					</tr>

@@ -288,6 +288,47 @@ foreach ( array( $doc_essai, $fig1, $fig2 ) as $f ) {
 }
 @rmdir( $dossier_essai );
 
+WP_CLI::log( 'Les illustrations du courriel, en version allégée' );
+$dossier_essai = trailingslashit( get_temp_dir() ) . 'na-essai-allegees';
+wp_mkdir_p( $dossier_essai );
+$doc_essai = $dossier_essai . '/notice.docx';
+$orig1     = $dossier_essai . '/orig1.jpg';
+$orig2     = $dossier_essai . '/orig2.jpg';
+$leger1    = $dossier_essai . '/apercu-1.jpg';
+file_put_contents( $doc_essai, str_repeat( 'd', 20 * KB_IN_BYTES ) );
+file_put_contents( $orig1, str_repeat( 'a', 4 * MB_IN_BYTES ) );
+file_put_contents( $orig2, str_repeat( 'b', 4 * MB_IN_BYTES ) );
+file_put_contents( $leger1, str_repeat( 'l', 150 * KB_IN_BYTES ) );
+$avec_figures = na_notice( array( 'commune' => 'Plédéhel', 'lieu_dit' => 'Le Bourg',
+	'illustrations' => array( array( 'rang' => 1, 'titre' => 'Vue' ), array( 'rang' => 2, 'titre' => 'Plan' ) ) ) );
+update_post_meta( $avec_figures, '_na_illustrations', array( $orig1, $orig2 ) );
+update_post_meta( $avec_figures, '_na_apercus', array( 1 => array( 'apercu' => $leger1,
+	'largeur' => 1000, 'hauteur' => 750, 'dpi' => 96 ) ) );
+$restees = array();
+$legeres = array();
+$joindre = na_appel( $plugin, 'pieces_du_courriel', array( $avec_figures,
+	get_post_meta( $avec_figures, '_na_donnees', true ),
+	array( $orig1, $orig2, $doc_essai ), $doc_essai, 4000, &$restees, &$legeres ) );
+$noms = array_map( 'basename', $joindre );
+na_verifier( 3 === count( $joindre ) && $doc_essai === $joindre[0]
+	&& 'Pledehel_Le_Bourg_Fig_1_apercu.jpg' === $noms[1]
+	&& $orig2 === $joindre[2] && empty( $restees ),
+	'le document, la figure 1 en version allégée sous un nom lisible, la figure 2 en original faute d\'aperçu',
+	$noms );
+na_verifier( ! in_array( $orig1, $joindre, true ),
+	'l\'original de la figure 1 ne part pas : il reste sur le site' );
+$copie = $legeres[0];
+na_appel( $plugin, 'effacer_les_copies', array( $legeres ) );
+na_verifier( ! file_exists( $copie ), 'la copie faite pour le courriel s\'efface après' );
+$avis = na_appel( $plugin, 'avis_des_illustrations', array( 1, array(), $avec_figures ) );
+na_verifier( false !== strpos( $avis, 'version allégée' ) && false !== strpos( $avis, 'post=' . $avec_figures ),
+	'le courriel dit que les originaux sont sur le site, et où' );
+wp_delete_post( $avec_figures, true );
+foreach ( array( $doc_essai, $orig1, $orig2, $leger1 ) as $f ) {
+	@unlink( $f );
+}
+@rmdir( $dossier_essai );
+
 WP_CLI::log( 'La note d\'un envoi partiel' );
 $partie = na_notice( $saisie );
 update_post_meta( $partie, '_na_erreur', 'Impossible d’instancier la fonction mail.' );

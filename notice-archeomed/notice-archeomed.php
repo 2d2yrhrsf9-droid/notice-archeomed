@@ -4296,18 +4296,23 @@ class Notice_Archeomed_Pactols {
 		// l'envoi immédiat —, rien n'est rangé nulle part : on joint tout, et
 		// un refus garde la notice de côté plutôt que d'en perdre une figure.
 		$joindre = $existants;
+		$legeres = array();
 		if ( $id ) {
-			$joindre = $this->pieces_qui_tiennent( $existants, $document, strlen( $notice ), $restees );
+			$joindre = $this->pieces_du_courriel( $id, $d, $existants, $document,
+				strlen( $notice ), $restees, $legeres );
 		}
 		$corps = $notice;
-		if ( ! empty( $restees ) ) {
-			$corps = $this->avis_des_pieces_restees( $restees, $id ) . $notice;
+		if ( ! empty( $legeres ) || ! empty( $restees ) ) {
+			$corps = $this->avis_des_illustrations( count( $legeres ), $restees, $id ) . $notice;
 		}
 		// Un seul envoi pour toute la rédaction : les pièces jointes pèsent
 		// jusqu'à vingt méga-octets, et les répéter par destinataire ferait
 		// payer la liste au poids.
 		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
 			$headers, $joindre );
+		// Les copies nommées des versions allégées n'ont servi qu'à ce
+		// courriel : elles partent, qu'il soit parti ou non.
+		$this->effacer_les_copies( $legeres );
 		if ( ! $sent ) {
 			// « wp_mail » rend faux sans dire pourquoi. Le crochet
 			// « wp_mail_failed » porte l'erreur de PHPMailer — la vraie
@@ -4615,15 +4620,17 @@ class Notice_Archeomed_Pactols {
 		} else {
 			// Ce que l'envoi véritable ferait de ces pièces, au poids réglé.
 			$restees  = array();
+			$legeres  = array();
 			$document = (string) get_post_meta( (int) $id, '_na_document', true );
-			$joindre  = $this->pieces_qui_tiennent( $produits, $document, strlen( $notice ), $restees );
+			$joindre  = $this->pieces_du_courriel( $id, $d, $produits, $document, strlen( $notice ),
+				$restees, $legeres );
+			$this->effacer_les_copies( $legeres );
 			$out[]    = array( 'ok' => true, 'etape' => 'l’envoi de la notice',
-				'message' => empty( $restees )
-					? 'joindrait les ' . count( $joindre ) . ' pièces : elles tiennent sous '
-						. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo.'
-					: 'joindrait ' . count( $joindre ) . ' pièce(s) sur ' . count( $produits )
-						. ' et nommerait les autres, restées sur le site : au-delà de '
-						. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo, le serveur refuse le message.' );
+				'message' => 'joindrait ' . count( $joindre ) . ' pièce(s), dont '
+					. count( $legeres ) . ' illustration(s) en version allégée'
+					. ( empty( $restees ) ? '.'
+						: ' ; ' . count( $restees ) . ' original(aux) resteraient sur le site, au-delà de '
+							. (int) Notice_Archeomed_Settings::get( 'poids_courriel' ) . ' Mo.' ) );
 		}
 		return $out;
 	}
@@ -4688,6 +4695,119 @@ class Notice_Archeomed_Pactols {
 	/**
 	 * Ce que le planificateur appelle : une notice inscrite, à expédier.
 	 */
+	/**
+	 * Les pièces du courriel de la rédaction : le document, puis chaque
+	 * illustration en version allégée — l'original seulement quand il n'y en
+	 * a pas, et s'il tient sous le poids réglé.
+	 *
+	 * Les originaux partaient en pièces jointes, jusqu'à vingt méga-octets par
+	 * notice. Le serveur de la revue refuse tout message de plus de dix
+	 * environ : une notice à deux figures ne partait jamais. Et même sans
+	 * cette limite, trois fois vingt méga-octets par notice, trois cents
+	 * notices par an, c'était charger des boîtes pour des fichiers qui sont
+	 * déjà sur le site et dans le dossier Métopes, d'où part la mise en page. La version
+	 * allégée — mille pixels, la même que celle du document — suffit à lire.
+	 *
+	 * Une notice déposée avant les versions allégées en reçoit une ici, au
+	 * moment de partir, et la garde. Les copies jointes portent un nom qui dit
+	 * ce qu'elles sont ; « $legeres » les rend, pour qu'on les efface après
+	 * l'envoi.
+	 */
+	private function pieces_du_courriel( $id, $d, $existants, $document, $poids_du_corps,
+		&$restees, &$legeres ) {
+		$restees   = array();
+		$legeres   = array();
+		$originaux = array_values( array_filter(
+			(array) get_post_meta( (int) $id, '_na_illustrations', true ), 'is_string' ) );
+		$apercus   = $this->apercus_de( $id, get_post_meta( (int) $id, '_na_donnees', true ) );
+
+		$manquent = array();
+		foreach ( $originaux as $i => $original ) {
+			if ( empty( $apercus[ $i + 1 ]['apercu'] ) || ! is_readable( $apercus[ $i + 1 ]['apercu'] ) ) {
+				$manquent[] = $i + 1;
+			}
+		}
+		if ( ! empty( $manquent ) ) {
+			// Seuls les rangs qui n'en ont pas : refaire les autres laisserait
+			// les anciennes versions sur le serveur, que plus rien ne désigne.
+			$a_faire = array();
+			foreach ( $originaux as $i => $original ) {
+				$a_faire[ $i ] = in_array( $i + 1, $manquent, true ) ? $original : '';
+			}
+			$neufs = $this->fabriquer_les_apercus( $a_faire, $d );
+			if ( ! empty( $neufs ) ) {
+				$apercus = $neufs + $apercus;
+				update_post_meta( (int) $id, '_na_apercus', $apercus );
+			}
+		}
+
+		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/courriel-'
+			. wp_generate_password( 8, false, false );
+		$lourds  = array();
+		foreach ( $originaux as $i => $original ) {
+			$rang = $i + 1;
+			if ( ! empty( $apercus[ $rang ]['apercu'] ) && is_readable( $apercus[ $rang ]['apercu'] ) ) {
+				wp_mkdir_p( $dossier );
+				$copie = $dossier . '/' . Notice_Archeomed_Nommage::assainir(
+					$d['commune'] . '_' . $d['lieu_dit'] . '_Fig_' . $rang ) . '_apercu.jpg';
+				if ( @copy( $apercus[ $rang ]['apercu'], $copie ) ) {
+					$legeres[] = $copie;
+					continue;
+				}
+			}
+			if ( in_array( $original, $existants, true ) ) {
+				$lourds[] = $original;
+			}
+		}
+		// Ce qui est dans la liste d'envoi sans être ni le document ni une
+		// illustration connue — une notice très ancienne — suit le sort des
+		// originaux.
+		foreach ( $existants as $fichier ) {
+			if ( $fichier !== $document && ! in_array( $fichier, $originaux, true ) ) {
+				$lourds[] = $fichier;
+			}
+		}
+		$tete = ( '' !== $document && in_array( $document, $existants, true ) ) ? array( $document ) : array();
+		return $this->pieces_qui_tiennent( array_merge( $tete, $legeres, $lourds ),
+			$document, $poids_du_corps, $restees );
+	}
+
+	/** Efface les copies faites pour un courriel, et leur dossier. */
+	private function effacer_les_copies( $copies ) {
+		$dossiers = array();
+		foreach ( (array) $copies as $copie ) {
+			if ( is_string( $copie ) && false !== strpos( $copie, 'notice-archeomed-tmp/courriel-' ) ) {
+				@unlink( $copie );
+				$dossiers[ dirname( $copie ) ] = true;
+			}
+		}
+		foreach ( array_keys( $dossiers ) as $dossier ) {
+			@rmdir( $dossier );
+		}
+	}
+
+	/**
+	 * L'encadré qui ouvre le courriel de la rédaction : ce qui est joint, en
+	 * quelle définition, et où sont les originaux.
+	 */
+	private function avis_des_illustrations( $legeres, $restees, $id ) {
+		$lien = admin_url( 'post.php?post=' . (int) $id . '&action=edit' );
+		$avis = '';
+		if ( $legeres > 0 ) {
+			$avis .= '<div style="background:#eef4f9;border:1px solid #72aee6;padding:12px 16px;margin:0 0 14px;">'
+				. esc_html( sprintf( _n( 'L’illustration est jointe en version allégée (1 000 pixels), pour la lecture.',
+					'Les %d illustrations sont jointes en version allégée (1 000 pixels), pour la lecture.',
+					$legeres, 'notice-archeomed' ), $legeres ) )
+				. ' Les originaux, en pleine définition, sont conservés sur le site — '
+				. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
+				. 'dossier Métopes de la rubrique.</div>';
+		}
+		if ( ! empty( $restees ) ) {
+			$avis .= $this->avis_des_pieces_restees( $restees, $id );
+		}
+		return $avis;
+	}
+
 	/**
 	 * Les pièces que le courriel peut porter sans dépasser le poids réglé.
 	 *
