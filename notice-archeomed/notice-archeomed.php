@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.35
+ * Version: 3.36
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -460,12 +460,11 @@ class Notice_Archeomed_Pactols {
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
 		check_admin_referer( 'na_document_' . $id );
-		$d = get_post_meta( $id, '_na_donnees', true );
-		if ( ! is_array( $d ) || empty( $d ) ) {
+		$d = $this->saisie_de( $id, true );
+		if ( null === $d ) {
 			wp_die( esc_html__( 'Cette notice ne porte pas de saisie exploitable.',
 				'notice-archeomed' ) );
 		}
-		$d = $this->poser_les_formes_preferees( $id, $d );
 		$erreur = '';
 		$chemin = $this->build_rtf_file( $d, $erreur,
 			class_exists( 'ZipArchive' ) ? 'docx' : 'rtf' );
@@ -520,13 +519,13 @@ class Notice_Archeomed_Pactols {
 		$erreur  = '';
 		$notices = array();
 		foreach ( $ids as $id ) {
-			$d = get_post_meta( $id, '_na_donnees', true );
-			if ( ! is_array( $d ) || empty( $d ) ) {
+			$d = $this->saisie_de( $id, false );
+			if ( null === $d ) {
 				continue;
 			}
 			$notices[] = array(
 				'id'            => $id,
-				'd'             => $this->poser_les_formes_preferees( $id, $d ),
+				'd'             => $d,
 				'illustrations' => array_values( array_filter(
 					(array) get_post_meta( $id, '_na_illustrations', true ), 'file_exists' ) ),
 			);
@@ -550,18 +549,11 @@ class Notice_Archeomed_Pactols {
 				// tient. « preparer » signale dans le lisez-moi le jour où les
 				// deux comptes ne coïncident pas.
 				//
-				// La figure se vide d'abord. La saisie porte depuis le dépôt
-				// l'aperçu fabriqué pour le courriel, et il n'a rien à faire
-				// ici : le dossier appelle ses images dans « icono/br », où la
-				// mise en page les remplace. Quand la basse définition n'a pas
-				// pu se faire — Imagick absente, format illisible —, le
-				// lisez-moi annonce que le document ne posera pas cette
-				// figure ; s'il en posait une, tirée d'un aperçu de mille
-				// pixels que personne ne peut remplacer dans le dossier, le
-				// lisez-moi mentirait et la mise en page partirait avec.
+				// La saisie arrive sans figure (« saisie_de » les ôte) : une
+				// illustration que le dossier n'a pas su réduire reste donc
+				// sans image, comme le lisez-moi l'annonce.
 				foreach ( $d['illustrations'] as $i => $item ) {
 					$n = (int) $item['rang'];
-					$d['illustrations'][ $i ]['figure'] = array();
 					if ( ! empty( $plan[ $rang_notice ][ $n ] ) ) {
 						$d['illustrations'][ $i ]['figure'] = $plan[ $rang_notice ][ $n ];
 					}
@@ -573,11 +565,18 @@ class Notice_Archeomed_Pactols {
 		// Les blocs d'index, un fichier par notice sous « XML/indexation ».
 		// C'est le seul endroit du dossier qui parle à la chaîne plutôt qu'à
 		// un lecteur : ce qu'il contient se colle, il ne se relit pas.
+		$termes_manquants  = 0;
+		$notices_en_attente = 0;
 		foreach ( $notices as $notice ) {
 			if ( empty( $notice['id'] ) ) {
 				continue;
 			}
-			$xml = $this->indexation_de( $notice['id'], $notice['d'] );
+			$manquants = 0;
+			$xml       = $this->indexation_de( $notice['id'], $notice['d'], $manquants );
+			if ( $manquants > 0 ) {
+				$termes_manquants += $manquants;
+				++$notices_en_attente;
+			}
 			if ( '' === $xml ) {
 				continue;
 			}
@@ -585,6 +584,14 @@ class Notice_Archeomed_Pactols {
 				Notice_Archeomed_Nommage::assainir(
 					trim( $notice['d']['commune'] . '-' . $notice['d']['lieu_dit'] ) ),
 				$xml );
+		}
+
+		if ( $termes_manquants > 0 ) {
+			$paquet->noter( sprintf(
+				'XML/indexation : %d terme(s) du thésaurus, dans %d notice(s), ne sont pas'
+				. ' encore résolus, et leur bloc d\'index manque. La résolution vient d\'être'
+				. ' relancée ; retéléchargez le dossier dans quelques minutes.',
+				$termes_manquants, $notices_en_attente ) );
 		}
 
 		$document = $this->fabriquer_le_fascicule( $rubrique, $donnees, $erreur );
@@ -769,9 +776,9 @@ class Notice_Archeomed_Pactols {
 	private function donnees_des_notices( $ids ) {
 		$donnees = array();
 		foreach ( (array) $ids as $id ) {
-			$d = get_post_meta( $id, '_na_donnees', true );
-			if ( is_array( $d ) && ! empty( $d ) ) {
-				$donnees[] = $this->poser_les_formes_preferees( $id, $d );
+			$d = $this->saisie_de( $id, true );
+			if ( null !== $d ) {
+				$donnees[] = $d;
 			}
 		}
 		return $donnees;
@@ -2850,22 +2857,22 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Rend une chaîne vide s'il n'y a rien à indexer.
 	 */
-	private function indexation_de( $id, $d ) {
+	private function indexation_de( $id, $d, &$manquants = 0 ) {
 		$termes = get_post_meta( (int) $id, '_na_pactols', true );
 		if ( ! is_array( $termes ) ) {
 			$termes = array();
 		}
-		// On redemande dès qu'il manque un terme, et non seulement quand il
-		// n'y en a aucun.
-		//
-		// Une coupure de huit secondes sur un seul appel, au moment de l'envoi,
-		// et ce terme-là manquait pour toujours : la réserve n'était pas vide,
-		// donc rien ne la reprenait, et le mot-clé disparaissait de l'index
-		// sans un mot. Le dossier est demandé à la main, il peut attendre le
-		// thésaurus ; et un terme que Pactols refuse obstinément ne coûte
-		// qu'un appel par heure, la réserve retenant aussi les échecs.
-		if ( $this->des_termes_manquent( $d, $termes ) ) {
-			$termes = $this->resoudre_les_termes( $id, $d );
+		// Ce qui manque ne se demande pas ici. La page qui fabrique le dossier
+		// a trente secondes, et une rubrique de quarante notices résolues à
+		// froid en demandait des minutes : le zip ne sortait pas. On fait le
+		// dossier avec ce qu'on sait, on dit ce qui manque, et le planificateur
+		// s'en charge — relancé à neuf, puisqu'une personne vient de le
+		// demander et que ses essais d'hier ne disent rien de Pactols
+		// aujourd'hui.
+		$manquants = count( $this->termes_manquants( $d, $termes ) );
+		if ( $manquants > 0 ) {
+			delete_post_meta( (int) $id, '_na_pactols_essais' );
+			$this->programmer_la_resolution( $id, MINUTE_IN_SECONDS );
 		}
 		if ( empty( $termes ) ) {
 			return '';
@@ -2904,8 +2911,10 @@ class Notice_Archeomed_Pactols {
 		if ( '' === $corps ) {
 			return '';
 		}
-		$premier = reset( $termes );
-		$lu_le   = ( is_array( $premier ) && ! empty( $premier['lu_le'] ) ) ? $premier['lu_le'] : '';
+		// Une date, ou deux en intervalle ISO 8601 quand les termes n'ont pas
+		// été lus le même jour.
+		list( $du, $au ) = $this->millesime( $d, $termes );
+		$lu_le = ( '' === $du ) ? '' : ( $du === $au ? $du : $du . '/' . $au );
 		$titre   = trim( $d['commune'] . ' ' . $d['lieu_dit'] );
 		return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
 			. '<!-- Blocs d\'index Pactols calculés depuis les identifiants choisis au dépôt.' . "\n"
@@ -3777,9 +3786,12 @@ class Notice_Archeomed_Pactols {
 		// identifiants qui ne se valent plus, et rien ne le dirait. La date de
 		// lecture est peu de chose à écrire et c'est elle qui permettra, le
 		// jour où un terme surprendra, de savoir ce qu'on avait sous les yeux.
-		if ( ! empty( $d['pactols_lu_le'] ) ) {
+		if ( ! empty( $d['pactols_lu_du'] ) ) {
+			$quand = ( $d['pactols_lu_du'] === $d['pactols_lu_au'] )
+				? 'lue le ' . $d['pactols_lu_du']
+				: 'lue entre le ' . $d['pactols_lu_du'] . ' et le ' . $d['pactols_lu_au'];
 			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
-				array( 'text' => 'Indexation Pactols lue le ' . $d['pactols_lu_le'] . '.' ),
+				array( 'text' => 'Indexation Pactols ' . $quand . '.' ),
 			) );
 		}
 
@@ -4062,18 +4074,24 @@ class Notice_Archeomed_Pactols {
 		// Les figures que le document emportera. Elles se fabriquent avant lui,
 		// puisqu'il les porte : le Word envoyé par courriel voyage seul, sans
 		// dossier d'icono à côté de lui où aller chercher une image.
+		//
+		// Ils vont au document et non à la saisie. La saisie se garde, et tout
+		// ce qui la relit — le fascicule, le dossier, la page de relecture —
+		// aurait hérité d'une figure faite pour un courriel, avec son chemin
+		// sur le serveur. Le dossier en a posé une : une image de mille
+		// pixels, dans le fichier, que la mise en page ne pouvait remplacer.
 		$apercus = $this->fabriquer_les_apercus( $attachments, $d );
-		$d       = $this->attacher_les_apercus( $d, $apercus );
+		$d_doc   = $this->attacher_les_apercus( $d, $apercus );
 
 		$rtf_error = '';
 		// Format de la pièce jointe : DOCX par défaut, RTF en repli si
 		// l'extension ZipArchive est absente de l'hébergement.
 		$format   = class_exists( 'ZipArchive' ) ? 'docx' : 'rtf';
-		$rtf_file = $this->build_rtf_file( $d, $rtf_error, $format );
+		$rtf_file = $this->build_rtf_file( $d_doc, $rtf_error, $format );
 		if ( '' === $rtf_file && 'docx' === $format ) {
 			// Repli sur le RTF si la production du DOCX a échoué.
 			error_log( 'Notice Archeomed: DOCX generation failed, falling back to RTF: ' . $rtf_error );
-			$rtf_file = $this->build_rtf_file( $d, $rtf_error, 'rtf' );
+			$rtf_file = $this->build_rtf_file( $d_doc, $rtf_error, 'rtf' );
 		}
 		if ( '' !== $rtf_error ) {
 			error_log( 'Notice Archeomed: RTF generation failed: ' . $rtf_error );
@@ -4113,6 +4131,9 @@ class Notice_Archeomed_Pactols {
 		if ( $this->envoi_differe() ) {
 			$id = $this->file()->deposer( $d, $notice, $produits, $document, $reference );
 			if ( $id ) {
+				if ( ! empty( $apercus ) ) {
+					update_post_meta( $id, '_na_apercus', $apercus );
+				}
 				// Les illustrations gagnent leur place définitive dès
 				// maintenant, et la file retient ces chemins-là : c'est eux
 				// que le courriel joindra, et eux que le dossier Métopes
@@ -4131,6 +4152,11 @@ class Notice_Archeomed_Pactols {
 			// que de perdre la notice, on retombe sur l'envoi immédiat.
 			error_log( 'Notice Archeomed: dépôt en file impossible, envoi immédiat.' );
 		}
+
+		// Sans dépôt, les aperçus n'ont plus d'usage : ils sont dans le
+		// document déjà fabriqué, et aucune notice ne les retrouverait. Les
+		// laisser, c'était les oublier dans le dossier de dépôt.
+		$this->effacer_des_apercus( $apercus );
 
 		$envoyee = $this->expedier( $d, $notice, $produits, $document );
 		if ( $envoyee ) {
@@ -4177,6 +4203,8 @@ class Notice_Archeomed_Pactols {
 	public function brancher_la_file() {
 		add_action( Notice_Archeomed_File::HOOK_UNE,
 			array( $this, 'expedier_de_la_file' ), 10, 1 );
+		add_action( self::HOOK_TERMES,
+			array( $this, 'resoudre_en_tache' ), 10, 1 );
 	}
 
 	/**
@@ -4565,11 +4593,16 @@ class Notice_Archeomed_Pactols {
 				update_post_meta( $id, '_na_fichiers', $produits );
 			}
 		}
-		// Le thésaurus se consulte ici, et nulle part ailleurs : c'est le seul
-		// moment où personne n'attend devant un écran. Ce qu'il dit sert au
-		// fascicule, au dossier et aux blocs d'index — pas au courriel, qui
-		// part avec la saisie telle qu'elle a été faite.
-		$this->resoudre_les_termes( $id, $d );
+		// Le thésaurus se consulte dans une tâche à part, et non ici.
+		//
+		// Il se consultait avant l'envoi : un Pactols lent retardait donc le
+		// courriel, et un Pactols en panne pouvait tuer la requête avant qu'il
+		// parte — trois appels de huit secondes par terme, dans une requête
+		// que l'hébergement coupe à trente. Le courriel n'a pas besoin du
+		// thésaurus : il part avec la saisie telle qu'elle a été faite. Ce que
+		// le thésaurus dit sert au fascicule, au dossier et aux blocs d'index,
+		// qui peuvent attendre une minute.
+		$this->programmer_la_resolution( $id, MINUTE_IN_SECONDS );
 
 		$pourquoi = '';
 		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi ) ) {
@@ -4672,18 +4705,11 @@ class Notice_Archeomed_Pactols {
 		if ( '' === $dossier ) {
 			return;
 		}
-		$a_effacer = (array) get_post_meta( $id, '_na_illustrations', true );
 		// Les aperçus incorporés aux documents vivent dans le même dossier et
 		// n'ont pas d'autre usage : ils partent avec la notice.
-		$d = get_post_meta( $id, '_na_donnees', true );
-		if ( is_array( $d ) && ! empty( $d['illustrations'] ) ) {
-			foreach ( $d['illustrations'] as $item ) {
-				if ( ! empty( $item['figure']['apercu'] ) ) {
-					$a_effacer[] = $item['figure']['apercu'];
-				}
-			}
-		}
-		foreach ( $a_effacer as $chemin ) {
+		$this->effacer_des_apercus(
+			$this->apercus_de( $id, get_post_meta( $id, '_na_donnees', true ) ) );
+		foreach ( (array) get_post_meta( $id, '_na_illustrations', true ) as $chemin ) {
 			if ( is_string( $chemin ) && 0 === strpos( $chemin, $dossier ) && is_file( $chemin ) ) {
 				@unlink( $chemin );
 			}
@@ -4746,6 +4772,19 @@ class Notice_Archeomed_Pactols {
 	 * avec ses seules légendes. Une figure manquante ne fait pas perdre une
 	 * notice.
 	 */
+	/** Le crochet du planificateur qui résout les termes d'une notice. */
+	const HOOK_TERMES = 'na_resoudre_les_termes';
+
+	/** Combien de passages horaires on accorde à un terme qui ne se résout pas. */
+	const ESSAIS_TERMES = 6;
+
+	/**
+	 * Le temps qu'un passage s'accorde, en secondes. Le planificateur enchaîne
+	 * ses tâches dans une requête que l'hébergement coupe à trente : dix
+	 * laissent la place à l'envoi d'un courriel et à la tâche suivante.
+	 */
+	const BUDGET_TERMES = 10;
+
 	/**
 	 * Les quatre zones de la saisie qui portent des termes du thésaurus, avec
 	 * le thésaurus dont chacune relève.
@@ -4760,52 +4799,132 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Demande à Pactols ce qu'il sait des termes d'une notice, et le garde.
+	 * Les termes du thésaurus que porte une saisie, par ARK : l'identifiant
+	 * numérique quand l'autocomplétion l'a donné, et le thésaurus dont le
+	 * terme relève.
 	 *
-	 * Hors de la requête de l'auteur : une dizaine d'appels au thésaurus n'a
-	 * rien à faire devant quelqu'un qui dépose. C'est le planificateur qui
-	 * appelle, après l'envoi, et la réserve d'un mois fait que la centaine de
-	 * notices d'une campagne ne coûte qu'une poignée d'appels.
+	 * Une seule extraction pour tous ceux qui en ont besoin — résoudre,
+	 * compter ce qui manque, dater la lecture. Chacun refaisait la sienne, et
+	 * une zone ajoutée à l'une mais pas à l'autre les aurait fait diverger.
 	 */
-	private function resoudre_les_termes( $id, $d ) {
-		// On repart de ce qui est déjà su. Un terme résolu ne se redemande pas :
-		// sa date de lecture dit de quel millésime du thésaurus il vient, et la
-		// redemander la ferait glisser sans qu'on l'ait voulu.
-		$deja   = get_post_meta( (int) $id, '_na_pactols', true );
-		$termes = is_array( $deja ) ? $deja : array();
+	private function arks_de( $d ) {
+		$out = array();
 		foreach ( $this->zones_pactols() as $clef => $theso ) {
-			$items = isset( $d[ $clef ] ) ? (array) $d[ $clef ] : array();
-			foreach ( $items as $item ) {
+			foreach ( (array) ( isset( $d[ $clef ] ) ? $d[ $clef ] : array() ) as $item ) {
 				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
-				if ( '' === $ark || isset( $termes[ $ark ] ) ) {
+				if ( '' === $ark || isset( $out[ $ark ] ) ) {
 					continue;
 				}
-				$concept = Notice_Archeomed_Thesaurus::resoudre( $ark,
-					isset( $item['idConcept'] ) ? $item['idConcept'] : '', $theso );
-				if ( is_array( $concept ) ) {
-					$termes[ $ark ] = $concept;
-				}
+				$out[ $ark ] = array(
+					'id'    => isset( $item['idConcept'] ) ? (string) $item['idConcept'] : '',
+					'theso' => $theso,
+				);
 			}
 		}
-		if ( ! empty( $termes ) ) {
-			update_post_meta( $id, '_na_pactols', $termes );
+		return $out;
+	}
+
+	/** Les ARK de la saisie que la réserve ne connaît pas encore. */
+	private function termes_manquants( $d, $termes ) {
+		return array_keys( array_diff_key( $this->arks_de( $d ), (array) $termes ) );
+	}
+
+	/**
+	 * Demande à Pactols ce qu'il sait des termes d'une notice, et le garde.
+	 *
+	 * On repart de ce qui est déjà su : un terme résolu ne se redemande pas, sa
+	 * date de lecture dit de quel millésime du thésaurus il vient, et la
+	 * redemander la ferait glisser sans qu'on l'ait voulu. Ce qui ne relève
+	 * plus de la saisie s'écarte.
+	 *
+	 * L'échéance est une heure d'horloge, non une durée : passé elle, on
+	 * s'arrête entre deux termes et « $interrompu » le dit. La réserve ne
+	 * s'écrit que si elle a changé — un terme que Pactols refuse obstinément
+	 * ne doit pas coûter une écriture à chaque passage.
+	 */
+	private function resoudre_les_termes( $id, $d, $echeance, &$interrompu = false ) {
+		$interrompu = false;
+		$deja       = get_post_meta( (int) $id, '_na_pactols', true );
+		$deja       = is_array( $deja ) ? $deja : array();
+		$voulus     = $this->arks_de( $d );
+		$termes     = array_intersect_key( $deja, $voulus );
+		foreach ( $voulus as $ark => $quoi ) {
+			if ( isset( $termes[ $ark ] ) ) {
+				continue;
+			}
+			if ( microtime( true ) >= $echeance ) {
+				break;
+			}
+			$concept = Notice_Archeomed_Thesaurus::resoudre( $ark, $quoi['id'],
+				$quoi['theso'], $echeance );
+			if ( is_array( $concept ) ) {
+				$termes[ $ark ] = $concept;
+			}
+		}
+		$interrompu = microtime( true ) >= $echeance
+			&& count( array_diff_key( $voulus, $termes ) ) > 0;
+		if ( $termes != $deja ) {
+			if ( empty( $termes ) ) {
+				delete_post_meta( (int) $id, '_na_pactols' );
+			} else {
+				update_post_meta( (int) $id, '_na_pactols', $termes );
+			}
 		}
 		return $termes;
 	}
 
 	/**
-	 * Un terme de la saisie porte-t-il un ARK que la réserve ignore ?
+	 * Inscrit la résolution des termes d'une notice au planificateur, si elle
+	 * n'y est pas déjà.
 	 */
-	private function des_termes_manquent( $d, $termes ) {
-		foreach ( array_keys( $this->zones_pactols() ) as $clef ) {
-			foreach ( (array) ( isset( $d[ $clef ] ) ? $d[ $clef ] : array() ) as $item ) {
-				$ark = isset( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
-				if ( '' !== $ark && empty( $termes[ $ark ] ) ) {
-					return true;
-				}
-			}
+	private function programmer_la_resolution( $id, $delai ) {
+		$id = (int) $id;
+		if ( $id && ! wp_next_scheduled( self::HOOK_TERMES, array( $id ) ) ) {
+			wp_schedule_single_event( time() + (int) $delai, self::HOOK_TERMES, array( $id ) );
 		}
-		return false;
+	}
+
+	/**
+	 * Ce que le planificateur appelle : les termes d'une notice, à résoudre.
+	 *
+	 * Le passage suivant s'inscrit avant que celui-ci commence. Si la requête
+	 * meurt en route — l'hébergement coupe à trente secondes, et le
+	 * planificateur enchaîne ses tâches dans une seule requête —, la tâche
+	 * n'est pas perdue : WordPress l'a déjà retirée de sa liste au moment de
+	 * la lancer, et rien d'autre ne la remettrait.
+	 *
+	 * Un terme qui échoue se retente toutes les heures, six fois ; la réserve
+	 * de Pactols retient ses échecs une heure, si bien que chaque passage
+	 * interroge vraiment. Un passage interrompu faute de temps ne compte pas :
+	 * il n'a rien appris, il reprend dans la minute.
+	 */
+	public function resoudre_en_tache( $id ) {
+		$id = (int) $id;
+		$d  = $id ? get_post_meta( $id, '_na_donnees', true ) : null;
+		if ( ! is_array( $d ) || empty( $d ) ) {
+			return;
+		}
+		$essais = (int) get_post_meta( $id, '_na_pactols_essais', true );
+		if ( $essais >= self::ESSAIS_TERMES ) {
+			return;
+		}
+		update_post_meta( $id, '_na_pactols_essais', $essais + 1 );
+		$this->programmer_la_resolution( $id, HOUR_IN_SECONDS );
+
+		$interrompu = false;
+		$termes     = $this->resoudre_les_termes( $id, $d,
+			microtime( true ) + self::BUDGET_TERMES, $interrompu );
+
+		if ( empty( $this->termes_manquants( $d, $termes ) ) ) {
+			wp_clear_scheduled_hook( self::HOOK_TERMES, array( $id ) );
+			delete_post_meta( $id, '_na_pactols_essais' );
+			return;
+		}
+		if ( $interrompu ) {
+			update_post_meta( $id, '_na_pactols_essais', $essais );
+			wp_clear_scheduled_hook( self::HOOK_TERMES, array( $id ) );
+			$this->programmer_la_resolution( $id, MINUTE_IN_SECONDS );
+		}
 	}
 
 	/**
@@ -4819,7 +4938,15 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function poser_les_formes_preferees( $id, $d ) {
 		$termes = get_post_meta( (int) $id, '_na_pactols', true );
-		if ( ! is_array( $termes ) || empty( $termes ) ) {
+		$termes = is_array( $termes ) ? $termes : array();
+		// Un terme qui manque se demande au planificateur, jamais ici : cette
+		// fonction sert des pages qu'une personne attend. Les notices d'avant
+		// la résolution des termes se rattrapent ainsi à leur premier
+		// passage dans un fascicule, sans rien coûter à celui qui le demande.
+		if ( ! empty( $this->termes_manquants( $d, $termes ) ) ) {
+			$this->programmer_la_resolution( $id, MINUTE_IN_SECONDS );
+		}
+		if ( empty( $termes ) ) {
 			return $d;
 		}
 		foreach ( array_keys( $this->zones_pactols() ) as $clef ) {
@@ -4837,11 +4964,100 @@ class Notice_Archeomed_Pactols {
 				$d[ $clef ][ $i ]['deprecie'] = ! empty( $termes[ $ark ]['deprecie'] );
 			}
 		}
-		$premier = reset( $termes );
-		if ( is_array( $premier ) && ! empty( $premier['lu_le'] ) ) {
-			$d['pactols_lu_le'] = $premier['lu_le'];
+		list( $du, $au ) = $this->millesime( $d, $termes );
+		if ( '' !== $du ) {
+			$d['pactols_lu_du'] = $du;
+			$d['pactols_lu_au'] = $au;
 		}
 		return $d;
+	}
+
+	/**
+	 * La plus ancienne et la plus récente des dates auxquelles les termes de
+	 * cette saisie ont été lus, ou deux chaînes vides.
+	 *
+	 * On n'en donnait qu'une, celle du premier terme de la réserve. Depuis que
+	 * les termes manqués se reprennent plus tard, ils ne sont plus tous lus le
+	 * même jour, et une date unique mentait pour ceux qui étaient venus
+	 * après — alors qu'elle n'est là que pour savoir ce qu'on avait sous les
+	 * yeux. Seuls comptent les termes de la saisie.
+	 */
+	private function millesime( $d, $termes ) {
+		$dates = array();
+		foreach ( array_keys( $this->arks_de( $d ) ) as $ark ) {
+			if ( ! empty( $termes[ $ark ]['lu_le'] ) ) {
+				$dates[] = (string) $termes[ $ark ]['lu_le'];
+			}
+		}
+		if ( empty( $dates ) ) {
+			return array( '', '' );
+		}
+		sort( $dates );
+		return array( $dates[0], $dates[ count( $dates ) - 1 ] );
+	}
+
+	/**
+	 * Les aperçus d'une notice, par rang de figure.
+	 *
+	 * Ils ont leur méta à eux. Les notices déposées de la 3.28 à la 3.35 les
+	 * portent encore dans leur saisie, sous la clef « figure » de chaque
+	 * illustration : on les y lit quand la méta manque.
+	 */
+	private function apercus_de( $id, $d = null ) {
+		$apercus = get_post_meta( (int) $id, '_na_apercus', true );
+		if ( is_array( $apercus ) && ! empty( $apercus ) ) {
+			return $apercus;
+		}
+		$apercus = array();
+		if ( is_array( $d ) && ! empty( $d['illustrations'] ) ) {
+			foreach ( (array) $d['illustrations'] as $item ) {
+				if ( ! empty( $item['figure']['apercu'] ) && isset( $item['rang'] ) ) {
+					$apercus[ (int) $item['rang'] ] = $item['figure'];
+				}
+			}
+		}
+		return $apercus;
+	}
+
+	/**
+	 * La saisie d'une notice, prête pour un document.
+	 *
+	 * Tous ceux qui fabriquent un document passent par ici : la notice seule,
+	 * le fascicule, le dossier. La saisie en sort sans figure — celles que
+	 * les notices anciennes y portent encore s'ôtent —, avec les formes
+	 * préférées du thésaurus, et avec ses aperçus quand le document part seul
+	 * et doit porter ses images. Le dossier les refuse : il appelle les
+	 * siennes dans « icono/br ».
+	 *
+	 * Rend null si la notice n'a pas de saisie exploitable.
+	 */
+	private function saisie_de( $id, $avec_apercus ) {
+		$d = get_post_meta( (int) $id, '_na_donnees', true );
+		if ( ! is_array( $d ) || empty( $d ) ) {
+			return null;
+		}
+		$apercus = $avec_apercus ? $this->apercus_de( $id, $d ) : array();
+		if ( ! empty( $d['illustrations'] ) ) {
+			foreach ( array_keys( (array) $d['illustrations'] ) as $i ) {
+				unset( $d['illustrations'][ $i ]['figure'] );
+			}
+		}
+		$d = $this->poser_les_formes_preferees( $id, $d );
+		return $this->attacher_les_apercus( $d, $apercus );
+	}
+
+	/** Efface des aperçus, pourvu qu'ils soient dans le dossier de dépôt. */
+	private function effacer_des_apercus( $apercus ) {
+		$dossier = $this->dossier_des_illustrations();
+		if ( '' === $dossier ) {
+			return;
+		}
+		foreach ( (array) $apercus as $mesure ) {
+			$chemin = isset( $mesure['apercu'] ) ? (string) $mesure['apercu'] : '';
+			if ( '' !== $chemin && 0 === strpos( $chemin, $dossier ) && is_file( $chemin ) ) {
+				@unlink( $chemin );
+			}
+		}
 	}
 
 	private function fabriquer_les_apercus( $illustrations, $d ) {

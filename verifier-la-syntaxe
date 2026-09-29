@@ -49,9 +49,23 @@ FERMANTS = {')': '(', ']': '[', '}': '{'}
 
 def analyser(source):
     """Rend la liste des fautes : (ligne, ce qui cloche)."""
+    return analyser_et_masquer(source)[0]
+
+
+def analyser_et_masquer(source):
+    """Les fautes, et le code PHP seul.
+
+    Le code seul a la longueur de la source : tout ce qui n'est pas du code —
+    le HTML hors des balises, les commentaires, les chaînes, les heredocs —
+    y est remplacé par des espaces, les fins de ligne gardées pour que les
+    numéros de ligne restent justes. C'est ce qu'on lit quand on cherche des
+    déclarations : un « class Piece » dans le JavaScript d'une page ou dans
+    une chaîne n'en est pas une.
+    """
     i, n, ligne = 0, len(source), 1
     dans_php = False
     pile, fautes = [], []
+    code = ['\n' if c == '\n' else ' ' for c in source]
 
     while i < n:
         c = source[i]
@@ -135,6 +149,7 @@ def analyser(source):
             continue
 
         # — Les délimiteurs —
+        code[i] = c
         if c in '([{':
             pile.append((c, ligne))
             i += 1
@@ -158,33 +173,58 @@ def analyser(source):
     for ouvrant, ligne_ouvrante in pile:
         fautes.append((ligne_ouvrante, f'« {ouvrant} » jamais fermé'))
 
-    return sorted(fautes)
+    return sorted(fautes), ''.join(code)
 
 
-def noms_declares(texte):
-    """Les classes, interfaces et traits qu'un fichier déclare."""
-    return set(
-        re.findall(
-            r'^\s*(?:final\s+|abstract\s+)*(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)',
-            texte,
-            re.M,
-        )
-    )
+DECLARATION = re.compile(
+    r'\b(?:final\s+|abstract\s+)*(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)'
+)
+
+
+def declarations(code):
+    """Les classes, interfaces et traits déclarés sans condition, avec leur ligne.
+
+    Une liste et non un ensemble : un nom déclaré deux fois dans le même
+    fichier est un doublon comme un autre, et un ensemble l'aurait réduit à
+    une seule entrée.
+
+    Seules comptent les déclarations hors de toute accolade. Celle qui se
+    trouve dans un bloc — le plus souvent « if ( ! class_exists( … ) ) » —
+    ne s'exécute qu'à la condition posée, et deux fichiers peuvent la porter
+    sans que PHP s'en plaigne.
+    """
+    profondeur = []
+    p = 0
+    for c in code:
+        profondeur.append(p)
+        if c == '{':
+            p += 1
+        elif c == '}':
+            p = max(0, p - 1)
+    out = []
+    for m in DECLARATION.finditer(code):
+        if profondeur[m.start()] == 0:
+            out.append((m.group(1), code.count('\n', 0, m.start()) + 1))
+    return out
 
 
 def doublons(fichiers):
-    """Deux fichiers qui déclarent le même nom, et que l'un charge l'autre.
+    """Les noms déclarés plus d'une fois dans l'ensemble des fichiers.
 
     PHP s'arrête net sur « Cannot declare class … because the name is already
     in use » : pas une dégradation, un arrêt, et le site avec. Le contrôle ne
     peut pas exécuter PHP sur ce poste, mais un nom déclaré deux fois se voit
     sans l'exécuter — et c'est ainsi qu'une classe neuve a un jour pris le nom
     de la classe principale du plugin, qui le tient de son shortcode.
+
+    Le contrôle ne sait pas quels fichiers se chargent l'un l'autre : il
+    suppose que tous ceux qu'on lui donne se chargent ensemble, ce qui est le
+    cas d'un plugin.
     """
     ou = {}
-    for fichier, texte in fichiers:
-        for nom in noms_declares(texte):
-            ou.setdefault(nom, []).append(fichier.name)
+    for fichier, code in fichiers:
+        for nom, ligne in declarations(code):
+            ou.setdefault(nom, []).append(f'{fichier.name}:{ligne}')
     return {nom: lieux for nom, lieux in ou.items() if len(lieux) > 1}
 
 
@@ -200,9 +240,8 @@ def main(chemins):
             print(f'  ? {fichier.name} — introuvable')
             ennuis += 1
             continue
-        texte = fichier.read_text(encoding='utf-8')
-        lus.append((fichier, texte))
-        fautes = analyser(texte)
+        fautes, code = analyser_et_masquer(fichier.read_text(encoding='utf-8'))
+        lus.append((fichier, code))
         if not fautes:
             print(f'  ✓ {fichier.name}')
             continue

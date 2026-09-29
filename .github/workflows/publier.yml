@@ -20,7 +20,44 @@ on:
       - 'v*'
 
 jobs:
+  # PHP lui-même, avant toute publication.
+  #
+  # Le poste qui prépare n'a pas PHP, et le contrôle maison ne voit que ce
+  # qu'il sait chercher. Les machines de GitHub l'ont : chaque fichier passe
+  # ici l'analyseur de PHP, sous la plus ancienne version que l'en-tête
+  # promet (7.2) et sous une récente. C'est la dernière occasion d'arrêter
+  # une version qui ne chargerait pas — après, elle est sur le site, et un
+  # plugin qui ne charge pas n'entend plus les mises à jour : la suivante,
+  # qui le réparerait, ne lui parvient pas. Il faut alors la téléverser à la
+  # main.
+  #
+  # L'action qui installe PHP vient d'un tiers : elle tourne dans un travail
+  # sans droit d'écriture, et celui qui publie attend qu'elle ait fini.
+  analyser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        php: ['7.2', '8.3']
+    steps:
+      - name: Prendre le code de l'étiquette
+        uses: actions/checkout@v4
+
+      - name: Installer PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: none
+
+      - name: Chaque fichier passe l'analyseur de PHP
+        run: |
+          set -eu
+          for f in notice-archeomed/*.php; do php -l "$f"; done
+
   publier:
+    needs: analyser
     runs-on: ubuntu-latest
     permissions:
       # Le jeton fourni par GitHub suffit à créer une release : aucune clé à

@@ -94,17 +94,42 @@ class Notice_Archeomed_Paquet {
 	 * qu'on sache pourquoi un fichier s'appelle « _2 ».
 	 */
 	private function nom_unique( $nom ) {
-		$clef = strtolower( $nom );
-		if ( ! isset( $this->noms_pris[ $clef ] ) ) {
-			$this->noms_pris[ $clef ] = 1;
-			return $nom;
+		$libre = self::nom_libre( $nom, $this->noms_pris );
+		if ( $libre !== $nom ) {
+			$this->journal[] = $nom . ' : nom déjà pris dans cette rubrique, posé sous « '
+				. $libre . ' ». Ajoutez « {lieu_dit} » au modèle de nom pour les distinguer.';
 		}
-		++$this->noms_pris[ $clef ];
-		$suffixe = $nom . '_' . $this->noms_pris[ $clef ];
-		$this->journal[] = $nom . ' : nom déjà pris dans cette rubrique, posé sous « '
-			. $suffixe . ' ». Ajoutez « {lieu_dit} » au modèle de nom pour les distinguer.';
-		$this->noms_pris[ strtolower( $suffixe ) ] = 1;
-		return $suffixe;
+		return $libre;
+	}
+
+	/**
+	 * Le premier nom libre dans un registre, qu'il inscrit : le nom lui-même,
+	 * ou le nom suivi de « _2 », « _3 »…
+	 *
+	 * Le suffixe se vérifiait mal : on prenait « _2 » sans regarder si
+	 * « _2 » était déjà pris. Une notice « Parcelle 2 » puis deux notices
+	 * « Parcelle », et la seconde recevait le nom de la première — que
+	 * l'écriture remplaçait sans un mot. On avance donc jusqu'à un nom que le
+	 * registre ne connaît pas.
+	 *
+	 * Les noms se comparent en minuscules : deux fichiers qui ne diffèrent que
+	 * par la casse se confondent sur plus d'un système.
+	 */
+	private static function nom_libre( $nom, &$registre ) {
+		$candidat = $nom;
+		for ( $n = 2; isset( $registre[ strtolower( $candidat ) ] ); $n++ ) {
+			$candidat = $nom . '_' . $n;
+		}
+		$registre[ strtolower( $candidat ) ] = true;
+		return $candidat;
+	}
+
+	/**
+	 * Ajoute une ligne au lisez-moi. Ce que le dossier sait de lui-même doit
+	 * s'y lire, qu'il vienne des images ou d'ailleurs.
+	 */
+	public function noter( $ligne ) {
+		$this->journal[] = (string) $ligne;
 	}
 
 	/**
@@ -499,21 +524,15 @@ class Notice_Archeomed_Paquet {
 		if ( ! is_dir( $dossier ) ) {
 			wp_mkdir_p( $dossier );
 		}
-		$clef = strtolower( $nom_sans_ext );
-		if ( isset( $this->noms_indexation[ $clef ] ) ) {
-			++$this->noms_indexation[ $clef ];
-			$suffixe = $nom_sans_ext . '_' . $this->noms_indexation[ $clef ];
+		$libre = self::nom_libre( $nom_sans_ext, $this->noms_indexation );
+		if ( $libre !== $nom_sans_ext ) {
 			$this->journal[] = $nom_sans_ext . '.xml : deux notices de cette rubrique'
-				. ' portent la même commune et le même lieu-dit ; la seconde est posée'
-				. ' sous « ' . $suffixe . ' ». Les deux fichiers sont bons, mais rien'
+				. ' portent la même commune et le même lieu-dit ; la suivante est posée'
+				. ' sous « ' . $libre . ' ». Les fichiers sont bons, mais rien'
 				. ' dans leur nom ne dit à quelle notice ils vont : ouvrez-les pour'
 				. ' les distinguer.';
-			$nom_sans_ext = $suffixe;
-			$this->noms_indexation[ strtolower( $suffixe ) ] = 1;
-		} else {
-			$this->noms_indexation[ $clef ] = 1;
 		}
-		$nom = $nom_sans_ext . '.xml';
+		$nom = $libre . '.xml';
 		return ( false !== @file_put_contents( $dossier . '/' . $nom, $xml ) ) ? $nom : '';
 	}
 

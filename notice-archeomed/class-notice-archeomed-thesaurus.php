@@ -63,7 +63,7 @@ class Notice_Archeomed_Thesaurus {
 	 * à laquelle tout cela a été lu — sans quoi on ne saurait pas de quel
 	 * millésime du thésaurus vient un identifiant.
 	 */
-	public static function resoudre( $ark, $id_concept = '', $theso = 'TH_1' ) {
+	public static function resoudre( $ark, $id_concept = '', $theso = 'TH_1', $echeance = 0 ) {
 		$ark = trim( (string) $ark );
 		if ( '' === $ark && '' === $id_concept ) {
 			return null;
@@ -85,7 +85,10 @@ class Notice_Archeomed_Thesaurus {
 			// Par l'ARK, et non par le couple thésaurus/identifiant : cette
 			// seconde route rend parfois 200 avec un corps vide, ce qui se
 			// lit comme un concept sans propriétés et n'en est pas un.
-			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ) );
+			if ( self::reste( $echeance ) < 1 ) {
+				return null;
+			}
+			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance );
 			$id   = self::valeur( $seul, $ark, self::DCT . 'identifier' );
 		}
 
@@ -95,14 +98,20 @@ class Notice_Archeomed_Thesaurus {
 			// L'expansion rend d'un coup le concept et tous ses ancêtres, avec
 			// leurs étiquettes dans toutes les langues. C'est de quoi composer
 			// le bloc d'index entier sans autre appel.
-			$graphe = self::appeler( 'concept/' . $theso . '/' . rawurlencode( $id ) . '/expansion?way=top' );
+			if ( self::reste( $echeance ) < 1 ) {
+				return null;
+			}
+			$graphe = self::appeler( 'concept/' . $theso . '/' . rawurlencode( $id ) . '/expansion?way=top', $echeance );
 			if ( is_array( $graphe ) && ! empty( $graphe ) ) {
 				$chemin = self::remonter( $graphe, $ark );
 				$noeud  = isset( $graphe[ $ark ] ) ? $graphe[ $ark ] : null;
 			}
 		}
 		if ( null === $noeud ) {
-			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ) );
+			if ( self::reste( $echeance ) < 1 ) {
+				return null;
+			}
+			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance );
 			$noeud = ( is_array( $seul ) && isset( $seul[ $ark ] ) ) ? $seul[ $ark ] : null;
 		}
 		if ( null === $noeud ) {
@@ -229,6 +238,24 @@ class Notice_Archeomed_Thesaurus {
 		return self::premiere( $reponse[ $ark ], $propriete );
 	}
 
+	/**
+	 * Les secondes qui restent avant l'échéance, ou huit si aucune n'est fixée.
+	 *
+	 * Une résolution ne doit jamais emporter la requête qui la porte : le
+	 * planificateur, comme la page qui fabrique un dossier, a un temps
+	 * d'exécution borné — trente secondes sur l'hébergement de la revue — et
+	 * un concept se paie jusqu'à trois appels. L'échéance se consulte avant
+	 * chacun, et raccourcit l'attente du dernier. Un terme laissé en route
+	 * n'est pas mis en réserve comme un échec : il n'a pas échoué, on l'a
+	 * interrompu, et le passage suivant le reprendra.
+	 */
+	private static function reste( $echeance ) {
+		if ( $echeance <= 0 ) {
+			return 8;
+		}
+		return (int) floor( $echeance - microtime( true ) );
+	}
+
 	/** « https://ark.frantiq.fr/ark:/26678/pcrt… » devient « 26678/pcrt… ». */
 	public static function partie_ark( $ark ) {
 		$pos = strpos( (string) $ark, 'ark:/' );
@@ -242,11 +269,11 @@ class Notice_Archeomed_Thesaurus {
 	 * 500. Le délai est court — la rédaction attend devant sa liste, et mieux
 	 * vaut un index manquant qu'une page qui ne rend jamais la main.
 	 */
-	private static function appeler( $chemin ) {
+	private static function appeler( $chemin, $echeance = 0 ) {
 		$reponse = wp_remote_get(
 			self::BASE . $chemin,
 			array(
-				'timeout' => 8,
+				'timeout' => max( 1, min( 8, self::reste( $echeance ) ) ),
 				'headers' => array( 'Accept' => 'application/json' ),
 			)
 		);
