@@ -262,72 +262,103 @@ na_verifier( (bool) wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),
 	'une notice qui attend sans tâche la voit renaître' );
 na_appel( $plugin, 'sortir_de_l_attente', array( $reveil ) );
 
-WP_CLI::log( 'Le poids du courriel' );
-// Un document léger et deux images de 4 Mo : sous 10 Mo, le document et une
-// image tiennent, la seconde reste sur le site — c'est ce qu'a montré
-// l'hébergement de la revue, où deux images faisaient refuser le message.
-$dossier_essai = trailingslashit( get_temp_dir() ) . 'na-essai-poids';
-wp_mkdir_p( $dossier_essai );
-$doc_essai = $dossier_essai . '/notice.docx';
-$fig1      = $dossier_essai . '/fig1.jpg';
-$fig2      = $dossier_essai . '/fig2.jpg';
-file_put_contents( $doc_essai, str_repeat( 'd', 20 * KB_IN_BYTES ) );
-file_put_contents( $fig1, str_repeat( 'a', 4 * MB_IN_BYTES ) );
-file_put_contents( $fig2, str_repeat( 'b', 4 * MB_IN_BYTES ) );
-$restees = array();
-$joindre = na_appel( $plugin, 'pieces_qui_tiennent',
-	array( array( $fig1, $fig2, $doc_essai ), $doc_essai, 4000, &$restees ) );
-na_verifier( array( $doc_essai, $fig1 ) === $joindre && array( $fig2 ) === $restees,
-	'le document d\'abord, puis ce qui tient ; la seconde image de 4 Mo reste sur le site',
-	array( 'joindre' => array_map( 'basename', $joindre ), 'restees' => array_map( 'basename', $restees ) ) );
-$avis = na_appel( $plugin, 'avis_des_pieces_restees', array( $restees, 123 ) );
-na_verifier( false !== strpos( $avis, 'fig2.jpg' ) && false !== strpos( $avis, 'post=123' ),
-	'le courriel nomme l\'image restée et donne le lien de la notice' );
-foreach ( array( $doc_essai, $fig1, $fig2 ) as $f ) {
-	@unlink( $f );
-}
-@rmdir( $dossier_essai );
-
-WP_CLI::log( 'Les illustrations du courriel, en version allégée' );
-$dossier_essai = trailingslashit( get_temp_dir() ) . 'na-essai-allegees';
+WP_CLI::log( 'Les pièces du courriel' );
+// Tout se calcule d'abord, s'efface ensuite, et ne se vérifie qu'à la fin :
+// un essai raté ne doit pas laisser derrière lui des fichiers de 4 Mo.
+$dossier_essai = trailingslashit( get_temp_dir() ) . 'na-essai-courriel';
 wp_mkdir_p( $dossier_essai );
 $doc_essai = $dossier_essai . '/notice.docx';
 $orig1     = $dossier_essai . '/orig1.jpg';
 $orig2     = $dossier_essai . '/orig2.jpg';
 $leger1    = $dossier_essai . '/apercu-1.jpg';
+$leger2    = $dossier_essai . '/apercu-2.jpg';
+$lourd1    = $dossier_essai . '/apercu-lourd-1.jpg';
 file_put_contents( $doc_essai, str_repeat( 'd', 20 * KB_IN_BYTES ) );
 file_put_contents( $orig1, str_repeat( 'a', 4 * MB_IN_BYTES ) );
 file_put_contents( $orig2, str_repeat( 'b', 4 * MB_IN_BYTES ) );
 file_put_contents( $leger1, str_repeat( 'l', 150 * KB_IN_BYTES ) );
-$avec_figures = na_notice( array( 'commune' => 'Plédéhel', 'lieu_dit' => 'Le Bourg',
-	'illustrations' => array( array( 'rang' => 1, 'titre' => 'Vue' ), array( 'rang' => 2, 'titre' => 'Plan' ) ) ) );
+file_put_contents( $leger2, str_repeat( 'm', 150 * KB_IN_BYTES ) );
+file_put_contents( $lourd1, str_repeat( 'n', 800 * KB_IN_BYTES ) );
+$saisie_fig = array( 'commune' => 'Plédéhel', 'lieu_dit' => 'Le Bourg', 'departement' => 'Côtes-d’Armor',
+	'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.ferrand@example.org',
+	'illustrations' => array( array( 'rang' => 1, 'titre' => 'Vue' ), array( 'rang' => 2, 'titre' => 'Plan' ) ) );
+$avec_figures = na_notice( $saisie_fig );
 update_post_meta( $avec_figures, '_na_illustrations', array( $orig1, $orig2 ) );
-update_post_meta( $avec_figures, '_na_apercus', array( 1 => array( 'apercu' => $leger1,
-	'largeur' => 1000, 'hauteur' => 750, 'dpi' => 96 ) ) );
-$restees = array();
-$legeres = array();
-$joindre = na_appel( $plugin, 'pieces_du_courriel', array( $avec_figures,
-	get_post_meta( $avec_figures, '_na_donnees', true ),
-	array( $orig1, $orig2, $doc_essai ), $doc_essai, 4000, &$restees, &$legeres ) );
-$noms = array_map( 'basename', $joindre );
-na_verifier( 3 === count( $joindre ) && $doc_essai === $joindre[0]
-	&& 'Pledehel_Le_Bourg_Fig_1_apercu.jpg' === $noms[1]
-	&& $orig2 === $joindre[2] && empty( $restees ),
-	'le document, la figure 1 en version allégée sous un nom lisible, la figure 2 en original faute d\'aperçu',
-	$noms );
-na_verifier( ! in_array( $orig1, $joindre, true ),
-	'l\'original de la figure 1 ne part pas : il reste sur le site' );
-$copie = $legeres[0];
-na_appel( $plugin, 'effacer_les_copies', array( $legeres ) );
-na_verifier( ! file_exists( $copie ), 'la copie faite pour le courriel s\'efface après' );
-$avis = na_appel( $plugin, 'avis_des_illustrations', array( 1, array(), $avec_figures ) );
-na_verifier( false !== strpos( $avis, 'version allégée' ) && false !== strpos( $avis, 'post=' . $avec_figures ),
-	'le courriel dit que les originaux sont sur le site, et où' );
+$existants = array( $orig1, $orig2, $doc_essai );
+$composer  = function ( $apercus ) use ( $plugin, $avec_figures, $saisie_fig, $existants, $doc_essai ) {
+	if ( null === $apercus ) {
+		delete_post_meta( $avec_figures, '_na_apercus' );
+	} else {
+		update_post_meta( $avec_figures, '_na_apercus', $apercus );
+	}
+	$restees = array();
+	$legeres = array();
+	$copies  = array();
+	$joindre = na_appel( $plugin, 'pieces_du_courriel', array( $avec_figures, $saisie_fig,
+		$existants, $doc_essai, 4000, &$restees, &$legeres, &$copies ) );
+	$noms    = array_map( 'basename', $joindre );
+	$reste   = array_map( 'basename', $restees );
+	$copies_existaient = ! empty( $copies ) && file_exists( $copies[0] );
+	na_appel( $plugin, 'effacer_les_copies', array( $copies ) );
+	return array( 'noms' => $noms, 'restees' => $reste, 'legeres' => count( $legeres ),
+		'copies_existaient' => $copies_existaient,
+		'copies_effacees' => empty( $copies ) || ! file_exists( $copies[0] ) );
+};
+$apercu = function ( $fichier ) {
+	return array( 'apercu' => $fichier, 'largeur' => 1000, 'hauteur' => 750, 'dpi' => 96 );
+};
+
+// Sans version allégée, sous 10 Mo : le document, un original, et le second
+// reste sur le site — ce qu'a montré l'hébergement de la revue.
+$sans = $composer( null );
+// La figure 1 allégée, la 2 en original : l'ordre des figures est gardé.
+$une = $composer( array( 1 => $apercu( $leger1 ) ) );
+// La figure 2 seule allégée : l'original de la 1 vient quand même en premier.
+$ordre = $composer( array( 2 => $apercu( $leger2 ) ) );
+// Sous un poids réglé à 1 Mo, une version allégée de 800 Ko ne tient plus :
+// c'est l'original, qui est sur le site, que le courriel doit nommer.
+$reglages = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME,
+	array_merge( (array) $reglages, array( 'poids_courriel' => 1 ) ) );
+$serre = $composer( array( 1 => $apercu( $lourd1 ), 2 => $apercu( $leger2 ) ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages );
+$avis_restees = na_appel( $plugin, 'avis_des_pieces_restees', array( array( $orig2 ), $avec_figures ) );
+$avis_legeres = na_appel( $plugin, 'avis_des_illustrations', array( 2, array(), $avec_figures ) );
+
+// Le diagnostic ne fabrique rien et ne touche pas à la notice.
+update_post_meta( $avec_figures, '_na_apercus', array( 1 => $apercu( $leger1 ) ) );
+$avant = get_post_meta( $avec_figures, '_na_apercus', true );
+na_appel( $plugin, 'diagnostiquer_la_notice', array( $avec_figures, 'essai@example.org' ) );
+$diagnostic_neutre = $avant === get_post_meta( $avec_figures, '_na_apercus', true )
+	&& '' === get_post_meta( $avec_figures, '_na_apercus_tente', true );
+update_post_meta( $avec_figures, '_na_apercus_tente', time() );
+$deja_tente = na_appel( $plugin, 'apercus_a_fabriquer', array( $avec_figures ) );
+
 wp_delete_post( $avec_figures, true );
-foreach ( array( $doc_essai, $orig1, $orig2, $leger1 ) as $f ) {
+foreach ( array( $doc_essai, $orig1, $orig2, $leger1, $leger2, $lourd1 ) as $f ) {
 	@unlink( $f );
 }
 @rmdir( $dossier_essai );
+
+na_verifier( array( 'notice.docx', 'orig1.jpg' ) === $sans['noms'] && array( 'orig2.jpg' ) === $sans['restees'],
+	'sans version allégée : le document, puis ce qui tient ; le second original reste sur le site', $sans );
+na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1_apercu.jpg', 'orig2.jpg' ) === $une['noms']
+	&& array() === $une['restees'] && 1 === $une['legeres'],
+	'la figure 1 en version allégée sous un nom lisible, la 2 en original faute d\'aperçu', $une );
+na_verifier( array( 'notice.docx', 'orig1.jpg', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $ordre['noms'],
+	'les figures gardent leur ordre, qu\'elles soient allégées ou non', $ordre );
+na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $serre['noms']
+	&& array( 'orig1.jpg' ) === $serre['restees'] && 1 === $serre['legeres'],
+	'une version allégée qui ne tient pas : l\'original est nommé, non la copie, et le compte est juste', $serre );
+na_verifier( $une['copies_existaient'] && $une['copies_effacees'],
+	'la copie faite pour le courriel existe pendant l\'envoi et s\'efface après' );
+na_verifier( false !== strpos( $avis_restees, 'orig2.jpg' ) && false !== strpos( $avis_restees, 'post=' . $avec_figures ),
+	'le courriel nomme l\'original resté et donne le lien de la notice' );
+na_verifier( false !== strpos( $avis_legeres, '2 illustrations sont jointes en version allégée' )
+	&& false !== strpos( $avis_legeres, number_format_i18n( Notice_Archeomed_Paquet::LARGEUR_APERCU ) ),
+	'le courriel dit combien de figures sont allégées, et à quelle largeur', $avis_legeres );
+na_verifier( $diagnostic_neutre, 'le diagnostic ne fabrique rien et ne touche pas à la notice' );
+na_verifier( false === $deja_tente, 'une notice déjà tentée ne relance pas la fabrication à chaque envoi' );
 
 WP_CLI::log( 'La note d\'un envoi partiel' );
 $partie = na_notice( $saisie );

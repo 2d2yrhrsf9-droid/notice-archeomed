@@ -63,6 +63,9 @@ jobs:
       - name: Le contrôle des doublons tranche juste
         run: .github/essais/verifier-les-doublons
 
+      - name: Chaque commentaire est sur sa fonction
+        run: .github/essais/verifier-les-commentaires
+
   # Le site d'essai que la revue n'a pas.
   #
   # « Un passage vert ne dispense pas d'installer sur un site d'essai avant

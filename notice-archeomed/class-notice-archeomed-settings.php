@@ -1216,12 +1216,12 @@ class Notice_Archeomed_Settings {
 								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[poids_courriel]"
 								value="<?php echo esc_attr( (int) self::get( 'poids_courriel' ) ); ?>"> Mo
 							<p class="description">
-								Au-delà, le serveur de courriel refuse le message entier. Les illustrations
-								partent en version allégée, qui pèse peu ; ce plafond ne compte que pour
-								un original joint faute de version allégée — au-delà, il reste sur le site
-								et le courriel le nomme, avec le lien de la notice. Une pièce jointe
-								grossit d’un tiers en voyageant. L’« essai de poids », plus bas, mesure
-								ce que le serveur accepte.
+								Au-delà, le serveur de courriel refuse le message entier. Le plafond vaut
+								pour tout ce que le courriel porte : le document, puis chaque figure dans
+								son ordre — en version allégée, qui pèse peu, ou en original faute d’en
+								avoir une. Une figure qui ne tient plus reste sur le site, et le courriel
+								la nomme, avec le lien de la notice. Une pièce jointe grossit d’un tiers en
+								voyageant. L’« essai de poids », plus bas, mesure ce que le serveur accepte.
 							</p>
 						</td>
 					</tr>

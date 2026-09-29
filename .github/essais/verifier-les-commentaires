@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Chaque commentaire de fonction est-il bien sur sa fonction ?
+
+Trois relectures de suite ont trouvé un commentaire décroché : une fonction
+neuve insérée entre une fonction et sa description, qui se retrouvait alors
+au-dessus de la nouvelle, et laissait l'ancienne sans rien. Le signe est
+toujours le même — deux blocs « /** … */ » de plusieurs lignes l'un sur
+l'autre — et il se voit sans rien exécuter.
+"""
+import pathlib
+import re
+import sys
+
+ICI = pathlib.Path(__file__).resolve().parent
+PLUGIN = ICI.parent.parent / 'notice-archeomed'
+EMPILES = re.compile(r'(/\*\*(?:(?!\*/).)*?\*/)\s*\n\s*/\*\*', re.S)
+
+fautes = 0
+for fichier in sorted(PLUGIN.glob('*.php')):
+    texte = fichier.read_text(encoding='utf-8')
+    for m in EMPILES.finditer(texte):
+        if '\n' not in m.group(1):
+            continue    # une ligne « /** … */ » sur une constante : légitime
+        ligne = texte.count('\n', 0, m.start()) + 1
+        premiere = [l.strip(' *\t') for l in m.group(1).splitlines() if l.strip(' */\t')][:1]
+        print(f'::error file=notice-archeomed/{fichier.name},line={ligne}::'
+              f'commentaire décroché de sa fonction : « {premiere[0][:70] if premiere else ""} »')
+        fautes += 1
+if fautes:
+    sys.exit(1)
+print('  ✓ chaque commentaire est sur sa fonction')
