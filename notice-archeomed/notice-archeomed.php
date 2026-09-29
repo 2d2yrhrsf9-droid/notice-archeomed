@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.30
+ * Version: 3.31
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3575,15 +3575,14 @@ class Notice_Archeomed_Pactols {
 		// ne pouvait donc pas les séparer — c'était à refaire à la main, notice
 		// par notice.
 		// L'image se posait dans un paragraphe « TEI_figure_title », c'est-à-dire
-		// qu'elle était stylée comme le titre de la figure. Le bloc portait
-		// alors deux titres, dont l'un ne contenait qu'un dessin. Métopes
-		// nomme « TEI_figure_alternative » l'image de substitution — celle que
-		// le document porte à la place du fichier de mise en page, ce qui est
-		// exactement le cas d'une basse définition. C'est donc là qu'elle va.
+		// stylée comme le titre de la figure : le bloc portait deux titres,
+		// dont l'un ne contenait qu'un dessin.
 		//
-		// La chaîne distingue cette image de « TEI_figure_alttext », qui est
-		// le texte de remplacement pour qui ne voit pas l'image : deux choses
-		// différentes sous deux noms voisins.
+		// Elle va en Normal, suivie du titre, de la légende et des crédits :
+		// c'est l'usage de la revue. « TEI_figure_alternative » existe dans le
+		// modèle et désigne une image de substitution, ce qu'est une basse
+		// définition — mais la revue ne s'en sert pas, et le stylage de
+		// référence ne la connaît pas. On suit l'usage, pas la déduction.
 		$illustrations = isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array();
 		foreach ( $illustrations as $item ) {
 			// Le bloc s'ouvre et se ferme, comme la chaîne Métopes l'attend
@@ -3594,8 +3593,8 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => self::figure_ouvrante() ) ) );
 			// « Fig. 1 Vue générale » et non « Fig. 1 : Vue générale » : c'est
 			// ainsi que la revue compose ses légendes.
-			$titre = 'Fig. ' . (int) $item['rang']
-				. ( '' !== $item['titre'] ? ' ' . $item['titre'] : '' );
+			$numero = 'Fig. ' . (int) $item['rang'];
+			$titre  = $numero . ( '' !== $item['titre'] ? ' ' . $item['titre'] : '' );
 			// L'image, appelée en lien depuis « icono/br », entre le repère
 			// d'ouverture et le titre. Elle n'est pas dans le document : le
 			// paquet la porte à côté, et la mise en page la remplace dans son
@@ -3609,7 +3608,7 @@ class Notice_Archeomed_Pactols {
 			// tard et coûte plus cher.
 			if ( ! empty( $item['figure']['fichier'] )
 				&& method_exists( $doc, 'image_liee' ) ) {
-				$doc->add_raw_paragraph( 'TEI_figure_alternative', $doc->image_liee(
+				$doc->add_raw_paragraph( 'Normal', $doc->image_liee(
 					// Le document vit dans « style/ » : il remonte d'un cran
 					// pour atteindre l'icono. Sans ce « ../ », le lien ne
 					// résout nulle part et Word pose un cadre vide.
@@ -3633,10 +3632,15 @@ class Notice_Archeomed_Pactols {
 					$titre
 				);
 				if ( '' !== $dessin ) {
-					$doc->add_raw_paragraph( 'TEI_figure_alternative', $dessin );
+					$doc->add_raw_paragraph( 'Normal', $dessin );
 				}
 			}
-			$doc->add_paragraph( 'TEI_figure_title', array( array( 'text' => $titre ) ) );
+			// « Fig. 1 » porte « TEI_figure_num_inline » : la chaîne sait alors
+			// où finit le numéro et où commence le titre, au lieu d'avoir à le
+			// deviner d'une expression régulière sur le point ou l'espace.
+			$doc->add_raw_paragraph( 'TEI_figure_title',
+				$doc->char_run( 'TEI_figure_num_inline', $numero )
+					. ( '' !== $item['titre'] ? $doc->plain( ' ' . $item['titre'] ) : '' ) );
 			if ( '' !== $item['legende'] ) {
 				$doc->add_paragraph( 'TEI_figure_caption',
 					array( array( 'text' => $item['legende'] ) ) );
