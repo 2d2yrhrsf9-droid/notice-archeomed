@@ -5268,6 +5268,15 @@ class Notice_Archeomed_Pactols {
 	 */
 	private static function siecles_du_html( $html ) {
 		$blanc   = '(?:[\s\x{A0}]|&nbsp;)';
+		// « siècle » s'abrège « s. » après un siècle en chiffres, comme au
+		// document.
+		$html = preg_replace_callback(
+			'#(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)((?:<sup>)?(?:er|re|e)(?:</sup>)?)' . $blanc . '+siècles?(?![\pL\d])\.?#u',
+			function ( $m ) {
+				return preg_match( '/^[lcLC]+$/', $m[1] ) ? $m[0] : $m[1] . $m[2] . "\u{00A0}s.";
+			},
+			(string) $html
+		);
 		$annonce = '(?=(?:' . $blanc . '*(?:-|–|—|et|à|ou)' . $blanc . '*(?:<sup>)?(?:[IVXLC]+|[ivxlc]+)(?:</sup>)?(?:<sup>)?(?:er|re|e)(?:</sup>)?)*' . $blanc . '+(?:s\.|siècles?\b|millénaires?\b))';
 		$html = preg_replace_callback(
 			'#(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(?:<sup>(er|re|e)</sup>|(er|re|e)(?![\pL\d]))' . $annonce . '#u',

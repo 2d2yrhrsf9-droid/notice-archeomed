@@ -490,6 +490,10 @@ na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis ab
 // exposant. « ce siècle » et un « XII » sans siècle derrière ne bougent pas.
 $doc_siecles = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
 $siecles_xml = $doc_siecles->html_to_paragraphs( '<p>Au XIIe s., au xiiie siècle, au XIV<sup>e</sup> siècle, aux IIIe-IVe s., au Ier millénaire ; en ce siècle, la tour XII.</p>' );
+$abreges = implode( '', $doc_siecles->html_to_paragraphs( '<p>Aux XIIe et XIIIe siècles. Au XIV<sup>e</sup> siècle, et en ce siècle.</p>' ) );
+na_verifier( 2 === substr_count( $abreges, "\u{00A0}s." ) && false === strpos( $abreges, 's..' )
+	&& false !== strpos( $abreges, 'ce siècle' ) && 1 === substr_count( $abreges, 'siècle' ),
+	'« siècle » s\'abrège « s. » après un siècle en chiffres, sans doubler le point, et « ce siècle » reste', $abreges );
 $siecles_xml = implode( '', $siecles_xml );
 $pc = function ( $chiffre ) {
 	return '<w:smallCaps/></w:rPr><w:t xml:space="preserve">' . $chiffre . '</w:t>';
@@ -521,7 +525,8 @@ $nom_doc = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_sty
 na_verifier( false !== strpos( $nom_doc, 'J.-M. Poisson' ), 'un nom d\'autorité garde son espace ordinaire, que la chaîne coupe', $nom_doc );
 
 $relu = na_appel( $plugin, 'siecles_du_html', array( '<p>Au XII<sup>e</sup>&nbsp;siècle et au xiiie s., en ce siècle.</p>' ) );
-na_verifier( 2 === substr_count( $relu, 'small-caps' ) && false !== strpos( $relu, '>xii</span><sup>e</sup>' ),
+na_verifier( 2 === substr_count( $relu, 'small-caps' ) && false !== strpos( $relu, '>xii</span><sup>e</sup>' )
+	&& false !== strpos( $relu, "<sup>e</sup>\u{00A0}s. et" ) && false !== strpos( $relu, 'ce siècle' ),
 	'la page de relecture montre aussi les siècles en petites capitales', $relu );
 
 WP_CLI::log( 'La désactivation' );

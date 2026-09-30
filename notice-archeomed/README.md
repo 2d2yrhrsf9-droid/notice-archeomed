@@ -761,6 +761,11 @@ Chaque fragment se corrige en voyant ses voisins : un deux-points qui suit un
 mot en italique reçoit bien son insécable. Les noms du bloc de responsabilité
 gardent leur espace ordinaire entre prénom et nom, que la chaîne coupe.
 
+**« siècle » s'abrège toujours « s. »** après un siècle en chiffres : « au
+XIIe siècle » s'imprime « au XIIe s. », « aux XIIe et XIIIe siècles. » garde un
+seul point ; « ce siècle » ne bouge pas. Les blocs d'index gardent, eux, la
+forme du thésaurus.
+
 **Les siècles sortent en petites capitales**, l'ordinal en exposant : « xii »
 en petites capitales puis « e » en exposant, forme que la chaîne rend en
 `<hi rend="small-caps">`. L'auteur peut les taper en capitales (« XIIe s. »),

@@ -270,6 +270,35 @@ class Notice_Archeomed_DOCX {
 				&& ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
 		};
 
+		// « siècle » s'abrège toujours « s. » après un siècle en chiffres :
+		// « au XIIe siècle » s'imprime « au XIIe s. ». Le texte qui précède
+		// peut être dans d'autres fragments — l'ordinal en exposant l'est
+		// presque toujours. Un point qui suivait « siècles » en fin de phrase
+		// se confond avec celui de l'abréviation.
+		$avant = '';
+		foreach ( $runs as $i => $run ) {
+			if ( ! $touchable( $run ) ) {
+				$avant .= is_array( $run ) && isset( $run['text'] ) ? $run['text'] : '';
+				continue;
+			}
+			$texte = $run['typo'];
+			if ( preg_match_all( '/(*UCP)[\s\x{A0}]+siècles?(?![\pL\d])\.?/u', $texte, $trouves, PREG_OFFSET_CAPTURE ) ) {
+				$rendu  = '';
+				$depuis = 0;
+				foreach ( $trouves[0] as $t ) {
+					$contexte = $avant . substr( $texte, 0, $t[1] );
+					$rendu   .= substr( $texte, $depuis, $t[1] - $depuis );
+					$rendu   .= ( preg_match( '/(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(?:er|re|e)$/u', $contexte, $m )
+						&& ! preg_match( '/^[lcLC]+$/u', $m[1] ) )
+						? "\u{00A0}s." : $t[0];
+					$depuis   = $t[1] + strlen( $t[0] );
+				}
+				$texte = $rendu . substr( $texte, $depuis );
+				$runs[ $i ]['typo'] = $texte;
+			}
+			$avant .= $texte;
+		}
+
 		// L'ordinal déjà en exposant, dans son propre fragment : le chiffre
 		// est à la fin du fragment d'avant.
 		for ( $i = 1; $i < count( $runs ); $i++ ) {
