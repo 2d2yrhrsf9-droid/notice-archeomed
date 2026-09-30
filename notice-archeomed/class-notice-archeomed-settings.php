@@ -281,6 +281,7 @@ class Notice_Archeomed_Settings {
 			'destinataires' => __( 'Destinataires', 'notice-archeomed' ),
 			'numero'        => __( 'Numéro et iconographie', 'notice-archeomed' ),
 			'normes'        => __( 'Normes éditoriales', 'notice-archeomed' ),
+			'styles'        => __( 'Styles Métopes', 'notice-archeomed' ),
 			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
@@ -416,6 +417,24 @@ class Notice_Archeomed_Settings {
 				isset( $input[ Notice_Archeomed_Normes::CLE ] ) && is_array( $input[ Notice_Archeomed_Normes::CLE ] )
 					? $input[ Notice_Archeomed_Normes::CLE ] : array() );
 			Notice_Archeomed_Normes::oublier();
+		}
+
+		// La correspondance des styles Métopes : un style refusé — absent de
+		// la feuille, ou du mauvais type — garde la valeur d'avant et le dit.
+		if ( ! empty( $input['styles_retablir'] ) ) {
+			unset( $out[ Notice_Archeomed_Styles::CLE ] );
+			Notice_Archeomed_Styles::oublier();
+		} elseif ( ! empty( $input['styles_presents'] ) ) {
+			list( $styles, $refuses ) = Notice_Archeomed_Styles::nettoyer(
+				isset( $input[ Notice_Archeomed_Styles::CLE ] ) && is_array( $input[ Notice_Archeomed_Styles::CLE ] )
+					? $input[ Notice_Archeomed_Styles::CLE ] : array(),
+				isset( $out[ Notice_Archeomed_Styles::CLE ] ) ? $out[ Notice_Archeomed_Styles::CLE ] : array() );
+			$out[ Notice_Archeomed_Styles::CLE ] = $styles;
+			Notice_Archeomed_Styles::oublier();
+			if ( ! empty( $refuses ) ) {
+				add_settings_error( self::OPTION_NAME, 'styles_refuses',
+					'Style absent de la feuille ou du mauvais type, choix non retenu pour : ' . implode( ', ', $refuses ) . '.', 'error' );
+			}
 		}
 
 		if ( isset( $input['turnstile_site'] ) ) {
@@ -1210,6 +1229,74 @@ class Notice_Archeomed_Settings {
 		echo '<button type="submit" class="button" name="' . esc_attr( self::OPTION_NAME ) . '[normes_retablir]" value="1"'
 			. ' onclick="return confirm(\'Rétablir toutes les normes de la revue ? Les choix faits ici seront oubliés.\');">'
 			. esc_html__( 'Rétablir les normes de la revue', 'notice-archeomed' ) . '</button>';
+		echo '</form>';
+	}
+
+	/**
+	 * La correspondance des blocs avec les styles Métopes : un menu par
+	 * bloc, qui ne propose que les styles du bon type que la feuille
+	 * installée porte. La correspondance d'origine est marquée ; un style
+	 * enregistré qui aurait disparu de la feuille le dit.
+	 */
+	private function onglet_styles( $essai ) {
+		unset( $essai );
+		$nom     = self::OPTION_NAME . '[' . Notice_Archeomed_Styles::CLE . ']';
+		$feuille = Notice_Archeomed_Styles::styles_de_la_feuille();
+		self::ouvrir_les_reglages();
+		?>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[styles_presents]" value="1">
+		<p class="description" style="max-width:46em">
+			Le style Métopes que reçoit chaque bloc de la notice dans le document
+			Word. Chaque menu ne propose que les styles de la feuille installée,
+			et du bon type — style de paragraphe ou style de caractère. La
+			correspondance d’origine est marquée «&nbsp;d’origine&nbsp;». Les
+			documents produits après l’enregistrement suivent la nouvelle
+			correspondance, comme les blocs d’index Pactols, qui nomment le
+			style du paragraphe où ils se collent.
+		</p>
+		<?php
+		if ( empty( $feuille['paragraphe'] ) ) {
+			echo '<div class="notice notice-warning inline"><p>'
+				. esc_html__( 'La feuille de styles n’a pas pu être lue : les correspondances ne peuvent pas se choisir. Voyez l’onglet « Feuille de styles ».', 'notice-archeomed' )
+				. '</p></div>';
+		}
+		foreach ( Notice_Archeomed_Styles::catalogue() as $groupe ) {
+			echo '<h2>' . esc_html( $groupe['titre'] ) . '</h2>';
+			echo '<table class="form-table" role="presentation">';
+			foreach ( $groupe['blocs'] as $cle => $bloc ) {
+				$actuel = Notice_Archeomed_Styles::de( $cle );
+				$id     = 'na_style_' . $cle;
+				$liste  = $feuille[ $bloc['type'] ];
+				echo '<tr><th scope="row"><label for="' . esc_attr( $id ) . '">' . esc_html( $bloc['libelle'] ) . '</label></th><td>';
+				echo '<select id="' . esc_attr( $id ) . '" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '" style="max-width:26em">';
+				if ( ! empty( $bloc['colle'] ) ) {
+					echo '<option value=""' . selected( $actuel, '', false ) . '>'
+						. esc_html( '— collé à la fin du texte, entre parenthèses —' . ( '' === $bloc['defaut'] ? ' (d’origine)' : '' ) ) . '</option>';
+				}
+				if ( '' !== $actuel && ! in_array( $actuel, $liste, true ) ) {
+					echo '<option value="' . esc_attr( $actuel ) . '" selected>' . esc_html( $actuel . ' — absent de la feuille' ) . '</option>';
+				}
+				foreach ( $liste as $style ) {
+					echo '<option value="' . esc_attr( $style ) . '"' . selected( $actuel, $style, false ) . '>'
+						. esc_html( $style . ( $style === $bloc['defaut'] ? ' (d’origine)' : '' ) ) . '</option>';
+				}
+				echo '</select> <span class="description">'
+					. esc_html( 'caractere' === $bloc['type'] ? 'style de caractère' : 'style de paragraphe' ) . '</span>';
+				if ( '' !== $actuel && ! empty( $liste ) && ! in_array( $actuel, $liste, true ) ) {
+					echo '<p class="description" style="color:#b32d2e">' . Notice_Archeomed_File::verdict( false ) . ' '
+						. esc_html__( 'Ce style n’est plus dans la feuille installée : le bloc sort en Normal. Choisissez-en un autre.', 'notice-archeomed' ) . '</p>';
+				} elseif ( $actuel !== $bloc['defaut'] ) {
+					echo '<p class="description">' . esc_html( 'D’origine : ' . ( '' === $bloc['defaut'] ? 'collé à la fin du texte' : $bloc['defaut'] ) ) . '</p>';
+				}
+				echo '</td></tr>';
+			}
+			echo '</table>';
+		}
+		submit_button( __( 'Enregistrer', 'notice-archeomed' ), 'primary', 'submit', false );
+		echo ' ';
+		echo '<button type="submit" class="button" name="' . esc_attr( self::OPTION_NAME ) . '[styles_retablir]" value="1"'
+			. ' onclick="return confirm(\'Rétablir toutes les correspondances d’origine ? Les choix faits ici seront oubliés.\');">'
+			. esc_html__( 'Rétablir les correspondances d’origine', 'notice-archeomed' ) . '</button>';
 		echo '</form>';
 	}
 

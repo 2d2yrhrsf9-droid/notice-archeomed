@@ -393,6 +393,18 @@ les paragraphes sortent en Normal, sans que rien ne casse.
 
 ## Correspondance champ / style
 
+La table ci-dessous est la **correspondance d'origine**. Elle se change bloc
+par bloc dans **Chronique ▸ Réglages ▸ Styles Métopes** : chaque menu ne
+propose que les styles du bon type — paragraphe ou caractère — que porte la
+feuille installée, la correspondance d'origine y est marquée, et un style
+enregistré qui aurait disparu de la feuille est signalé en rouge. C'est là
+qu'on tranche les questions ouvertes avec Métopes : un numéro d'autorisation
+qui ne serait plus l'identifiant Patriarche (« à supprimer », ou un autre
+style), un bloc de responsabilité dans son propre paragraphe
+(`TEI_archeoCHR_authority`, sans parenthèses) plutôt que collé au texte. Les
+blocs d'index Pactols nomment le style réglé dans leur `rend`.
+« Rétablir les correspondances d'origine » remet tout d'un geste.
+
 | Bloc de la notice | Style Métopes |
 |---|---|
 | Avis de correction (dépôt corrigé) | à supprimer |
@@ -777,8 +789,8 @@ Les documents produits après un changement suivent les nouvelles normes —
 un fascicule ou un dossier refabriqué aussi. L'année d'une opération sur
 plusieurs années, elle, s'écrit au dépôt.
 
-La correspondance des champs avec les styles Métopes n'y est pas : ce n'est
-pas une norme de revue, mais le contrat avec la chaîne XML.
+La correspondance des blocs avec les styles Métopes a son onglet à part,
+**Styles Métopes** : voir plus bas.
 
 ## La typographie
 

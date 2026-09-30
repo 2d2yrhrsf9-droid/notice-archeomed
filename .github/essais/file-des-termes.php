@@ -559,6 +559,51 @@ na_verifier( 'abrege' === $propres['siecle_mot'] && 2400 === $propres['photo_ppp
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
 $N::oublier();
 
+WP_CLI::log( 'La correspondance des styles Métopes' );
+$ST = 'Notice_Archeomed_Styles';
+$reglages_avant = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$feuille = $ST::styles_de_la_feuille();
+na_verifier( in_array( 'TEI_archeoCHR_authority', $feuille['paragraphe'], true ) && in_array( 'à supprimer', $feuille['paragraphe'], true )
+	&& in_array( 'TEI_archeoCHR_name:fld', $feuille['caractere'], true ) && ! in_array( 'TEI_archeoCHR_name:fld', $feuille['paragraphe'], true ),
+	'la feuille installée donne ses styles par type, « à supprimer » compris' );
+list( $choisis, $refuses ) = $ST::nettoyer( array(
+	'num_autorisation' => 'à supprimer', 'responsabilites' => 'TEI_archeoCHR_authority',
+	'autres_lieux' => 'TEI_archeoCHR_keywords_subjects', 'titre_notice' => 'TEI_Titre 2+notice',
+	'responsable' => 'TEI_Titre 2+notice', 'annee' => 'Style inventé' ) );
+na_verifier( array( 'num_autorisation' => 'à supprimer', 'responsabilites' => 'TEI_archeoCHR_authority', 'autres_lieux' => 'TEI_archeoCHR_keywords_subjects' ) == $choisis
+	&& 2 === count( $refuses ),
+	'un style de la feuille est retenu ; un style inventé ou du mauvais type est refusé ; l\'origine n\'est pas retenue', array( $choisis, $refuses ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_avant, array( $ST::CLE => $choisis ) ) );
+$ST::oublier();
+$saisie_styles = array_merge( $saisie, array(
+	'rubrique_principale' => 'I. Constructions et habitats civils', 'renvoi_1' => '', 'renvoi_2' => '', 'departement' => 'Calvados',
+	'annee' => '2025', 'num_autorisation' => 'A-12', 'id_patriarche' => '', 'rapport_lien' => '', 'originaux_lien' => '',
+	'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_inst' => 'Inrap', 'resp_email' => 'a@example.org',
+	'coresp_prenom' => '', 'coresp_nom' => '', 'coresp_inst' => '', 'coresp_email' => '',
+	'coauteur_prenom' => '', 'coauteur_nom' => '', 'coauteur_inst' => '', 'coauteur_email' => '',
+	'commentaires' => '', 'texte_notice' => '<p>Le texte.</p>', 'remplace' => '', 'organismes' => array( 'Inrap' ), 'organisme' => 'Inrap',
+	'lieux' => array( array( 'nom' => 'Caen', 'ark' => '' ) ), 'illustrations' => array(), 'nature' => '', 'nature_items' => array(),
+	'pactols_places_items' => array( array( 'label' => 'Normandie', 'ark' => '' ) ), 'avis' => array(),
+) );
+$doc_styles = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_styles, $saisie_styles ) );
+$corps = ( new ReflectionProperty( $doc_styles, 'body' ) );
+$corps->setAccessible( true );
+$xml_doc = implode( '', $corps->getValue( $doc_styles ) );
+$id_de = function ( $nom ) use ( $doc_styles ) {
+	$r = new ReflectionProperty( $doc_styles, 'styles' );
+	$r->setAccessible( true );
+	$t = $r->getValue( $doc_styles );
+	return isset( $t[ $nom ] ) ? $t[ $nom ] : '?';
+};
+na_verifier( false !== strpos( $xml_doc, 'w:val="' . $id_de( 'à supprimer' ) . '"/></w:pPr><w:r><w:t xml:space="preserve">Numéro d’autorisation' )
+	&& false !== strpos( $xml_doc, 'w:val="' . $id_de( 'TEI_archeoCHR_authority' ) . '"/></w:pPr><w:r><w:t xml:space="preserve">Responsable' )
+	&& false === strpos( $xml_doc, 'texte. (Responsable' ),
+	'le document suit la correspondance réglée : l\'autorisation à supprimer, les autorités dans leur paragraphe', $xml_doc );
+na_verifier( 'archeoCHR_keywords_subjects' === $ST::rend( 'autres_lieux' ), 'les blocs d\'index nomment le style réglé' );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
+$ST::oublier();
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

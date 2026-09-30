@@ -184,6 +184,18 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
+	 * Les noms des styles de la feuille, par type : « paragraphe » ou
+	 * « caractere ». C'est parmi eux que se choisit la correspondance d'un
+	 * bloc ; « à supprimer », que le plugin injecte, compte parmi les styles
+	 * de paragraphe.
+	 */
+	public function noms_des_styles( $type ) {
+		$noms = array_keys( 'caractere' === $type ? $this->char_styles : $this->styles );
+		sort( $noms, SORT_NATURAL | SORT_FLAG_CASE );
+		return $noms;
+	}
+
+	/**
 	 * Construit la correspondance nom affiché => styleId à partir de styles.xml.
 	 */
 	private function index_styles( $xml ) {
@@ -278,7 +290,7 @@ class Notice_Archeomed_DOCX {
 		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|ou)[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
 		$touchable = function ( $run ) {
 			return is_array( $run ) && empty( $run['raw'] ) && isset( $run['typo'] )
-				&& ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
+				&& empty( $run['nom'] ) && ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
 		};
 
 		// « siècle » s'abrège toujours « s. » après un siècle en chiffres :
@@ -458,7 +470,7 @@ class Notice_Archeomed_DOCX {
 		// non dans « esc », qui sert aussi aux noms de styles et aux adresses.
 		if ( isset( $run['typo'] ) ) {
 			$text = self::esc( $run['typo'] );
-		} elseif ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) ) {
+		} elseif ( ! empty( $run['nom'] ) || ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) ) ) {
 			// Un nom d'autorité a déjà ses insécables, posées où il faut : la
 			// chaîne coupe le nom sur la dernière espace ordinaire. La règle
 			// des initiales soudait « J.-M. Poisson », et le prénom entier
@@ -540,8 +552,10 @@ class Notice_Archeomed_DOCX {
 	/**
 	 * Construit un run portant un style de caractère Métopes.
 	 */
-	public function char_run( $style_name, $text ) {
-		return $this->render_run( array( 'cs' => $style_name, 'text' => $text ) );
+	public function char_run( $style_name, $text, $nom = false ) {
+		// « $nom » : un nom de personne, qui garde ses espaces telles qu'on
+		// les a posées — la chaîne le coupe sur la dernière espace ordinaire.
+		return $this->render_run( array( 'cs' => $style_name, 'text' => $text, 'nom' => $nom ) );
 	}
 
 	/**
@@ -680,8 +694,11 @@ class Notice_Archeomed_DOCX {
 	public function hyperlink( $url, $label ) {
 		$rid                 = 'rIdNA' . ( count( $this->links ) + 1 );
 		$this->links[ $rid ] = $url;
-		$style               = isset( $this->char_styles['Hyperlink'] )
-			? '<w:rStyle w:val="' . self::esc( $this->char_styles['Hyperlink'] ) . '"/>'
+		// Le style des liens se règle comme les autres ; « Hyperlink » est
+		// celui de Word, et le repli quand rien n'est réglé.
+		$nom_du_style        = class_exists( 'Notice_Archeomed_Styles' ) ? Notice_Archeomed_Styles::de( 'lien' ) : 'Hyperlink';
+		$style               = isset( $this->char_styles[ $nom_du_style ] )
+			? '<w:rStyle w:val="' . self::esc( $this->char_styles[ $nom_du_style ] ) . '"/>'
 			: '';
 		// Un terme de période — « XIIe siècle » — a son siècle en petites
 		// capitales comme le texte : le lien peut donc porter plusieurs runs.

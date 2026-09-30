@@ -68,13 +68,23 @@ def styles_poses(chemin):
     return noms
 
 
+CATALOGUE = RACINE / "notice-archeomed" / "class-notice-archeomed-styles.php"
+
+
 def styles_demandes(chemin):
-    """Ce que le générateur applique, lu dans le code lui-même."""
+    """Ce que le générateur applique : les styles encore écrits dans le code,
+    et la correspondance d'origine de chaque bloc, qui vit dans le catalogue
+    des styles. Une correspondance changée dans les réglages se contrôle, elle,
+    dans l'onglet « Styles Métopes », qui ne propose que des styles présents."""
     code = chemin.read_text(encoding="utf-8")
-    return set(
+    demandes = set(
         re.findall(r"add_(?:raw_)?paragraph\(\s*'([^']+)'", code)
         + re.findall(r"char_run\(\s*'([^']+)'", code)
     )
+    if CATALOGUE.is_file():
+        catalogue = CATALOGUE.read_text(encoding="utf-8")
+        demandes |= {s for s in re.findall(r"'defaut'\s*=>\s*'([^']+)'", catalogue) if s}
+    return demandes
 
 
 def main():

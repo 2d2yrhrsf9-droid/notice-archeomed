@@ -22,6 +22,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
@@ -893,7 +894,7 @@ class Notice_Archeomed_Pactols {
 		// style pour un contenu qu'on voudrait taire à l'écran : ses styles
 		// locaux retombent en paragraphe ordinaire à l'export, ce qui
 		// reproduirait le défaut.
-		$doc->add_raw_paragraph( 'TEI_Titre 2+notice', $contenu );
+		$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'renvoi' ), $contenu );
 	}
 
 	/**
@@ -916,7 +917,7 @@ class Notice_Archeomed_Pactols {
 		// « IV. – Sépultures et nécropoles », « IV.1 – Opérations de terrain »,
 		// et sous elle les notices, communes par ordre alphabétique. Les
 		// notices arrivent déjà dans cet ordre, le classement les y a mises.
-		$doc->add_paragraph( 'Title', array( array(
+		$doc->add_paragraph( Notice_Archeomed_Styles::de( 'rubrique' ), array( array(
 			'text' => $this->titre_de_rubrique( $rubrique ) ) ) );
 		// Les notices de la rubrique, et les renvois que d'autres lui font :
 		// les uns et les autres se rangent ensemble, par sous-rubrique puis
@@ -947,7 +948,7 @@ class Notice_Archeomed_Pactols {
 		foreach ( $entrees as $entree ) {
 			$famille = $this->titre_de_famille( $entree['d'] );
 			if ( $famille !== $famille_en_cours ) {
-				$doc->add_paragraph( 'TEI_Titre 1+rubrique',
+				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'sous_rubrique' ),
 					array( array( 'text' => $famille ) ) );
 				$famille_en_cours = $famille;
 			}
@@ -5077,10 +5078,10 @@ class Notice_Archeomed_Pactols {
 		// autres ; il se corrige d'un remplacement si la chaîne en nomme un
 		// autre.
 		$zones = array(
-			array( 'nature_items',           'archeoCHR_fieldwork_method',             'pactols:Sujets',      false ),
-			array( 'pactols_periods_items',  'archeoCHR_keywords_subjects:chronology', 'pactols:Chronologie', true ),
-			array( 'pactols_subjects_items', 'archeoCHR_keywords_subjects',            'pactols:Sujets',      false ),
-			array( 'pactols_places_items',   'keywords_subjects:geography',            'pactols:Lieux',       true ),
+			array( 'nature_items',           Notice_Archeomed_Styles::rend( 'nature' ),       'pactols:Sujets',      false ),
+			array( 'pactols_periods_items',  Notice_Archeomed_Styles::rend( 'periodes' ),     'pactols:Chronologie', true ),
+			array( 'pactols_subjects_items', Notice_Archeomed_Styles::rend( 'mots_cles' ),    'pactols:Sujets',      false ),
+			array( 'pactols_places_items',   Notice_Archeomed_Styles::rend( 'autres_lieux' ), 'pactols:Lieux',       true ),
 		);
 		$corps = '';
 		foreach ( $zones as $zone ) {
@@ -5903,12 +5904,12 @@ class Notice_Archeomed_Pactols {
 		// document : la répéter avant chaque notice donnait un sommaire à
 		// chaque page, et faussait la hiérarchie que la chaîne XML en tire.
 		if ( $rubrique_en_tete ) {
-			$doc->add_paragraph( 'Title', array( array(
+			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'rubrique' ), array( array(
 				'text' => $this->titre_de_rubrique( $d['rubrique_principale'] ) ) ) );
 			// 2. La sous-rubrique, en titre de niveau 1 : « IV.1 – Opérations
 			//    de terrain ». Dans un fascicule, elle se pose une fois par
 			//    groupe et non par notice, comme la rubrique elle-même.
-			$doc->add_paragraph( 'TEI_Titre 1+rubrique', array( array(
+			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'sous_rubrique' ), array( array(
 				'text' => $this->titre_de_famille( $d ) ) ) );
 		}
 
@@ -5946,7 +5947,7 @@ class Notice_Archeomed_Pactols {
 			$titre .= $doc->plain( Notice_Archeomed_Normes::avant_le_lieu_dit() )
 				. $this->run_xml( $doc, array( 'text' => $d['lieu_dit'], 'i' => Notice_Archeomed_Normes::lieu_dit_en_italique() ) );
 		}
-		$doc->add_raw_paragraph( 'TEI_Titre 2+notice', $titre );
+		$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'titre_notice' ), $titre );
 
 		// 4 bis à 5. Les métadonnées de l'opération, telles qu'elles
 		// s'impriment désormais dans la notice.
@@ -5967,7 +5968,7 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		if ( ! empty( $natures ) ) {
-			$doc->add_raw_paragraph( 'TEI_archeoCHR_fieldwork_method',
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'nature' ),
 				$doc->plain( "Nature de l'opération : " )
 					. implode( $doc->plain( ', ' ), $natures ) );
 		}
@@ -5985,7 +5986,7 @@ class Notice_Archeomed_Pactols {
 			isset( $d['pactols_places_items'] ) ? $d['pactols_places_items'] : array(),
 			true );
 		if ( ! empty( $autres_lieux ) ) {
-			$doc->add_raw_paragraph( 'TEI_keywords_subjects:geography',
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'autres_lieux' ),
 				$doc->plain( 1 === count( $autres_lieux ) ? 'Autre lieu : ' : 'Autres lieux : ' )
 					. implode( $doc->plain( ', ' ), $autres_lieux ) );
 		}
@@ -5994,36 +5995,36 @@ class Notice_Archeomed_Pactols {
 			isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(),
 			true );
 		if ( ! empty( $periodes ) ) {
-			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects:chronology',
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'periodes' ),
 				$doc->plain( 'Période historique : ' )
 					. implode( $doc->plain( ', ' ), $periodes ) );
 		}
 
 		$doc->add_paragraph(
-			'TEI_archeoCHR_fieldwork_year',
+			Notice_Archeomed_Styles::de( 'annee' ),
 			array( array( 'text' => "Année de l'opération : " . $d['annee'] ) )
 		);
 		if ( '' !== $d['num_autorisation'] ) {
 			$doc->add_paragraph(
-				'TEI_archeoCHR_IDpatriarche',
+				Notice_Archeomed_Styles::de( 'num_autorisation' ),
 				array( array( 'text' => "Numéro d'autorisation : " . $d['num_autorisation'] ) )
 			);
 		}
-		// L'identifiant Patriarche partage pour l'instant le style du numéro
+		// L'identifiant Patriarche partage par défaut le style du numéro
 		// d'autorisation — c'est celui que Métopes nomme « Identifiant
 		// Patriarche », et rien d'autre ne lui convient mieux. Les deux
 		// renseignements sont distincts : l'un est un arrêté, l'autre une
-		// entrée dans la base du ministère. Ils sont donc collectés à part,
-		// quitte à ce que la chaîne les distingue plus tard.
+		// entrée dans la base du ministère. Ils sont donc collectés à part, et
+		// chacun a sa correspondance dans les réglages.
 		if ( ! empty( $d['id_patriarche'] ) ) {
 			$doc->add_paragraph(
-				'TEI_archeoCHR_IDpatriarche',
+				Notice_Archeomed_Styles::de( 'id_patriarche' ),
 				array( array( 'text' => 'Identifiant Patriarche : ' . $d['id_patriarche'] ) )
 			);
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
 			$doc->add_raw_paragraph(
-				'TEI_archeoCHR_reportlink',
+				Notice_Archeomed_Styles::de( 'rapport' ),
 				$doc->plain( 'Rapport final : ' )
 					. $doc->hyperlink( $d['rapport_lien'], $d['rapport_lien'] )
 			);
@@ -6031,7 +6032,7 @@ class Notice_Archeomed_Pactols {
 		$organismes_doc = $this->organismes_de( $d );
 		if ( ! empty( $organismes_doc ) ) {
 			$doc->add_paragraph(
-				'TEI_archeoCHR_holder',
+				Notice_Archeomed_Styles::de( 'organismes' ),
 				array( array( 'text' => $this->libelle_organisme( count( $organismes_doc ) )
 					. ' : ' . implode( ', ', $organismes_doc ) ) )
 			);
@@ -6041,23 +6042,33 @@ class Notice_Archeomed_Pactols {
 		$sujets = $this->termes_pactols_lies( $doc,
 			isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
 		if ( ! empty( $sujets ) ) {
-			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects',
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'mots_cles' ),
 				$doc->plain( 'Mots-clés : ' )
 					. implode( $doc->plain( ', ' ), $sujets ) );
 		}
 
 		// 6. Texte de la notice, un paragraphe par <p>, avec le bloc responsable
 		// collé au point final du dernier paragraphe.
+		//
+		// Ou, si la correspondance des styles le demande, dans un paragraphe
+		// à lui, sans parenthèses : c'est la forme que la documentation
+		// Métopes donne au paragraphe d'autorités.
 		$paragraphes = $doc->html_to_paragraphs( $d['texte_notice'] );
-		$bloc_resp   = $this->responsables_rtf( $doc, $d );
-		if ( empty( $paragraphes ) ) {
-			$paragraphes = array( $bloc_resp );
-		} else {
-			$last                 = count( $paragraphes ) - 1;
-			$paragraphes[ $last ] = $paragraphes[ $last ] . $bloc_resp;
+		$a_part      = Notice_Archeomed_Styles::responsabilites_a_part();
+		$bloc_resp   = $this->responsables_rtf( $doc, $d, ! $a_part );
+		if ( ! $a_part ) {
+			if ( empty( $paragraphes ) ) {
+				$paragraphes = array( $bloc_resp );
+			} else {
+				$last                 = count( $paragraphes ) - 1;
+				$paragraphes[ $last ] = $paragraphes[ $last ] . $bloc_resp;
+			}
 		}
 		foreach ( $paragraphes as $p ) {
-			$doc->add_raw_paragraph( 'Normal', $p );
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'texte' ), $p );
+		}
+		if ( $a_part && '' !== $bloc_resp ) {
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'responsabilites' ), $bloc_resp );
 		}
 
 		// 7. Les illustrations, chacune dans son bloc de figure.
@@ -6082,7 +6093,7 @@ class Notice_Archeomed_Pactols {
 			// pour les figures d'un article : elle sait alors où commence et
 			// où finit la figure, et le préparateur le voit à l'œil sans
 			// ouvrir le volet des styles.
-			$doc->add_paragraph( 'TEI_figure_start',
+			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_debut' ),
 				array( array( 'text' => self::figure_ouvrante() ) ) );
 			// « Fig. 1 Vue générale » et non « Fig. 1 : Vue générale » : c'est
 			// ainsi que la revue compose ses légendes.
@@ -6104,7 +6115,7 @@ class Notice_Archeomed_Pactols {
 			// tard et coûte plus cher.
 			if ( ! empty( $item['figure']['fichier'] )
 				&& method_exists( $doc, 'image_liee' ) ) {
-				$doc->add_raw_paragraph( 'Normal', $doc->image_liee(
+				$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'figure_image' ), $doc->image_liee(
 					// Le document vit dans « style/ » : il remonte d'un cran
 					// pour atteindre l'icono. Sans ce « ../ », le lien ne
 					// résout nulle part et Word pose un cadre vide.
@@ -6128,21 +6139,21 @@ class Notice_Archeomed_Pactols {
 					$titre
 				);
 				if ( '' !== $dessin ) {
-					$doc->add_raw_paragraph( 'Normal', $dessin );
+					$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'figure_image' ), $dessin );
 				}
 			}
 			// « Fig. 1 » porte « TEI_figure_num_inline » : la chaîne sait alors
 			// où finit le numéro et où commence le titre, au lieu d'avoir à le
 			// deviner d'une expression régulière sur le point ou l'espace.
-			$doc->add_raw_paragraph( 'TEI_figure_title',
-				$doc->char_run( 'TEI_figure_num_inline', $numero )
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'figure_titre' ),
+				$doc->char_run( Notice_Archeomed_Styles::de( 'figure_numero' ), $numero )
 					. ( '' !== $item['titre'] ? $doc->plain( Notice_Archeomed_Normes::apres_le_numero() . $item['titre'] ) : '' ) );
 			if ( '' !== $item['legende'] ) {
-				$doc->add_paragraph( 'TEI_figure_caption',
+				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_legende' ),
 					array( array( 'text' => $item['legende'] ) ) );
 			}
 			if ( '' !== $item['credits'] ) {
-				$doc->add_paragraph( 'TEI_figure_credits',
+				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_credits' ),
 					array( array( 'text' => $item['credits'] ) ) );
 			}
 			// Une figure déposée sans un mot : le bloc reste, pour que la
@@ -6156,7 +6167,7 @@ class Notice_Archeomed_Pactols {
 				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 					array( array( 'text' => 'Titre, légende et crédits manquants : à demander à l’auteur.', 'b' => true ) ) );
 			}
-			$doc->add_paragraph( 'TEI_figure_end',
+			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_fin' ),
 				array( array( 'text' => self::figure_fermante() ) ) );
 		}
 
@@ -6343,16 +6354,16 @@ class Notice_Archeomed_Pactols {
 	 * langage. C'est ce qui l'a préservé quand la variable s'est perdue — et
 	 * la raison de l'ôter partout ailleurs.
 	 */
-	private function responsables_rtf( $doc, $d ) {
+	private function responsables_rtf( $doc, $d, $entre_parentheses = true ) {
 		$segments = array();
 
 		$resp = self::nom_d_autorite( $d['resp_prenom'], $d['resp_nom'] );
 		if ( '' !== $resp ) {
 			$seg = $doc->plain( "Responsable de l'opération : " )
-				. $doc->char_run( 'TEI_archeoCHR_name:fld', $resp );
+				. $doc->char_run( Notice_Archeomed_Styles::de( 'responsable' ), $resp, true );
 			if ( '' !== $d['resp_inst'] ) {
 				$seg .= $doc->plain( ', ' )
-					. $doc->char_run( 'TEI_archeoCHR_aff_inline', $d['resp_inst'] );
+					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['resp_inst'] );
 			}
 			$segments[] = $seg;
 		}
@@ -6360,10 +6371,10 @@ class Notice_Archeomed_Pactols {
 		$coresp = self::nom_d_autorite( $d['coresp_prenom'], $d['coresp_nom'] );
 		if ( '' !== $coresp ) {
 			$seg = $doc->plain( "co-responsable de l'opération : " )
-				. $doc->char_run( 'TEI_archeoCHR_name:fld', $coresp );
+				. $doc->char_run( Notice_Archeomed_Styles::de( 'coresponsable' ), $coresp, true );
 			if ( '' !== $d['coresp_inst'] ) {
 				$seg .= $doc->plain( ', ' )
-					. $doc->char_run( 'TEI_archeoCHR_aff_inline', $d['coresp_inst'] );
+					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['coresp_inst'] );
 			}
 			$segments[] = $seg;
 		}
@@ -6371,16 +6382,19 @@ class Notice_Archeomed_Pactols {
 		$coauteur = self::nom_d_autorite( $d['coauteur_prenom'], $d['coauteur_nom'] );
 		if ( '' !== $coauteur ) {
 			$seg = $doc->plain( 'notice rédigée avec : ' )
-				. $doc->char_run( 'TEI_archeoCHR_name:aut', $coauteur );
+				. $doc->char_run( Notice_Archeomed_Styles::de( 'coauteur' ), $coauteur, true );
 			if ( '' !== $d['coauteur_inst'] ) {
 				$seg .= $doc->plain( ', ' )
-					. $doc->char_run( 'TEI_archeoCHR_aff_inline', $d['coauteur_inst'] );
+					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['coauteur_inst'] );
 			}
 			$segments[] = $seg;
 		}
 
 		if ( empty( $segments ) ) {
 			return '';
+		}
+		if ( ! $entre_parentheses ) {
+			return implode( $doc->plain( ' ; ' ), $segments );
 		}
 		return $doc->plain( ' (' )
 			. implode( $doc->plain( ' ; ' ), $segments )
