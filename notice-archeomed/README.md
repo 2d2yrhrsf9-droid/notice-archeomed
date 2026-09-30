@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.48
+# Formulaire des notices d’archéologie médiévale — version 3.49
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
