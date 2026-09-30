@@ -529,6 +529,36 @@ na_verifier( 2 === substr_count( $relu, 'small-caps' ) && false !== strpos( $rel
 	&& false !== strpos( $relu, "<sup>e</sup>\u{00A0}s. et" ) && false !== strpos( $relu, 'ce siècle' ),
 	'la page de relecture montre aussi les siècles en petites capitales', $relu );
 
+WP_CLI::log( 'Les normes éditoriales' );
+$N = 'Notice_Archeomed_Normes';
+$reglages_avant = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$poser_les_normes = function ( $normes ) use ( $reglages_avant, $N ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_avant, array( $N::CLE => $normes ) ) );
+	$N::oublier();
+};
+$poser_les_normes( array() );
+na_verifier( 'abrege' === $N::valeur( 'siecle_mot' ) && 'Fig. 3' === $N::numero_de_figure( 3 ) && '. ' === $N::avant_le_lieu_dit()
+	&& array( 1182, 1772 ) === $N::pixels_des_photographies(),
+	'sans réglage, les normes sont celles de la revue' );
+$poser_les_normes( array( 'siecle_mot' => 'entier', 'siecle_chiffres' => 'capitales', 'siecle_ordinal' => 'ligne',
+	'espace_ponctuation' => 'fine', 'annees' => 'demi_cadratin', 'titre_notice' => 'virgule', 'figure_abreviation' => 'figure',
+	'figure_numero' => 'deux_points', 'photo_ppp' => 600, 'siecle_inconnu' => 'x', 'avis' => array( 'credits' ) ) );
+$doc_normes = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$xml_normes = implode( '', $doc_normes->html_to_paragraphs( '<p>Au xiie s. Puis aux XIIIe-XIVe s., et le mot ; fin.</p>' ) );
+na_verifier( false !== strpos( $xml_normes, 'XII</w:t>' ) && false === strpos( $xml_normes, '<w:smallCaps/>' )
+	&& false === strpos( $xml_normes, 'superscript' ) && false !== strpos( $xml_normes, 'siècle. Puis' )
+	&& false !== strpos( $xml_normes, 'siècles, et' ) && false !== strpos( $xml_normes, "mot\u{202F};" ),
+	'une autre revue : siècle en entier, capitales, ordinal sur la ligne, espace fine', $xml_normes );
+na_verifier( '2004–2005' === na_appel( $plugin, 'annee_normalisee', array( '2004-2005' ) )
+	&& 'Figure 2' === $N::numero_de_figure( 2 ) && ' : ' === $N::apres_le_numero() && ', ' === $N::avant_le_lieu_dit()
+	&& array( 2363, 3544 ) === $N::pixels_des_photographies() && ! $N::avis_actif( 'ordinaux' ) && $N::avis_actif( 'credits' ),
+	'les années, l\'appel des figures, le titre, la norme des images et les avis suivent les réglages' );
+$propres = $N::nettoyer( array( 'siecle_mot' => 'nimporte', 'photo_ppp' => '99999', 'avis' => array( 'credits', 'pirate' ) ) );
+na_verifier( 'abrege' === $propres['siecle_mot'] && 2400 === $propres['photo_ppp'] && array( 'credits' ) === $propres['avis'],
+	'une valeur hors du catalogue retombe sur le choix de la revue, un nombre sur sa borne', $propres );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
+$N::oublier();
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

@@ -21,15 +21,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Notice_Archeomed_Controles {
 
-	/**
-	 * La norme des photographies, annoncée dans le formulaire et contrôlée
-	 * ici : une seule source, pour que l'aide et le contrôle ne divergent pas.
-	 */
-	const PHOTO_LARGEUR_CM = 10;
-	const PHOTO_HAUTEUR_CM = 15;
-	const PHOTO_PPP        = 300;
-	const TRAIT_PPP        = 1200;
-
 	/** Ce qui clôt un paragraphe. */
 	const PONCTUATION_FINALE = '.!?…:;';
 
@@ -37,14 +28,13 @@ class Notice_Archeomed_Controles {
 	const FERMANTS = "»\"'’”)] \u{00A0}\u{202F}\u{2009}\u{2007}\u{2008}\u{200A}\u{2002}\u{2003}\u{2005}";
 
 	/**
-	 * Les pixels qu'il faut pour la norme, petit côté puis grand côté.
+	 * Les pixels qu'il faut pour la norme des photographies, petit côté puis
+	 * grand côté. La norme se règle avec les autres, dans les normes
+	 * éditoriales : l'aide du formulaire et ce contrôle la lisent au même
+	 * endroit.
 	 */
 	public static function pixels_de_la_norme() {
-		$pouce = 2.54;
-		return array(
-			(int) ceil( self::PHOTO_LARGEUR_CM / $pouce * self::PHOTO_PPP ),
-			(int) ceil( self::PHOTO_HAUTEUR_CM / $pouce * self::PHOTO_PPP ),
-		);
+		return Notice_Archeomed_Normes::pixels_des_photographies();
 	}
 
 	/**
@@ -54,15 +44,30 @@ class Notice_Archeomed_Controles {
 		$avis = array();
 		$paragraphes = self::paragraphes( isset( $d['texte_notice'] ) ? $d['texte_notice'] : '' );
 		$figures     = isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array();
-		$avis = array_merge(
-			$avis,
-			self::ponctuation_finale( $paragraphes ),
-			self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) ),
-			self::ordinaux_fautifs( $paragraphes ),
-			self::dates_espacees( $paragraphes ),
-			self::figures( $figures ),
-			self::personnes( $d )
+		// Chaque famille d'avis se donne ou non, selon les normes de la revue.
+		$familles = array(
+			'ponctuation'      => function () use ( $paragraphes ) {
+				return self::ponctuation_finale( $paragraphes );
+			},
+			'figures_appelees' => function () use ( $paragraphes, $figures ) {
+				return self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) );
+			},
+			'ordinaux'         => function () use ( $paragraphes ) {
+				return self::ordinaux_fautifs( $paragraphes );
+			},
+			'annees_espacees'  => function () use ( $paragraphes ) {
+				return self::dates_espacees( $paragraphes );
+			},
+			'personnes'        => function () use ( $d ) {
+				return self::personnes( $d );
+			},
 		);
+		foreach ( $familles as $famille => $calcul ) {
+			if ( Notice_Archeomed_Normes::avis_actif( $famille ) ) {
+				$avis = array_merge( $avis, $calcul() );
+			}
+		}
+		$avis = array_merge( $avis, self::figures( $figures ) );
 		return array_values( array_unique( $avis ) );
 	}
 
@@ -202,21 +207,22 @@ class Notice_Archeomed_Controles {
 		list( $petit, $grand ) = self::pixels_de_la_norme();
 		foreach ( $figures as $item ) {
 			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
-			if ( ! empty( $item['pixels'] ) && is_array( $item['pixels'] ) ) {
+			if ( ! empty( $item['pixels'] ) && is_array( $item['pixels'] ) && Notice_Archeomed_Normes::avis_actif( 'definition' ) ) {
 				$l = (int) $item['pixels'][0];
 				$h = (int) $item['pixels'][1];
+				$ppp = (int) Notice_Archeomed_Normes::valeur( 'photo_ppp' );
 				if ( min( $l, $h ) < $petit || max( $l, $h ) < $grand ) {
-					$avis[] = sprintf( 'Fig. %1$d : %2$s × %3$s pixels, soit %4$s × %5$s cm à %6$d ppp — sous la norme de %7$d × %8$d cm. À vérifier s’il s’agit d’une photographie.',
-						$rang, number_format_i18n( $l ), number_format_i18n( $h ),
-						number_format_i18n( $l / self::PHOTO_PPP * 2.54, 1 ), number_format_i18n( $h / self::PHOTO_PPP * 2.54, 1 ),
-						self::PHOTO_PPP, self::PHOTO_LARGEUR_CM, self::PHOTO_HAUTEUR_CM );
+					$avis[] = sprintf( '%1$s : %2$s × %3$s pixels, soit %4$s × %5$s cm à %6$d ppp — sous la norme de %7$d × %8$d cm. À vérifier s’il s’agit d’une photographie.',
+						Notice_Archeomed_Normes::numero_de_figure( $rang ), number_format_i18n( $l ), number_format_i18n( $h ),
+						number_format_i18n( $l / $ppp * 2.54, 1 ), number_format_i18n( $h / $ppp * 2.54, 1 ),
+						$ppp, (int) Notice_Archeomed_Normes::valeur( 'photo_largeur_cm' ), (int) Notice_Archeomed_Normes::valeur( 'photo_hauteur_cm' ) );
 				}
 			}
 			$titre   = isset( $item['titre'] ) ? trim( $item['titre'] ) : '';
 			$legende = isset( $item['legende'] ) ? trim( $item['legende'] ) : '';
 			$credits = isset( $item['credits'] ) ? trim( $item['credits'] ) : '';
-			if ( '' === $credits && '' !== $titre . $legende ) {
-				$avis[] = sprintf( 'Fig. %d : pas de crédits (auteur, détenteur des droits).', $rang );
+			if ( '' === $credits && '' !== $titre . $legende && Notice_Archeomed_Normes::avis_actif( 'credits' ) ) {
+				$avis[] = sprintf( '%s : pas de crédits (auteur, détenteur des droits).', Notice_Archeomed_Normes::numero_de_figure( $rang ) );
 			}
 		}
 		return $avis;

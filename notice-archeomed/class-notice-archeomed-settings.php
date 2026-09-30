@@ -280,6 +280,7 @@ class Notice_Archeomed_Settings {
 		return array(
 			'destinataires' => __( 'Destinataires', 'notice-archeomed' ),
 			'numero'        => __( 'Numéro et iconographie', 'notice-archeomed' ),
+			'normes'        => __( 'Normes éditoriales', 'notice-archeomed' ),
 			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
@@ -403,6 +404,18 @@ class Notice_Archeomed_Settings {
 					'warning'
 				);
 			}
+		}
+
+		// Les normes éditoriales : un onglet à lui, qui peut aussi rétablir
+		// d'un geste les choix de la revue.
+		if ( ! empty( $input['normes_retablir'] ) ) {
+			unset( $out[ Notice_Archeomed_Normes::CLE ] );
+			Notice_Archeomed_Normes::oublier();
+		} elseif ( ! empty( $input['normes_presentes'] ) ) {
+			$out[ Notice_Archeomed_Normes::CLE ] = Notice_Archeomed_Normes::nettoyer(
+				isset( $input[ Notice_Archeomed_Normes::CLE ] ) && is_array( $input[ Notice_Archeomed_Normes::CLE ] )
+					? $input[ Notice_Archeomed_Normes::CLE ] : array() );
+			Notice_Archeomed_Normes::oublier();
 		}
 
 		if ( isset( $input['turnstile_site'] ) ) {
@@ -1115,6 +1128,89 @@ class Notice_Archeomed_Settings {
 		}());
 		</script>
 		<?php
+	}
+
+	/**
+	 * Les normes éditoriales : ce que la revue a décidé pour ses notices,
+	 * chaque décision avec ses variantes et un exemple. Le choix de la revue
+	 * est coché d'avance et marqué comme tel ; une autre revue coche les
+	 * siens.
+	 */
+	private function onglet_normes( $essai ) {
+		unset( $essai );
+		$nom = self::OPTION_NAME . '[' . Notice_Archeomed_Normes::CLE . ']';
+		self::ouvrir_les_reglages();
+		?>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[normes_presentes]" value="1">
+		<p class="description" style="max-width:46em">
+			Ce que la revue a décidé pour ses notices, et que le formulaire
+			applique sans qu’on ait à le refaire à la main. Chaque choix de la
+			revue est coché d’avance et marqué «&nbsp;choix de la revue&nbsp;».
+			Les documents produits après l’enregistrement suivent les nouvelles
+			normes — un fascicule ou un dossier refabriqué aussi. L’année d’une
+			opération sur plusieurs années, elle, s’écrit au dépôt.
+		</p>
+		<?php
+		foreach ( Notice_Archeomed_Normes::catalogue() as $groupe ) {
+			echo '<h2>' . esc_html( $groupe['titre'] ) . '</h2>';
+			if ( ! empty( $groupe['aide'] ) ) {
+				echo '<p class="description" style="max-width:46em">' . esc_html( $groupe['aide'] ) . '</p>';
+			}
+			echo '<table class="form-table" role="presentation">';
+			foreach ( $groupe['normes'] as $cle => $norme ) {
+				$valeur = Notice_Archeomed_Normes::valeur( $cle );
+				$id     = 'na_norme_' . $cle;
+				echo '<tr><th scope="row">';
+				if ( isset( $norme['min'] ) ) {
+					echo '<label for="' . esc_attr( $id ) . '">' . esc_html( $norme['libelle'] ) . '</label>';
+				} else {
+					echo esc_html( $norme['libelle'] );
+				}
+				echo '</th><td>';
+				if ( isset( $norme['choix'] ) ) {
+					echo '<fieldset><legend class="screen-reader-text">' . esc_html( $norme['libelle'] ) . '</legend>';
+					foreach ( $norme['choix'] as $choix => $texte ) {
+						echo '<label style="display:block;margin:0 0 6px">'
+							. '<input type="radio" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '" value="' . esc_attr( $choix ) . '"'
+							. checked( $valeur, $choix, false ) . '> '
+							. esc_html( $texte[0] )
+							. ( '' !== $texte[1] ? ' <span style="margin-left:.4em;padding:1px 8px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:3px;font-family:Georgia,serif">'
+								. wp_kses( $texte[1], array( 'em' => array(), 'sup' => array(), 'span' => array( 'style' => array() ) ) ) . '</span>' : '' )
+							. ( $norme['defaut'] === $choix ? ' <span class="description">— choix de la revue</span>' : '' )
+							. '</label>';
+					}
+					echo '</fieldset>';
+				} elseif ( isset( $norme['cases'] ) ) {
+					echo '<fieldset><legend class="screen-reader-text">' . esc_html( $norme['libelle'] ) . '</legend>';
+					foreach ( $norme['cases'] as $case => $texte ) {
+						echo '<label style="display:block;margin:0 0 6px">'
+							. '<input type="checkbox" name="' . esc_attr( $nom . '[' . $cle . '][]' ) . '" value="' . esc_attr( $case ) . '"'
+							. checked( in_array( $case, (array) $valeur, true ), true, false ) . '> '
+							. esc_html( $texte ) . '</label>';
+					}
+					echo '</fieldset>';
+				} else {
+					echo '<input type="number" id="' . esc_attr( $id ) . '" class="small-text" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '"'
+						. ' min="' . (int) $norme['min'] . '" max="' . (int) $norme['max'] . '" value="' . esc_attr( $valeur ) . '"> '
+						. esc_html( $norme['unite'] )
+						. ( (int) $norme['defaut'] !== (int) $valeur
+							? ' <span class="description">— la revue : ' . esc_html( $norme['defaut'] . ' ' . $norme['unite'] ) . '</span>' : '' );
+				}
+				if ( ! empty( $norme['aide'] ) ) {
+					echo '<p class="description">' . esc_html( $norme['aide'] ) . '</p>';
+				}
+				echo '</td></tr>';
+			}
+			echo '</table>';
+		}
+		submit_button( __( 'Enregistrer', 'notice-archeomed' ), 'primary', 'submit', false );
+		echo ' ';
+		// Rétablir est un geste secondaire, et il se confirme : il efface les
+		// choix de la page entière.
+		echo '<button type="submit" class="button" name="' . esc_attr( self::OPTION_NAME ) . '[normes_retablir]" value="1"'
+			. ' onclick="return confirm(\'Rétablir toutes les normes de la revue ? Les choix faits ici seront oubliés.\');">'
+			. esc_html__( 'Rétablir les normes de la revue', 'notice-archeomed' ) . '</button>';
+		echo '</form>';
 	}
 
 	/** Le numéro en préparation et ce qu'on fait des illustrations. */

@@ -232,8 +232,8 @@ class Notice_Archeomed_DOCX {
 
 	/** Le texte à imprimer, en typographie française. */
 	private static function typographie( $texte ) {
-		return class_exists( 'Notice_Archeomed_Typographie' )
-			? Notice_Archeomed_Typographie::corriger( $texte ) : (string) $texte;
+		return class_exists( 'Notice_Archeomed_Normes' )
+			? Notice_Archeomed_Normes::typographie( $texte ) : (string) $texte;
 	}
 
 	/**
@@ -254,6 +254,17 @@ class Notice_Archeomed_DOCX {
 	 */
 	private static function siecles( $runs ) {
 		$runs  = array_values( $runs );
+		// Les trois normes des siècles : le mot, les chiffres, l'ordinal.
+		$normes   = class_exists( 'Notice_Archeomed_Normes' );
+		$mot      = $normes ? Notice_Archeomed_Normes::valeur( 'siecle_mot' ) : 'abrege';
+		$chiffres = $normes ? Notice_Archeomed_Normes::valeur( 'siecle_chiffres' ) : 'petites_capitales';
+		$ordinal  = $normes ? Notice_Archeomed_Normes::valeur( 'siecle_ordinal' ) : 'exposant';
+		$ecrire   = function ( $chiffre ) use ( $chiffres ) {
+			if ( 'petites_capitales' === $chiffres ) {
+				return array( 'typo' => strtolower( $chiffre ), 'pc' => true );
+			}
+			return array( 'typo' => 'capitales' === $chiffres ? strtoupper( $chiffre ) : $chiffre, 'pc' => false );
+		};
 		$suite = function ( $depuis, $texte_apres ) use ( &$runs ) {
 			$reste = $texte_apres;
 			for ( $k = $depuis; $k < count( $runs ); $k++ ) {
@@ -275,14 +286,36 @@ class Notice_Archeomed_DOCX {
 		// peut être dans d'autres fragments — l'ordinal en exposant l'est
 		// presque toujours. Un point qui suivait « siècles » en fin de phrase
 		// se confond avec celui de l'abréviation.
+		// Ou, pour une revue qui écrit le mot en entier, « s. » redevient
+		// « siècle » — « siècles » après une suite « XIIe-XIIIe » —, et garde
+		// son point quand il finissait la phrase.
 		$avant = '';
 		foreach ( $runs as $i => $run ) {
-			if ( ! $touchable( $run ) ) {
+			if ( 'tel' === $mot || ! $touchable( $run ) ) {
 				$avant .= is_array( $run ) && isset( $run['text'] ) ? $run['text'] : '';
 				continue;
 			}
 			$texte = $run['typo'];
-			if ( preg_match_all( '/(*UCP)[\s\x{A0}]+siècles?(?![\pL\d])\.?/u', $texte, $trouves, PREG_OFFSET_CAPTURE ) ) {
+			if ( 'entier' === $mot && preg_match_all( '/(*UCP)[\s\x{A0}]+s\.(?=(\s*$|[\s\x{A0}]+\p{Lu})?)/u', $texte, $trouves, PREG_OFFSET_CAPTURE | PREG_SET_ORDER ) ) {
+				$rendu  = '';
+				$depuis = 0;
+				foreach ( $trouves as $t ) {
+					$contexte = $avant . substr( $texte, 0, $t[0][1] );
+					$rendu   .= substr( $texte, $depuis, $t[0][1] - $depuis );
+					if ( preg_match( '/(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(?:er|re|e)$/u', $contexte, $m )
+						&& ! preg_match( '/^[lcLC]+$/u', $m[1] ) ) {
+						$pluriel = preg_match( '/(*UCP)(?:-|–|—|\bet|\bà|\bou)[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e)$/u', $contexte );
+						$fin     = isset( $t[1] ) && '' !== $t[1][0] || ( $t[0][1] + strlen( $t[0][0] ) === strlen( $texte ) );
+						$rendu  .= ' siècle' . ( $pluriel ? 's' : '' ) . ( $fin ? '.' : '' );
+					} else {
+						$rendu .= $t[0][0];
+					}
+					$depuis = $t[0][1] + strlen( $t[0][0] );
+				}
+				$texte = $rendu . substr( $texte, $depuis );
+				$runs[ $i ]['typo'] = $texte;
+			}
+			if ( 'abrege' === $mot && preg_match_all( '/(*UCP)[\s\x{A0}]+siècles?(?![\pL\d])\.?/u', $texte, $trouves, PREG_OFFSET_CAPTURE ) ) {
 				$rendu  = '';
 				$depuis = 0;
 				foreach ( $trouves[0] as $t ) {
@@ -313,9 +346,10 @@ class Notice_Archeomed_DOCX {
 			}
 			$avant = $runs[ $i - 1 ];
 			$tete  = substr( $avant['typo'], 0, -strlen( $m[1] ) );
-			$chiffre         = $avant;
-			$chiffre['typo'] = strtolower( $m[1] );
-			$chiffre['pc']   = true;
+			$chiffre  = array_merge( $avant, $ecrire( $m[1] ) );
+			if ( 'ligne' === $ordinal ) {
+				$runs[ $i ]['sup'] = false;
+			}
 			$remplace = array( $chiffre );
 			if ( '' !== $tete ) {
 				$avant['typo'] = $tete;
@@ -346,8 +380,8 @@ class Notice_Archeomed_DOCX {
 				if ( $t[0][1] > $depuis ) {
 					$rendus[] = array_merge( $run, array( 'typo' => substr( $texte, $depuis, $t[0][1] - $depuis ) ) );
 				}
-				$rendus[] = array_merge( $run, array( 'typo' => strtolower( $chiffre ), 'pc' => true ) );
-				$rendus[] = array_merge( $run, array( 'typo' => $t[2][0], 'sup' => true ) );
+				$rendus[] = array_merge( $run, $ecrire( $chiffre ) );
+				$rendus[] = array_merge( $run, array( 'typo' => $t[2][0], 'sup' => 'exposant' === $ordinal ) );
 				$depuis   = $fin;
 			}
 			if ( $depuis < strlen( $texte ) ) {
@@ -367,7 +401,7 @@ class Notice_Archeomed_DOCX {
 	 * anglais cité. On lui donne donc le texte d'avant et celui d'après.
 	 */
 	private static function typographie_des_fragments( $runs ) {
-		if ( ! class_exists( 'Notice_Archeomed_Typographie' ) ) {
+		if ( ! class_exists( 'Notice_Archeomed_Normes' ) ) {
 			return $runs;
 		}
 		$textes = array();
@@ -385,7 +419,7 @@ class Notice_Archeomed_DOCX {
 			$avant = substr( $paragraphe, 0, $position );
 			$apres = substr( $paragraphe, $position + strlen( $texte ) );
 			$run   = is_array( $run ) ? $run : array( 'text' => $run );
-			$run['typo'] = Notice_Archeomed_Typographie::corriger( $texte, $avant, 'fr', $avant, $apres );
+			$run['typo'] = Notice_Archeomed_Normes::typographie( $texte, $avant, $avant, $apres );
 			$runs[ $i ]  = $run;
 			$position   += strlen( $texte );
 		}

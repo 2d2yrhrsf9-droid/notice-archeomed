@@ -824,7 +824,7 @@ class Notice_Archeomed_File {
 		echo '<ul style="margin:0">';
 		foreach ( $gardees as $rang => $chemin ) {
 			if ( ! file_exists( $chemin ) ) {
-				echo '<li>' . esc_html( sprintf( 'Fig. %d', $rang + 1 ) ) . ' — <em>'
+				echo '<li>' . esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . ' — <em>'
 					. esc_html__( 'fichier introuvable sur le serveur', 'notice-archeomed' ) . '</em></li>';
 				continue;
 			}
@@ -839,7 +839,7 @@ class Notice_Archeomed_File {
 			);
 			$titre = isset( $dites[ $rang ]['titre'] ) ? $dites[ $rang ]['titre'] : '';
 			echo '<li><a href="' . esc_url( $url ) . '">'
-				. esc_html( sprintf( 'Fig. %d', $rang + 1 ) ) . '</a>'
+				. esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . '</a>'
 				. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
 				. ' <span class="description">('
 				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span>'

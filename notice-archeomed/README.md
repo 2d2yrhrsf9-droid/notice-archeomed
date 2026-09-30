@@ -748,6 +748,38 @@ institut entier dès le sixième dépôt, un jour de campagne. La barrière cont
 les robots est Turnstile ; les compteurs ne sont qu'un garde-fou contre le
 martèlement, et seul celui de l'adresse électronique reste serré.
 
+## Les normes éditoriales
+
+Ce que la revue a décidé pour ses notices est rangé dans **Chronique ▸
+Réglages ▸ Normes éditoriales**, et le code ne lit plus que cet onglet.
+Chaque norme y porte ses variantes, un exemple pour chacune, et le choix de
+la revue coché d'avance et marqué comme tel ; « Rétablir les normes de la
+revue » les remet toutes d'un geste. Une autre revue adapte ainsi le
+formulaire à ses propres usages sans toucher au code :
+
+| Norme | Choix de la revue | Variantes |
+|---|---|---|
+| Le mot « siècle » après un siècle en chiffres | abrégé, « XIIe s. » | en toutes lettres ; tel que saisi |
+| Les chiffres romains du siècle | petites capitales | capitales ; tels que saisis |
+| L'ordinal du siècle | en exposant | sur la ligne |
+| Corriger la typographie | oui | non |
+| L'espace devant ; ! ? et dans les guillemets | insécable | fine insécable |
+| Une opération sur plusieurs années | 2004-2005 | 2004–2005 ; 2004/2005 |
+| Entre la parenthèse et le lieu-dit | un point | une virgule |
+| Le lieu-dit du titre | en italique | en romain |
+| L'appel d'une figure | Fig. | Figure ; Ill. |
+| Entre le numéro et le titre d'une figure | une espace | un deux-points ; un point |
+| Norme des photographies, des dessins au trait | 10 × 15 cm à 300 ppp ; 1 200 ppp | chiffres libres |
+| Longueur recommandée du texte | 300 à 700 mots | chiffres libres |
+| Les avis donnés au dépôt | tous | chacun se coche ou se décoche |
+
+Les documents produits après un changement suivent les nouvelles normes —
+un fascicule ou un dossier refabriqué aussi. L'année d'une opération sur
+plusieurs années, elle, s'écrit au dépôt.
+
+La correspondance des champs avec les styles Métopes n'y est pas : ce n'est
+pas une norme de revue, mais le contrat avec la chaîne XML.
+
 ## La typographie
 
 Le texte imprimé du document reçoit la typographie française : espace
