@@ -160,6 +160,9 @@ class Notice_Archeomed_Pactols {
 	const MAX_SENDS_PER_EMAIL   = 25;    // par personne : là, une IP vaut bien une personne
 	const MAX_LOOKUPS_PER_HOUR  = 400;
 	const MAX_FILES           = 3;
+	// L'espace de noms de l'enveloppe des blocs d'index : un nom, non une
+	// adresse à consulter.
+	const ESPACE_INDEXATION   = 'https://archeomed.cnrs.fr/ns/indexation';
 	// Une opération porte parfois sur plusieurs communes : « Beneuvre,
 	// Bure-les-Temple, Duesme, Vanvey (Côte-d'Or), Mont Aigu ». Cinq lignes
 	// couvrent ce qu'on voit passer, et chacune garde son identifiant Pactols.
@@ -694,12 +697,13 @@ class Notice_Archeomed_Pactols {
 			$lier = function ( $items, $capitale = false ) {
 				$out = array();
 				foreach ( (array) $items as $item ) {
-					$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
-					if ( '' === $label ) {
+					if ( '' === ( isset( $item['label'] ) ? trim( (string) $item['label'] ) : '' ) ) {
 						continue;
 					}
-					$label = $capitale ? $this->capitale_initiale( $label )
-						: $this->bas_de_casse( $label );
+					// La graphie du document, forme préférée comprise : la page
+					// montrait la variante saisie, le Word du même dossier la
+					// forme du thésaurus.
+					$label = $this->graphie_imprimee( $item, $capitale );
 					$out[] = ! empty( $item['ark'] )
 						? '<a href="' . esc_url( $item['ark'] ) . '">' . esc_html( $label ) . '</a>'
 						: esc_html( $label );
@@ -737,12 +741,20 @@ class Notice_Archeomed_Pactols {
 			if ( ! empty( $sujets ) ) {
 				$meta[] = esc_html( 'Mots-clés : ' ) . implode( ', ', $sujets );
 			}
+			$autres = $lier( isset( $d['pactols_places_items'] ) ? $d['pactols_places_items'] : array(), true );
+			if ( ! empty( $autres ) ) {
+				$meta[] = esc_html( 1 === count( $autres ) ? 'Autre lieu : ' : 'Autres lieux : ' )
+					. implode( ', ', $autres );
+			}
 			$h .= '<p class="meta">' . implode( '<br>', $meta ) . '</p>';
 
 			// Le texte a déjà traversé « clean_richtext » au dépôt : il ne
 			// porte que huit balises. On le repasse au même tamis plutôt que
 			// de s'en remettre à ce qui est en base.
 			$h .= '<div class="texte">' . $this->clean_richtext( $d['texte_notice'] ) . '</div>';
+			// La mention de responsabilité, que le document accroche au
+			// dernier paragraphe : la page l'omettait.
+			$h .= '<p class="meta">(' . esc_html( $this->responsables_inline( $d ) ) . ')</p>';
 
 			foreach ( (array) ( isset( $d['illustrations'] ) ? $d['illustrations'] : array() ) as $item ) {
 				$h .= '<figure>';
@@ -1771,6 +1783,10 @@ class Notice_Archeomed_Pactols {
 			} else {
 				quill = new Quill('#na-editor', {
 					theme: 'snow',
+					// Les seuls formats que le document sait rendre. Sans cette
+					// liste, un collage depuis Word apportait listes, titres et
+					// citations, que le serveur aplatissait en un paragraphe.
+					formats: ['bold', 'italic', 'script'],
 					modules: {
 						toolbar: [
 							['bold', 'italic'],
@@ -1834,7 +1850,7 @@ class Notice_Archeomed_Pactols {
 								}
 							}
 						}
-						return deptLabel.replace(/^D[ée]partement\s+(du|de la|de l['’]|des|de)\s+/i, '').trim();
+						return deptLabel.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|de\s+)/i, '').trim();
 					})
 					.catch(function () { return ''; });
 			}
@@ -2530,7 +2546,8 @@ class Notice_Archeomed_Pactols {
 			$decode = base64_decode( substr( $brut, 4 ), true );
 			$brut   = ( false !== $decode ) ? $decode : '';
 		}
-		return $this->limit_string( $this->clean_richtext( $brut ), 30000 );
+		// La coupe peut tomber dans une balise : « <str » sortirait en clair.
+		return preg_replace( '/<[^>]*$/', '', $this->limit_string( $this->clean_richtext( $brut ), 30000 ) );
 	}
 
 	private function clean_richtext( $html ) {
@@ -2544,6 +2561,10 @@ class Notice_Archeomed_Pactols {
 			'p' => array(),
 			'br' => array(),
 		);
+		// Un élément de liste, un intertitre ou une citation collés font
+		// chacun un paragraphe. Sans cela, kses ôtait la balise en gardant le
+		// texte, et « Phase 1 : fossé » se soudait à « Phase 2 : mur ».
+		$html = preg_replace( '#</(li|h[1-6]|blockquote|div|pre|tr)\s*>#i', '</p><p>', (string) $html );
 		return wp_kses( $html, $allowed );
 	}
 	private function limit_string( $value, $max ) {
@@ -2722,7 +2743,12 @@ class Notice_Archeomed_Pactols {
 			$valeur = trim( substr( $valeur, 1, -1 ) );
 		}
 		// Et l'on ôte celles qui resteraient aux extrémités seulement.
-		return trim( $valeur, " \t\n\r\0\x0B()" );
+		$valeur = trim( $valeur, " \t\n\r\0\x0B()" );
+		// « l'Aude », « l'Orne », « l'Eure » : le remplissage automatique
+		// laissait l'article, faute d'admettre l'apostrophe collée au nom.
+		// Aucun département ni aucune région ne s'écrit ainsi en tête de
+		// parenthèse ; les notices déjà reçues se redressent ici.
+		return preg_replace( "/^l['’]\\s*(?=\\p{Lu})/u", '', $valeur );
 	}
 
 	/**
@@ -2837,8 +2863,12 @@ class Notice_Archeomed_Pactols {
 	 * séparés finiraient par diverger sans que rien ne le signale.
 	 */
 	private function graphie_imprimee( $item, $capitale = false ) {
+		// La capitale des périodes vaut aussi pour la forme du thésaurus :
+		// sans elle, le dépôt imprimait « Haut Moyen Âge » et le fascicule,
+		// une fois les termes lus, « haut Moyen Âge ».
 		if ( ! empty( $item['prefLabel'] ) ) {
-			return trim( (string) $item['prefLabel'] );
+			$prefere = trim( (string) $item['prefLabel'] );
+			return $capitale ? $this->capitale_initiale( $prefere ) : $prefere;
 		}
 		$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
 		return $capitale ? $this->capitale_initiale( $label ) : $this->bas_de_casse( $label );
@@ -2899,8 +2929,8 @@ class Notice_Archeomed_Pactols {
 				}
 			}
 			if ( '' !== $blocs ) {
-				$corps .= "\n   <zone rend=\"" . esc_attr( $rend ) . "\">"
-					. $blocs . "\n   </zone>";
+				$corps .= "\n   <na:zone rend=\"" . Notice_Archeomed_Thesaurus::xml( $rend ) . "\">"
+					. $blocs . "\n   </na:zone>";
 			}
 		}
 		if ( '' === $corps ) {
@@ -2913,10 +2943,14 @@ class Notice_Archeomed_Pactols {
 		$titre   = trim( $d['commune'] . ' ' . $d['lieu_dit'] );
 		return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
 			. '<!-- Blocs d\'index Pactols calculés depuis les identifiants choisis au dépôt.' . "\n"
-			. '     Chaque « zone » nomme le style du paragraphe où son contenu se colle. -->' . "\n"
-			. '<indexation xmlns="http://www.tei-c.org/ns/1.0" notice="' . esc_attr( $titre ) . '"'
-			. ( '' !== $lu_le ? ' lu-le="' . esc_attr( $lu_le ) . '"' : '' ) . '>'
-			. $corps . "\n" . '</indexation>' . "\n";
+			. '     Chaque « zone » nomme le style du paragraphe où son contenu se colle ;' . "\n"
+			. '     seuls les « index » qu\'elle contient sont du TEI. -->' . "\n"
+			// L'enveloppe a son propre espace de noms : « indexation » n'existe
+			// pas en TEI, et « zone » y désigne une surface de fac-similé.
+			. '<na:indexation xmlns:na="' . self::ESPACE_INDEXATION . '" xmlns="http://www.tei-c.org/ns/1.0"'
+			. ' notice="' . Notice_Archeomed_Thesaurus::xml( $titre ) . '"'
+			. ( '' !== $lu_le ? ' lu-le="' . Notice_Archeomed_Thesaurus::xml( $lu_le ) . '"' : '' ) . '>'
+			. $corps . "\n" . '</na:indexation>' . "\n";
 	}
 
 	/**
@@ -2991,23 +3025,54 @@ class Notice_Archeomed_Pactols {
 		foreach ( $parts as $liste ) {
 			$combien = max( $combien, count( $liste ) );
 		}
+		// Un fichier déposé est une figure, légendée ou non. On jetait la
+		// ligne vide : la figure disparaissait alors du document, du courriel
+		// et du dossier, et la suivante prenait sa place sans que personne
+		// ne le voie. Elle garde désormais son bloc, et la rédaction lit
+		// qu'il lui manque un titre.
+		$combien = max( $combien, $this->fichiers_deposes() );
 		$combien = min( $combien, self::MAX_FILES );
 
 		$items = array();
 		for ( $i = 0; $i < $combien; $i++ ) {
 			$item = array( 'rang' => $i + 1 );
 			foreach ( $parts as $clef => $liste ) {
-				$valeur = isset( $liste[ $i ] ) ? sanitize_textarea_field( (string) $liste[ $i ] ) : '';
+				$valeur = isset( $liste[ $i ] ) ? sanitize_textarea_field( self::chevrons_a_garder( (string) $liste[ $i ] ) ) : '';
 				$item[ $clef ] = $this->limit_string( $valeur, 'legende' === $clef ? 1500 : 400 );
 			}
-			// Une ligne entièrement vide ne dit rien : on ne la garde pas, et
-			// la figure gardera son rang par le nom du fichier joint.
-			if ( '' === trim( $item['titre'] . $item['legende'] . $item['credits'] ) ) {
+			// Une ligne vide sans fichier en face ne dit rien : c'est le seul
+			// cas où on ne la garde pas.
+			if ( $i >= $this->fichiers_deposes()
+				&& '' === trim( $item['titre'] . $item['legende'] . $item['credits'] ) ) {
 				continue;
 			}
 			$items[] = $item;
 		}
 		return $items;
+	}
+
+	/**
+	 * « L. <5 cm, l. >2 cm » : l'assainissement de WordPress prend « <5 … > »
+	 * pour une balise et l'ôte. On écrit d'avance « &lt; » devant un chiffre
+	 * ou un signe égal — la forme que WordPress donne lui-même au chevron
+	 * isolé, et que le document rend en « < ».
+	 */
+	private static function chevrons_a_garder( $texte ) {
+		return (string) preg_replace( '/<(?=[\d=])/', '&lt;', (string) $texte );
+	}
+
+	/** Le nombre de fichiers réellement joints au formulaire. */
+	private function fichiers_deposes() {
+		if ( empty( $_FILES['illustrations']['error'] ) || ! is_array( $_FILES['illustrations']['error'] ) ) {
+			return 0;
+		}
+		$n = 0;
+		foreach ( $_FILES['illustrations']['error'] as $erreur ) {
+			if ( UPLOAD_ERR_NO_FILE !== (int) $erreur ) {
+				$n++;
+			}
+		}
+		return $n;
 	}
 
 	/**
@@ -3455,6 +3520,11 @@ class Notice_Archeomed_Pactols {
 			return '';
 		}
 		$this->remplir_le_document( $doc, $d );
+		if ( method_exists( $doc, 'definir_le_titre' ) ) {
+			$doc->definir_le_titre( trim( $d['commune'] . ' (' . $this->sans_parentheses( $d['departement'] ) . ')'
+				. ( '' !== trim( (string) $d['lieu_dit'] ) ? ', ' . trim( (string) $d['lieu_dit'] ) : '' )
+				. ( '' !== trim( (string) $d['annee'] ) ? ' — ' . trim( (string) $d['annee'] ) : '' ) ) );
+		}
 
 		// Écriture dans le répertoire temporaire, avec un nom parlant pour le classement.
 		$tmp_dir  = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
@@ -3487,15 +3557,17 @@ class Notice_Archeomed_Pactols {
 		// ce qui n'est pas du texte —, et non surligné : le surlignement vient
 		// du gabarit Métopes et veut dire autre chose. Il ne paraît que sur le
 		// document d'une notice seule ; dans un fascicule, la question ne se
-		// pose plus, la rédaction a fait le ménage depuis longtemps.
+		// pose plus, la rédaction a fait le ménage depuis longtemps. Il porte
+		// le style « à supprimer » : en Normal, trois paragraphes précédaient
+		// le titre de l'unité éditoriale, que Métopes veut en tête.
 		if ( $rubrique_en_tete && ! empty( $d['remplace'] ) ) {
-			$doc->add_paragraph( 'Normal', array(
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
 				array( 'text' => '— CORRECTION ' . str_repeat( '—', 50 ) ) ) );
-			$doc->add_paragraph( 'Normal', array( array(
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array(
 				'text' => 'Cette notice remplace le dépôt ' . $d['remplace']
 					. ' : le précédent est à supprimer.',
 				'b'    => true ) ) );
-			$doc->add_paragraph( 'Normal', array(
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
 				array( 'text' => str_repeat( '—', 62 ) ) ) );
 		}
 		$commune_dept = $this->lieux_en_ligne( $d ) . ' (' . $departement . ')';
@@ -3740,14 +3812,23 @@ class Notice_Archeomed_Pactols {
 				$doc->add_paragraph( 'TEI_figure_credits',
 					array( array( 'text' => $item['credits'] ) ) );
 			}
+			// Une figure déposée sans un mot : le bloc reste, pour que la
+			// numérotation tienne, et la rédaction lit ce qui manque dans le
+			// style qui s'ôte d'un geste avant l'import.
+			if ( '' === trim( $item['titre'] . $item['legende'] . $item['credits'] ) ) {
+				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
+					array( array( 'text' => 'Titre, légende et crédits manquants : à demander à l’auteur.', 'b' => true ) ) );
+			}
 			$doc->add_paragraph( 'TEI_figure_end',
 				array( array( 'text' => self::figure_fermante() ) ) );
 		}
 
-		// 8. Commentaires de l'auteur.
+		// 8. Commentaires de l'auteur, adressés à la rédaction : ils ne
+		// s'impriment pas. En Normal, ils restaient dans le texte à verser
+		// après le geste qui ôte le reste du bloc de la rédaction.
 		if ( '' !== $d['commentaires'] ) {
 			$doc->add_paragraph(
-				'Normal',
+				Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 				array(
 					array( 'text' => 'Commentaires : ', 'b' => true ),
 					array( 'text' => $d['commentaires'] ),
@@ -3774,7 +3855,10 @@ class Notice_Archeomed_Pactols {
 			foreach ( $contacts as $nom => $infos ) {
 				$doc->add_raw_paragraph(
 					Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
-					$doc->char_run( $infos['cs'], $nom )
+					// En texte simple : le style d'autorité est déjà posé dans
+					// la mention de responsabilité, et un bloc oublié au
+					// ménage baliserait deux fois les mêmes personnes.
+					$doc->plain( $nom )
 						. $doc->plain( ' : ' )
 						. $doc->hyperlink( 'mailto:' . $infos['mail'], $infos['mail'] )
 				);
@@ -3909,7 +3993,7 @@ class Notice_Archeomed_Pactols {
 	private function responsables_rtf( $doc, $d ) {
 		$segments = array();
 
-		$resp = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
+		$resp = self::nom_d_autorite( $d['resp_prenom'], $d['resp_nom'] );
 		if ( '' !== $resp ) {
 			$seg = $doc->plain( "Responsable de l'opération : " )
 				. $doc->char_run( 'TEI_archeoCHR_name:fld', $resp );
@@ -3920,7 +4004,7 @@ class Notice_Archeomed_Pactols {
 			$segments[] = $seg;
 		}
 
-		$coresp = trim( $d['coresp_prenom'] . ' ' . $d['coresp_nom'] );
+		$coresp = self::nom_d_autorite( $d['coresp_prenom'], $d['coresp_nom'] );
 		if ( '' !== $coresp ) {
 			$seg = $doc->plain( "co-responsable de l'opération : " )
 				. $doc->char_run( 'TEI_archeoCHR_name:fld', $coresp );
@@ -3931,7 +4015,7 @@ class Notice_Archeomed_Pactols {
 			$segments[] = $seg;
 		}
 
-		$coauteur = trim( $d['coauteur_prenom'] . ' ' . $d['coauteur_nom'] );
+		$coauteur = self::nom_d_autorite( $d['coauteur_prenom'], $d['coauteur_nom'] );
 		if ( '' !== $coauteur ) {
 			$seg = $doc->plain( 'notice rédigée avec : ' )
 				. $doc->char_run( 'TEI_archeoCHR_name:aut', $coauteur );
@@ -3948,6 +4032,20 @@ class Notice_Archeomed_Pactols {
 		return $doc->plain( ' (' )
 			. implode( $doc->plain( ' ; ' ), $segments )
 			. $doc->plain( ')' );
+	}
+
+	/**
+	 * Prénom et nom, les blancs du nom rendus insécables.
+	 *
+	 * La chaîne lit un nom de droite à gauche jusqu'à la première espace
+	 * simple pour séparer le nom du prénom : « Jean Le Maho » donnerait
+	 * « Maho », prénom « Jean Le ». Avec « Le Maho » soudé, le découpage
+	 * tombe juste — c'est ce que la documentation Métopes demande pour les
+	 * noms à particule ou doubles.
+	 */
+	private static function nom_d_autorite( $prenom, $nom ) {
+		$nom = trim( (string) preg_replace( '/\s+/u', ' ', (string) $nom ) );
+		return trim( trim( (string) $prenom ) . ' ' . str_replace( ' ', "\u{00A0}", $nom ) );
 	}
 
 	/**
@@ -4032,7 +4130,7 @@ class Notice_Archeomed_Pactols {
 			'commentaires',
 		);
 		foreach ( $text_fields as $f ) {
-			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( wp_unslash( $_POST[ $f ] ) ) : '';
+			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( self::chevrons_a_garder( wp_unslash( $_POST[ $f ] ) ) ) : '';
 		}
 		// Le lien du rapport passe par « esc_url_raw » et non par le tamis des
 		// champs de texte : il finit dans un lien hypertexte du document, et
@@ -4263,7 +4361,11 @@ class Notice_Archeomed_Pactols {
 		$wrap_close = '</div></body></html>';
 
 		$resp_complet = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
-		$subject = 'Notice Archéomed - ' . $d['commune'] . ' (' . $d['departement'] . ')';
+		// Le lieu-dit et l'année : deux notices de Caen étaient indiscernables
+		// dans une boîte triée sur les objets.
+		$subject = 'Notice Archéomed - ' . $d['commune'] . ' (' . $d['departement'] . ')'
+			. ( '' !== trim( (string) $d['lieu_dit'] ) ? ', ' . trim( (string) $d['lieu_dit'] ) : '' )
+			. ( '' !== trim( (string) $d['annee'] ) ? ' — ' . trim( (string) $d['annee'] ) : '' );
 		// Une boîte pleine se trie sur les objets : le bandeau du corps ne se
 		// voit qu'une fois le message ouvert, et deux notices de la même
 		// commune se ressemblent trop pour qu'on ouvre les deux.
@@ -4936,9 +5038,30 @@ class Notice_Archeomed_Pactols {
 	 * sur le site : lesquelles, combien elles pèsent, et où les prendre.
 	 */
 	private function avis_des_pieces_restees( $restees, $id ) {
+		// Chaque pièce se nomme par sa figure : le nom du fichier sur le
+		// serveur est une suite de caractères tirée au sort, qui ne dit à la
+		// rédaction ni de quelle image il s'agit ni où elle va.
+		$originaux = array_values( array_filter(
+			(array) get_post_meta( (int) $id, '_na_illustrations', true ), 'is_string' ) );
+		$saisie    = get_post_meta( (int) $id, '_na_donnees', true );
+		$titres    = array();
+		if ( is_array( $saisie ) && ! empty( $saisie['illustrations'] ) ) {
+			foreach ( (array) $saisie['illustrations'] as $item ) {
+				if ( isset( $item['rang'], $item['titre'] ) ) {
+					$titres[ (int) $item['rang'] ] = (string) $item['titre'];
+				}
+			}
+		}
 		$lignes = array();
 		foreach ( $restees as $fichier ) {
-			$lignes[] = '<li>' . esc_html( basename( $fichier ) )
+			$rang = array_search( $fichier, $originaux, true );
+			if ( false === $rang ) {
+				$nom = basename( $fichier );
+			} else {
+				$nom = 'Fig. ' . ( $rang + 1 )
+					. ( ! empty( $titres[ $rang + 1 ] ) ? ' — ' . $titres[ $rang + 1 ] : '' );
+			}
+			$lignes[] = '<li>' . esc_html( $nom )
 				. ( file_exists( $fichier ) ? ' (' . esc_html( size_format( filesize( $fichier ) ) ) . ')' : '' )
 				. '</li>';
 		}
@@ -5049,14 +5172,20 @@ class Notice_Archeomed_Pactols {
 	private function mettre_a_labri( $fichiers ) {
 		$gardes = array();
 		foreach ( (array) $fichiers as $file ) {
-			if ( ! file_exists( $file ) || false === strpos( $file, 'notice-archeomed-' ) ) {
+			// Le nom seul, jamais le chemin : le dossier s'appelle lui-même
+			// « notice-archeomed-tmp ». Le remplacement portait sur le chemin
+			// entier, visait un dossier « notice-archeomed-garde-tmp » qui
+			// n'existe pas, et le renommage échouait sans bruit — la purge
+			// d'un jour emportait ce qu'on croyait gardé un mois.
+			$nom = basename( $file );
+			if ( ! file_exists( $file ) || 0 !== strpos( $nom, 'notice-archeomed-' ) ) {
 				continue;
 			}
-			if ( false !== strpos( $file, 'notice-archeomed-garde-' ) ) {
+			if ( 0 === strpos( $nom, 'notice-archeomed-garde-' ) ) {
 				$gardes[] = $file;
 				continue;
 			}
-			$garde = str_replace( 'notice-archeomed-', 'notice-archeomed-garde-', $file );
+			$garde = dirname( $file ) . '/' . substr_replace( $nom, 'notice-archeomed-garde-', 0, strlen( 'notice-archeomed-' ) );
 			$gardes[] = @rename( $file, $garde ) ? $garde : $file;
 		}
 		return $gardes;

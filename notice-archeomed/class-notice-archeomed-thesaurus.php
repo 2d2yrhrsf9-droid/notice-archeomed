@@ -193,27 +193,43 @@ class Notice_Archeomed_Thesaurus {
 		if ( ! is_array( $concept ) || empty( $concept['chemin'] ) ) {
 			return '';
 		}
+		// Un concept retiré du thésaurus n'est jamais indexé : sa chaîne
+		// remonte à « ~[termes dépréciés] », et le bloc partirait tel quel
+		// dans le TEI, puisqu'il se colle sans se relire. Le document le
+		// signale déjà, à reprendre avant indexation.
+		if ( ! empty( $concept['deprecie'] ) ) {
+			return '';
+		}
 		$dedans = '';
 		$rang   = count( $concept['chemin'] );
 		// On compose de l'intérieur vers l'extérieur : chaque niveau enveloppe
 		// le précédent, et le plus profond est le terme choisi.
 		foreach ( array_reverse( $concept['chemin'] ) as $etage ) {
 			$attributs = ' n="' . $rang . '" rendition="oe"'
-				. ' source="' . esc_attr( self::partie_ark( $etage['ark'] ) ) . '"';
+				. ' source="' . self::xml( self::partie_ark( $etage['ark'] ) ) . '"';
 			if ( 1 === $rang ) {
-				$attributs = ' indexName="' . esc_attr( $index_name ) . '"' . $attributs
+				$attributs = ' indexName="' . self::xml( $index_name ) . '"' . $attributs
 					. ' xml:base="' . self::BASE_ARK . '"';
 			}
 			$termes = '';
 			foreach ( $etage['labels'] as $langue => $mot ) {
-				$termes .= '<term xml:lang="' . esc_attr( $langue ) . '">'
-					. esc_html( $mot ) . '</term>';
+				$termes .= '<term xml:lang="' . self::xml( $langue ) . '">'
+					. self::xml( $mot ) . '</term>';
 			}
 			$dedans = '<index' . $attributs . '>' . $termes . $dedans . '</index>';
 			--$rang;
 		}
 		return '<index indexName="Index"><term type="orig">'
-			. esc_html( $graphie ) . '</term>' . $dedans . '</index>';
+			. self::xml( $graphie ) . '</term>' . $dedans . '</index>';
+	}
+
+	/**
+	 * L'échappement XML, et non HTML : « esc_html » garde les entités
+	 * nommées — « &nbsp; », « &eacute; » —, que XML ne connaît pas, et une
+	 * autre extension peut le filtrer.
+	 */
+	public static function xml( $texte ) {
+		return Notice_Archeomed_DOCX::esc( $texte );
 	}
 
 	/**
@@ -256,7 +272,14 @@ class Notice_Archeomed_Thesaurus {
 			if ( '' === $langue ) {
 				continue;
 			}
-			$out[ $langue ] = (string) $item['value'];
+			$valeur = (string) $item['value'];
+			// Pactols rend quelques libellés hors de la forme NFC — en arabe
+			// surtout. On les normalise, comme le reste de ce qu'on écrit.
+			if ( class_exists( 'Normalizer' ) ) {
+				$normal = Normalizer::normalize( $valeur, Normalizer::FORM_C );
+				$valeur = false === $normal ? $valeur : $normal;
+			}
+			$out[ $langue ] = $valeur;
 		}
 		return $out;
 	}

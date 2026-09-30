@@ -204,15 +204,18 @@ class Notice_Archeomed_Paquet {
 			$figures    = array();
 			$n          = 0;
 			foreach ( $fichiers as $source ) {
+				// Le rang du fichier, qu'il soit là ou non : un fichier perdu
+				// ne décale pas les suivants, qui garderaient sinon le nom et
+				// la légende de la figure d'avant.
+				++$n;
 				if ( ! file_exists( $source ) ) {
 					// Un fichier reçu puis perdu — effacé du serveur, purgé —
 					// s'écartait sans un mot : le lisez-moi disait alors qu'il
 					// n'y avait « aucune illustration, et c'est normal ».
 					$this->journal[] = basename( (string) $source )
-						. ' : fichier reçu mais introuvable sur le serveur ; la figure manque au dossier.';
+						. ' : fichier reçu mais introuvable sur le serveur ; la figure ' . $n . ' manque au dossier.';
 					continue;
 				}
-				++$n;
 				++$this->comptes['illustrations'];
 				$nom = $this->nom_unique( Notice_Archeomed_Nommage::construire(
 					$modele,

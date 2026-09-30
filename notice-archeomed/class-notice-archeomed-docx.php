@@ -88,9 +88,17 @@ class Notice_Archeomed_DOCX {
 	 */
 	private $error = '';
 
+	/** Le titre du fichier, que Word montre dans ses propriétés. */
+	private $titre = '';
+
 	public function __construct( $template_path ) {
 		$this->template = $template_path;
 		$this->load_template();
+	}
+
+	/** Le titre à inscrire dans les propriétés du document. */
+	public function definir_le_titre( $titre ) {
+		$this->titre = (string) $titre;
 	}
 
 	public function get_error() {
@@ -203,11 +211,23 @@ class Notice_Archeomed_DOCX {
 
 	/**
 	 * Échappe le texte pour insertion dans du XML.
+	 *
+	 * Un seul caractère interdit en XML 1.0 rend le document entier illisible
+	 * — et avec lui le fascicule de la rubrique, qui reprend toutes les
+	 * notices. Or une légende collée depuis Word apporte volontiers son saut
+	 * de ligne manuel (U+000B), que l'assainissement de WordPress laisse
+	 * passer. On le rend en vrai retour à la ligne, et l'on ôte le reste.
+	 * « ENT_SUBSTITUTE » garde le texte quand un octet n'est pas de l'UTF-8 :
+	 * sans lui, la chaîne entière disparaîtrait sans rien dire.
 	 */
 	public static function esc( $text ) {
 		$text = (string) $text;
-		$text = str_replace( array( "\r\n", "\r" ), "\n", $text );
-		return htmlspecialchars( $text, ENT_QUOTES | ENT_XML1, 'UTF-8' );
+		$text = str_replace( array( "\r\n", "\r", "\x0B" ), "\n", $text );
+		// Le chevron isolé, WordPress le garde sous la forme « &lt; » : sans
+		// ceci, le document imprimait « Tessons &lt; 2 cm ».
+		$text = str_replace( '&lt;', '<', $text );
+		$text = htmlspecialchars( $text, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8' );
+		return (string) preg_replace( '/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $text );
 	}
 
 	/**
@@ -420,7 +440,9 @@ class Notice_Archeomed_DOCX {
 			. '<wp:inline distT="0" distB="0" distL="0" distR="0">'
 			. '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/>'
 			. '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
-			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '"/>'
+			// « descr » est le texte de remplacement de l'image : le titre de
+			// la figure, que la documentation Métopes demande.
+			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '" descr="' . self::esc( $nom ) . '"/>'
 			. '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
 			. '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
 			. '<pic:pic>'
@@ -555,6 +577,10 @@ class Notice_Archeomed_DOCX {
 		$sect       = '';
 		if ( is_string( $original ) && preg_match( '#<w:sectPr\b.*?</w:sectPr>#s', $original, $m ) ) {
 			$sect = $m[0];
+			// Le gabarit est au format Letter américain : on impose l'A4, que
+			// porte le stylage de référence et sur lequel se calcule la
+			// largeur utile des figures.
+			$sect = preg_replace( '#<w:pgSz\b[^>]*/>#', '<w:pgSz w:w="11906" w:h="16838"/>', $sect );
 		}
 		$rels_src = $src->getFromName( 'word/_rels/document.xml.rels' );
 
@@ -585,6 +611,15 @@ class Notice_Archeomed_DOCX {
 				$contenu = preg_replace(
 					'#<Relationship\b[^>]*attachedTemplate[^>]*/>#', '', $contenu );
 			}
+			// Les propriétés du gabarit — sa date, ses 453 mots, ses deux
+			// pages — passaient telles quelles dans chaque notice.
+			if ( 'docProps/core.xml' === $name && is_string( $contenu ) ) {
+				$contenu = $this->proprietes_du_document( $contenu );
+			}
+			if ( 'docProps/app.xml' === $name && is_string( $contenu ) ) {
+				$contenu = preg_replace(
+					'#<(TotalTime|Pages|Words|Characters|Lines|Paragraphs|CharactersWithSpaces)>[^<]*</\1>#', '', $contenu );
+			}
 			if ( '[Content_Types].xml' === $name && is_string( $contenu ) ) {
 				$contenu = $this->types_de_contenu( $contenu );
 			}
@@ -611,6 +646,21 @@ class Notice_Archeomed_DOCX {
 		$dest->close();
 
 		return $path;
+	}
+
+	/** Le titre et les dates du document, à la place de ceux du gabarit. */
+	private function proprietes_du_document( $xml ) {
+		$maintenant = gmdate( 'Y-m-d\TH:i:s\Z' );
+		$xml = preg_replace( '#(<dcterms:(created|modified)\b[^>]*>)[^<]*(</dcterms:\2>)#',
+			'${1}' . $maintenant . '${3}', $xml );
+		if ( '' !== $this->titre ) {
+			$titre = self::esc( $this->titre );
+			$xml   = preg_replace_callback( '#<dc:title\s*/>|<dc:title>[^<]*</dc:title>#',
+				function () use ( $titre ) {
+					return '<dc:title>' . $titre . '</dc:title>';
+				}, $xml, 1 );
+		}
+		return $xml;
 	}
 
 	/**

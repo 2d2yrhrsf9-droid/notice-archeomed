@@ -522,11 +522,22 @@ class Notice_Archeomed_File {
 	 * ici plutôt que dans une boîte aux lettres.
 	 */
 	private function afficher_les_illustrations( $post ) {
-		$gardees = (array) get_post_meta( $post->ID, '_na_illustrations', true );
-		$gardees = array_values( array_filter( $gardees, 'file_exists' ) );
+		// Chaque figure garde son rang, présente ou non : renuméroter après
+		// avoir écarté un fichier perdu faisait pointer « Fig. 1 » sur lui,
+		// puisque le téléchargement lit la liste telle qu'enregistrée.
+		$gardees = array_values( array_filter(
+			(array) get_post_meta( $post->ID, '_na_illustrations', true ), 'is_string' ) );
 		$donnees = get_post_meta( $post->ID, '_na_donnees', true );
-		$dites   = ( is_array( $donnees ) && ! empty( $donnees['illustrations'] ) )
-			? (array) $donnees['illustrations'] : array();
+		// Les légendes par leur rang, et non par leur position : une figure
+		// sans légende n'en décale plus les suivantes.
+		$dites = array();
+		if ( is_array( $donnees ) && ! empty( $donnees['illustrations'] ) ) {
+			foreach ( (array) $donnees['illustrations'] as $item ) {
+				if ( isset( $item['rang'] ) ) {
+					$dites[ (int) $item['rang'] - 1 ] = $item;
+				}
+			}
+		}
 
 		echo '<p style="margin-top:14px"><strong>'
 			. esc_html__( 'Illustrations', 'notice-archeomed' ) . '</strong></p>';
@@ -544,6 +555,11 @@ class Notice_Archeomed_File {
 		$poids = 0;
 		echo '<ul style="margin:0">';
 		foreach ( $gardees as $rang => $chemin ) {
+			if ( ! file_exists( $chemin ) ) {
+				echo '<li>' . esc_html( sprintf( 'Fig. %d', $rang + 1 ) ) . ' — <em>'
+					. esc_html__( 'fichier introuvable sur le serveur', 'notice-archeomed' ) . '</em></li>';
+				continue;
+			}
 			$poids += (int) filesize( $chemin );
 			$url = wp_nonce_url(
 				add_query_arg(
@@ -636,11 +652,12 @@ class Notice_Archeomed_File {
 	 * une action demandée à la main, qui en fait bien davantage par ailleurs.
 	 */
 	public function renvois_vers( $rubrique ) {
+		$remplacees = $this->references_remplacees();
 		$ids = get_posts(
 			array(
 				'post_type'      => self::CPT,
 				'post_status'    => 'private',
-				'posts_per_page' => 500,
+				'posts_per_page' => -1,
 				'fields'         => 'ids',
 				'meta_key'       => '_na_classement',
 				'orderby'        => 'meta_value',
@@ -649,6 +666,9 @@ class Notice_Archeomed_File {
 		);
 		$out = array();
 		foreach ( $ids as $id ) {
+			if ( isset( $remplacees[ (string) get_post_meta( $id, '_na_reference', true ) ] ) ) {
+				continue;
+			}
 			$d = get_post_meta( $id, '_na_donnees', true );
 			if ( ! is_array( $d ) || empty( $d ) ) {
 				continue;
@@ -672,11 +692,13 @@ class Notice_Archeomed_File {
 	 * Les notices d'une rubrique, dans l'ordre où elles seront relues.
 	 */
 	public function notices_de_la_rubrique( $rubrique ) {
-		return get_posts(
+		// Sans plafond : à 500, une rubrique de deux campagnes non purgées
+		// perdait des notices sans avis.
+		$ids = get_posts(
 			array(
 				'post_type'      => self::CPT,
 				'post_status'    => 'private',
-				'posts_per_page' => 500,
+				'posts_per_page' => -1,
 				'fields'         => 'ids',
 				'meta_query'     => array(
 					array(
@@ -689,6 +711,43 @@ class Notice_Archeomed_File {
 				'order'          => 'ASC',
 			)
 		);
+		// Une notice corrigée ne paraît qu'une fois : sa correction la
+		// remplace. Les deux figuraient au fascicule et au dossier, et le
+		// bandeau qui l'aurait dit n'y est pas.
+		$remplacees = $this->references_remplacees();
+		if ( empty( $remplacees ) ) {
+			return $ids;
+		}
+		return array_values( array_filter( $ids, function ( $id ) use ( $remplacees ) {
+			return ! isset( $remplacees[ (string) get_post_meta( $id, '_na_reference', true ) ] );
+		} ) );
+	}
+
+	/** Les références que des corrections ont remplacées, en clefs. */
+	private function references_remplacees() {
+		$ids = get_posts(
+			array(
+				'post_type'      => self::CPT,
+				'post_status'    => 'private',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'meta_query'     => array(
+					array(
+						'key'     => '_na_remplace',
+						'value'   => '',
+						'compare' => '!=',
+					),
+				),
+			)
+		);
+		$refs = array();
+		foreach ( $ids as $id ) {
+			$ref = strtoupper( trim( (string) get_post_meta( $id, '_na_remplace', true ) ) );
+			if ( '' !== $ref ) {
+				$refs[ $ref ] = true;
+			}
+		}
+		return $refs;
 	}
 
 	/**

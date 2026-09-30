@@ -352,8 +352,9 @@ na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $s
 	'une version allégée qui ne tient pas : l\'original est nommé, non la copie, et le compte est juste', $serre );
 na_verifier( $une['copies_existaient'] && $une['copies_effacees'],
 	'la copie faite pour le courriel existe pendant l\'envoi et s\'efface après' );
-na_verifier( false !== strpos( $avis_restees, 'orig2.jpg' ) && false !== strpos( $avis_restees, 'post=' . $avec_figures ),
-	'le courriel nomme l\'original resté et donne le lien de la notice' );
+na_verifier( false !== strpos( $avis_restees, 'Fig. 2' ) && false === strpos( $avis_restees, 'orig2.jpg' )
+	&& false !== strpos( $avis_restees, 'post=' . $avec_figures ),
+	'le courriel nomme la figure restée par son numéro, non par le nom du fichier, et donne le lien de la notice', $avis_restees );
 na_verifier( false !== strpos( $avis_legeres, '2 illustrations sont jointes en version allégée' )
 	&& false !== strpos( $avis_legeres, number_format_i18n( Notice_Archeomed_Paquet::LARGEUR_APERCU ) ),
 	'le courriel dit combien de figures sont allégées, et à quelle largeur', $avis_legeres );
@@ -389,6 +390,46 @@ WP_CLI::log( 'L\'icône du menu' );
 $icone = na_appel( 'Notice_Archeomed_File', 'icone_du_menu' );
 na_verifier( 0 === strpos( $icone, 'data:image/svg+xml;base64,' ),
 	'le menu porte l\'arc de la revue', substr( $icone, 0, 40 ) );
+
+WP_CLI::log( 'La relecture TEI' );
+// Un saut de ligne manuel collé depuis Word, et un octet qui n'est pas de
+// l'UTF-8 : le XML reste bien formé, et le texte ne disparaît pas.
+$echappe = Notice_Archeomed_DOCX::esc( "Vue générale\x0Bdu chantier \x0C< 2 cm \xFF" );
+na_verifier( false !== simplexml_load_string( '<t>' . $echappe . '</t>' )
+	&& false !== strpos( $echappe, "générale\ndu chantier" ) && false !== strpos( $echappe, '&lt; 2 cm' ),
+	'un caractère interdit en XML ne rend plus le document illisible', $echappe );
+na_verifier( '&lt; 2 cm' === Notice_Archeomed_DOCX::esc( '&lt; 2 cm' ),
+	'le chevron que WordPress a gardé sous forme d\'entité s\'imprime « < »' );
+$retire = $concept( $a, '2026-10-01' );
+$retire['deprecie'] = true;
+na_verifier( '' === Notice_Archeomed_Thesaurus::index_tei( 'partie d\'église', $retire, 'pactols:Sujets' ),
+	'un concept retiré du thésaurus ne reçoit pas de bloc d\'index' );
+na_verifier( 'Aude' === na_appel( $plugin, 'sans_parentheses', array( "(l'Aude)" ) )
+	&& 'Côte-d’Or' === na_appel( $plugin, 'sans_parentheses', array( 'Côte-d’Or' ) ),
+	'l\'article collé au département s\'ôte, le reste ne bouge pas' );
+$colle = na_appel( $plugin, 'clean_richtext', array( '<p>Trois phases :</p><ol><li>fossé</li><li>mur</li></ol><h2>Fin</h2>' ) );
+$paras = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->html_to_paragraphs( $colle );
+na_verifier( 4 === count( $paras ), 'les éléments de liste et les intertitres collés font chacun un paragraphe', $colle );
+na_verifier( "Jean Le\u{00A0}Maho" === na_appel( $plugin, 'nom_d_autorite', array( ' Jean ', 'Le  Maho' ) ),
+	'le nom à particule reste d\'un bloc pour la chaîne' );
+$tmp = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
+wp_mkdir_p( $tmp );
+$a_garder = $tmp . '/notice-archeomed-essai-' . wp_generate_password( 6, false, false ) . '.docx';
+file_put_contents( $a_garder, 'x' );
+$gardes = na_appel( $plugin, 'mettre_a_labri', array( array( $a_garder ) ) );
+na_verifier( 1 === count( $gardes ) && 0 === strpos( basename( $gardes[0] ), 'notice-archeomed-garde-' )
+	&& dirname( $gardes[0] ) === $tmp && file_exists( $gardes[0] ) && ! file_exists( $a_garder ),
+	'un fichier mis à l\'abri est vraiment renommé, dans son dossier', $gardes );
+@unlink( $gardes[0] );
+$_FILES = array( 'illustrations' => array( 'error' => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ) ) );
+$_POST['illus_titre']   = array( '', 'Plan' );
+$_POST['illus_legende'] = array( '', '' );
+$_POST['illus_credits'] = array( '', '' );
+$figures = na_appel( $plugin, 'collect_illustrations' );
+$_FILES = array();
+unset( $_POST['illus_titre'], $_POST['illus_legende'], $_POST['illus_credits'] );
+na_verifier( 2 === count( $figures ) && 1 === $figures[0]['rang'] && 'Plan' === $figures[1]['titre'],
+	'une figure déposée sans légende garde sa place et son numéro', $figures );
 
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
