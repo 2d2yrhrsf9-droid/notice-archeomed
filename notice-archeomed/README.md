@@ -92,6 +92,23 @@ cURL error 56: Received HTTP code 403 from proxy after CONNECT
 Elle veut dire : demander à l'hébergeur d'ouvrir le flux sortant, et en
 attendant, s'en tenir à la protection locale.
 
+### Suspendre la vérification sur un site d'essai
+
+Un dépôt complet ne s'essaie pas automatiquement tant que la pièce de puzzle
+est là : elle est faite pour arrêter ce qui n'est pas une personne. Sur un
+**site d'essai seulement**, on peut la suspendre dans `wp-config.php` :
+
+```php
+define( 'WP_ENVIRONMENT_TYPE', 'local' );   // ou 'development'
+define( 'NA_PROTECTION', 'aucune' );
+```
+
+La valeur `aucune` n'existe pas dans la page de réglages, et elle est
+ignorée sur un site qui se déclare en production — ce que WordPress fait par
+défaut. Un bandeau le rappelle sur toutes les pages de l'administration tant
+qu'elle est active. Le champ-piège, le délai minimal et les plafonds d'envoi
+restent en place.
+
 ## Les mises à jour depuis GitHub
 
 Le plugin ne vit pas dans le répertoire de WordPress : sans mécanisme, chaque

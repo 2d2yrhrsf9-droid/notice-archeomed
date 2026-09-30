@@ -480,16 +480,42 @@ class Notice_Archeomed_File {
 	 * recevait la même notice deux fois, et l'auteur deux accusés.
 	 */
 	public function prendre( $id ) {
+		global $wpdb;
+		$id = (int) $id;
+		// La lecture puis l'écriture laissaient une fenêtre : deux passages
+		// lisaient « en_attente » l'un après l'autre avant que le premier
+		// n'écrive, et la notice partait deux fois — la seconde sans son
+		// document, que la première venait d'effacer. On le voyait sur un
+		// site d'essai lent, une relance à la main croisant le planificateur.
+		//
+		// La prise est donc une seule écriture conditionnelle : la base ne
+		// change la ligne que si elle porte encore l'ancienne valeur, et un
+		// seul des passages la trouve ainsi.
+		wp_cache_delete( $id, 'post_meta' );
 		$etat = (string) get_post_meta( $id, '_na_etat', true );
-		if ( 'en_cours' === $etat ) {
-			$depuis = (int) get_post_meta( $id, '_na_prise', true );
-			if ( $depuis > time() - self::ABANDON ) {
+		if ( 'en_attente' === $etat ) {
+			$pris = $wpdb->query( $wpdb->prepare(
+				"UPDATE {$wpdb->postmeta} SET meta_value = 'en_cours' WHERE post_id = %d AND meta_key = '_na_etat' AND meta_value = 'en_attente'",
+				$id ) );
+		} elseif ( 'en_cours' === $etat ) {
+			// Une prise abandonnée — la requête qui la tenait est morte en
+			// route — se reprend, mais par la même écriture conditionnelle,
+			// sur l'heure de la prise : deux repreneurs ne la reprennent pas
+			// tous les deux.
+			$depuis = (string) get_post_meta( $id, '_na_prise', true );
+			if ( (int) $depuis > time() - self::ABANDON ) {
 				return false;   // quelqu'un s'en occupe à l'instant
 			}
-		} elseif ( 'en_attente' !== $etat ) {
+			$pris = $wpdb->query( $wpdb->prepare(
+				"UPDATE {$wpdb->postmeta} SET meta_value = %s WHERE post_id = %d AND meta_key = '_na_prise' AND meta_value = %s",
+				(string) time(), $id, $depuis ) );
+		} else {
 			return false;       // déjà partie, ou renoncée
 		}
-		update_post_meta( $id, '_na_etat', 'en_cours' );
+		wp_cache_delete( $id, 'post_meta' );
+		if ( 1 !== (int) $pris ) {
+			return false;       // un autre passage l'a prise juste avant
+		}
 		update_post_meta( $id, '_na_prise', time() );
 		return true;
 	}
@@ -2113,9 +2139,11 @@ class Notice_Archeomed_File {
 			: __( 'Aucune notice ne peut partir : aucune adresse n’est cochée pour recevoir chaque notice.', 'notice-archeomed' );
 		$suite = empty( $retenues )
 			? __( 'Les notices déposées seront conservées en attendant.', 'notice-archeomed' )
-			: sprintf( /* translators: %s : « 2 notices attendent et 1 a échoué ». */
-				__( '%s ; elles seront à envoyer une fois l’adresse enregistrée.', 'notice-archeomed' ),
-				implode( __( ' et ', 'notice-archeomed' ), $retenues ) );
+			: sprintf( /* translators: 1 : « 2 notices attendent et 1 a échoué » ; 2 : « elle sera » ou « elles seront ». */
+				__( '%1$s ; %2$s à envoyer une fois l’adresse enregistrée.', 'notice-archeomed' ),
+				implode( __( ' et ', 'notice-archeomed' ), $retenues ),
+				// Une seule notice en tout : « elle sera », et non « elles seront ».
+				1 === $attente + $echec ? __( 'elle sera', 'notice-archeomed' ) : __( 'elles seront', 'notice-archeomed' ) );
 		echo '<div class="notice notice-error"><p><strong>'
 			. esc_html__( 'Chronique :', 'notice-archeomed' ) . '</strong> '
 			. esc_html( $cause . ' ' . $suite )

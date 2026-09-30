@@ -296,11 +296,12 @@ $composer  = function ( $apercus ) use ( $plugin, $avec_figures, $saisie_fig, $e
 	$copies  = array();
 	$joindre = na_appel( $plugin, 'pieces_du_courriel', array( $avec_figures, $saisie_fig,
 		$existants, $doc_essai, 4000, &$restees, &$legeres, &$copies ) );
-	$noms    = array_map( 'basename', $joindre );
+	$noms    = array_values( array_map( 'basename', $joindre ) );
 	$reste   = array_map( 'basename', $restees );
 	$copies_existaient = ! empty( $copies ) && file_exists( $copies[0] );
 	na_appel( $plugin, 'effacer_les_copies', array( $copies ) );
 	return array( 'noms' => $noms, 'restees' => $reste, 'legeres' => count( $legeres ),
+		'cles' => array_values( array_filter( array_keys( $joindre ), 'is_string' ) ),
 		'copies_existaient' => $copies_existaient,
 		'copies_effacees' => empty( $copies ) || ! file_exists( $copies[0] ) );
 };
@@ -342,6 +343,8 @@ foreach ( array( $doc_essai, $orig1, $orig2, $leger1, $leger2, $lourd1 ) as $f )
 
 na_verifier( array( 'notice.docx', 'orig1.jpg' ) === $sans['noms'] && array( 'orig2.jpg' ) === $sans['restees'],
 	'sans version allégée : le document, puis ce qui tient ; le second original reste sur le site', $sans );
+na_verifier( array( 'Pledehel_Le_Bourg_Fig_2.jpg' ) === $une['cles'],
+	'un original joint part sous le nom de sa figure, non sous son nom tiré au sort', $une );
 na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1_apercu.jpg', 'orig2.jpg' ) === $une['noms']
 	&& array() === $une['restees'] && 1 === $une['legeres'],
 	'la figure 1 en version allégée sous un nom lisible, la 2 en original faute d\'aperçu', $une );
@@ -601,8 +604,48 @@ na_verifier( false !== strpos( $xml_doc, 'w:val="' . $id_de( 'à supprimer' ) . 
 	&& false === strpos( $xml_doc, 'texte. (Responsable' ),
 	'le document suit la correspondance réglée : l\'autorisation à supprimer, les autorités dans leur paragraphe', $xml_doc );
 na_verifier( 'archeoCHR_keywords_subjects' === $ST::rend( 'autres_lieux' ), 'les blocs d\'index nomment le style réglé' );
+$doc_id = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_id, array_merge( $saisie_styles, array( 'id_patriarche' => '14 118 0012' ) ) ) );
+$xml_id = implode( '', $corps->getValue( $doc_id ) );
+na_verifier( false !== strpos( $xml_id, '>14 118 0012<' ), 'un identifiant Patriarche garde ses espaces : la typographie ne le prend pas pour un nombre', $xml_id );
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
 $ST::oublier();
+
+WP_CLI::log( 'La prise d\'une notice' );
+// Deux passages ne l'expédient jamais tous les deux : un seul gagne la prise,
+// même quand l'autre l'a lue « en attente » juste avant qu'elle change.
+$course = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Course' ) );
+update_post_meta( $course, '_na_etat', 'en_attente' );
+$file_course = $GLOBALS['notice_archeomed_file'];
+$premiere = $file_course->prendre( $course );
+$seconde  = $file_course->prendre( $course );
+update_post_meta( $course, '_na_etat', 'en_attente' );
+get_post_meta( $course, '_na_etat', true );   // la valeur en cache : « en_attente »
+global $wpdb;
+$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->postmeta} SET meta_value = 'en_cours' WHERE post_id = %d AND meta_key = '_na_etat'", $course ) );
+$apres_un_autre = $file_course->prendre( $course );
+update_post_meta( $course, '_na_etat', 'en_cours' );
+update_post_meta( $course, '_na_prise', time() - Notice_Archeomed_File::ABANDON - 5 );
+$reprise = $file_course->prendre( $course );
+$reprise_bis = $file_course->prendre( $course );
+wp_delete_post( $course, true );
+na_verifier( $premiere && ! $seconde, 'une notice prise ne se reprend pas' );
+na_verifier( ! $apres_un_autre, 'une notice qu\'un autre passage vient de prendre en base ne se prend pas, même lue « en attente » juste avant' );
+na_verifier( $reprise && ! $reprise_bis, 'une prise abandonnée se reprend une fois, et une seule' );
+
+WP_CLI::log( 'Les bandeaux de l\'administration' );
+// Ils s'exécutent sur chaque page d'administration : une erreur fatale dans
+// l'un d'eux rend toute l'administration inaccessible. On les joue donc,
+// connecté comme administrateur, dans les deux positions de la protection.
+wp_set_current_user( 1 );
+require_once ABSPATH . 'wp-admin/includes/admin.php';
+set_current_screen( 'edit-' . Notice_Archeomed_File::CPT );
+ob_start();
+do_action( 'admin_notices' );
+$bandeaux = ob_get_clean();
+na_verifier( is_string( $bandeaux ), 'les bandeaux de l\'administration s\'affichent sans erreur' );
+na_verifier( false === Notice_Archeomed_Pactols::protection_suspendue() || 'production' !== wp_get_environment_type(),
+	'la vérification anti-robot ne se suspend jamais sur un site de production' );
 
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();

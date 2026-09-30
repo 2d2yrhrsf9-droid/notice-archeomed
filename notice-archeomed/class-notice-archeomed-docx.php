@@ -290,7 +290,7 @@ class Notice_Archeomed_DOCX {
 		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|ou)[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
 		$touchable = function ( $run ) {
 			return is_array( $run ) && empty( $run['raw'] ) && isset( $run['typo'] )
-				&& empty( $run['nom'] ) && ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
+				&& empty( $run['nom'] ) && empty( $run['brut'] ) && ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
 		};
 
 		// « siècle » s'abrège toujours « s. » après un siècle en chiffres :
@@ -420,12 +420,18 @@ class Notice_Archeomed_DOCX {
 		foreach ( $runs as $i => $run ) {
 			$textes[ $i ] = ( is_array( $run ) && empty( $run['raw'] ) && isset( $run['text'] ) )
 				? (string) $run['text'] : ( is_string( $run ) ? $run : '' );
+			// Un identifiant ne se retouche pas : « 14 118 0012 » n'est pas
+			// un nombre en milliers, et une insécable y fausserait la clé.
+			if ( is_array( $run ) && ! empty( $run['brut'] ) ) {
+				$runs[ $i ]['typo'] = $textes[ $i ];
+			}
 		}
 		$paragraphe = implode( '', $textes );
 		$position   = 0;
 		foreach ( $runs as $i => $run ) {
 			$texte = $textes[ $i ];
-			if ( '' === $texte ) {
+			if ( '' === $texte || ( is_array( $run ) && ! empty( $run['brut'] ) ) ) {
+				$position += strlen( $texte );
 				continue;
 			}
 			$avant = substr( $paragraphe, 0, $position );

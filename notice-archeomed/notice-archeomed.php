@@ -125,6 +125,11 @@ add_action(
 		// un bandeau rouge permanent sur une installation qui se protège
 		// autrement finirait par ne plus être lu du tout.
 		$protection = Notice_Archeomed_Settings::get( 'protection' );
+		if ( Notice_Archeomed_Pactols::protection_suspendue() ) {
+			echo '<div class="notice notice-warning"><p><strong>Chronique&nbsp;:</strong> '
+				. esc_html__( 'la vérification anti-robot du formulaire est suspendue (NA_PROTECTION à « aucune », site d’essai). Ne jamais le faire sur le site en ligne.', 'notice-archeomed' )
+				. '</p></div>';
+		}
 		$turnstile_sert = in_array( $protection, array( 'turnstile', 'les_deux' ), true );
 		if ( $turnstile_sert && '' === trim( Notice_Archeomed_Settings::get( 'turnstile_secret' ) ) ) {
 			$lien = Notice_Archeomed_Settings::url( 'formulaire' );
@@ -322,8 +327,29 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function protection() {
 		$mode = Notice_Archeomed_Settings::get( 'protection' );
+		if ( self::protection_suspendue() ) {
+			return 'aucune';
+		}
 		return in_array( $mode, array( 'locale', 'turnstile', 'les_deux' ), true )
 			? $mode : 'locale';
+	}
+
+	/**
+	 * La vérification suspendue, pour un site d'essai seulement.
+	 *
+	 * Un dépôt complet ne s'essayait qu'à la main : la pièce de puzzle est
+	 * faite pour arrêter ce qui n'est pas une personne, et un essai
+	 * automatique n'en est pas une. On peut donc la suspendre — mais par la
+	 * seule constante « NA_PROTECTION » réglée à « aucune » dans wp-config.php,
+	 * jamais depuis la page de réglages, et seulement sur un site qui se
+	 * déclare « local » ou « development ». Un site de production ignore la
+	 * constante et garde sa protection. Le champ-piège, le délai minimal et
+	 * les plafonds d'envoi restent en place.
+	 */
+	public static function protection_suspendue() {
+		return defined( 'NA_PROTECTION' ) && 'aucune' === NA_PROTECTION
+			&& function_exists( 'wp_get_environment_type' )
+			&& in_array( wp_get_environment_type(), array( 'local', 'development' ), true );
 	}
 
 	private function protection_utilise_turnstile() {
@@ -2950,7 +2976,12 @@ class Notice_Archeomed_Pactols {
 				var lieux = [].map.call(form.querySelectorAll('.na-commune'), function (c) { return net(c.value); })
 					.filter(Boolean).slice(0, <?php echo (int) self::MAX_LIEUX; ?>);
 				var dept = sansParentheses(deptInput.value);
+				// Sans le point final qu'on y met par habitude, comme au document —
+				// sauf abréviation : « Le XXe s. ».
 				var lieuDit = net(lieuDitInput.value);
+				if (/\.$/.test(lieuDit) && !/\.\.\.$/.test(lieuDit) && !/(^|\s)(\S{1,3}|\S+\.\S*)\.$/.test(lieuDit)) {
+					lieuDit = lieuDit.slice(0, -1).trim();
+				}
 				function morceau(texte, manque, italique) {
 					var el = document.createElement(italique ? 'em' : 'span');
 					el.textContent = texte;
@@ -6007,7 +6038,7 @@ class Notice_Archeomed_Pactols {
 		if ( '' !== $d['num_autorisation'] ) {
 			$doc->add_paragraph(
 				Notice_Archeomed_Styles::de( 'num_autorisation' ),
-				array( array( 'text' => "Numéro d'autorisation : " . $d['num_autorisation'] ) )
+				array( array( 'text' => "Numéro d'autorisation : " ), array( 'text' => $d['num_autorisation'], 'brut' => true ) )
 			);
 		}
 		// L'identifiant Patriarche partage par défaut le style du numéro
@@ -6019,7 +6050,7 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $d['id_patriarche'] ) ) {
 			$doc->add_paragraph(
 				Notice_Archeomed_Styles::de( 'id_patriarche' ),
-				array( array( 'text' => 'Identifiant Patriarche : ' . $d['id_patriarche'] ) )
+				array( array( 'text' => 'Identifiant Patriarche : ' ), array( 'text' => $d['id_patriarche'], 'brut' => true ) )
 			);
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
@@ -7146,13 +7177,15 @@ class Notice_Archeomed_Pactols {
 		$document = (string) get_post_meta( (int) $id, '_na_document', true );
 		$pieces   = $this->pieces_du_courriel( $id, $d, $produits, $document, strlen( $notice ),
 			$restees, $legeres, $copies );
-		foreach ( $pieces as $rang => $fichier ) {
+		$numero = 0;
+		foreach ( $pieces as $nom => $fichier ) {
+			++$numero;
 			$out[] = $this->poster_brut(
-				'pièce jointe ' . ( $rang + 1 ) . ' : ' . basename( $fichier )
+				'pièce jointe ' . $numero . ' : ' . ( is_string( $nom ) ? $nom : basename( $fichier ) )
 					. ' (' . size_format( filesize( $fichier ) ) . ')',
 				$vers, $sujet, $corps,
 				'' !== $reply ? array_merge( $base, array( $reply ) ) : $base,
-				array_slice( $pieces, 0, $rang + 1 ) );
+				array_slice( $pieces, 0, $numero, true ) );
 		}
 		$this->effacer_les_copies( $copies );
 		if ( empty( $pieces ) ) {
@@ -7229,6 +7262,13 @@ class Notice_Archeomed_Pactols {
 		}
 	}
 
+	/** Le nom lisible d'une pièce jointe : « Caen_Chateau_Fig_2.tif ». */
+	private function nom_de_piece( $d, $rang, $fichier, $suffixe = '' ) {
+		return Notice_Archeomed_Nommage::assainir(
+			( isset( $d['commune'] ) ? $d['commune'] : '' ) . '_' . ( isset( $d['lieu_dit'] ) ? $d['lieu_dit'] : '' ) . '_Fig_' . (int) $rang )
+			. $suffixe . '.' . strtolower( pathinfo( $fichier, PATHINFO_EXTENSION ) );
+	}
+
 	/**
 	 * Les pièces du courriel de la rédaction : le document, puis chaque
 	 * illustration en version allégée — l'original seulement quand il n'y en
@@ -7298,11 +7338,16 @@ class Notice_Archeomed_Pactols {
 			}
 			$poids = $this->poids_encode( $piece );
 			if ( $cumul + $poids <= $budget ) {
-				$joindre[] = $piece;
-				$cumul    += $poids;
+				// Un original part sous le nom de sa figure, comme la version
+				// allégée : son nom sur le serveur est tiré au sort, et ne
+				// disait ni de quelle image il s'agit ni où elle va.
 				if ( $legere ) {
+					$joindre[] = $piece;
 					$legeres[] = $piece;
+				} else {
+					$joindre[ $this->nom_de_piece( $d, $rang, $piece ) ] = $piece;
 				}
+				$cumul += $poids;
 			} else {
 				$restees[] = $original;
 			}
@@ -7315,8 +7360,13 @@ class Notice_Archeomed_Pactols {
 			}
 			$poids = $this->poids_encode( $fichier );
 			if ( $cumul + $poids <= $budget ) {
-				$joindre[] = $fichier;
-				$cumul    += $poids;
+				// Une autorisation de reproduction part sous le nom de sa figure.
+				if ( preg_match( '/autorisation-fig-(\d+)-/', basename( $fichier ), $m ) ) {
+					$joindre[ $this->nom_de_piece( $d, (int) $m[1], $fichier, '_autorisation' ) ] = $fichier;
+				} else {
+					$joindre[] = $fichier;
+				}
+				$cumul += $poids;
 			} else {
 				$restees[] = $fichier;
 			}
