@@ -103,12 +103,12 @@ add_action(
 		// façon — elle ne se paie que sur un hébergement dépourvu de
 		// ZipArchive, où le DOCX ne peut pas se fabriquer.
 		if ( ! file_exists( plugin_dir_path( __FILE__ ) . 'modele-metopes.docx' ) ) {
-			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
+			echo '<div class="notice notice-error"><p><strong>Chronique&nbsp;:</strong> '
 				. esc_html__( 'le gabarit modele-metopes.docx est introuvable. Il porte la feuille de styles Métopes de référence : les notices partiront sans document mis en forme.', 'notice-archeomed' )
 				. '</p></div>';
 		}
 		if ( ! file_exists( plugin_dir_path( __FILE__ ) . 'modele-metopes.rtf' ) && ! class_exists( 'ZipArchive' ) ) {
-			echo '<div class="notice notice-warning"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
+			echo '<div class="notice notice-warning"><p><strong>Chronique&nbsp;:</strong> '
 				. esc_html__( 'cet hébergement n’a pas l’extension ZipArchive, le document doit donc se fabriquer en RTF — et le gabarit modele-metopes.rtf est introuvable.', 'notice-archeomed' )
 				. '</p></div>';
 		}
@@ -121,16 +121,16 @@ add_action(
 		// celui qu'on oublie : il se signale donc en rouge et sur toutes les
 		// pages, tant qu'il manque.
 		if ( empty( Notice_Archeomed_Settings::destinataires_de( 'notices' ) ) ) {
-			$lien = Notice_Archeomed_Settings::url();
-			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
+			$lien = Notice_Archeomed_Settings::url( 'destinataires' );
+			echo '<div class="notice notice-error"><p><strong>Chronique&nbsp;:</strong> '
 				. esc_html__( 'l\'adresse de la rédaction n\'est pas renseignée. Les notices déposées sont conservées, mais aucune ne peut être expédiée tant qu\'elle manque.', 'notice-archeomed' )
 				. ' <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Renseigner l\'adresse', 'notice-archeomed' ) . '</a></p></div>';
 		}
 		$protection = Notice_Archeomed_Settings::get( 'protection' );
 		$turnstile_sert = in_array( $protection, array( 'turnstile', 'les_deux' ), true );
 		if ( $turnstile_sert && '' === trim( Notice_Archeomed_Settings::get( 'turnstile_secret' ) ) ) {
-			$lien = Notice_Archeomed_Settings::url();
-			echo '<div class="notice notice-error"><p><strong>Formulaire des notices d’archéologie médiévale :</strong> '
+			$lien = Notice_Archeomed_Settings::url( 'formulaire' );
+			echo '<div class="notice notice-error"><p><strong>Chronique&nbsp;:</strong> '
 				. esc_html__( 'la clé secrète Turnstile n\'est pas renseignée. Tant qu\'elle est absente, le formulaire refuse toutes les soumissions.', 'notice-archeomed' )
 				. ' <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Renseigner la clé', 'notice-archeomed' ) . '</a></p></div>';
 		}
@@ -266,6 +266,8 @@ class Notice_Archeomed_Pactols {
 		add_shortcode( 'notice_archeomed_pactols', array( $this, 'render_form' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'init', array( $this, 'handle_submission' ) );
+		// Après « init » : il faut savoir quelle page est demandée.
+		add_action( 'template_redirect', array( $this, 'refuser_l_envoi_trop_lourd' ) );
 		add_action( 'wp_ajax_na_pactols_search', array( $this, 'ajax_pactols_search' ) );
 		add_action( 'wp_ajax_nopriv_na_pactols_search', array( $this, 'ajax_pactols_search' ) );
 		// L'expédition ne dépend pas de l'affichage du formulaire : elle a
@@ -504,6 +506,24 @@ class Notice_Archeomed_Pactols {
 		if ( empty( $ids ) ) {
 			wp_die( esc_html__( 'Aucune notice dans cette rubrique.', 'notice-archeomed' ) );
 		}
+		// Un dossier à la fois. L'assemblage dure une à trois minutes sans
+		// rien montrer : on recliquait, ou l'on demandait la rubrique voisine
+		// en attendant, et deux assemblages de cent images se disputaient la
+		// mémoire d'un hébergement mutualisé — et les processus qui servent
+		// les dépôts des auteurs. Six minutes : au-delà de ce que le serveur
+		// accorde à l'assemblage, pour qu'un verrou oublié ne bloque pas.
+		if ( get_transient( 'na_assemblage' ) ) {
+			wp_die(
+				esc_html__( 'Un dossier Métopes est déjà en préparation. Attendez qu’il soit téléchargé avant d’en demander un autre.', 'notice-archeomed' ),
+				esc_html__( 'Dossier en préparation', 'notice-archeomed' ),
+				array( 'back_link' => true, 'response' => 429 )
+			);
+		}
+		set_transient( 'na_assemblage', time(), 6 * MINUTE_IN_SECONDS );
+		// Levé à la fin quoi qu'il arrive : fichier servi, « wp_die » sur une
+		// erreur, durée dépassée ou erreur fatale — PHP appelle les fonctions
+		// d'arrêt dans tous ces cas, là où un « finally » ne voit pas « exit ».
+		register_shutdown_function( 'delete_transient', 'na_assemblage' );
 		// Redimensionner cent images prend plus que les trente secondes
 		// d'usage. On demande du temps ; si l'hébergement refuse, l'encart de
 		// diagnostic l'aura déjà dit.
@@ -1112,8 +1132,8 @@ class Notice_Archeomed_Pactols {
 			$referer = home_url( isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/' );
 		}
 		return remove_query_arg(
-			array( 'notice_envoyee', 'notice_erreur', 'notice_champ', 'notice_ref',
-				'notice_reprise' ),
+			array( 'notice_envoyee', 'notice_erreur', 'notice_champ', 'notice_champs',
+				'notice_ref', 'notice_reprise' ),
 			$referer );
 	}
 
@@ -1198,43 +1218,104 @@ class Notice_Archeomed_Pactols {
 		}
 		return $tag;
 	}
-	private function options_html( $options, $selected = '' ) {
-		$html = '<option value="">- Sélectionner -</option>';
+	/**
+	 * Les options d'une liste déroulante, précédées du choix vide.
+	 *
+	 * Le choix vide disait « - Sélectionner - » partout, y compris sur les
+	 * renvois, où ne rien choisir est une réponse et non un oubli.
+	 */
+	private function options_html( $options, $selected = '', $vide = 'Choisir…' ) {
+		$html = '<option value="">' . esc_html( $vide ) . '</option>';
 		foreach ( $options as $opt ) {
 			$sel   = ( $opt === $selected ) ? ' selected' : '';
 			$html .= '<option value="' . esc_attr( $opt ) . '"' . $sel . '>' . esc_html( $opt ) . '</option>';
 		}
 		return $html;
 	}
-	private function checkboxes_html( $options, $name ) {
-		// $options peut être une liste simple ou un tableau associatif (libellé => ARK).
-		$labels = $this->is_assoc( $options ) ? array_keys( $options ) : $options;
-		$html = '<div class="na-checkboxes">';
-		foreach ( $labels as $opt ) {
-			$html .= '<label class="na-check"><input type="checkbox" name="'
-				. esc_attr( $name ) . '[]" value="' . esc_attr( $opt ) . '"'
-				. $this->repris_coche( $name, $opt ) . '> '
-				. esc_html( $opt ) . '</label>';
+
+	/**
+	 * Les natures cochables, rangées par famille d'opérations.
+	 *
+	 * Douze cases à plat se lisaient mal, et ne disaient rien de ce que la
+	 * Chronique en fait. Les familles sont celles du volume ; une nature
+	 * qu'aucune n'aurait rangée se coche quand même, dans un dernier groupe.
+	 */
+	private function natures_par_famille() {
+		$groupes = array();
+		$rangees = array();
+		foreach ( $this->familles as $famille => $liste ) {
+			$gardees = array();
+			foreach ( $liste as $nature ) {
+				if ( isset( $this->natures[ $nature ] ) ) {
+					$gardees[] = $nature;
+					$rangees[] = $nature;
+				}
+			}
+			if ( ! empty( $gardees ) ) {
+				$groupes[ $famille ] = $gardees;
+			}
 		}
-		$html .= '</div>';
+		$reste = array_values( array_diff( array_keys( $this->natures ), $rangees ) );
+		if ( ! empty( $reste ) ) {
+			$groupes['Autres natures'] = $reste;
+		}
+		return $groupes;
+	}
+
+	/**
+	 * Le groupe « Nature de l'opération » : un vrai groupe de cases, avec sa
+	 * légende, là où il n'y avait qu'un libellé orphelin.
+	 */
+	private function natures_html() {
+		$html  = '<fieldset class="na-sous-groupe na-champ" id="na-nature" aria-describedby="na-nature-aide">';
+		$html .= '<legend>Nature de l’opération</legend>';
+		$html .= '<p class="na-help" id="na-nature-aide">Cochez toutes celles qui s’appliquent.</p>';
+		$html .= '<div class="na-familles na-ancre">';
+		$n = 0;
+		foreach ( $this->natures_par_famille() as $famille => $liste ) {
+			$html .= '<fieldset class="na-famille"><legend>' . esc_html( $famille ) . '</legend>';
+			$html .= '<div class="na-checkboxes">';
+			foreach ( $liste as $opt ) {
+				++$n;
+				$html .= '<label class="na-check" for="na-nature-' . $n . '">'
+					. '<input type="checkbox" id="na-nature-' . $n . '" name="nature[]" value="'
+					. esc_attr( $opt ) . '"' . $this->repris_coche( 'nature', $opt ) . '> '
+					. esc_html( $opt ) . '</label>';
+			}
+			$html .= '</div></fieldset>';
+		}
+		$html .= '</div></fieldset>';
 		return $html;
 	}
-	private function pactols_column_html( $title, $type, $help = '' ) {
-		$html  = '<div class="na-pactols-col">';
-		$html .= '<h4>' . esc_html( $title ) . '</h4>';
-		if ( '' !== $help ) {
-			$html .= '<p class="na-help">' . esc_html( $help ) . '</p>';
-		}
-		for ( $i = 1; $i <= self::PACTOLS_FIELD_COUNT; $i++ ) {
-			$field_id = 'na-pactols-' . $type . '-' . $i;
-			$html .= '<div class="na-pactols-field" data-pactols-field>';
-			$html .= '<label for="' . esc_attr( $field_id ) . '">' . esc_html( $i ) . '</label>';
-			$html .= '<input type="text" id="' . esc_attr( $field_id ) . '" class="na-pactols-input" data-pactols-type="' . esc_attr( $type ) . '" autocomplete="off">';
-			$html .= '<input type="hidden" class="na-pactols-hidden" data-pactols-hidden="' . esc_attr( $type ) . '">';
-			$html .= '<ul class="na-pactols-suggestions" style="display:none;"></ul>';
-			$html .= '</div>';
-		}
+
+	/**
+	 * Une catégorie de mots-clés Pactols : un seul champ de recherche, et les
+	 * termes retenus en jetons.
+	 *
+	 * Il y avait dix cases numérotées par catégorie, trente en tout, qui
+	 * faisaient à elles seules la moitié de la page sur un téléphone. Le
+	 * champ caché que le serveur lit (« pactols_periods »…) ne change pas :
+	 * le script y tient la liste, dans le même JSON qu'avant.
+	 */
+	private function pactols_categorie_html( $type, $titre, $aide, $cherche, $cible ) {
+		$id    = 'na-kw-' . $type;
+		$html  = '<fieldset class="na-kw" id="' . esc_attr( $id ) . '" data-type="' . esc_attr( $type )
+			. '" data-cible="' . esc_attr( $cible ) . '">';
+		$html .= '<legend>' . esc_html( $titre ) . '</legend>';
+		$html .= '<p class="na-help" id="' . esc_attr( $id ) . '-aide">' . $aide . '</p>';
+		$html .= '<ul class="na-jetons" id="' . esc_attr( $id ) . '-jetons" aria-label="'
+			. esc_attr( $titre . ' retenus' ) . '" hidden></ul>';
+		$html .= '<div class="na-combo na-ancre">';
+		$html .= '<label class="na-sr" for="' . esc_attr( $id ) . '-champ">' . esc_html( $cherche ) . '</label>';
+		$html .= '<input type="text" id="' . esc_attr( $id ) . '-champ" class="na-kw-champ" autocomplete="off"'
+			. ' spellcheck="false" enterkeyhint="search" placeholder="Rechercher…"'
+			. ' aria-describedby="' . esc_attr( $id ) . '-aide ' . esc_attr( $id ) . '-compte ' . esc_attr( $id ) . '-etat">';
+		$html .= '<ul class="na-pactols-suggestions" id="' . esc_attr( $id ) . '-liste" hidden></ul>';
 		$html .= '</div>';
+		$html .= '<p class="na-kw-compte" id="' . esc_attr( $id ) . '-compte">0 sur '
+			. (int) self::PACTOLS_FIELD_COUNT . '</p>';
+		$html .= '<p class="na-kw-etat" id="' . esc_attr( $id ) . '-etat" aria-live="polite"></p>';
+		$html .= '</fieldset>';
 		return $html;
 	}
 	/**
@@ -1346,225 +1427,647 @@ class Notice_Archeomed_Pactols {
 	 * champ manquant, fichier refusé, panne de courriel. La raison n'était
 	 * que dans le journal PHP, que l'auteur ne lit pas — il ne pouvait donc
 	 * rien corriger, et recommençait à l'identique.
+	 *
+	 * Les refus de fichiers se disent maintenant selon leur cause : « trois
+	 * au plus, vingt méga-octets » était faux pour qui avait respecté ces
+	 * bornes et buté sur la limite du serveur, plus basse.
 	 */
 	private function message_derreur( $raison ) {
+		$plafonds = $this->plafonds_des_fichiers();
+		$total    = $this->en_mo( $plafonds['total'] ) . "\u{00A0}Mo";
+		$fichier  = $this->en_mo( $plafonds['fichier'] ) . "\u{00A0}Mo";
+		$serveur  = $this->en_mo( $plafonds['requete'] ) . "\u{00A0}Mo";
 		$messages = array(
-			'securite'     => 'La page avait expiré. Rechargez-la et redéposez votre notice — le texte saisi est conservé par le navigateur si vous revenez en arrière.',
-			'quota'        => 'Trop de tentatives depuis cette connexion. Attendez une heure, ou écrivez directement à la rédaction.',
-			'envois'       => 'Le nombre de notices envoyées depuis cette adresse a atteint la limite horaire. Attendez une heure, ou écrivez directement à la rédaction.',
-			'verification' => 'La vérification anti-robot n\'a pas abouti. Glissez la pièce dans son encoche, puis renvoyez le formulaire.',
-			'champs'       => 'Un renseignement obligatoire manque ou n\'est pas valide.',
-			'texte'        => 'Le texte de la notice est vide, ou dépasse la longueur admise.',
-			'fichiers'     => 'Un fichier joint a été refusé : trois au plus, vingt méga-octets en tout, et seulement des .jpg, .tif ou .pdf.',
-			'envoi'        => 'Le courriel n\'a pas pu partir, mais votre notice n\'est pas perdue : elle est conservée sur le serveur, fichier stylé compris.',
+			'securite'        => 'La page était ouverte depuis trop longtemps et a expiré.',
+			'quota'           => 'Trop de tentatives depuis cette connexion. Attendez une heure, ou écrivez directement à la rédaction.',
+			'envois'          => 'Le nombre de notices envoyées depuis cette adresse a atteint la limite horaire. Attendez une heure, ou écrivez directement à la rédaction.',
+			'verification'    => 'La vérification n’a pas abouti. Faites glisser la pièce jusqu’à son encoche, puis renvoyez le formulaire.',
+			'champs'          => 'Un renseignement obligatoire manque ou n’est pas valide.',
+			'texte'           => 'Le texte de la notice est vide, ou dépasse la longueur admise.',
+			'fichiers'        => 'Un fichier joint n’a pas pu être reçu par le serveur. Renvoyez le formulaire.',
+			'fichier_lourd'   => 'Un fichier dépasse la taille que le serveur accepte par fichier (' . $fichier . '). Joignez-en une version plus légère.',
+			'fichier_coupe'   => 'Un fichier n’est arrivé qu’en partie : la connexion a sans doute été coupée pendant l’envoi. Renvoyez le formulaire.',
+			'fichiers_nombre' => 'Trois fichiers au plus peuvent être joints.',
+			'fichiers_total'  => 'Les fichiers joints dépassent ' . $total . ' en tout. Joignez des versions plus légères.',
+			'fichier_format'  => 'Un fichier joint n’est pas en JPEG, TIFF ou PDF, ou son contenu ne correspond pas à son extension.',
+			'trop_lourd'      => 'Votre envoi dépassait ce que le serveur accepte (' . $serveur . ' en tout) : rien n’a été reçu. Joignez des illustrations plus légères, puis renvoyez. Si votre saisie a été gardée sur cet appareil, elle vous est proposée juste en dessous.',
+			'envoi'           => 'Le courriel n’a pas pu partir, mais votre notice n’est pas perdue : elle est conservée sur le serveur, fichier stylé compris.',
 		);
-		$mot = isset( $messages[ $raison ] ) ? $messages[ $raison ] : 'Une erreur est survenue lors de l\'envoi.';
+		$mot = isset( $messages[ $raison ] ) ? $messages[ $raison ] : 'Une erreur est survenue lors de l’envoi.';
+		// Un champ oublié se corrige dans la page : l'adresse de la rédaction
+		// n'y ajouterait qu'une tentation d'écrire au lieu de corriger.
+		if ( in_array( $raison, array( 'champs', 'texte' ), true ) ) {
+			return $this->typo( $mot );
+		}
 		$redaction = $this->adresse_de_contact();
-		return '' !== $redaction
+		return $this->typo( '' !== $redaction
 			? $mot . ' Si le problème persiste, écrivez à ' . esc_html( $redaction ) . '.'
-			: $mot . ' Si le problème persiste, écrivez à la rédaction de la revue.';
+			: $mot . ' Si le problème persiste, écrivez à la rédaction de la revue.' );
 	}
 
 	/**
-	 * Le champ qui manque, dit en français plutôt qu'en nom de variable.
+	 * Les espaces que la typographie française veut insécables : avant les
+	 * deux-points, et une espace fine avant « ; », « ! » et « ? ». Sans
+	 * elles, la ponctuation se retrouvait seule en tête de ligne.
 	 */
-	private function libelle_du_champ( $champ ) {
-		$libelles = array(
-			'rubrique_principale' => 'la rubrique principale',
-			'commune'             => 'le lieu de l’opération',
-			'departement'         => 'la précision entre parenthèses',
-			'lieu_dit'            => 'le lieu-dit ou le complément de titre',
-			'annee'               => 'l\'année de l\'opération',
-			'organisme'           => 'l\'organisme porteur de l\'opération',
-			'resp_prenom'         => 'le prénom du responsable',
-			'resp_nom'            => 'le nom du responsable',
-			'resp_inst'           => 'l\'institution du responsable',
-			'resp_email'          => 'l\'adresse électronique du responsable',
-			'nature'              => 'la nature de l\'opération',
-		);
-		return isset( $libelles[ $champ ] ) ? $libelles[ $champ ] : '';
+	private function typo( $texte ) {
+		$texte = preg_replace( '/ :(?=\s|$)/u', "\u{00A0}:", (string) $texte );
+		return preg_replace( '/ ([;!?])(?=\s|$)/u', "\u{202F}$1", $texte );
 	}
 
-	public function render_form() {
-		ob_start();
-		if ( isset( $_GET['notice_envoyee'] ) ) {
-			if ( '1' === $_GET['notice_envoyee'] ) {
-				// « Reçue » et non « transmise » : en envoi différé, le
-				// courriel part quelques secondes plus tard. Annoncer une
-				// copie déjà envoyée, c'est promettre ce qu'on ne tient pas
-				// encore — et faire écrire à la rédaction ceux qui regardent
-				// leur boîte dans la minute.
-				echo '<div class="na-message na-success">Votre notice a bien été reçue. Vous allez en recevoir une copie par courriel, dans quelques instants. Merci.</div>';
-			} else {
-				$raison = isset( $_GET['notice_erreur'] )
-					? sanitize_key( wp_unslash( $_GET['notice_erreur'] ) ) : '';
-				$champ  = isset( $_GET['notice_champ'] )
-					? $this->libelle_du_champ( sanitize_key( wp_unslash( $_GET['notice_champ'] ) ) ) : '';
-				$mot = $this->message_derreur( $raison );
-				if ( ! empty( $this->reprise() ) ) {
-					$mot .= ' <strong>Votre saisie est conservée : le formulaire est '
-						. 'rempli comme vous l’aviez laissé.</strong>';
-					if ( ! empty( $this->reprise()['illus_titre'] ) ) {
-						$mot .= ' Les fichiers, eux, sont à redéposer — aucun '
-							. 'navigateur ne permet de les remettre en place. Ce que '
-							. 'vous aviez écrit à leur sujet revient dès que vous les '
-							. 'aurez rechoisis.';
-					}
-				}
-				$ref = isset( $_GET['notice_ref'] )
-					? sanitize_key( wp_unslash( $_GET['notice_ref'] ) ) : '';
-				if ( 'envoi' === $raison && '' !== $ref ) {
-					$mot .= ' Citez la référence <strong>' . esc_html( strtoupper( $ref ) )
-						. '</strong> dans votre message : elle permet de la retrouver.';
-				}
-				if ( 'champs' === $raison && '' !== $champ ) {
-					$mot = str_replace(
-						'Un renseignement obligatoire manque ou n\'est pas valide.',
-						'Il manque ' . esc_html( $champ ) . '.',
-						$mot
-					);
-				}
-				echo '<div class="na-message na-error">' . wp_kses_post( $mot ) . '</div>';
+	/**
+	 * Chaque champ que l'on peut refuser : où il se trouve dans la page, et
+	 * ce qu'on dit quand il manque.
+	 *
+	 * Le navigateur et le serveur parlaient chacun à leur façon — une bulle
+	 * ici, « Il manque la rubrique principale » là —, et le serveur
+	 * s'arrêtait au premier champ. Une seule table, lue des deux côtés : le
+	 * même message sous le champ, qu'il vienne du script ou du retour. Elle
+	 * suit l'ordre de la page, qui est celui du récapitulatif.
+	 */
+	private function champs_du_formulaire() {
+		$deux_points = "\u{00A0}:";
+		return array(
+			'commune'             => array( 'na-lieu-1', 'Indiquez la commune ou le territoire de l’opération' ),
+			'departement'         => array( 'na-departement', 'Indiquez ce qui figure entre parenthèses, le plus souvent le département' ),
+			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez ce qui suit le point' . $deux_points . ' lieu-dit, adresse ou nom du projet' ),
+			'nature'              => array( 'na-nature-1', 'Cochez au moins une nature d’opération' ),
+			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
+			'organisme'           => array( 'na-organisme-1', 'Indiquez l’organisme qui gère l’opération' ),
+			'rapport_lien'        => array( 'na-rapport', 'Saisissez l’adresse complète du rapport, par exemple https://hal.science/hal-01234567' ),
+			'resp_prenom'         => array( 'na-resp-prenom', 'Indiquez le prénom du responsable d’opération' ),
+			'resp_nom'            => array( 'na-resp-nom', 'Indiquez le nom du responsable d’opération' ),
+			'resp_email'          => array( 'na-resp-email', 'Indiquez l’adresse électronique du responsable d’opération' ),
+			'resp_inst'           => array( 'na-resp-inst', 'Indiquez l’institution de rattachement du responsable d’opération' ),
+			'email_forme'         => array( 'na-resp-email', 'Saisissez une adresse électronique complète pour le responsable d’opération, par exemple prenom.nom@exemple.fr' ),
+			'coresp_email'        => array( 'na-coresp-email', 'Saisissez une adresse électronique complète pour le co-responsable, par exemple prenom.nom@exemple.fr' ),
+			'coauteur_email'      => array( 'na-coauteur-email', 'Saisissez une adresse électronique complète pour le co-auteur, par exemple prenom.nom@exemple.fr' ),
+			'texte'               => array( 'na-texte', 'Saisissez ou collez le texte de la notice' ),
+			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
+			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
+		);
+	}
+
+	/**
+	 * Les champs que le retour signale, dans l'ordre de la page.
+	 *
+	 * « notice_champs » porte la liste ; « notice_champ », le seul que
+	 * connaissaient les versions précédentes, est encore lu : un lien de
+	 * retour ouvert entre deux versions doit dire la même chose.
+	 */
+	private function champs_signales() {
+		$cles = array();
+		if ( isset( $_GET['notice_champs'] ) && is_string( $_GET['notice_champs'] ) ) {
+			foreach ( explode( ',', wp_unslash( $_GET['notice_champs'] ) ) as $cle ) {
+				$cles[] = sanitize_key( $cle );
 			}
+		}
+		if ( isset( $_GET['notice_champ'] ) && is_string( $_GET['notice_champ'] ) ) {
+			$cles[] = sanitize_key( wp_unslash( $_GET['notice_champ'] ) );
+		}
+		$table = $this->champs_du_formulaire();
+		return array_values( array_intersect( array_keys( $table ), $cles ) );
+	}
+
+	/**
+	 * Ce que le serveur accepte réellement : par fichier, en tout, et pour
+	 * la requête entière.
+	 *
+	 * Le formulaire annonçait vingt méga-octets quelle que soit la
+	 * configuration. Sur un hébergement réglé plus bas, PHP vidait la requête
+	 * trop lourde sans un mot, et l'auteur retrouvait un formulaire vide.
+	 * On garde un méga-octet pour le texte et les autres champs.
+	 */
+	private function plafonds_des_fichiers() {
+		$requete = wp_convert_hr_to_bytes( (string) ini_get( 'post_max_size' ) );
+		$total   = self::MAX_TOTAL_FILESIZE;
+		if ( $requete > 0 ) {
+			$total = min( $total, max( MB_IN_BYTES, $requete - MB_IN_BYTES ) );
+		}
+		$fichier = (int) wp_max_upload_size();
+		$fichier = $fichier > 0 ? min( $fichier, $total ) : $total;
+		return array(
+			'fichier' => $fichier,
+			'total'   => $total,
+			'requete' => $requete > 0 ? $requete : $total,
+		);
+	}
+
+	/** « 20 », « 7,5 » : des méga-octets à la française. */
+	private function en_mo( $octets ) {
+		$mo = round( $octets / MB_IN_BYTES, 1 );
+		return ( floor( $mo ) == $mo ) ? (string) (int) $mo : str_replace( '.', ',', (string) $mo );
+	}
+
+	/**
+	 * Les messages qui ouvrent le formulaire au retour d'un refus, ou quand
+	 * il se rouvre pour une correction.
+	 *
+	 * Ils se plaçaient hors du formulaire, sans focus ni annonce, et ne
+	 * nommaient que le premier champ manquant. Ils nomment maintenant chacun
+	 * d'eux, avec un lien qui y mène.
+	 */
+	private function messages_du_retour() {
+		$html    = '';
+		$reprise = $this->reprise();
+		if ( isset( $_GET['notice_envoyee'] ) && '0' === $_GET['notice_envoyee'] ) {
+			$raison = isset( $_GET['notice_erreur'] )
+				? sanitize_key( wp_unslash( $_GET['notice_erreur'] ) ) : '';
+			$champs = $this->champs_signales();
+			$table  = $this->champs_du_formulaire();
+			$corps  = '';
+			if ( ! empty( $champs ) ) {
+				$corps .= '<h2>' . ( count( $champs ) > 1
+					? 'Il reste ' . count( $champs ) . ' points à corriger'
+					: 'Il reste un point à corriger' ) . '</h2><ul>';
+				foreach ( $champs as $cle ) {
+					$corps .= '<li><a href="#' . esc_attr( $table[ $cle ][0] ) . '">'
+						. esc_html( $table[ $cle ][1] ) . '</a></li>';
+				}
+				$corps .= '</ul>';
+				if ( 'texte' === $raison && array( 'texte' ) !== $champs ) {
+					$corps .= '<p>' . esc_html( $this->message_derreur( 'texte' ) ) . '</p>';
+				}
+			} else {
+				$corps .= '<p>' . wp_kses_post( $this->message_derreur( $raison ) ) . '</p>';
+			}
+			if ( ! empty( $reprise ) ) {
+				$suite = '<strong>Votre saisie est conservée : le formulaire est '
+					. 'rempli comme vous l’aviez laissé.</strong>';
+				if ( ! empty( $reprise['illus_titre'] ) ) {
+					$suite .= ' Les fichiers, eux, sont à redéposer — aucun '
+						. 'navigateur ne permet de les remettre en place. Ce que '
+						. 'vous aviez écrit à leur sujet revient dès que vous les '
+						. 'aurez rechoisis.';
+				}
+				$corps .= '<p>' . $suite . '</p>';
+			}
+			$ref = isset( $_GET['notice_ref'] )
+				? strtoupper( sanitize_key( wp_unslash( $_GET['notice_ref'] ) ) ) : '';
+			if ( 'envoi' === $raison && '' !== $ref ) {
+				$corps .= '<p>Citez la référence <strong>' . esc_html( $ref )
+					. '</strong> dans votre message : elle permet de la retrouver.</p>';
+			}
+			$html .= '<div class="na-message na-error" id="na-message" role="alert" tabindex="-1"'
+				. ' data-champs="' . esc_attr( implode( ',', $champs ) ) . '">' . $this->typo( $corps ) . '</div>';
 		}
 		// Arrivée par le lien de correction : il faut le dire avant qu'on se
 		// demande pourquoi le formulaire est déjà rempli, et prévenir que le
 		// renvoi produit un second dépôt.
-		$reprise = $this->reprise();
 		if ( ! empty( $reprise['remplace'] ) ) {
-			echo '<div class="na-message na-avis"><strong>Vous corrigez la notice déposée '
+			$html .= '<div class="na-message na-avis"><p>' . $this->typo( '<strong>Vous corrigez la notice déposée '
 				. 'sous la référence ' . esc_html( $reprise['remplace'] ) . '.</strong> '
 				. 'Le formulaire est rempli de votre saisie ; les illustrations sont à '
 				. 'redéposer, aucun navigateur ne permettant de les remettre en place. '
 				. 'En le renvoyant, vous produisez un nouveau dépôt : la rédaction sera '
-				. 'avertie qu\'il remplace le précédent, et supprimera celui-ci.</div>';
+				. 'avertie qu’il remplace le précédent, et supprimera celui-ci.' ) . '</p></div>';
 		}
+		return $html;
+	}
+
+	/**
+	 * La page qui suit un dépôt réussi : la référence, et ce qui va se passer.
+	 *
+	 * Le formulaire vide se réaffichait sous un message d'une ligne, ce qui
+	 * invitait à déposer une seconde fois ; la référence était produite mais
+	 * jamais montrée. On s'arrête ici : le formulaire ne revient que si l'on
+	 * demande à déposer une autre notice.
+	 */
+	private function panneau_de_fin() {
+		$ref = isset( $_GET['notice_ref'] )
+			? strtoupper( sanitize_key( wp_unslash( $_GET['notice_ref'] ) ) ) : '';
+		if ( ! preg_match( '/^[A-Z0-9]{6}$/', $ref ) ) {
+			$ref = '';
+		}
+		$redaction = $this->adresse_de_contact();
+		$autre     = remove_query_arg( array( 'notice_envoyee', 'notice_erreur', 'notice_champ',
+			'notice_champs', 'notice_ref', 'notice_reprise' ) );
+		ob_start();
 		?>
 		<style>
-			.na-form { max-width: 980px; }
-			.na-form label { display: block; font-weight: 600; margin: 18px 0 4px; }
-			.na-form .na-req { color: #b00; }
-			.na-form input[type=text],
-			.na-form input[type=email],
-			.na-form select,
-			.na-form textarea { width: 100%; padding: 8px; box-sizing: border-box; font-size: 15px; }
-			.na-form .na-help { font-weight: 400; font-size: 13px; color: #555; margin: 2px 0 0; }
-			.na-form .na-intro { background: #f4f4f0; border-left: 3px solid #8a6d3b; padding: 12px 16px; font-size: 14px; margin-bottom: 8px; }
-			.na-form .na-intro.na-spaced { margin-top: 28px; }
-			.na-form #na-editor { height: 260px; background: #fff; }
-			/* Le thème de la revue donne aux paragraphes une couleur qui,
-			   dans l'éditeur, rendait le texte saisi gris pâle sur blanc.
-			   On la reprend : ce qu'on écrit se lit en noir. */
-			.na-form #na-editor .ql-editor,
-			.na-form #na-editor .ql-editor p { color: #111; }
-			.na-form #na-editor .ql-editor.ql-blank::before { color: #888; }
-			.na-form .na-wordcount { font-size: 13px; color: #555; margin-top: 4px; }
-			.na-form .na-wordcount.na-out { color: #b00; font-weight: 600; }
-			.na-form .na-submit { margin-top: 24px; padding: 12px 28px; font-size: 16px; background: #8a6d3b; color: #fff; border: 0; cursor: pointer; }
-			.na-form .na-submit:hover { background: #6f5730; }
-			.na-message { padding: 14px 18px; margin-bottom: 20px; border-radius: 3px; }
-			.na-success { background: #e6f4e6; border: 1px solid #4a8a4a; }
-			.na-error { background: #f8e6e6; border: 1px solid #b00; }
-			.na-avis { background: #fdf6e3; border: 1px solid #8a6d3b; }
-			.na-form .na-half { display: flex; gap: 16px; }
-			.na-form .na-half > div { flex: 1; }
-			.na-form .na-checkboxes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-top: 4px; }
-			.na-form .na-check { font-weight: 400; margin: 0; display: flex; align-items: center; gap: 6px; }
-			.na-form .na-check input { width: auto; }
-			.na-form .na-autocomplete,
-			.na-form .na-pactols-field { position: relative; }
-			.na-form .na-lieu { position: relative; margin-bottom: 6px; }
-			.na-form .na-lieu input[type=text] { margin: 0; }
-			.na-form input.na-organisme { margin-bottom: 6px; }
-			/* La pièce et son encoche. Tout est dessiné : aucun champ natif ne
-			   sert ici, et un thème qui remet l'apparence des champs à zéro n'a
-			   donc rien à casser. */
-			.na-form .na-puzzle-scene { position: relative; margin-top: 10px; max-width: 420px;
-				border-radius: 6px; overflow: hidden; line-height: 0; }
-			.na-form .na-puzzle-scene canvas.na-puzzle-fond { width: 100%; height: auto; display: block; }
-			.na-form .na-puzzle-scene canvas.na-puzzle-piece { position: absolute; top: 50%;
-				transform: translateY(-50%); height: auto;
-				filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); pointer-events: none; }
-			.na-form .na-puzzle-piste { position: relative; max-width: 420px; height: 34px;
-				margin-top: 8px; background: #ececec; border: 1px solid #cfcfcf; border-radius: 17px; }
-			.na-form .na-puzzle-poignee { position: absolute; top: 50%; left: 0; width: 46px;
-				height: 30px; transform: translate(0, -50%); background: #fff;
-				border: 1px solid #8a6d3b; border-radius: 15px; cursor: grab;
-				touch-action: none; display: flex; align-items: center; justify-content: center;
-				box-shadow: 0 1px 3px rgba(0,0,0,.25); box-sizing: border-box; }
-			.na-form .na-puzzle-poignee::after { content: '⋮⋮'; color: #8a6d3b;
-				font-size: 13px; letter-spacing: -2px; }
-			.na-form .na-prise .na-puzzle-poignee { cursor: grabbing; }
-			.na-form .na-rate .na-puzzle-scene { animation: na-secousse .3s; }
+			.na-fin#na-fin { --na-encre: #1f1a17; --na-sourd: #5b534b; --na-accent: #7d1a1d;
+				--na-succes: #2d6a33; --na-succes-fond: #edf5ee;
+				max-width: 44rem; margin: 0 0 3rem; padding: 1.25rem 1.5rem 1.5rem;
+				font-size: max(16px, 1rem); line-height: 1.55; color: var(--na-encre);
+				background: var(--na-succes-fond); border: 1px solid var(--na-succes);
+				border-left-width: 4px; border-radius: 6px; }
+			.na-fin#na-fin:focus { outline: 3px solid var(--na-accent); outline-offset: 2px; }
+			.na-fin#na-fin h2, .na-fin#na-fin h3 { margin: 0 0 .5rem; padding: 0; color: var(--na-encre);
+				font-weight: 600; line-height: 1.3; letter-spacing: normal; text-transform: none; }
+			.na-fin#na-fin h2 { font-size: max(21px, 1.3125rem); }
+			.na-fin#na-fin h3 { margin-top: 1.25rem; font-size: max(18px, 1.125rem); }
+			.na-fin#na-fin p { margin: 0 0 .75rem; color: var(--na-encre); }
+			.na-fin#na-fin .na-fin-ref { font-size: max(18px, 1.125rem); }
+			.na-fin#na-fin .na-fin-ref strong { font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+			.na-fin#na-fin a { color: var(--na-accent); text-decoration: underline; text-underline-offset: .18em; }
+			.na-fin#na-fin .na-fin-autre { margin: 1.25rem 0 0; }
+		</style>
+		<div class="na-fin" id="na-fin" tabindex="-1" aria-labelledby="na-fin-titre">
+			<h2 id="na-fin-titre">Votre notice est déposée</h2>
+			<?php if ( '' !== $ref ) : ?>
+				<p class="na-fin-ref">Référence&nbsp;: <strong><?php echo esc_html( $ref ); ?></strong></p>
+			<?php endif; ?>
+			<p>Une copie part dans quelques minutes à l’adresse du responsable d’opération, et à celles des autres personnes dont vous avez donné l’adresse. Elle contient un lien pour corriger la notice pendant un mois.</p>
+			<h3>Et ensuite&#8239;?</h3>
+			<p>La rédaction harmonise la forme des notices sans vous consulter&#8239;; elle ne vous écrira que pour une question de fond.</p>
+			<p>Pas de copie d’ici une heure&#8239;? Regardez dans vos courriers indésirables, puis écrivez à
+				<?php if ( '' !== $redaction ) : ?>
+					<a href="mailto:<?php echo esc_attr( antispambot( $redaction ) ); ?>"><?php echo esc_html( antispambot( $redaction ) ); ?></a><?php else : ?>la rédaction de la revue<?php endif; ?><?php echo '' !== $ref ? ' en citant la référence.' : '.'; ?></p>
+			<p class="na-fin-autre"><a href="<?php echo esc_url( $autre ); ?>">Déposer une autre notice</a></p>
+		</div>
+		<script>
+		document.addEventListener('DOMContentLoaded', function () {
+			var fin = document.getElementById('na-fin');
+			if (fin) { fin.focus(); }
+			// La notice est partie : le brouillon gardé sur l'appareil n'a plus
+			// d'objet, et le proposer au prochain dépôt serait une erreur.
+			try { window.localStorage.removeItem('na_brouillon_' + window.location.pathname); } catch (e) {}
+		});
+		</script>
+		<?php
+		return ob_get_clean();
+	}
+
+	/**
+	 * Le formulaire de dépôt.
+	 *
+	 * Soixante-quinze commandes se suivaient à plat, sans introduction ni
+	 * section, le facultatif tout déployé. Elles se rangent maintenant en six
+	 * sections numérotées, et ce qui ne sert qu'à certains — co-responsable,
+	 * co-auteur, lieux et organismes supplémentaires, renvois — s'ouvre à la
+	 * demande. Les noms des champs n'ont pas changé : le serveur reçoit
+	 * exactement ce qu'il recevait. Sans script, rien n'est replié.
+	 */
+	public function render_form() {
+		// Le dépôt a abouti : on le dit, et l'on s'arrête là.
+		if ( isset( $_GET['notice_envoyee'] ) && '1' === $_GET['notice_envoyee'] ) {
+			return $this->panneau_de_fin();
+		}
+		$reprise    = $this->reprise();
+		$correction = ! empty( $reprise['remplace'] );
+		$plafonds   = $this->plafonds_des_fichiers();
+		$total_mo   = $this->en_mo( $plafonds['total'] );
+		$fichier_mo = $this->en_mo( $plafonds['fichier'] );
+		$par_fichier = ( $plafonds['fichier'] < $plafonds['total'] )
+			? ', ' . $fichier_mo . '&nbsp;Mo par fichier' : '';
+		ob_start();
+		?>
+		<style>
+			/* ══ Le formulaire de dépôt ════════════════════════════════════════
+			   Toutes les règles partent de « .na-form#na-form » : la classe pour
+			   le préfixe, l'identifiant pour le poids. Hueman repeignait le
+			   bouton d'envoi (« .themeform button[type=submit] »), grisait le
+			   texte saisi (#777, sous le contraste exigé) et effaçait le focus ;
+			   aucun de ses sélecteurs ne l'emporte plus sans !important. */
+			.na-form#na-form {
+				--na-encre: #1f1a17; --na-sourd: #5b534b; --na-indice: #6f675f;
+				--na-filet: #857c73; --na-filet-doux: #e2dbd0;
+				--na-papier: #fff; --na-fond: #faf8f4; --na-surface: #f3efe7;
+				--na-accent: #7d1a1d; --na-accent-fonce: #5e1215; --na-accent-voile: #f5eaea;
+				--na-erreur: #b3261e; --na-erreur-fond: #fcefed;
+				--na-succes: #2d6a33; --na-succes-fond: #edf5ee;
+				--na-avis: #7a4d00; --na-avis-bord: #b07a1a; --na-avis-fond: #fdf5e4;
+				--na-inerte: #6b645d; --na-inerte-fond: #ece8e1;
+				--na-t-s: max(14px, .875rem); --na-t-m: max(16px, 1rem);
+				--na-t-l: max(18px, 1.125rem); --na-t-xl: max(21px, 1.3125rem);
+				--na-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+				--na-e1: .25rem; --na-e2: .5rem; --na-e3: .75rem; --na-e4: 1rem;
+				--na-e5: 1.5rem; --na-e6: 2rem; --na-e7: 3rem;
+				--na-r1: 3px; --na-r2: 6px; --na-cible: 2.75rem; --na-mesure: 68ch;
+				--na-anneau: 3px solid var(--na-accent);
+				position: relative; max-width: 60rem; margin: 0 0 var(--na-e7); padding: 0;
+				font-size: var(--na-t-m); font-weight: 400; line-height: 1.5; color: var(--na-encre);
+			}
+			.na-form#na-form *, .na-form#na-form *::before, .na-form#na-form *::after { box-sizing: border-box; }
+			.na-form#na-form [hidden] { display: none !important; }
+			.na-form#na-form p { margin: 0; color: inherit; }
+			.na-form#na-form ul, .na-form#na-form ol, .na-form#na-form li { margin: 0; padding: 0; list-style: none; }
+			.na-form#na-form a { color: var(--na-accent); text-decoration: underline; text-underline-offset: .18em; }
+			.na-form#na-form .na-sr { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0;
+				overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+			/* ── Introduction ── */
+			.na-form#na-form .na-intro { margin: 0 0 var(--na-e5); padding: var(--na-e4) var(--na-e5);
+				font-size: var(--na-t-s); line-height: 1.55; background: var(--na-surface);
+				border-left: 3px solid var(--na-accent); border-radius: 0 var(--na-r2) var(--na-r2) 0; }
+			.na-form#na-form .na-intro p + p, .na-form#na-form .na-intro ul + p { margin-top: var(--na-e2); }
+			.na-form#na-form .na-intro ul { margin: var(--na-e1) 0 0; }
+			.na-form#na-form .na-intro li { position: relative; margin: var(--na-e1) 0 0; padding-left: 1.1em; }
+			.na-form#na-form .na-intro li::before { content: "–"; position: absolute; left: 0; color: var(--na-sourd); }
+
+			/* ── Sections numérotées ── */
+			.na-form#na-form .na-section { margin-top: var(--na-e7); padding-top: var(--na-e5); border-top: 1px solid var(--na-filet-doux); }
+			.na-form#na-form .na-section:first-of-type { margin-top: var(--na-e5); }
+			.na-form#na-form h2.na-section-titre { display: flex; align-items: baseline; gap: var(--na-e3);
+				margin: 0 0 var(--na-e2); padding: 0; font-family: inherit; font-size: var(--na-t-xl);
+				font-weight: 600; line-height: 1.25; letter-spacing: -.005em; color: var(--na-encre); text-transform: none; }
+			.na-form#na-form h2.na-section-titre .na-section-num { flex: none; min-width: 1.1em; font-family: var(--na-serif);
+				font-style: italic; font-weight: 400; font-size: 1.45em; line-height: 1; color: var(--na-accent); }
+			.na-form#na-form h2.na-section-titre .na-facultatif,
+			.na-form#na-form h3.na-sous-titre .na-facultatif { font-size: var(--na-t-m); }
+			.na-form#na-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+			.na-form#na-form legend { float: left; width: 100%; margin: 0 0 var(--na-e1); padding: 0; color: var(--na-encre); }
+			.na-form#na-form fieldset > legend + * { clear: both; }
+			.na-form#na-form .na-sous-groupe { margin-top: var(--na-e5); }
+			.na-form#na-form .na-sous-groupe > legend,
+			.na-form#na-form h3.na-sous-titre { margin: 0 0 var(--na-e1); padding: 0; font-family: inherit;
+				font-size: var(--na-t-l); font-weight: 600; line-height: 1.3; letter-spacing: normal; color: var(--na-encre); text-transform: none; }
+			.na-form#na-form .na-sous-groupe > legend { margin-bottom: var(--na-e2); }
+			.na-form#na-form .na-bloc { padding: var(--na-e3) 0 var(--na-e1) var(--na-e4); border-left: 3px solid var(--na-filet-doux); }
+
+			/* ── Champ : libellé, aide, saisie, erreur ── */
+			.na-form#na-form .na-champ { margin-top: var(--na-e5); }
+			.na-form#na-form .na-sous-groupe .na-champ { margin-top: var(--na-e4); }
+			.na-form#na-form label, .na-form#na-form .na-libelle { display: block; margin: 0 0 var(--na-e1); padding: 0;
+				font-size: var(--na-t-m); font-weight: 600; line-height: 1.35; color: var(--na-encre);
+				text-transform: none; letter-spacing: normal; }
+			.na-form#na-form .na-facultatif { font-weight: 400; color: var(--na-sourd); }
+			.na-form#na-form .na-help { max-width: var(--na-mesure); margin: 0 0 var(--na-e2);
+				font-size: var(--na-t-s); font-weight: 400; line-height: 1.5; color: var(--na-sourd); }
+			.na-form#na-form .na-help strong { font-weight: 600; color: var(--na-encre); }
+			.na-form#na-form input[type=text], .na-form#na-form input[type=email], .na-form#na-form input[type=url],
+			.na-form#na-form select, .na-form#na-form textarea {
+				display: block; width: 100%; max-width: 100%; min-height: var(--na-cible); margin: 0;
+				padding: .5625rem .75rem; font: inherit; font-size: var(--na-t-m); line-height: 1.5; color: var(--na-encre);
+				background-color: var(--na-papier); border: 1px solid var(--na-filet); border-radius: var(--na-r1);
+				box-shadow: none; text-shadow: none; -webkit-appearance: none; appearance: none;
+				transition: border-color .15s ease; }
+			.na-form#na-form textarea { min-height: 6.5rem; resize: vertical; }
+			.na-form#na-form select { padding-right: 2.5rem; cursor: pointer;
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%235b534b' stroke-width='2'/%3E%3C/svg%3E");
+				background-repeat: no-repeat; background-position: right .875rem center; background-size: 12px 8px; }
+			.na-form#na-form ::placeholder { color: var(--na-indice); opacity: 1; }
+			.na-form#na-form input[type=text]:hover, .na-form#na-form input[type=email]:hover,
+			.na-form#na-form select:hover, .na-form#na-form textarea:hover { border-color: var(--na-encre); }
+			.na-form#na-form input[type=text]:focus, .na-form#na-form input[type=email]:focus,
+			.na-form#na-form select:focus, .na-form#na-form textarea:focus {
+				border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; box-shadow: none; color: var(--na-encre); }
+			.na-form#na-form [aria-invalid="true"]:not(fieldset) { border-color: var(--na-erreur); box-shadow: inset 4px 0 0 var(--na-erreur); }
+			.na-form#na-form .na-champ--erreur { padding-left: var(--na-e3); border-left: 4px solid var(--na-erreur); }
+			.na-form#na-form .na-erreur-champ { display: flex; gap: .45em; align-items: flex-start; max-width: var(--na-mesure);
+				margin: 0 0 var(--na-e2); font-size: var(--na-t-s); font-weight: 600; line-height: 1.4; color: var(--na-erreur); }
+			.na-form#na-form .na-erreur-champ::before { content: "!"; flex: none; display: inline-grid; place-items: center;
+				width: 1.3em; height: 1.3em; margin-top: .05em; border-radius: 50%; font-size: .85em; font-weight: 700;
+				color: #fff; background: var(--na-erreur); }
+			.na-form#na-form .na-auto { margin-top: var(--na-e1); font-size: var(--na-t-s); color: var(--na-avis); }
+			.na-form#na-form .na-auto:empty { display: none; }
+			.na-form#na-form .na-half { display: grid; gap: 0 var(--na-e5);
+				grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+			.na-form#na-form .na-half > * { min-width: 0; }
+			/* Côte à côte, deux aides de longueur inégale décalaient les champs :
+			   la saisie se cale en bas de sa colonne. */
+			.na-form#na-form .na-half > .na-champ { display: flex; flex-direction: column; }
+			.na-form#na-form .na-half > .na-champ > :is(input, select, .na-erreur-champ) { margin-top: auto; }
+			.na-form#na-form .na-half > .na-champ > .na-erreur-champ + :is(input, select) { margin-top: 0; }
+			.na-form#na-form .na-court input { max-width: 16rem; }
+
+			/* ── Lignes répétées et blocs repliés ── */
+			.na-form#na-form .na-lieu, .na-form#na-form .na-ligne { position: relative; margin-top: var(--na-e3); }
+			.na-form#na-form .na-lieu:first-of-type, .na-form#na-form .na-ligne:first-of-type { margin-top: 0; }
+			.na-form#na-form .na-lieu label, .na-form#na-form .na-ligne label { font-size: var(--na-t-s); }
+			.na-form#na-form .na-combo { position: relative; }
+			.na-form#na-form button.na-ajout { display: inline-block; width: auto; max-width: 100%; text-align: left;
+				min-height: var(--na-cible); margin: var(--na-e3) 0 0; padding: .5625rem .875rem;
+				font: inherit; font-size: var(--na-t-m); font-weight: 600; line-height: 1.3; text-transform: none; letter-spacing: normal;
+				color: var(--na-accent); background: var(--na-papier); border: 1px dashed var(--na-accent);
+				border-radius: var(--na-r1); box-shadow: none; cursor: pointer; -webkit-appearance: none; appearance: none; }
+			.na-form#na-form button.na-ajout:hover { background: var(--na-accent-voile); border-style: solid; }
+			.na-form#na-form button.na-ajout + .na-help { margin-top: var(--na-e1); }
+			.na-form#na-form button.na-retirer, .na-form#na-form button.na-fileremove,
+			.na-form#na-form button.na-puzzle-rejouer, .na-form#na-form button.na-pactols-remplacer,
+			.na-form#na-form button.na-bouton-lien {
+				display: inline-flex; align-items: center; gap: .3em; width: auto; min-height: 2rem; margin: var(--na-e1) 0 0;
+				padding: .25rem .125rem; font: inherit; font-size: var(--na-t-s); font-weight: 600; line-height: 1.3;
+				text-transform: none; letter-spacing: normal; color: var(--na-accent); background: none; border: 0;
+				border-radius: var(--na-r1); text-decoration: underline; text-underline-offset: .2em; box-shadow: none;
+				cursor: pointer; -webkit-appearance: none; appearance: none; }
+			.na-form#na-form button.na-retirer:hover, .na-form#na-form button.na-fileremove:hover,
+			.na-form#na-form button.na-puzzle-rejouer:hover, .na-form#na-form button.na-pactols-remplacer:hover,
+			.na-form#na-form button.na-bouton-lien:hover { color: var(--na-accent-fonce); background: none; text-decoration-thickness: 2px; }
+			.na-form#na-form button:focus-visible, .na-form#na-form input[type=checkbox]:focus-visible { outline: var(--na-anneau); outline-offset: 2px; }
+
+			/* ── Aperçu du titre ── */
+			.na-form#na-form .na-apercu { margin-top: var(--na-e5); padding: var(--na-e3) var(--na-e4);
+				background: var(--na-fond); border-left: 3px solid var(--na-accent); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
+			.na-form#na-form .na-apercu-mot { font-size: var(--na-t-s); color: var(--na-sourd); }
+			.na-form#na-form .na-apercu-titre { margin-top: var(--na-e1); font-size: var(--na-t-l); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+			.na-form#na-form .na-apercu-titre em { font-style: italic; font-weight: 400; }
+			.na-form#na-form .na-apercu-titre .na-manque { font-weight: 400; color: var(--na-indice); }
+
+			/* ── Nature de l'opération ── */
+			.na-form#na-form .na-familles { display: grid; gap: var(--na-e3); }
+			.na-form#na-form .na-famille > legend { margin: 0; font-size: var(--na-t-s); font-weight: 600; color: var(--na-sourd); }
+			.na-form#na-form .na-checkboxes { display: grid; gap: 0 var(--na-e5);
+				grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
+			.na-form#na-form label.na-check { display: flex; align-items: center; gap: var(--na-e3); min-height: var(--na-cible);
+				margin: 0; padding: var(--na-e1) var(--na-e2); font-weight: 400; line-height: 1.35; border-radius: var(--na-r1); cursor: pointer; }
+			.na-form#na-form label.na-check:hover { background: var(--na-fond); }
+			.na-form#na-form input[type=checkbox] { -webkit-appearance: auto; appearance: auto; flex: none;
+				width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--na-accent); cursor: pointer; }
+
+			/* ── Autocomplétion ── */
+			.na-form#na-form .na-suggestions, .na-form#na-form .na-pactols-suggestions {
+				position: absolute; z-index: 60; top: calc(100% + 2px); left: 0; right: 0;
+				max-height: min(22rem, 55vh); overflow-y: auto; overscroll-behavior: contain;
+				margin: 0; padding: var(--na-e1) 0; background: var(--na-papier);
+				border: 1px solid var(--na-filet); border-radius: var(--na-r1); box-shadow: 0 8px 24px rgba(31, 26, 23, .16); }
+			.na-form#na-form .na-suggestions > li, .na-form#na-form .na-pactols-suggestions > li {
+				display: flex; flex-wrap: wrap; align-items: center; min-height: var(--na-cible); margin: 0;
+				padding: .5rem .75rem .5rem calc(.75rem - 3px); font-size: var(--na-t-m); line-height: 1.35;
+				color: var(--na-encre); border-left: 3px solid transparent; cursor: pointer; list-style: none; }
+			.na-form#na-form .na-suggestions > li:hover, .na-form#na-form .na-pactols-suggestions > li:hover { background: var(--na-fond); }
+			.na-form#na-form .na-suggestions > li[aria-selected="true"], .na-form#na-form .na-pactols-suggestions > li[aria-selected="true"] {
+				background: var(--na-accent-voile); border-left-color: var(--na-accent); color: var(--na-accent); font-weight: 600; }
+			.na-form#na-form .na-suggestion-precision { margin-left: .35em; font-weight: 400; color: var(--na-sourd); }
+
+			/* ── Éditeur ── */
+			.na-form#na-form .na-editeur { margin-top: var(--na-e2); }
+			.na-form#na-form .ql-toolbar.ql-snow { display: flex; flex-wrap: wrap; gap: var(--na-e1); padding: var(--na-e1) var(--na-e2);
+				font-family: inherit; background: var(--na-fond); border: 1px solid var(--na-filet);
+				border-bottom-color: var(--na-filet-doux); border-radius: var(--na-r1) var(--na-r1) 0 0; }
+			.na-form#na-form .ql-toolbar.ql-snow .ql-formats { display: flex; gap: 2px; margin: 0 var(--na-e3) 0 0; }
+			.na-form#na-form .ql-toolbar.ql-snow button { float: none; width: 2.25rem; height: 2.25rem; padding: .4375rem;
+				border-radius: var(--na-r1); background: none; color: var(--na-encre); }
+			.na-form#na-form .ql-toolbar.ql-snow button:hover { background: var(--na-surface); }
+			.na-form#na-form .ql-toolbar.ql-snow button.ql-active { background: var(--na-accent-voile); }
+			.na-form#na-form .ql-snow .ql-stroke { stroke: var(--na-encre); }
+			.na-form#na-form .ql-snow .ql-fill { fill: var(--na-encre); }
+			.na-form#na-form .ql-snow button:hover .ql-stroke, .na-form#na-form .ql-snow button.ql-active .ql-stroke { stroke: var(--na-accent); }
+			.na-form#na-form .ql-snow button:hover .ql-fill, .na-form#na-form .ql-snow button.ql-active .ql-fill { fill: var(--na-accent); }
+			/* La hauteur fixe de 260 px faisait un défilement dans le défilement
+			   sur téléphone : l'éditeur grandit avec le texte. */
+			.na-form#na-form #na-editor.ql-container.ql-snow { height: auto; font-family: inherit; font-size: var(--na-t-m);
+				background: var(--na-papier); border: 1px solid var(--na-filet); border-top: 0; border-radius: 0 0 var(--na-r1) var(--na-r1); }
+			.na-form#na-form #na-editor.ql-container.ql-snow:focus-within { outline: var(--na-anneau); outline-offset: 2px; border-color: var(--na-accent); }
+			.na-form#na-form #na-editor .ql-editor { min-height: 20rem; padding: var(--na-e4);
+				font-size: var(--na-t-m); line-height: 1.65; color: var(--na-encre); }
+			.na-form#na-form #na-editor .ql-editor p { margin: 0; color: inherit; }
+			.na-form#na-form #na-editor .ql-editor.ql-blank::before { left: var(--na-e4); right: var(--na-e4); font-style: normal; color: var(--na-indice); }
+			.na-form#na-form .na-texte--erreur #na-editor.ql-container.ql-snow,
+			.na-form#na-form .na-texte--erreur .ql-toolbar.ql-snow { border-color: var(--na-erreur); }
+			.na-form#na-form .na-wordcount { margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
+			.na-form#na-form .na-wordcount.na-out { color: var(--na-avis); font-weight: 600; }
+
+			/* ── Mots-clés Pactols ── */
+			/* Trois colonnes quand elles tiennent à l'aise (54 rem), une seule
+			   sinon : jamais deux plus une, qui laissait un trou. */
+			.na-form#na-form .na-pactols-grid { display: grid; gap: var(--na-e4); margin-top: var(--na-e3);
+				grid-template-columns: repeat(auto-fit, minmax(min(100%, max(calc((100% - 2rem) / 3), calc((54rem - 100%) * 999))), 1fr)); }
+			.na-form#na-form .na-kw { min-width: 0; padding: var(--na-e4); background: var(--na-fond); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r2); }
+			.na-form#na-form .na-kw > legend { margin: 0 0 var(--na-e1); font-size: var(--na-t-m); font-weight: 600; line-height: 1.3; }
+			.na-form#na-form .na-jetons { display: flex; flex-wrap: wrap; gap: var(--na-e2); margin: 0 0 var(--na-e2); }
+			.na-form#na-form .na-jeton { display: inline-flex; align-items: center; gap: .25em; max-width: 100%;
+				padding: .1875rem .25rem .1875rem .625rem; font-size: var(--na-t-s); line-height: 1.35;
+				background: var(--na-papier); border: 1px solid var(--na-succes); border-radius: 999px; }
+			.na-form#na-form .na-jeton-libre { border-style: dashed; border-color: var(--na-filet); }
+			.na-form#na-form .na-jeton-texte { min-width: 0; overflow-wrap: break-word; }
+			.na-form#na-form .na-jeton-note { color: var(--na-sourd); }
+			.na-form#na-form button.na-jeton-retirer { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem;
+				min-height: 0; margin: 0; padding: 0; font: inherit; font-size: 1.1rem; line-height: 1; color: var(--na-sourd);
+				background: none; border: 0; border-radius: 50%; box-shadow: none; cursor: pointer; -webkit-appearance: none; appearance: none; }
+			.na-form#na-form button.na-jeton-retirer:hover { color: #fff; background: var(--na-accent); }
+			.na-form#na-form .na-kw-compte { margin-top: var(--na-e1); font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
+			.na-form#na-form .na-kw-etat { margin-top: var(--na-e1); font-size: var(--na-t-s); line-height: 1.45; color: var(--na-avis); }
+			.na-form#na-form .na-kw-etat:empty { display: none; }
+			.na-form#na-form .na-pactols-avis { margin: var(--na-e2) 0 0; padding: var(--na-e2) var(--na-e3);
+				font-size: var(--na-t-s); line-height: 1.45; color: var(--na-avis); background: var(--na-avis-fond);
+				border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
+
+			/* ── Illustrations ── */
+			.na-form#na-form .na-depot-fichiers { position: relative; display: grid; justify-items: center; gap: var(--na-e2);
+				margin-top: var(--na-e2); padding: var(--na-e5) var(--na-e4); text-align: center; background: var(--na-fond);
+				border: 2px dashed var(--na-filet); border-radius: var(--na-r2); }
+			/* Le vrai champ couvre toute la zone, invisible : un clic ouvre le
+			   sélecteur, un fichier lâché n'importe où y tombe. Cela marche aussi
+			   sans script. */
+			.na-form#na-form .na-depot-fichiers input[type=file] { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 1;
+				width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; cursor: pointer; font-size: 16px; }
+			.na-form#na-form .na-depot-fichiers:hover, .na-form#na-form .na-depot-fichiers.na-survol { border-color: var(--na-accent); background: var(--na-accent-voile); }
+			.na-form#na-form .na-depot-fichiers:focus-within { border-style: solid; border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; }
+			.na-form#na-form .na-depot-invite { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--na-e2) var(--na-e3); }
+			.na-form#na-form .na-bouton-faux { display: inline-flex; align-items: center; min-height: var(--na-cible); padding: .5rem 1.25rem;
+				font-weight: 600; color: var(--na-accent); background: var(--na-papier); border: 1px solid var(--na-accent); border-radius: var(--na-r1); }
+			.na-form#na-form .na-depot-ou { color: var(--na-sourd); font-size: var(--na-t-s); }
+			@media (pointer: coarse) { .na-form#na-form .na-depot-ou { display: none; } }
+			.na-form#na-form .na-fichiers-refuses:empty { display: none; }
+			.na-form#na-form .na-fichiers-refuses { margin-top: var(--na-e2); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
+				color: var(--na-erreur); background: var(--na-erreur-fond); border-left: 3px solid var(--na-erreur); }
+			.na-form#na-form .na-filelist { display: grid; gap: var(--na-e3); margin-top: var(--na-e3); }
+			.na-form#na-form .na-illus { position: relative; padding: var(--na-e4); background: var(--na-papier);
+				border: 1px solid var(--na-filet-doux); border-left: 3px solid var(--na-accent); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus legend { margin: 0 0 var(--na-e2); padding-right: 5.5rem; font-size: var(--na-t-m); font-weight: 600; line-height: 1.35; }
+			.na-form#na-form .na-illus-fichier { font-weight: 400; font-size: var(--na-t-s); color: var(--na-sourd); overflow-wrap: anywhere; }
+			.na-form#na-form .na-illus button.na-fileremove { position: absolute; top: var(--na-e3); right: var(--na-e3); margin: 0; }
+			.na-form#na-form .na-illus-champs { clear: both; display: grid; gap: var(--na-e3); }
+			.na-form#na-form .na-illus-champs label { margin: 0; font-size: var(--na-t-s); }
+			.na-form#na-form .na-illus-champs .na-help { margin: 0 0 var(--na-e1); }
+			.na-form#na-form .na-illus-mention { margin-top: var(--na-e3); font-size: var(--na-t-s); color: var(--na-avis); }
+			.na-form#na-form .na-illus-total { font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
+			.na-form#na-form .na-illus-droits { margin-top: var(--na-e3); }
+
+			/* ── Vérification (pièce de puzzle) ── */
+			.na-form#na-form .na-question { padding: var(--na-e4) var(--na-e5); background: var(--na-fond);
+				border: 1px solid var(--na-filet-doux); border-radius: var(--na-r2); }
+			.na-form#na-form .na-question.na-fait { background: var(--na-succes-fond); border-color: var(--na-succes); }
+			.na-form#na-form .na-puzzle-scene { position: relative; max-width: 26.25rem; margin-top: var(--na-e2); border-radius: var(--na-r2); overflow: hidden; line-height: 0; }
+			.na-form#na-form .na-puzzle-scene canvas.na-puzzle-fond { display: block; width: 100%; height: auto; }
+			.na-form#na-form .na-puzzle-scene canvas.na-puzzle-piece { position: absolute; top: 50%; height: auto; transform: translateY(-50%);
+				filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .5)); pointer-events: none; }
+			.na-form#na-form .na-puzzle-piste { position: relative; max-width: 26.25rem; height: var(--na-cible); margin-top: var(--na-e3);
+				background: var(--na-surface); border: 1px solid var(--na-filet); border-radius: 999px; cursor: pointer; touch-action: pan-y; }
+			.na-form#na-form .na-puzzle-poignee { position: absolute; top: 50%; left: 0; display: flex; align-items: center; justify-content: center;
+				width: 3.5rem; height: calc(var(--na-cible) - 6px); transform: translate(0, -50%); background: var(--na-papier);
+				border: 2px solid var(--na-accent); border-radius: 999px; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); cursor: grab; touch-action: none; }
+			.na-form#na-form .na-puzzle-poignee::after { content: ""; width: 22px; height: 12px;
+				background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='12' viewBox='0 0 22 12'%3E%3Cpath d='M6 1L1 6l5 5M16 1l5 5-5 5M1 6h20' fill='none' stroke='%237d1a1d' stroke-width='2'/%3E%3C/svg%3E") center / contain no-repeat; }
+			.na-form#na-form .na-puzzle-poignee:focus-visible { outline: var(--na-anneau); outline-offset: 3px; }
+			.na-form#na-form .na-prise .na-puzzle-poignee { cursor: grabbing; }
+			.na-form#na-form .na-fait .na-puzzle-poignee { border-color: var(--na-succes); cursor: default; }
+			.na-form#na-form .na-fait .na-puzzle-poignee::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='11' viewBox='0 0 14 11'%3E%3Cpath d='M1 5.5l4 4L13 1' fill='none' stroke='%232d6a33' stroke-width='2.2'/%3E%3C/svg%3E"); }
+			.na-form#na-form .na-rate .na-puzzle-scene { animation: na-secousse .3s; }
 			@keyframes na-secousse { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
-			.na-form .na-puzzle-etat { display: block; font-size: 14px; color: #555; margin-top: 6px; }
-			.na-form .na-fait .na-puzzle-etat { color: #2f6b2f; font-weight: 600; }
-			.na-form .na-puzzle-rejouer { background: none; border: 0; padding: 0; margin-top: 2px;
-				color: #2271b1; text-decoration: underline; cursor: pointer; font-size: 13px; }
-			.na-form .na-question.na-fait { border-color: #4a8a4a; }
-			/* L'envoi d'une notice prend plusieurs secondes — le document se
-			   fabrique, les illustrations montent. Sans rien à l'écran, on
-			   croit que le bouton n'a pas pris et l'on clique encore. */
-			.na-form .na-envoi { display: none; margin-top: 14px; }
-			.na-form .na-envoi.na-visible { display: block; }
-			.na-form .na-envoi-piste { height: 6px; background: #ececec;
-				border-radius: 3px; overflow: hidden; }
-			.na-form .na-envoi-barre { height: 100%; width: 35%; background: #8a6d3b;
-				border-radius: 3px; animation: na-va-et-vient 1.4s ease-in-out infinite; }
+			.na-form#na-form .na-puzzle-etat { display: block; min-height: 1.5em; margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-sourd); }
+			.na-form#na-form .na-fait .na-puzzle-etat { color: var(--na-succes); font-weight: 600; }
+			.na-form#na-form .na-turnstile { margin-top: var(--na-e5); }
+
+			/* ── Envoi ── */
+			.na-form#na-form .na-envoyer { margin-top: var(--na-e6); padding-top: var(--na-e5); border-top: 1px solid var(--na-filet-doux); }
+			/* Le thème l'emportait sur l'ancienne règle (« .themeform
+			   button[type=submit] ») : bouton rouge vif, puis gris au survol. */
+			.na-form#na-form button.na-submit { display: inline-flex; align-items: center; justify-content: center; width: auto;
+				min-height: var(--na-cible); margin: 0; padding: .75rem 2rem; font: inherit; font-size: max(17px, 1.0625rem);
+				font-weight: 600; line-height: 1.25; letter-spacing: .01em; text-transform: none; text-decoration: none; text-shadow: none;
+				color: #fff; background: var(--na-accent); border: 1px solid var(--na-accent); border-radius: var(--na-r1);
+				box-shadow: none; cursor: pointer; -webkit-appearance: none; appearance: none; transition: background-color .15s ease; }
+			.na-form#na-form button.na-submit:hover { color: #fff; background: var(--na-accent-fonce); border-color: var(--na-accent-fonce); }
+			.na-form#na-form button.na-submit:focus-visible { outline: var(--na-anneau); outline-offset: 3px; }
+			.na-form#na-form button.na-submit:disabled { color: #fff; background: var(--na-accent-fonce); border-color: var(--na-accent-fonce); opacity: 1; cursor: progress; }
+			.na-form#na-form .na-envoi { margin-top: var(--na-e3); }
+			.na-form#na-form .na-envoi-piste { max-width: 24rem; height: 4px; overflow: hidden; background: var(--na-surface); border-radius: 2px; }
+			.na-form#na-form .na-envoi-barre { width: 35%; height: 100%; background: var(--na-accent); border-radius: 2px; animation: na-va-et-vient 1.4s ease-in-out infinite; }
 			@keyframes na-va-et-vient { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-			.na-form .na-envoi-mot { font-size: 14px; color: #555; margin-top: 8px; }
-			.na-form .na-submit[disabled] { opacity: .6; cursor: progress; }
-			.na-form .na-suggestions,
-			.na-form .na-pactols-suggestions { position: absolute; z-index: 50; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: 0; max-height: 380px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
-			.na-form .na-suggestions li,
-			.na-form .na-pactols-suggestions li { padding: 7px 10px; cursor: pointer; font-size: 14px; }
-			.na-form .na-suggestions li:hover,
-			.na-form .na-suggestions li.na-active,
-			.na-form .na-pactols-suggestions li:hover,
-			.na-form .na-pactols-suggestions li.na-active { background: #f0ece2; }
-			.na-form .na-filelist { font-size: 13px; color: #333; margin-top: 6px; padding-left: 18px; }
-			.na-form .na-filelist li { margin: 2px 0; }
-			.na-form .na-fileremove { color: #b00; cursor: pointer; margin-left: 8px; font-size: 12px; }
-			/* Une illustration et ce qu'on en dit tiennent ensemble : le titre,
-			   la légende et les crédits appartiennent à ce fichier-là et à
-			   aucun autre. Un champ libre commun obligeait la rédaction à
-			   deviner quelle ligne se rapportait à quelle image. */
-			.na-form .na-filelist { list-style: none; padding-left: 0; }
-			.na-form .na-illus { border: 1px solid #d8d8d8; border-radius: 8px;
-				padding: 10px 12px; margin: 8px 0; background: #fafafa; }
-			.na-form .na-illus-nom { font-weight: 600; font-size: 13px; }
-			.na-form .na-illus-champs { display: grid; gap: 8px; margin-top: 8px; }
-			.na-form .na-illus-champs label { font-size: 12px; color: #555;
-				margin: 0; display: block; }
-			.na-form .na-illus-champs input,
-			.na-form .na-illus-champs textarea { width: 100%; font: inherit;
-				font-size: 13px; padding: 5px 7px; box-sizing: border-box; }
-			.na-form .na-illus-total { font-size: 12px; color: #555; margin-top: 6px; }
-			.na-form .na-question { margin-top: 20px; padding: 12px 14px;
-				border: 1px solid #d8d8d8; border-radius: 8px; background: #fafafa; }
-			.na-form .na-question label { font-weight: 600; margin: 0; }
-			.na-form .na-question input[type=text] { width: 140px; margin-top: 4px; }
-			.na-form .na-js-error { background: #f8e6e6; border: 1px solid #b00; padding: 10px; margin: 10px 0; display: none; }
-			.na-form .na-pactols-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 8px; }
-			.na-form .na-pactols-col { border: 1px solid #ddd; padding: 12px; background: #fafafa; }
-			.na-form .na-pactols-col h4 { margin: 0 0 8px; font-size: 16px; }
-			.na-form .na-pactols-field { margin-top: 8px; }
-			.na-form .na-pactols-field label { display: inline-block; width: 24px; margin: 0 4px 0 0; font-weight: 600; color: #555; }
-			.na-form .na-pactols-field input[type=text] { width: calc(100% - 34px); }
-			.na-form .na-pactols-selected { border-color: #4a8a4a !important; background: #f6fff6; }
-			.na-form .na-pactols-avis { margin: .35em 0 0; font-size: .9em; color: #8a5a00;
-				background: #fff8e8; border-left: 3px solid #d79b2a; padding: .4em .6em; }
-			.na-form .na-pactols-remplacer { margin-left: .4em; font-size: .95em;
-				background: #fff; border: 1px solid #d79b2a; border-radius: 3px;
-				padding: .15em .5em; cursor: pointer; color: #8a5a00; }
-			.na-form .na-pactols-warning { color: #b00; font-size: 13px; display: none; margin-top: 8px; }
-			@media (max-width: 800px) {
-				.na-form .na-half,
-				.na-form .na-pactols-grid { display: block; }
-				.na-form .na-pactols-col { margin-top: 12px; }
+			.na-form#na-form .na-envoi-mot { max-width: var(--na-mesure); margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-encre); }
+			.na-form#na-form .na-donnees { max-width: var(--na-mesure); margin-top: var(--na-e5); font-size: 13px; line-height: 1.5; color: #555; }
+
+			/* ── Messages ── */
+			.na-form#na-form .na-message, .na-form#na-form .na-js-error, .na-form#na-form .na-recap {
+				margin: 0 0 var(--na-e5); padding: var(--na-e4) var(--na-e5); font-size: var(--na-t-m); line-height: 1.5;
+				color: var(--na-encre); border: 1px solid; border-left-width: 4px; border-radius: var(--na-r2); }
+			.na-form#na-form .na-message p + p, .na-form#na-form .na-message ul + p { margin-top: var(--na-e2); }
+			.na-form#na-form .na-message.na-error, .na-form#na-form .na-js-error, .na-form#na-form .na-recap { background: var(--na-erreur-fond); border-color: var(--na-erreur); }
+			.na-form#na-form .na-message.na-avis { background: var(--na-avis-fond); border-color: var(--na-avis-bord); }
+			.na-form#na-form .na-message:focus, .na-form#na-form .na-recap:focus { outline: var(--na-anneau); outline-offset: 2px; }
+			.na-form#na-form .na-message h2, .na-form#na-form .na-recap h2 { margin: 0 0 var(--na-e2); padding: 0; font-family: inherit;
+				font-size: var(--na-t-l); font-weight: 600; line-height: 1.3; letter-spacing: normal; color: var(--na-erreur); }
+			.na-form#na-form .na-message li, .na-form#na-form .na-recap li { margin-top: var(--na-e1); }
+			.na-form#na-form .na-message.na-error a, .na-form#na-form .na-recap a { color: var(--na-erreur); font-weight: 600; }
+			.na-form#na-form .na-brouillon-choix { display: flex; flex-wrap: wrap; gap: var(--na-e2) var(--na-e4); margin-top: var(--na-e2); }
+
+			/* ── Téléphone ── */
+			@media (max-width: 40em) {
+				.na-form#na-form .na-section { margin-top: var(--na-e6); }
+				.na-form#na-form h2.na-section-titre { font-size: max(19px, 1.1875rem); }
+				.na-form#na-form .na-question, .na-form#na-form .na-kw, .na-form#na-form .na-intro,
+				.na-form#na-form .na-message, .na-form#na-form .na-recap { padding: var(--na-e3) var(--na-e4); }
+				.na-form#na-form .na-checkboxes { grid-template-columns: 1fr; }
+				.na-form#na-form button.na-submit { width: 100%; }
+				.na-form#na-form .na-depot-fichiers { padding: var(--na-e4) var(--na-e3); }
+				.na-form#na-form .na-bloc { padding-left: var(--na-e3); }
+			}
+
+			/* ── Préférences du système ── */
+			@media (prefers-reduced-motion: reduce) {
+				.na-form#na-form *, .na-form#na-form *::before, .na-form#na-form *::after {
+					animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+				.na-form#na-form .na-envoi-barre { width: 100%; margin-left: 0; animation: none; }
+			}
+			@media (forced-colors: active) {
+				.na-form#na-form .na-puzzle-poignee, .na-form#na-form .na-puzzle-piste, .na-form#na-form .na-depot-fichiers,
+				.na-form#na-form .na-illus, .na-form#na-form .na-kw, .na-form#na-form .na-jeton { border-color: CanvasText; }
+				.na-form#na-form .na-suggestions > li[aria-selected="true"], .na-form#na-form .na-pactols-suggestions > li[aria-selected="true"] {
+					forced-color-adjust: none; color: HighlightText; background: Highlight; }
 			}
 		</style>
-		<form class="na-form" method="post" enctype="multipart/form-data" id="na-form">
+		<form class="na-form" id="na-form" method="post" enctype="multipart/form-data"
+			data-reprise="<?php echo empty( $reprise ) ? '0' : '1'; ?>"
+			data-brouillon="<?php echo $correction ? '0' : '1'; ?>">
+			<?php
+			// Déjà échappé pièce à pièce.
+			echo $this->messages_du_retour();
+			?>
+			<div class="na-recap" id="na-recap" tabindex="-1" hidden></div>
+			<div class="na-js-error" id="na-js-error" role="alert" hidden></div>
+			<div class="na-intro" id="na-intro">
+				<p>Ce formulaire transmet votre notice à la rédaction de la Chronique d’<em>Archéologie médiévale</em>. Comptez une vingtaine de minutes si votre texte est prêt.</p>
+				<p><strong>Ayez sous la main&nbsp;:</strong></p>
+				<ul>
+					<li>le texte de la notice (300 à 700&nbsp;mots), à coller depuis votre traitement de texte&#8239;;</li>
+					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’autorisation et son identifiant Patriarche&#8239;;</li>
+					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout), avec leurs légendes et crédits.</li>
+				</ul>
+				<p>Tous les champs sont obligatoires, sauf ceux marqués «&#8239;facultatif&#8239;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, vous recevrez une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
+			</div>
+			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
 			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
 			<div aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:0;overflow:hidden;">
 				<label>Ne pas remplir ce champ
@@ -1573,213 +2076,392 @@ class Notice_Archeomed_Pactols {
 			</div>
 			<input type="hidden" name="na_ts" value="<?php echo esc_attr( time() ); ?>">
 			<input type="hidden" name="reprise_jeton" value="<?php echo esc_attr( $this->jeton_de_reprise() ); ?>">
-			<div class="na-js-error" id="na-js-error"></div>
-			<label>Rubrique principale <span class="na-req">*</span></label>
-			<select name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, $this->repris( 'rubrique_principale' ) ); ?></select>
-			<label>Renvoi à une autre rubrique</label>
-			<select name="renvoi_1"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_1' ) ); ?></select>
-			<label>Renvoi à une autre rubrique</label>
-			<select name="renvoi_2"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_2' ) ); ?></select>
-			<div class="na-half">
-				<div>
-					<label>Prénom du responsable d'opération <span class="na-req">*</span></label>
-					<input type="text" name="resp_prenom" required value="<?php echo esc_attr( $this->repris( 'resp_prenom' ) ); ?>">
+
+			<section class="na-section" aria-labelledby="na-s1">
+				<h2 class="na-section-titre" id="na-s1"><span class="na-section-num" aria-hidden="true">1</span> L’opération</h2>
+				<fieldset class="na-sous-groupe" id="na-titre">
+					<legend>Le titre de la notice</legend>
+					<div class="na-champ">
+						<label for="na-lieu-1">Commune ou territoire de l’opération</label>
+						<p class="na-help" id="na-lieu-aide">Commencez à taper, puis choisissez dans la liste&nbsp;: le lieu reçoit ainsi son identifiant Pactols. S’il n’y figure pas, écrivez-le simplement.</p>
+						<?php
+						$lieux_repris = $this->repris_liste( 'commune' );
+						$arks_repris  = $this->repris_liste( 'commune_ark' );
+						for ( $rang = 0; $rang < self::MAX_LIEUX; $rang++ ) :
+							$valeur = isset( $lieux_repris[ $rang ] ) ? $lieux_repris[ $rang ] : '';
+							$ark    = isset( $arks_repris[ $rang ] ) ? $arks_repris[ $rang ] : '';
+							$n      = $rang + 1;
+							?>
+							<div class="na-lieu<?php echo $rang ? ' na-repli' : ''; ?>"<?php echo $rang ? ' data-repli="lieu"' : ''; ?>>
+								<?php if ( $rang ) : ?>
+									<label for="na-lieu-<?php echo (int) $n; ?>">Lieu <?php echo (int) $n; ?> <span class="na-facultatif">(facultatif)</span></label>
+								<?php endif; ?>
+								<div class="na-combo na-ancre">
+									<input type="text" id="na-lieu-<?php echo (int) $n; ?>" name="commune[]" class="na-commune"
+										autocomplete="off" spellcheck="false"<?php echo 0 === $rang ? ' required aria-describedby="na-lieu-aide"' : ''; ?>
+										value="<?php echo esc_attr( $valeur ); ?>">
+									<ul class="na-suggestions" id="na-lieu-<?php echo (int) $n; ?>-liste" hidden></ul>
+								</div>
+								<input type="hidden" name="commune_ark[]" class="na-commune-ark" value="<?php echo esc_attr( $ark ); ?>">
+								<?php if ( $rang ) : ?>
+									<button type="button" class="na-retirer" hidden>Retirer ce lieu</button>
+								<?php endif; ?>
+							</div>
+						<?php endfor; ?>
+						<button type="button" class="na-ajout" data-ajoute="lieu" aria-describedby="na-lieu-plus-aide" hidden><span aria-hidden="true">+</span> Ajouter un autre lieu</button>
+						<p class="na-help" id="na-lieu-plus-aide">Pour une opération sur plusieurs communes, dans l’ordre où elles doivent paraître (cinq au plus).</p>
+					</div>
+					<div class="na-champ">
+						<label for="na-departement">Entre parenthèses&nbsp;: département ou région</label>
+						<p class="na-help" id="na-departement-aide">Le plus souvent le département&nbsp;: Calvados. Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Rempli d’après la commune choisie&#8239;; vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&#8239;Autres lieux&#8239;» (section&nbsp;4).</p>
+						<input type="text" id="na-departement" name="departement" required
+							aria-describedby="na-departement-aide na-departement-auto"
+							value="<?php echo esc_attr( $this->repris( 'departement' ) ); ?>">
+						<p class="na-auto" id="na-departement-auto" aria-live="polite"></p>
+					</div>
+					<div class="na-champ">
+						<label for="na-lieu-dit">Après le point&nbsp;: lieu-dit, adresse ou nom du projet</label>
+						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&#8239;; 12, rue des Carmes&#8239;; ou le titre d’un projet collectif de recherche.</p>
+						<input type="text" id="na-lieu-dit" name="lieu_dit" required
+							aria-describedby="na-lieu-dit-aide na-apercu"
+							value="<?php echo esc_attr( $this->repris( 'lieu_dit' ) ); ?>">
+					</div>
+					<div class="na-apercu" id="na-apercu" hidden>
+						<p class="na-apercu-mot">Votre notice paraîtra sous le titre&nbsp;:</p>
+						<p class="na-apercu-titre" id="na-apercu-titre"></p>
+					</div>
+				</fieldset>
+
+				<?php echo $this->natures_html(); ?>
+
+				<div class="na-champ na-court">
+					<label for="na-annee">Année de l’opération</label>
+					<p class="na-help" id="na-annee-aide">Par exemple&nbsp;: 2024.</p>
+					<input type="text" id="na-annee" name="annee" required aria-describedby="na-annee-aide"
+						value="<?php echo esc_attr( $this->repris( 'annee' ) ); ?>">
 				</div>
-				<div>
-					<label>Nom du responsable d'opération <span class="na-req">*</span></label>
-					<input type="text" name="resp_nom" required value="<?php echo esc_attr( $this->repris( 'resp_nom' ) ); ?>">
-				</div>
-			</div>
-			<label>Adresse électronique du responsable <span class="na-req">*</span></label>
-			<input type="email" name="resp_email" required value="<?php echo esc_attr( $this->repris( 'resp_email' ) ); ?>">
-			<label>Institution de rattachement du responsable d'opération <span class="na-req">*</span></label>
-			<input type="text" name="resp_inst" required value="<?php echo esc_attr( $this->repris( 'resp_inst' ) ); ?>">
-			<div class="na-half">
-				<div>
-					<label>Prénom du co-responsable de l'opération</label>
-					<input type="text" name="coresp_prenom" value="<?php echo esc_attr( $this->repris( 'coresp_prenom' ) ); ?>">
-				</div>
-				<div>
-					<label>Nom du co-responsable de l'opération</label>
-					<input type="text" name="coresp_nom" value="<?php echo esc_attr( $this->repris( 'coresp_nom' ) ); ?>">
-				</div>
-			</div>
-			<label>Adresse électronique du co-responsable</label>
-			<input type="email" name="coresp_email" value="<?php echo esc_attr( $this->repris( 'coresp_email' ) ); ?>">
-			<label>Institution de rattachement du co-responsable de l'opération</label>
-			<input type="text" name="coresp_inst" value="<?php echo esc_attr( $this->repris( 'coresp_inst' ) ); ?>">
-			<div class="na-half">
-				<div>
-					<label>Prénom du co-auteur (notice rédigée avec)</label>
-					<input type="text" name="coauteur_prenom" value="<?php echo esc_attr( $this->repris( 'coauteur_prenom' ) ); ?>">
-				</div>
-				<div>
-					<label>Nom du co-auteur</label>
-					<input type="text" name="coauteur_nom" value="<?php echo esc_attr( $this->repris( 'coauteur_nom' ) ); ?>">
-				</div>
-			</div>
-			<label>Adresse électronique du co-auteur</label>
-			<input type="email" name="coauteur_email" value="<?php echo esc_attr( $this->repris( 'coauteur_email' ) ); ?>">
-			<label>Institution de rattachement du co-auteur</label>
-			<input type="text" name="coauteur_inst" value="<?php echo esc_attr( $this->repris( 'coauteur_inst' ) ); ?>">
-			<div class="na-half">
-				<div class="na-autocomplete">
-					<label>Lieu(x) de l’opération <span class="na-req">*</span></label>
-					<p class="na-help">Une commune, un territoire, une région : ce que
-					Pactols connaît. Plusieurs lignes quand l’opération a porté sur
-					plusieurs lieux — ils s’écriront dans l’ordre, séparés par des
-					virgules, et chacun garde son identifiant.</p>
+
+				<div class="na-champ">
+					<label for="na-organisme-1">Organisme qui gère l’opération</label>
+					<p class="na-help" id="na-organisme-aide">Par exemple&nbsp;: Inrap, service archéologique départemental, université, CNRS, opérateur privé. Les autres partenaires scientifiques se citent dans le texte.</p>
 					<?php
-					$lieux_repris = $this->repris_liste( 'commune' );
-					$arks_repris  = $this->repris_liste( 'commune_ark' );
-					for ( $rang = 0; $rang < self::MAX_LIEUX; $rang++ ) :
-						$valeur = isset( $lieux_repris[ $rang ] ) ? $lieux_repris[ $rang ] : '';
-						$ark    = isset( $arks_repris[ $rang ] ) ? $arks_repris[ $rang ] : '';
-					?>
-					<div class="na-lieu">
-						<input type="text" name="commune[]" class="na-commune"
-							autocomplete="off"<?php echo 0 === $rang ? ' required' : ''; ?>
-							placeholder="<?php echo 0 === $rang ? 'Commune ou territoire' : 'Lieu suivant (facultatif)'; ?>"
-							value="<?php echo esc_attr( $valeur ); ?>">
-						<input type="hidden" name="commune_ark[]" class="na-commune-ark"
-							value="<?php echo esc_attr( $ark ); ?>">
-						<ul class="na-suggestions" style="display:none;"></ul>
-					</div>
+					$organismes_repris = $this->repris_liste( 'organisme' );
+					for ( $rang = 0; $rang < self::MAX_ORGANISMES; $rang++ ) :
+						$valeur = isset( $organismes_repris[ $rang ] ) ? $organismes_repris[ $rang ] : '';
+						$n      = $rang + 1;
+						?>
+						<div class="na-ligne na-ancre<?php echo $rang ? ' na-repli' : ''; ?>"<?php echo $rang ? ' data-repli="organisme"' : ''; ?>>
+							<?php if ( $rang ) : ?>
+								<label for="na-organisme-<?php echo (int) $n; ?>">Organisme <?php echo (int) $n; ?> <span class="na-facultatif">(facultatif)</span></label>
+							<?php endif; ?>
+							<input type="text" id="na-organisme-<?php echo (int) $n; ?>" name="organisme[]" class="na-organisme"
+								<?php echo 0 === $rang ? 'required aria-describedby="na-organisme-aide"' : ''; ?>
+								value="<?php echo esc_attr( $valeur ); ?>">
+							<?php if ( $rang ) : ?>
+								<button type="button" class="na-retirer" hidden>Retirer cet organisme</button>
+							<?php endif; ?>
+						</div>
 					<?php endfor; ?>
+					<button type="button" class="na-ajout" data-ajoute="organisme" aria-describedby="na-organisme-plus-aide" hidden><span aria-hidden="true">+</span> Ajouter un organisme</button>
+					<p class="na-help" id="na-organisme-plus-aide">Quand la gestion de l’opération est partagée (trois organismes au plus).</p>
 				</div>
-				<div>
-					<label>Précision entre parenthèses <span class="na-req">*</span></label>
-					<p class="na-help">Le département le plus souvent, mais ce peut être
-					une région ou un ensemble : « Côte-d’Or », « Champagne, Alsace,
-					Lorraine ». Rempli tout seul quand le premier lieu est une commune.
-					<strong>Ce qui s’écrit ici n’est pas indexé</strong> : si la
-					parenthèse nomme des territoires — Champagne, Alsace, Lorraine —,
-					ajoutez-les plus bas dans « Lieux autres que celui de la notice »
-					pour qu’ils reçoivent leur identifiant Pactols.</p>
-					<input type="text" name="departement" id="na-departement" required value="<?php echo esc_attr( $this->repris( 'departement' ) ); ?>">
+
+				<div class="na-half">
+					<div class="na-champ">
+						<label for="na-autorisation">Numéro d’autorisation <span class="na-facultatif">(facultatif)</span></label>
+						<p class="na-help" id="na-autorisation-aide">Le numéro de l’arrêté qui autorise l’opération.</p>
+						<input type="text" id="na-autorisation" name="num_autorisation" aria-describedby="na-autorisation-aide"
+							value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
+					</div>
+					<div class="na-champ">
+						<label for="na-patriarche">Identifiant Patriarche <span class="na-facultatif">(facultatif)</span></label>
+						<p class="na-help" id="na-patriarche-aide">Le numéro de l’opération dans la base Patriarche du ministère de la Culture, s’il vous est connu.</p>
+						<input type="text" id="na-patriarche" name="id_patriarche" aria-describedby="na-patriarche-aide"
+							value="<?php echo esc_attr( $this->repris( 'id_patriarche' ) ); ?>">
+					</div>
 				</div>
-			</div>
-			<label>Lieu-dit, adresse ou complément de titre <span class="na-req">*</span></label>
-			<p class="na-help">Ce qui suit la parenthèse dans le titre de la notice :
-			un lieu-dit, une adresse, ou le titre d’un projet collectif.</p>
-			<input type="text" name="lieu_dit" required value="<?php echo esc_attr( $this->repris( 'lieu_dit' ) ); ?>">
-			<label>Nature de l'opération <span class="na-req">*</span></label>
-			<?php echo $this->checkboxes_html( $this->natures, 'nature' ); ?>
-			<label>Année de l'opération <span class="na-req">*</span></label>
-			<input type="text" name="annee" required value="<?php echo esc_attr( $this->repris( 'annee' ) ); ?>">
-			<label>Numéro d'autorisation</label>
-			<input type="text" name="num_autorisation" value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
-			<label>Identifiant Patriarche</label>
-			<p class="na-help">Le numéro que porte l’opération dans la base Patriarche
-			du ministère de la Culture, s’il vous est connu. Il ne se confond pas avec
-			le numéro d’autorisation, qui est celui de l’arrêté.</p>
-			<input type="text" name="id_patriarche" value="<?php echo esc_attr( $this->repris( 'id_patriarche' ) ); ?>">
-			<label>Rapport final (lien)</label>
-			<p class="na-help">L’adresse à laquelle le rapport final d’opération se
-			consulte — Dolia, HAL, le site du service régional. Laisser vide s’il
-			n’est pas déposé.</p>
-			<input type="url" name="rapport_lien" placeholder="https://" value="<?php echo esc_attr( $this->repris( 'rapport_lien' ) ); ?>">
-			<label>Organisme porteur de l'opération <span class="na-req">*</span></label>
-			<p class="na-help">L’organisme qui gère administrativement l’opération :
-			l’Inrap, un service archéologique de collectivité, une université, le
-			CNRS, un opérateur privé. Plusieurs lignes quand cette gestion est
-			partagée entre plusieurs organismes ; les autres partenaires
-			scientifiques se citent dans le texte de la notice.</p>
-			<?php
-			$organismes_repris = $this->repris_liste( 'organisme' );
-			for ( $rang = 0; $rang < self::MAX_ORGANISMES; $rang++ ) :
-				$valeur = isset( $organismes_repris[ $rang ] ) ? $organismes_repris[ $rang ] : '';
-			?>
-			<input type="text" name="organisme[]" class="na-organisme"<?php echo 0 === $rang ? ' required' : ''; ?>
-				placeholder="<?php echo 0 === $rang ? 'Organisme porteur' : 'Organisme suivant (facultatif)'; ?>"
-				value="<?php echo esc_attr( $valeur ); ?>">
-			<?php endfor; ?>
-			<label>Texte de la notice <span class="na-req">*</span></label>
-			<p class="na-help">Entre 300 et 700 mots (recommandation).</p>
-			<div id="na-editor"></div>
-			<div class="na-wordcount" id="na-wordcount">0 mot</div>
-			<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
-			<label>Mots-clés Pactols</label>
-			<p class="na-help">Saisir au moins 3 caractères, puis sélectionner un concept dans la liste. Le libellé et l'ARK seront transmis à la rédaction.</p>
-			<div class="na-pactols-warning" id="na-pactols-warning">Certains mots-clés ont été saisis sans sélection Pactols. Merci de choisir une proposition dans la liste afin de transmettre l'ARK.</div>
-			<div class="na-pactols-grid" id="na-pactols-grid">
+
+				<div class="na-champ">
+					<label for="na-rapport">Adresse du rapport final en ligne <span class="na-facultatif">(facultatif)</span></label>
+					<p class="na-help" id="na-rapport-aide">Sur Dolia, HAL ou le site du service régional de l’archéologie. Par exemple&nbsp;: https://hal.science/hal-01234567</p>
+					<input type="text" inputmode="url" id="na-rapport" name="rapport_lien" autocomplete="off"
+						spellcheck="false" autocapitalize="off" aria-describedby="na-rapport-aide"
+						value="<?php echo esc_attr( $this->repris( 'rapport_lien' ) ); ?>">
+				</div>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s2">
+				<h2 class="na-section-titre" id="na-s2"><span class="na-section-num" aria-hidden="true">2</span> Les responsables</h2>
+				<fieldset class="na-sous-groupe" id="na-resp">
+					<legend>Responsable d’opération</legend>
+					<div class="na-half">
+						<div class="na-champ">
+							<label for="na-resp-prenom">Prénom</label>
+							<input type="text" id="na-resp-prenom" name="resp_prenom" required autocomplete="given-name"
+								value="<?php echo esc_attr( $this->repris( 'resp_prenom' ) ); ?>">
+						</div>
+						<div class="na-champ">
+							<label for="na-resp-nom">Nom</label>
+							<input type="text" id="na-resp-nom" name="resp_nom" required autocomplete="family-name"
+								value="<?php echo esc_attr( $this->repris( 'resp_nom' ) ); ?>">
+						</div>
+					</div>
+					<div class="na-champ">
+						<label for="na-resp-email">Adresse électronique</label>
+						<p class="na-help" id="na-resp-email-aide">La copie de la notice et le lien pour la corriger y seront envoyés.</p>
+						<input type="email" id="na-resp-email" name="resp_email" required autocomplete="email" spellcheck="false"
+							aria-describedby="na-resp-email-aide" value="<?php echo esc_attr( $this->repris( 'resp_email' ) ); ?>">
+					</div>
+					<div class="na-champ">
+						<label for="na-resp-inst">Institution de rattachement</label>
+						<p class="na-help" id="na-resp-inst-aide">Telle qu’elle doit paraître après son nom dans la notice&nbsp;: employeur, laboratoire.</p>
+						<input type="text" id="na-resp-inst" name="resp_inst" required autocomplete="organization"
+							aria-describedby="na-resp-inst-aide" value="<?php echo esc_attr( $this->repris( 'resp_inst' ) ); ?>">
+					</div>
+				</fieldset>
 				<?php
-				echo $this->pactols_column_html( 'Périodes historiques', 'period', '' );
-				echo $this->pactols_column_html( 'Sujets', 'subject', '' );
-				// La commune de la notice est déjà demandée plus haut : ce qu'on
-				// attend ici, ce sont les autres lieux — la région, le pays, un
-				// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
-				echo $this->pactols_column_html(
-					'Lieux autres que celui de la notice', 'place', '' );
-				?>
-			</div>
-			<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
-			<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
-			<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
-			<label>Commentaires éventuels</label>
-			<textarea name="commentaires" rows="3"><?php echo esc_textarea( $this->repris( 'commentaires' ) ); ?></textarea>
-			<div class="na-intro na-spaced">
-				Normes des illustrations : photographies 10 x 15 cm minimum à 300 dpi, dessins au trait 1200 dpi, fichiers PDF acceptés si nécessaire. Les fichiers sources lourds doivent être transmis par un autre moyen.
-			</div>
-			<label>Illustrations</label>
-			<p class="na-help">Formats acceptés : jpg, jpeg, tiff, tif, pdf. 3 fichiers maximum, 20 Mo maximum au total.</p>
-			<input type="file" name="illustrations[]" id="na-illustrations" multiple accept=".jpg,.jpeg,.tiff,.tif,.pdf">
-			<ul class="na-filelist" id="na-filelist"></ul>
-			<p class="na-help">Chaque fichier déposé reçoit ci-dessous sa ligne : titre, légende, crédits. Joindre les autorisations pour les documents dont vous ne détenez pas les droits.</p>
-			<div class="na-intro na-spaced">
-				Les informations transmises via ce formulaire sont utilisées uniquement pour l'instruction éditoriale des notices destinées à la Chronique d'<em>Archéologie médiévale</em>. Elles sont adressées à la rédaction de la revue et ne sont pas utilisées à d'autres fins. Elles sont conservées pendant la durée nécessaire au traitement éditorial de la notice. Pour toute demande relative à ces données, vous pouvez contacter la rédaction à l'adresse indiquée sur le site.
-			</div>
-			<?php if ( $this->protection_utilise_la_question() ) : $defi = $this->defi_du_puzzle(); ?>
-				<div class="na-question" id="na-puzzle"
-					data-cible="<?php echo esc_attr( $defi['cible'] ); ?>"
-					data-tolerance="<?php echo esc_attr( self::PUZZLE_TOLERANCE ); ?>">
-					<label for="na-puzzle-poignee">Faites glisser la pièce jusque dans son encoche</label>
-					<p class="na-help">Une vérification pour distinguer un lecteur d’un
-					robot. Au clavier : atteignez le curseur par la tabulation, déplacez-le
-					avec les flèches — la touche Majuscule enfoncée pour aller plus vite —,
-					puis validez par Entrée.</p>
-					<div class="na-puzzle-scene">
-						<canvas class="na-puzzle-fond" id="na-puzzle-fond" width="320" height="150"
-							role="img" aria-label="Image de vérification portant une encoche à combler"></canvas>
-						<canvas class="na-puzzle-piece" id="na-puzzle-piece" width="59" height="48"
-							aria-hidden="true"></canvas>
-					</div>
-					<div class="na-puzzle-piste">
-						<div class="na-puzzle-poignee" id="na-puzzle-poignee" tabindex="0"
-							role="slider" aria-label="Position de la pièce"
-							aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-							aria-describedby="na-puzzle-etat"></div>
-					</div>
-					<span class="na-puzzle-etat" id="na-puzzle-etat" role="status">À faire glisser</span>
-					<button type="button" class="na-puzzle-rejouer" id="na-puzzle-rejouer">Recommencer</button>
-					<input type="hidden" name="na_curseur" id="na-curseur-valeur" value="">
-					<input type="hidden" name="na_preuve" value="<?php echo esc_attr( $defi['preuve'] ); ?>">
+				// Le co-responsable et le co-auteur : mêmes quatre champs, et
+				// aucune saisie automatique — ils ne décrivent pas la personne
+				// qui remplit, et le navigateur y proposait son identité.
+				$personnes = array(
+					'coresp'   => array( 'Co-responsable de l’opération', 'Ajouter un co-responsable de l’opération',
+						'Retirer ce co-responsable', 'Recevra aussi une copie de la notice.', '' ),
+					'coauteur' => array( 'Co-auteur de la notice', 'Ajouter un co-auteur de la notice',
+						'Retirer ce co-auteur', 'Recevra aussi une copie de la notice.',
+						'Une personne qui a rédigé la notice avec le responsable sans codiriger l’opération.' ),
+				);
+				foreach ( $personnes as $cle => $textes ) :
+					list( $titre, $ajout, $retrait, $aide_courriel, $aide ) = $textes;
+					?>
+					<button type="button" class="na-ajout" aria-controls="na-<?php echo esc_attr( $cle ); ?>" aria-expanded="true"
+						<?php echo '' !== $aide ? 'aria-describedby="na-' . esc_attr( $cle ) . '-aide"' : ''; ?> hidden><span aria-hidden="true">+</span> <?php echo esc_html( $ajout ); ?></button>
+					<?php if ( '' !== $aide ) : ?>
+						<p class="na-help" id="na-<?php echo esc_attr( $cle ); ?>-aide"><?php echo esc_html( $aide ); ?></p>
+					<?php endif; ?>
+					<fieldset class="na-sous-groupe na-bloc" id="na-<?php echo esc_attr( $cle ); ?>">
+						<legend><?php echo esc_html( $titre ); ?> <span class="na-facultatif">(facultatif)</span></legend>
+						<div class="na-half">
+							<div class="na-champ">
+								<label for="na-<?php echo esc_attr( $cle ); ?>-prenom">Prénom</label>
+								<input type="text" id="na-<?php echo esc_attr( $cle ); ?>-prenom" name="<?php echo esc_attr( $cle ); ?>_prenom" autocomplete="off"
+									value="<?php echo esc_attr( $this->repris( $cle . '_prenom' ) ); ?>">
+							</div>
+							<div class="na-champ">
+								<label for="na-<?php echo esc_attr( $cle ); ?>-nom">Nom</label>
+								<input type="text" id="na-<?php echo esc_attr( $cle ); ?>-nom" name="<?php echo esc_attr( $cle ); ?>_nom" autocomplete="off"
+									value="<?php echo esc_attr( $this->repris( $cle . '_nom' ) ); ?>">
+							</div>
+						</div>
+						<div class="na-champ">
+							<label for="na-<?php echo esc_attr( $cle ); ?>-email">Adresse électronique</label>
+							<p class="na-help" id="na-<?php echo esc_attr( $cle ); ?>-email-aide"><?php echo esc_html( $aide_courriel ); ?></p>
+							<input type="email" id="na-<?php echo esc_attr( $cle ); ?>-email" name="<?php echo esc_attr( $cle ); ?>_email" autocomplete="off" spellcheck="false"
+								aria-describedby="na-<?php echo esc_attr( $cle ); ?>-email-aide"
+								value="<?php echo esc_attr( $this->repris( $cle . '_email' ) ); ?>">
+						</div>
+						<div class="na-champ">
+							<label for="na-<?php echo esc_attr( $cle ); ?>-inst">Institution de rattachement</label>
+							<input type="text" id="na-<?php echo esc_attr( $cle ); ?>-inst" name="<?php echo esc_attr( $cle ); ?>_inst" autocomplete="off"
+								value="<?php echo esc_attr( $this->repris( $cle . '_inst' ) ); ?>">
+						</div>
+						<button type="button" class="na-retirer" hidden><?php echo esc_html( $retrait ); ?></button>
+					</fieldset>
+				<?php endforeach; ?>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s3">
+				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
+				<div class="na-champ">
+					<p class="na-libelle" id="na-texte-libelle">Texte de la notice</p>
+					<p class="na-help" id="na-texte-aide">300 à 700&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&#8239;; titres et listes deviennent des paragraphes. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes.</p>
+					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
+					<p class="na-wordcount" id="na-wordcount">0 mot</p>
+					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
 				</div>
-			<?php endif; ?>
-			<?php if ( $this->protection_utilise_turnstile() && $this->turnstile_site_key_is_set() ) : ?>
-				<div class="na-turnstile" style="margin-top:20px;">
-					<div class="cf-turnstile" data-sitekey="<?php echo esc_attr( $this->turnstile_site_key() ); ?>" data-theme="light" data-language="fr"></div>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s4">
+				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Classement et mots-clés</h2>
+				<div class="na-champ">
+					<label for="na-rubrique">Rubrique de la Chronique</label>
+					<p class="na-help" id="na-rubrique-aide">La rubrique où paraîtra la notice.</p>
+					<select id="na-rubrique" name="rubrique_principale" required aria-describedby="na-rubrique-aide"><?php echo $this->options_html( $this->rubriques, $this->repris( 'rubrique_principale' ), 'Choisir une rubrique…' ); ?></select>
 				</div>
-			<?php endif; ?>
-			<button type="submit" name="notice_archeomed_envoi" value="1" class="na-submit">Envoyer la notice</button>
-			<div class="na-envoi" id="na-envoi" role="status" aria-live="polite">
-				<div class="na-envoi-piste"><div class="na-envoi-barre"></div></div>
-				<p class="na-envoi-mot">Envoi en cours — le document se fabrique et les
-				illustrations montent. Cela peut prendre quelques instants ; ne fermez pas
-				cette page et ne cliquez pas une seconde fois.</p>
-			</div>
+				<button type="button" class="na-ajout" aria-controls="na-renvois" aria-expanded="true" hidden><span aria-hidden="true">+</span> Signaler la notice dans d’autres rubriques</button>
+				<fieldset class="na-sous-groupe na-bloc" id="na-renvois" aria-describedby="na-renvois-aide">
+					<legend>Autres rubriques concernées <span class="na-facultatif">(facultatif)</span></legend>
+					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
+					<div class="na-half">
+						<div class="na-champ">
+							<label for="na-renvoi-1">Premier renvoi <span class="na-facultatif">(facultatif)</span></label>
+							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_1' ), 'Aucun renvoi' ); ?></select>
+						</div>
+						<div class="na-champ">
+							<label for="na-renvoi-2">Second renvoi <span class="na-facultatif">(facultatif)</span></label>
+							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_2' ), 'Aucun renvoi' ); ?></select>
+						</div>
+					</div>
+					<button type="button" class="na-retirer" hidden>Retirer les renvois</button>
+				</fieldset>
+
+				<div class="na-sous-groupe" role="group" aria-labelledby="na-kw-titre" aria-describedby="na-kw-aide">
+					<h3 class="na-sous-titre" id="na-kw-titre">Mots-clés Pactols <span class="na-facultatif">(facultatif)</span></h3>
+					<p class="na-help" id="na-kw-aide">Tapez trois lettres au moins, puis choisissez les termes dans la liste que propose le thésaurus Pactols&nbsp;: la notice sera indexée avec eux. Un terme absent de la liste se garde tel quel avec la touche Entrée. Dix au plus par catégorie.</p>
+					<div class="na-pactols-grid">
+						<?php
+						echo $this->pactols_categorie_html( 'period', 'Périodes',
+							'Par exemple&nbsp;: haut Moyen Âge, XII<sup>e</sup>&nbsp;siècle.', 'Chercher une période', 'pactols_periods' );
+						echo $this->pactols_categorie_html( 'subject', 'Sujets',
+							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects' );
+						// La commune de la notice est déjà demandée plus haut : ce qu'on
+						// attend ici, ce sont les autres lieux — la région, le pays, un
+						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
+						echo $this->pactols_categorie_html( 'place', 'Autres lieux',
+							'Région, pays ou ensemble géographique&nbsp;: Normandie. Inutile de répéter la commune de l’opération, déjà indexée.',
+							'Chercher un lieu', 'pactols_places' );
+						?>
+					</div>
+					<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
+					<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
+					<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
+				</div>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s5">
+				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
+				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. Photographies&nbsp;: 10&nbsp;×&nbsp;15&nbsp;cm au moins à 300&nbsp;ppp&#8239;; dessins au trait&nbsp;: 1&#8239;200&nbsp;ppp.</p>
+				<label class="na-sr" for="na-illustrations">Choisir des fichiers</label>
+				<div class="na-depot-fichiers" id="na-depot-zone">
+					<input type="file" name="illustrations[]" id="na-illustrations" multiple accept=".jpg,.jpeg,.tiff,.tif,.pdf" aria-describedby="na-illus-aide">
+					<p class="na-depot-invite" aria-hidden="true"><span class="na-bouton-faux">Choisir des fichiers</span><span class="na-depot-ou">ou faites-les glisser ici</span></p>
+				</div>
+				<p class="na-fichiers-refuses" id="na-fichiers-refuses" role="alert"></p>
+				<ul class="na-filelist" id="na-filelist"></ul>
+				<p class="na-help na-illus-droits">Pour les documents dont vous ne détenez pas les droits, joignez les autorisations de reproduction. Des originaux trop lourds pour ce formulaire&#8239;? Transmettez-les à la rédaction par un autre moyen.</p>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s6">
+				<h2 class="na-section-titre" id="na-s6"><span class="na-section-num" aria-hidden="true">6</span> Envoi</h2>
+				<div class="na-champ">
+					<label for="na-commentaires">Message à la rédaction <span class="na-facultatif">(facultatif)</span></label>
+					<p class="na-help" id="na-commentaires-aide">Ne sera pas publié. Par exemple&nbsp;: une précision sur une illustration, une autorisation en attente.</p>
+					<textarea id="na-commentaires" name="commentaires" rows="3" aria-describedby="na-commentaires-aide"><?php echo esc_textarea( $this->repris( 'commentaires' ) ); ?></textarea>
+				</div>
+				<?php if ( $this->protection_utilise_la_question() ) : $defi = $this->defi_du_puzzle(); ?>
+					<div class="na-question na-champ" id="na-puzzle"
+						data-cible="<?php echo esc_attr( $defi['cible'] ); ?>"
+						data-tolerance="<?php echo esc_attr( self::PUZZLE_TOLERANCE ); ?>">
+						<p class="na-libelle" id="na-puzzle-libelle">Vérification&nbsp;: faites glisser la pièce jusqu’à son encoche</p>
+						<p class="na-help" id="na-puzzle-aide">Au clavier&nbsp;: flèches, puis Entrée.</p>
+						<div class="na-puzzle-scene na-ancre">
+							<canvas class="na-puzzle-fond" id="na-puzzle-fond" width="320" height="150"
+								role="img" aria-label="Image de vérification portant une encoche à combler"></canvas>
+							<canvas class="na-puzzle-piece" id="na-puzzle-piece" width="59" height="48"
+								aria-hidden="true"></canvas>
+						</div>
+						<div class="na-puzzle-piste">
+							<div class="na-puzzle-poignee" id="na-puzzle-poignee" tabindex="0"
+								role="slider" aria-labelledby="na-puzzle-libelle"
+								aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+								aria-describedby="na-puzzle-aide na-puzzle-etat"></div>
+						</div>
+						<span class="na-puzzle-etat" id="na-puzzle-etat" role="status">À faire glisser</span>
+						<button type="button" class="na-puzzle-rejouer" id="na-puzzle-rejouer">Recommencer</button>
+						<input type="hidden" name="na_curseur" id="na-curseur-valeur" value="">
+						<input type="hidden" name="na_preuve" value="<?php echo esc_attr( $defi['preuve'] ); ?>">
+					</div>
+				<?php endif; ?>
+				<?php if ( $this->protection_utilise_turnstile() && $this->turnstile_site_key_is_set() ) : ?>
+					<div class="na-turnstile">
+						<div class="cf-turnstile" data-sitekey="<?php echo esc_attr( $this->turnstile_site_key() ); ?>" data-theme="light" data-language="fr"></div>
+					</div>
+				<?php endif; ?>
+				<div class="na-envoyer">
+					<button type="submit" name="notice_archeomed_envoi" value="1" class="na-submit">Envoyer la notice</button>
+					<div class="na-envoi" id="na-envoi" hidden>
+						<div class="na-envoi-piste"><div class="na-envoi-barre"></div></div>
+						<p class="na-envoi-mot">Envoi en cours. Avec des illustrations lourdes et une connexion lente, cela peut prendre deux ou trois minutes. Ne fermez pas cette page.</p>
+					</div>
+					<p class="na-donnees">Les informations transmises via ce formulaire sont utilisées uniquement pour l’instruction éditoriale des notices destinées à la Chronique d’<em>Archéologie médiévale</em>. Elles sont adressées à la rédaction de la revue et ne sont pas utilisées à d’autres fins. Elles sont conservées pendant la durée nécessaire au traitement éditorial de la notice. Pour toute demande relative à ces données, vous pouvez contacter la rédaction à l’adresse indiquée sur le site.</p>
+				</div>
+			</section>
 		</form>
 		<script>
 		document.addEventListener('DOMContentLoaded', function () {
-			var ajaxUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+			var form = document.getElementById('na-form');
+			if (!form) { return; }
+			// Le script valide lui-même, en une passe et dans la page. Sans lui,
+			// la validation du navigateur reste en place.
+			form.noValidate = true;
+
+			var CHAMPS = <?php echo wp_json_encode( $this->champs_du_formulaire() ); ?>;
+			var MAX_FILES = <?php echo (int) self::MAX_FILES; ?>;
+			var MAX_TOTAL_SIZE = <?php echo (int) $plafonds['total']; ?>;
+			var MAX_FILE_SIZE = <?php echo (int) $plafonds['fichier']; ?>;
+			var ALLOWED = <?php echo wp_json_encode( self::ALLOWED_EXT ); ?>;
+			var KW_MAX = <?php echo (int) self::PACTOLS_FIELD_COUNT; ?>;
+			var PACTOLS = 'https://pactols.frantiq.fr/';
+			var NBSP = ' ', FINE = ' ';
+
+			// ── Petits outils ──────────────────────────────────────────────
+			function vide(v) { return !v || !String(v).replace(/\s+/g, '').length; }
+			function net(v) { return String(v || '').replace(/\s+/g, ' ').trim(); }
+			function guillemets(t) { return '«' + FINE + t + FINE + '»'; }
+			function mo(octets) {
+				if (octets < 102400) { return Math.max(1, Math.round(octets / 1024)) + NBSP + 'Ko'; }
+				var v = Math.round(octets / 1048576 * 10) / 10;
+				return String(v).replace('.', ',') + NBSP + 'Mo';
+			}
+			var naAnnonce = document.getElementById('na-annonce');
+			function annoncer(texte) {
+				if (!naAnnonce) { return; }
+				naAnnonce.textContent = '';
+				window.setTimeout(function () { naAnnonce.textContent = texte; }, 60);
+			}
+			function ajouterDescription(el, id) {
+				var ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+				if (ids.indexOf(id) === -1) { ids.unshift(id); }
+				el.setAttribute('aria-describedby', ids.join(' '));
+			}
+			function retirerDescription(el, id) {
+				var ids = (el.getAttribute('aria-describedby') || '').split(/\s+/)
+					.filter(function (x) { return x && x !== id; });
+				if (ids.length) { el.setAttribute('aria-describedby', ids.join(' ')); }
+				else { el.removeAttribute('aria-describedby'); }
+			}
+			// Un appel à Pactols qui ne répond pas s'abandonne au bout de quatre
+			// secondes : la recherche échouait sans bruit, et l'on attendait une
+			// liste qui ne viendrait pas.
+			function chercher(url, delai) {
+				var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+				var minuterie = null;
+				var attente = new Promise(function (resoudre, rejeter) {
+					minuterie = window.setTimeout(function () {
+						if (ctrl) { ctrl.abort(); }
+						rejeter(new Error('délai'));
+					}, delai || 4000);
+				});
+				var options = { headers: { 'Accept': 'application/json' } };
+				if (ctrl) { options.signal = ctrl.signal; }
+				var appel = fetch(url, options).then(function (r) {
+					if (!r.ok) { throw new Error('HTTP ' + r.status); }
+					return r.json();
+				});
+				return Promise.race([appel, attente]).then(
+					function (v) { window.clearTimeout(minuterie); return v; },
+					function (e) { window.clearTimeout(minuterie); throw e; });
+			}
+
 			var jsErrorBox = document.getElementById('na-js-error');
 			function showJsError(msg) {
 				jsErrorBox.textContent = msg;
-				jsErrorBox.style.display = 'block';
+				jsErrorBox.hidden = false;
 			}
+
+			// ── L'éditeur ──────────────────────────────────────────────────
 			var quill = null;
 			if (typeof Quill === 'undefined') {
-				showJsError('Erreur technique : l\u2019éditeur de texte ne s\u2019est pas chargé.');
+				showJsError('Erreur technique' + NBSP + ': l’éditeur de texte ne s’est pas chargé. Rechargez la page.');
 			} else {
 				quill = new Quill('#na-editor', {
 					theme: 'snow',
@@ -1792,7 +2474,10 @@ class Notice_Archeomed_Pactols {
 							['bold', 'italic'],
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
-						]
+						],
+						// Tab insérait une tabulation : au clavier, on ne sortait
+						// plus de l'éditeur qu'à reculons.
+						keyboard: { bindings: { tab: { key: 'Tab', handler: function () { return true; } } } }
 					}
 				});
 				// Le texte revient dans l'éditeur après un renvoi manqué : il
@@ -1801,8 +2486,31 @@ class Notice_Archeomed_Pactols {
 				if (texteGarde) {
 					quill.clipboard.dangerouslyPasteHTML(texteGarde);
 				}
+				// Un bloc éditable n'a pas de libellé à lui : on le nomme, sans
+				// quoi un lecteur d'écran n'annonçait qu'une « zone modifiable ».
+				var racine = quill.root;
+				racine.id = 'na-texte-editeur';
+				racine.setAttribute('role', 'textbox');
+				racine.setAttribute('aria-multiline', 'true');
+				racine.setAttribute('aria-required', 'true');
+				racine.setAttribute('aria-labelledby', 'na-texte-libelle');
+				racine.setAttribute('aria-describedby', 'na-texte-aide na-wordcount');
+				var barre = document.querySelector('#na-texte .ql-toolbar');
+				if (barre) {
+					barre.setAttribute('role', 'toolbar');
+					barre.setAttribute('aria-label', 'Mise en forme du texte');
+					[['.ql-bold', 'Gras'], ['.ql-italic', 'Italique'], ['.ql-script[value="super"]', 'Exposant'],
+						['.ql-script[value="sub"]', 'Indice'], ['.ql-clean', 'Effacer la mise en forme']].forEach(function (p) {
+						var b = barre.querySelector(p[0]);
+						if (b) { b.setAttribute('aria-label', p[1]); b.title = p[1]; }
+					});
+				}
 			}
+			// Le compteur passait au rouge dès le premier mot et jusqu'au
+			// deux-cent-quatre-vingt-dix-neuvième : il alarmait pendant qu'on
+			// écrivait. Sous la fourchette, il ne le dit qu'à la sortie.
 			var wc = document.getElementById('na-wordcount');
+			var texteQuitte = false;
 			function countWords() {
 				if (!quill) {
 					wc.textContent = 'éditeur indisponible';
@@ -1810,32 +2518,117 @@ class Notice_Archeomed_Pactols {
 				}
 				var text = quill.getText().trim();
 				var n = text.length ? text.split(/\s+/).length : 0;
-				wc.textContent = n + (n > 1 ? ' mots' : ' mot');
-				wc.classList.toggle('na-out', n > 0 && (n < 300 || n > 700));
+				var mots = n + (n > 1 ? ' mots' : ' mot');
+				var hors = false;
+				if (n > 700) { mots += ' — au-delà des 700 recommandés'; hors = true; }
+				else if (n >= 300) { mots += ' — dans la fourchette recommandée'; }
+				else if (n > 0 && texteQuitte) { mots += ' — la rédaction recommande au moins 300'; hors = true; }
+				wc.textContent = mots;
+				wc.classList.toggle('na-out', hors);
 				return n;
 			}
 			if (quill) {
-				quill.on('text-change', countWords);
+				quill.on('text-change', function () { countWords(); reverifier('texte'); });
+				quill.root.addEventListener('blur', function () { texteQuitte = true; countWords(); });
+				quill.root.addEventListener('focus', function () { texteQuitte = false; countWords(); });
 			}
 			countWords();
-			var deptInput = document.getElementById('na-departement');
-			var timer = null;
 
-			// Extrait "26678/pcrtd1Ms3ERUXz" depuis une URI ARK complète.
+			// ── Combobox (lieux et Pactols) ────────────────────────────────
+			// Le focus reste dans le champ ; l'option active est désignée par
+			// aria-activedescendant, que les lecteurs d'écran suivent. Flèches,
+			// Entrée, Échap ; la souris et le doigt comme avant.
+			function armerCombobox(champ, liste, choisir, dire) {
+				var actif = -1;
+				dire = dire || annoncer;
+				champ.setAttribute('role', 'combobox');
+				champ.setAttribute('aria-autocomplete', 'list');
+				champ.setAttribute('aria-expanded', 'false');
+				champ.setAttribute('aria-controls', liste.id);
+				liste.setAttribute('role', 'listbox');
+				liste.setAttribute('aria-label', 'Propositions');
+				liste.hidden = true;
+				// Le champ garde le focus : la liste ne se ferme pas sous le
+				// doigt avant que le clic n'arrive.
+				liste.addEventListener('mousedown', function (e) { e.preventDefault(); });
+				function options() { return liste.querySelectorAll('[role="option"]'); }
+				function marquer(i) {
+					var opts = options();
+					actif = i;
+					for (var k = 0; k < opts.length; k++) {
+						opts[k].setAttribute('aria-selected', k === i ? 'true' : 'false');
+					}
+					if (i >= 0 && opts[i]) {
+						champ.setAttribute('aria-activedescendant', opts[i].id);
+						if (opts[i].scrollIntoView) { opts[i].scrollIntoView({ block: 'nearest' }); }
+					} else {
+						champ.removeAttribute('aria-activedescendant');
+					}
+				}
+				function fermer() {
+					liste.hidden = true;
+					liste.innerHTML = '';
+					champ.setAttribute('aria-expanded', 'false');
+					marquer(-1);
+				}
+				function ouvrir(items, rendre) {
+					liste.innerHTML = '';
+					// Une réponse arrivée après qu'on a quitté le champ n'ouvre
+					// rien : la liste restait déployée sur le champ suivant.
+					if (!items.length || document.activeElement !== champ) { fermer(); return; }
+					items.forEach(function (item, i) {
+						var li = document.createElement('li');
+						li.id = liste.id + '-' + i;
+						li.setAttribute('role', 'option');
+						li.setAttribute('aria-selected', 'false');
+						rendre(li, item, i);
+						li.addEventListener('click', function () { fermer(); choisir(item); });
+						liste.appendChild(li);
+					});
+					liste.hidden = false;
+					champ.setAttribute('aria-expanded', 'true');
+					actif = -1;
+					dire(items.length + (items.length > 1 ? ' propositions' : ' proposition')
+						+ NBSP + ': flèche bas pour les parcourir, Entrée pour choisir.');
+				}
+				champ.addEventListener('keydown', function (e) {
+					var opts = options();
+					var ouverte = !liste.hidden && opts.length > 0;
+					var k = e.key;
+					if (k === 'Escape' || k === 'Esc') {
+						if (ouverte) { e.preventDefault(); fermer(); }
+						return;
+					}
+					if (!ouverte) { return; }
+					if (k === 'ArrowDown' || k === 'Down') {
+						e.preventDefault(); marquer(actif < opts.length - 1 ? actif + 1 : 0);
+					} else if (k === 'ArrowUp' || k === 'Up') {
+						e.preventDefault(); marquer(actif > 0 ? actif - 1 : opts.length - 1);
+					} else if (k === 'Enter' && actif >= 0) {
+						e.preventDefault(); opts[actif].click();
+					} else if (k === 'Tab') {
+						fermer();
+					}
+				});
+				champ.addEventListener('blur', function () { window.setTimeout(fermer, 150); });
+				return { ouvrir: ouvrir, fermer: fermer };
+			}
+
+			// Extrait « 26678/pcrtd1Ms3ERUXz » d'une URI ARK complète.
 			function arkPathFromUri(uri) {
 				var m = String(uri).match(/ark:\/(.+)$/);
 				return m ? m[1] : '';
 			}
-			// À partir de l'ARK d'une commune, renvoie une promesse du nom de département
-			// (chaîne vide si introuvable). Le département est l'avant-dernier élément du
-			// chemin (le dernier étant la commune). On nettoie le préfixe "Département du/de...".
+			// Le département d'une commune, d'après son ARK : l'avant-dernier
+			// élément du chemin, débarrassé de « Département du… ». Chaque ARK
+			// n'est demandé qu'une fois.
+			var departements = {};
 			function getDepartmentFromArk(arkUri) {
 				var arkPath = arkPathFromUri(arkUri);
 				if (!arkPath) { return Promise.resolve(''); }
-				var url = 'https://pactols.frantiq.fr/api/searchwidgetbyark?q='
-					+ encodeURIComponent(arkPath) + '&lang=fr';
-				return fetch(url, { headers: { 'Accept': 'application/json' } })
-					.then(function (r) { return r.ok ? r.json() : null; })
+				if (departements[arkPath]) { return departements[arkPath]; }
+				departements[arkPath] = chercher(PACTOLS + 'api/searchwidgetbyark?q='
+					+ encodeURIComponent(arkPath) + '&lang=fr')
 					.then(function (data) {
 						if (!Array.isArray(data) || !data.length) { return ''; }
 						var path = Array.isArray(data[0]) ? data[0] : data;
@@ -1852,318 +2645,432 @@ class Notice_Archeomed_Pactols {
 						}
 						return deptLabel.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|de\s+)/i, '').trim();
 					})
-					.catch(function () { return ''; });
+					.catch(function () { delete departements[arkPath]; return ''; });
+				return departements[arkPath];
 			}
-			// Chaque ligne de lieu se complète pour son propre compte : une
-			// opération porte parfois sur quatre communes, et il n'y a pas de
-			// raison que la deuxième soit moins bien servie que la première.
-			// Seule la première renseigne la parenthèse — c'est d'elle qu'on
-			// tire le département, et les suivantes sont du même.
+			function precision(li, texte) {
+				var p = document.createElement('span');
+				p.className = 'na-suggestion-precision';
+				p.textContent = '(' + texte + ')';
+				li.appendChild(p);
+			}
+
+			// ── Le titre : lieux, parenthèse, lieu-dit, et leur aperçu ──────
+			var deptInput = document.getElementById('na-departement');
+			var deptAuto = document.getElementById('na-departement-auto');
+			var lieuDitInput = document.getElementById('na-lieu-dit');
+			// La parenthèse tapée par l'auteur ne s'écrase plus : choisir la
+			// commune la vidait, même quand Pactols n'avait rien à y remettre.
+			var deptSaisiMain = !vide(deptInput.value);
+			deptInput.addEventListener('input', function () {
+				deptSaisiMain = !vide(deptInput.value);
+				deptAuto.textContent = '';
+				majApercu();
+			});
+			function remplirDept(uri) {
+				if (deptSaisiMain) { return; }
+				deptInput.value = '';
+				deptAuto.textContent = '';
+				majApercu();
+				getDepartmentFromArk(uri).then(function (d) {
+					if (!d || deptSaisiMain) { return; }
+					deptInput.value = d;
+					deptAuto.textContent = 'Rempli d’après Pactols' + NBSP + ': vérifiez.';
+					reverifier('departement');
+					majApercu();
+				});
+			}
+			// Le serveur ôte les parenthèses saisies et l'article élidé en tête
+			// (« l’Aude ») : l'aperçu en fait autant, pour montrer ce qui paraîtra.
+			var ARTICLE = null;
+			try { ARTICLE = new RegExp('^l[\'’]\\s*(?=\\p{Lu})', 'u'); } catch (e) { ARTICLE = /^l['’]\s*(?=[A-ZÀ-Ý])/; }
+			function sansParentheses(v) {
+				v = net(v);
+				while (v && v.charAt(0) === '(' && v.charAt(v.length - 1) === ')') { v = v.slice(1, -1).trim(); }
+				v = v.replace(/^[\s()]+|[\s()]+$/g, '');
+				return v.replace(ARTICLE, '');
+			}
+			var apercu = document.getElementById('na-apercu');
+			var apercuTitre = document.getElementById('na-apercu-titre');
+			// Compose comme le document : les lieux joints par des virgules, la
+			// parenthèse, puis le point et le lieu-dit en italique. Ce qui manque
+			// encore paraît en gris, à sa place.
+			function majApercu() {
+				var lieux = [].map.call(form.querySelectorAll('.na-commune'), function (c) { return net(c.value); })
+					.filter(Boolean).slice(0, <?php echo (int) self::MAX_LIEUX; ?>);
+				var dept = sansParentheses(deptInput.value);
+				var lieuDit = net(lieuDitInput.value);
+				function morceau(texte, manque, italique) {
+					var el = document.createElement(italique ? 'em' : 'span');
+					el.textContent = texte;
+					if (manque) { el.className = 'na-manque'; }
+					apercuTitre.appendChild(el);
+				}
+				apercuTitre.innerHTML = '';
+				morceau(lieux.length ? lieux.join(', ') : 'Commune', !lieux.length);
+				morceau(' (', false);
+				morceau(dept || 'département', !dept);
+				morceau('). ', false);
+				morceau(lieuDit || 'Lieu-dit', !lieuDit, true);
+				apercu.hidden = false;
+			}
+			lieuDitInput.addEventListener('input', majApercu);
+
+			// Chaque ligne de lieu se complète pour son propre compte ; seule la
+			// première renseigne la parenthèse.
 			function armerLeLieu(ligne, rang) {
 				var champ = ligne.querySelector('.na-commune');
 				var ark = ligne.querySelector('.na-commune-ark');
 				var boite = ligne.querySelector('.na-suggestions');
 				if (!champ || !ark || !boite) { return; }
-				var actif = -1;
-
-				function vider() {
-					boite.innerHTML = '';
-					boite.style.display = 'none';
-					actif = -1;
-				}
-				ligne.viderLesSuggestions = vider;
-
+				var cb = armerCombobox(champ, boite, function (c) {
+					champ.value = c.label;
+					ark.value = c.uri;
+					annoncer(guillemets(c.label) + ' retenu.');
+					reverifier('commune');
+					majApercu();
+					marquerModifie();
+					if (0 === rang) { remplirDept(c.uri); }
+				});
+				var minuterie = null, tour = 0;
 				champ.addEventListener('input', function () {
 					var q = champ.value.trim();
 					ark.value = '';
-					if (timer) { clearTimeout(timer); }
-					if (q.length < 3) { vider(); return; }
-					timer = setTimeout(function () {
-						var url = 'https://pactols.frantiq.fr/api/autocomplete/'
-							+ encodeURIComponent(q) + '?lang=fr&theso=th17';
-						fetch(url, { headers: { 'Accept': 'application/json' } })
-							.then(function (r) { return r.ok ? r.json() : []; })
+					majApercu();
+					if (minuterie) { window.clearTimeout(minuterie); }
+					var ce = ++tour;
+					if (q.length < 3) { cb.fermer(); return; }
+					minuterie = window.setTimeout(function () {
+						chercher(PACTOLS + 'api/autocomplete/' + encodeURIComponent(q) + '?lang=fr&theso=th17')
 							.then(function (data) {
-								boite.innerHTML = '';
-								if (!Array.isArray(data) || data.length === 0) { vider(); return; }
-								var vus = {};
-								data.forEach(function (c) {
-									if (!c || !c.label || !c.uri || vus[c.uri]) { return; }
-									vus[c.uri] = true;
-									var li = document.createElement('li');
-									var etiquette = document.createElement('span');
-									etiquette.textContent = c.label;
-									li.appendChild(etiquette);
-									// Le département entre parenthèses distingue les
-									// communes homonymes, qui sont légion.
-									getDepartmentFromArk(c.uri).then(function (dept) {
-										if (dept) { etiquette.textContent = c.label + ' (' + dept + ')'; }
-									});
-									li.addEventListener('click', function () {
-										champ.value = c.label;
-										ark.value = c.uri;
-										vider();
-										if (0 === rang) {
-											deptInput.value = '';
-											getDepartmentFromArk(c.uri).then(function (dept) {
-												if (dept) { deptInput.value = dept; }
-											});
-										}
-									});
-									boite.appendChild(li);
+								if (ce !== tour) { return; }   // une réponse périmée n'écrase rien
+								var vus = {}, items = [];
+								(Array.isArray(data) ? data : []).forEach(function (c) {
+									if (c && c.label && c.uri && !vus[c.uri]) { vus[c.uri] = true; items.push(c); }
 								});
-								boite.style.display = 'block';
-							}).catch(function () { vider(); });
+								cb.ouvrir(items.slice(0, 20), function (li, c, i) {
+									var nom = document.createElement('span');
+									nom.textContent = c.label;
+									li.appendChild(nom);
+									// Le département distingue les homonymes. Une requête
+									// par proposition : on s'en tient aux cinq premières.
+									if (i < 5) {
+										getDepartmentFromArk(c.uri).then(function (d) { if (d) { precision(li, d); } });
+									}
+								});
+							}, function () { if (ce === tour) { cb.fermer(); } });
 					}, 250);
 				});
+			}
+			[].forEach.call(form.querySelectorAll('.na-lieu'), armerLeLieu);
+			deptInput.addEventListener('change', majApercu);
 
-				champ.addEventListener('keydown', function (e) {
-					var items = boite.querySelectorAll('li');
-					if (boite.style.display === 'none' || items.length === 0) { return; }
-					if (e.key === 'ArrowDown') {
-						e.preventDefault();
-						actif = Math.min(actif + 1, items.length - 1);
-					} else if (e.key === 'ArrowUp') {
-						e.preventDefault();
-						actif = Math.max(actif - 1, 0);
-					} else if (e.key === 'Enter' && actif >= 0) {
-						e.preventDefault();
-						items[actif].click();
-						return;
-					} else {
-						return;
-					}
-					items.forEach(function (it, i) { it.classList.toggle('na-active', i === actif); });
+			// ── Les blocs repliés ──────────────────────────────────────────
+			// Tout est dans la page, et visible sans script : le script replie ce
+			// qui est vide, et ouvre d'office ce que la reprise a rempli.
+			function aDesValeurs(el) {
+				return [].some.call(el.querySelectorAll('input, select, textarea'), function (c) {
+					if (c.type === 'hidden' || c.type === 'button') { return false; }
+					if (c.type === 'checkbox' || c.type === 'radio') { return c.checked; }
+					return !vide(c.value);
 				});
 			}
-
-			var lignesDeLieu = [].slice.call(document.querySelectorAll('.na-lieu'));
-			lignesDeLieu.forEach(armerLeLieu);
-
-			document.addEventListener('click', function (e) {
-				lignesDeLieu.forEach(function (ligne) {
-					if (!ligne.contains(e.target) && ligne.viderLesSuggestions) {
-						ligne.viderLesSuggestions();
-					}
+			function viderLeBloc(el) {
+				[].forEach.call(el.querySelectorAll('input, select, textarea'), function (c) {
+					if (c.type === 'checkbox' || c.type === 'radio') { c.checked = false; }
+					else if (c.tagName === 'SELECT') { c.selectedIndex = 0; }
+					else if (c.type !== 'button') { c.value = ''; }
+					effacerLErreurDe(c);
 				});
-				document.querySelectorAll('.na-pactols-suggestions').forEach(function (box) {
-					if (!box.contains(e.target) && !box.parentNode.contains(e.target)) {
-						box.innerHTML = '';
-						box.style.display = 'none';
+			}
+			function premierChamp(el) {
+				return el.querySelector('input:not([type=hidden]), select, textarea');
+			}
+			var replis = [];
+			[].forEach.call(form.querySelectorAll('.na-ajout[aria-controls]'), function (bouton) {
+				var bloc = document.getElementById(bouton.getAttribute('aria-controls'));
+				if (!bloc) { return; }
+				var retirer = bloc.querySelector('.na-retirer');
+				function ouvrir(focus) {
+					bloc.hidden = false;
+					bouton.hidden = true;
+					bouton.setAttribute('aria-expanded', 'true');
+					if (focus) { var c = premierChamp(bloc); if (c) { c.focus(); } }
+				}
+				function fermer() {
+					bloc.hidden = true;
+					bouton.hidden = false;
+					bouton.setAttribute('aria-expanded', 'false');
+				}
+				bouton.addEventListener('click', function () { ouvrir(true); });
+				if (retirer) {
+					retirer.hidden = false;
+					retirer.addEventListener('click', function () {
+						viderLeBloc(bloc);
+						fermer();
+						bouton.focus();
+						marquerModifie();
+					});
+				}
+				replis.push(function () { if (aDesValeurs(bloc)) { ouvrir(false); } else { fermer(); } });
+			});
+			[].forEach.call(form.querySelectorAll('.na-ajout[data-ajoute]'), function (bouton) {
+				var nom = bouton.getAttribute('data-ajoute');
+				var lignes = [].slice.call(form.querySelectorAll('.na-repli[data-repli="' + nom + '"]'));
+				function maj() { bouton.hidden = lignes.every(function (l) { return !l.hidden; }); }
+				bouton.addEventListener('click', function () {
+					for (var i = 0; i < lignes.length; i++) {
+						if (lignes[i].hidden) {
+							lignes[i].hidden = false;
+							var c = premierChamp(lignes[i]);
+							if (c) { c.focus(); }
+							break;
+						}
 					}
+					maj();
+				});
+				lignes.forEach(function (ligne) {
+					var retirer = ligne.querySelector('.na-retirer');
+					if (!retirer) { return; }
+					retirer.hidden = false;
+					retirer.addEventListener('click', function () {
+						viderLeBloc(ligne);
+						ligne.hidden = true;
+						maj();
+						bouton.focus();
+						majApercu();
+						marquerModifie();
+					});
+				});
+				replis.push(function () {
+					lignes.forEach(function (l) { l.hidden = !aDesValeurs(l); });
+					maj();
 				});
 			});
+			function ajusterLesReplis() { replis.forEach(function (f) { f(); }); }
+			ajusterLesReplis();
+
+			// ── Mots-clés Pactols ──────────────────────────────────────────
 			function pactolsSearch(type, q) {
-				// Appel direct à l'API Pactols depuis le navigateur (comme geo.api.gouv.fr).
-				// URL sans /opentheso/ : ce préfixe provoquait une redirection 404 sans
-				// en-têtes CORS, d'où l'erreur "No Access-Control-Allow-Origin" trompeuse.
+				// URL sans /opentheso/ : ce préfixe provoquait une redirection
+				// 404 sans en-têtes CORS. Les périodes se restreignent à la
+				// branche P2-Entités temporelles (groupe g124).
 				var theso = (type === 'place') ? 'th17' : 'TH_1';
-				var url = 'https://pactols.frantiq.fr/api/autocomplete/' + encodeURIComponent(q)
+				var url = PACTOLS + 'api/autocomplete/' + encodeURIComponent(q)
 					+ '?lang=fr&theso=' + encodeURIComponent(theso);
-				// Périodes : restreindre à la branche P2-Entités temporelles (groupe g124),
-				// pour ne pas proposer tout le thésaurus Sujets.
-				if (type === 'period') {
-					url += '&group=g124';
-				}
-				return fetch(url, { headers: { 'Accept': 'application/json' } })
-					.then(function (r) {
-						if (!r.ok) { return []; }
-						return r.json();
-					})
-					.then(function (data) {
-						if (!Array.isArray(data)) { return []; }
-						var seen = {};
-						var out = [];
-						data.forEach(function (item) {
-							if (!item || !item.label || !item.uri) { return; }
-							if (seen[item.uri]) { return; }
-							seen[item.uri] = true;
-							out.push({
-								label: item.label,
-								ark: item.uri,
-								idConcept: item.identifier || '',
-								fullpath: ''
-							});
-						});
-						return out.slice(0, 20);
-					})
-					.catch(function () { return []; });
+				if (type === 'period') { url += '&group=g124'; }
+				return chercher(url).then(function (data) {
+					if (!Array.isArray(data)) { return []; }
+					var seen = {}, out = [];
+					data.forEach(function (item) {
+						if (!item || !item.label || !item.uri || seen[item.uri]) { return; }
+						seen[item.uri] = true;
+						out.push({ label: item.label, ark: item.uri, idConcept: item.identifier || '', fullpath: '' });
+					});
+					return out.slice(0, 20);
+				});
 			}
-			// Un terme retiré du thésaurus s'indexe dans le vide : la chaîne
-			// refuse de l'enrichir, et le mot-clé reste nu sans que personne
-			// l'ait vu passer. L'autocomplétion les propose comme les autres —
-			// elle ne rend qu'une étiquette et un identifiant. On va donc le
-			// demander, une fois, au moment où quelqu'un choisit.
-			//
-			// La vérification ne bloque rien : le terme est déjà posé quand
-			// elle part, et si Pactols ne répond pas, le dépôt suit son cours.
-			function verifierLeConcept(field, item, type) {
-				var zone = field.querySelector('[data-pactols-avis]');
-				if (zone) { zone.remove(); }
-				if (!item.idConcept) { return; }
-				var theso = (type === 'place') ? 'th17' : 'TH_1';
-				var url = 'https://pactols.frantiq.fr/openapi/v1/concept/'
-					+ encodeURIComponent(theso) + '/' + encodeURIComponent(item.idConcept);
-				fetch(url, { headers: { 'Accept': 'application/json' } })
-					.then(function (r) { return r.ok ? r.json() : null; })
+			// Un terme retiré du thésaurus s'indexe dans le vide. On le demande
+			// une fois, au moment du choix ; rien n'est bloqué si Pactols se tait,
+			// et l'avis nomme le remplaçant quand il y en a un.
+			function verifierLeConcept(cat, item) {
+				if (!item.idConcept || !item.ark) { return; }
+				var theso = (cat.type === 'place') ? 'th17' : 'TH_1';
+				chercher(PACTOLS + 'openapi/v1/concept/' + encodeURIComponent(theso) + '/' + encodeURIComponent(item.idConcept), 6000)
 					.then(function (data) {
 						if (!data || !data[item.ark]) { return; }
 						var n = data[item.ark];
 						var dep = n['http://www.w3.org/2002/07/owl#deprecated'];
 						if (!dep || !dep.length) { return; }
 						var rep = n['http://purl.org/dc/terms/isReplacedBy'];
-						poserUnAvis(field, item, type, rep && rep.length ? rep[0].value : '');
+						poserUnAvis(cat, item, theso, rep && rep.length ? rep[0].value : '');
 					})
 					.catch(function () {});
 			}
-			// L'avis nomme le remplaçant et propose de le prendre : signaler un
-			// terme mort sans dire par quoi le remplacer laisse le travail
-			// entier à qui dépose.
-			function poserUnAvis(field, item, type, remplacant) {
+			function poserUnAvis(cat, item, theso, remplacant) {
 				var zone = document.createElement('p');
-				zone.setAttribute('data-pactols-avis', '1');
 				zone.className = 'na-pactols-avis';
-				zone.textContent = '« ' + item.label + ' » a été retiré du thésaurus Pactols.';
-				field.appendChild(zone);
+				zone.setAttribute('data-ark', item.ark);
+				zone.textContent = guillemets(item.label) + ' a été retiré du thésaurus Pactols.';
+				cat.fs.appendChild(zone);
 				if (!remplacant) { return; }
-				var theso = (type === 'place') ? 'th17' : 'TH_1';
-				var seg = remplacant.split('/').pop();
-				fetch('https://pactols.frantiq.fr/openapi/v1/concept/'
-						+ encodeURIComponent(theso) + '/' + encodeURIComponent(seg),
-					{ headers: { 'Accept': 'application/json' } })
-					.then(function (r) { return r.ok ? r.json() : null; })
+				chercher(PACTOLS + 'openapi/v1/concept/' + encodeURIComponent(theso) + '/'
+					+ encodeURIComponent(remplacant.split('/').pop()), 6000)
 					.then(function (data) {
 						if (!data || !data[remplacant]) { return; }
 						var labels = data[remplacant]['http://www.w3.org/2004/02/skos/core#prefLabel'] || [];
-						var fr = '';
 						var id = data[remplacant]['http://purl.org/dc/terms/identifier'];
+						var fr = '';
 						labels.forEach(function (l) { if (l.lang === 'fr') { fr = l.value; } });
 						if (!fr) { return; }
-						zone.textContent = '« ' + item.label + ' » a été retiré du thésaurus Pactols. Il est remplacé par « ' + fr + ' ». ';
+						zone.textContent = guillemets(item.label) + ' a été retiré du thésaurus Pactols. Il est remplacé par ' + guillemets(fr) + '. ';
 						var b = document.createElement('button');
 						b.type = 'button';
 						b.className = 'na-pactols-remplacer';
-						b.textContent = 'Prendre « ' + fr + ' »';
+						b.textContent = 'Prendre ' + guillemets(fr);
 						b.addEventListener('click', function () {
-							var neuf = { label: fr, ark: remplacant,
-								idConcept: (id && id.length) ? id[0].value : '', fullpath: '' };
-							var input = field.querySelector('.na-pactols-input');
-							var hidden = field.querySelector('.na-pactols-hidden');
-							input.value = fr;
-							input.classList.add('na-pactols-selected');
-							hidden.value = JSON.stringify(neuf);
+							cat.remplacer(item, { label: fr, ark: remplacant,
+								idConcept: (id && id.length) ? id[0].value : '', fullpath: '' });
 							zone.remove();
+							cat.champ.focus();
 						});
 						zone.appendChild(b);
 					})
 					.catch(function () {});
 			}
-			function renderPactolsSuggestions(field, items, type) {
-				var box = field.querySelector('.na-pactols-suggestions');
-				var input = field.querySelector('.na-pactols-input');
-				var hidden = field.querySelector('.na-pactols-hidden');
-				box.innerHTML = '';
-				if (!items.length) {
-					box.style.display = 'none';
-					return;
-				}
-				items.forEach(function (item) {
-					var li = document.createElement('li');
-					var labelSpan = document.createElement('span');
-					labelSpan.textContent = item.label;
-					li.appendChild(labelSpan);
-					// Pour les lieux, on complète avec le département entre parenthèses
-					// dès que disponible (utile pour distinguer les communes homonymes).
-					if (type === 'place' && item.ark) {
-						getDepartmentFromArk(item.ark).then(function (dept) {
-							if (dept) { labelSpan.textContent = item.label + ' (' + dept + ')'; }
-						});
-					}
-					li.addEventListener('click', function () {
-						input.value = item.label;
-						input.classList.add('na-pactols-selected');
-						hidden.value = JSON.stringify(item);
-						box.innerHTML = '';
-						box.style.display = 'none';
-						verifierLeConcept(field, item, type);
+			function Categorie(fs) {
+				var cat = this;
+				cat.fs = fs;
+				cat.type = fs.getAttribute('data-type');
+				var cache = document.getElementById(fs.getAttribute('data-cible'));
+				var jetons = fs.querySelector('.na-jetons');
+				var champ = cat.champ = fs.querySelector('.na-kw-champ');
+				var liste = fs.querySelector('.na-pactols-suggestions');
+				var compte = fs.querySelector('.na-kw-compte');
+				var etat = fs.querySelector('.na-kw-etat');
+				var items = [];
+				function dire(t) { etat.textContent = t; }
+				// Le champ caché garde le JSON d'avant, tel que le serveur le lit
+				// et que la reprise le rend.
+				cat.relire = function () {
+					items = [];
+					var lu = [];
+					try { lu = cache.value ? JSON.parse(cache.value) : []; } catch (e) { lu = []; }
+					(Array.isArray(lu) ? lu : []).forEach(function (it) {
+						if (it && it.label && items.length < KW_MAX) {
+							items.push({ label: String(it.label), ark: it.ark || '', idConcept: it.idConcept || '', fullpath: it.fullpath || '' });
+						}
 					});
-					box.appendChild(li);
-				});
-				box.style.display = 'block';
-			}
-			document.querySelectorAll('.na-pactols-field').forEach(function (field) {
-				var input = field.querySelector('.na-pactols-input');
-				var hidden = field.querySelector('.na-pactols-hidden');
-				var pTimer = null;
-				input.addEventListener('input', function () {
-					var q = input.value.trim();
-					input.classList.remove('na-pactols-selected');
-					hidden.value = '';
-					if (pTimer) { clearTimeout(pTimer); }
-					if (q.length < 3) {
-						renderPactolsSuggestions(field, [], input.getAttribute('data-pactols-type'));
-						return;
+					dessiner();
+				};
+				function ecrire() { cache.value = JSON.stringify(items); }
+				function dessiner() {
+					jetons.innerHTML = '';
+					items.forEach(function (it, i) {
+						var li = document.createElement('li');
+						li.className = 'na-jeton' + (it.ark ? '' : ' na-jeton-libre');
+						var mot = document.createElement('span');
+						mot.className = 'na-jeton-texte';
+						mot.textContent = it.label;
+						if (!it.ark) {
+							var note = document.createElement('span');
+							note.className = 'na-jeton-note';
+							note.textContent = ' (sans identifiant)';
+							mot.appendChild(note);
+						}
+						li.appendChild(mot);
+						var b = document.createElement('button');
+						b.type = 'button';
+						b.className = 'na-jeton-retirer';
+						b.setAttribute('aria-label', 'Retirer ' + it.label);
+						b.innerHTML = '<span aria-hidden="true">×</span>';
+						b.addEventListener('click', function () {
+							items.splice(i, 1);
+							ecrire();
+							dessiner();
+							dire(guillemets(it.label) + ' retiré.');
+							champ.focus();
+							marquerModifie();
+						});
+						li.appendChild(b);
+						jetons.appendChild(li);
+					});
+					jetons.hidden = !items.length;
+					compte.textContent = items.length + ' sur ' + KW_MAX;
+				}
+				function ajouter(item) {
+					var cle = net(item.label).toLowerCase();
+					var deja = items.some(function (it) {
+						return (item.ark && it.ark === item.ark) || net(it.label).toLowerCase() === cle;
+					});
+					if (deja) {
+						champ.value = '';
+						dire(guillemets(item.label) + ' est déjà retenu.');
+						return true;
 					}
-					pTimer = setTimeout(function () {
-						var t = input.getAttribute('data-pactols-type');
-						pactolsSearch(t, q).then(function (items) {
-							renderPactolsSuggestions(field, items, t);
+					if (items.length >= KW_MAX) {
+						dire('Dix termes au plus dans cette catégorie' + NBSP + ': retirez-en un pour en ajouter un autre.');
+						return false;
+					}
+					items.push(item);
+					ecrire();
+					dessiner();
+					champ.value = '';
+					effacerLErreurDe(champ);
+					dire(guillemets(item.label) + (item.ark ? ' ajouté.' : ' ajouté, sans identifiant Pactols.'));
+					marquerModifie();
+					verifierLeConcept(cat, item);
+					return true;
+				}
+				cat.remplacer = function (ancien, neuf) {
+					var i = items.indexOf(ancien);
+					if (i === -1) { return; }
+					items[i] = neuf;
+					ecrire();
+					dessiner();
+					dire(guillemets(neuf.label) + ' remplace ' + guillemets(ancien.label) + '.');
+				};
+				// Le texte laissé dans le champ au moment d'envoyer devient un
+				// terme libre : il bloquait l'envoi, par une alerte qui ne disait
+				// pas où regarder.
+				cat.garderLaSaisie = function () {
+					var t = net(champ.value);
+					if (!t) { return true; }
+					return ajouter({ label: t, ark: '', idConcept: '', fullpath: '' });
+				};
+				cat.ecrire = ecrire;
+				var cb = armerCombobox(champ, liste, function (item) { ajouter(item); }, dire);
+				var minuterie = null, tour = 0;
+				champ.addEventListener('input', function () {
+					var q = champ.value.trim();
+					if (minuterie) { window.clearTimeout(minuterie); }
+					var ce = ++tour;
+					if (q.length < 3) { cb.fermer(); dire(''); return; }
+					minuterie = window.setTimeout(function () {
+						dire('Recherche dans Pactols…');
+						pactolsSearch(cat.type, q).then(function (res) {
+							if (ce !== tour) { return; }
+							if (!res.length) {
+								cb.fermer();
+								dire('Aucun terme Pactols ne correspond. Essayez un mot plus court ou un synonyme, ou appuyez sur Entrée pour garder ' + guillemets(q) + ' tel quel.');
+								return;
+							}
+							cb.ouvrir(res, function (li, item, i) {
+								var s = document.createElement('span');
+								s.textContent = item.label;
+								li.appendChild(s);
+								if (cat.type === 'place' && item.ark && i < 5) {
+									getDepartmentFromArk(item.ark).then(function (d) { if (d) { precision(li, d); } });
+								}
+							});
+						}, function () {
+							if (ce !== tour) { return; }
+							cb.fermer();
+							dire('Pactols ne répond pas pour l’instant. Appuyez sur Entrée pour garder ' + guillemets(q) + ' tel quel, sans identifiant.');
 						});
 					}, 300);
 				});
-			});
-			// Les mots-clés déjà choisis, quand la page revient d'un renvoi
-			// manqué : le champ caché les porte, il reste à regarnir les cases
-			// visibles pour qu'on les retrouve tels qu'on les avait posés.
-			function reprendrePactols(type) {
-				var garde = document.getElementById('pactols_' + type);
-				if (!garde || !garde.value) { return; }
-				var items = [];
-				try { items = JSON.parse(garde.value); } catch (e) { return; }
-				if (!Array.isArray(items) || items.length === 0) { return; }
-				var cle = (type === 'periods') ? 'period'
-					: (type === 'subjects') ? 'subject' : 'place';
-				var caches = document.querySelectorAll(
-					'.na-pactols-hidden[data-pactols-hidden="' + cle + '"]');
-				items.forEach(function (item, i) {
-					if (i >= caches.length || !item || !item.label) { return; }
-					caches[i].value = JSON.stringify(item);
-					var champ = caches[i].parentNode.querySelector('.na-pactols-input');
-					if (champ) { champ.value = item.label; }
+				// Entrée sans option choisie garde le texte tel quel ; elle ne
+				// soumet jamais le formulaire.
+				champ.addEventListener('keydown', function (e) {
+					if (e.key !== 'Enter' || e.defaultPrevented) { return; }
+					e.preventDefault();
+					if (vide(champ.value)) { return; }
+					if (minuterie) { window.clearTimeout(minuterie); }
+					tour++;
+					cb.fermer();
+					cat.garderLaSaisie();
 				});
+				cat.relire();
 			}
-			['periods', 'subjects', 'places'].forEach(reprendrePactols);
+			var categories = [].map.call(form.querySelectorAll('.na-kw'), function (fs) { return new Categorie(fs); });
 
-			function collectPactols(type) {
-				var values = [];
-				document.querySelectorAll('.na-pactols-hidden[data-pactols-hidden="' + type + '"]').forEach(function (hidden) {
-					if (!hidden.value) { return; }
-					try {
-						var item = JSON.parse(hidden.value);
-						if (item && item.label) {
-							values.push(item);
-						}
-					} catch (e) {}
-				});
-				return values;
-			}
-			function hasUnselectedPactolsInput() {
-				var bad = false;
-				document.querySelectorAll('.na-pactols-field').forEach(function (field) {
-					var input = field.querySelector('.na-pactols-input');
-					var hidden = field.querySelector('.na-pactols-hidden');
-					if (input.value.trim() !== '' && hidden.value.trim() === '') {
-						bad = true;
-					}
-				});
-				return bad;
-			}
+			// ── Les illustrations ──────────────────────────────────────────
 			var fileInput = document.getElementById('na-illustrations');
 			var fileList = document.getElementById('na-filelist');
+			var refuses = document.getElementById('na-fichiers-refuses');
+			var zone = document.getElementById('na-depot-zone');
 			var selected = [];
-			var MAX_FILES = <?php echo (int) self::MAX_FILES; ?>;
-			var MAX_TOTAL_SIZE = <?php echo (int) self::MAX_TOTAL_FILESIZE; ?>;
-			var ALLOWED = <?php echo wp_json_encode( self::ALLOWED_EXT ); ?>;
 			function extOf(name) {
 				var parts = name.toLowerCase().split('.');
 				return parts.length > 1 ? parts.pop() : '';
@@ -2171,87 +3078,116 @@ class Notice_Archeomed_Pactols {
 			function totalSelectedSize() {
 				return selected.reduce(function (sum, f) { return sum + f.size; }, 0);
 			}
-			function formatMo(bytes) {
-				return Math.round(bytes / 1024 / 1024 * 10) / 10;
-			}
 			function refreshFileInput() {
-				var dt = new DataTransfer();
-				selected.forEach(function (f) { dt.items.add(f); });
-				fileInput.files = dt.files;
+				try {
+					var dt = new DataTransfer();
+					selected.forEach(function (f) { dt.items.add(f); });
+					fileInput.files = dt.files;
+				} catch (e) {}
 				renderFileList();
 			}
-			// Ce que l'auteur a écrit sur chaque illustration, gardé à part
-			// des fichiers eux-mêmes : la liste se redessine à chaque retrait,
-			// et retaper trois légendes parce qu'on a enlevé une image serait
-			// le genre de détail qui fait abandonner un formulaire.
+			// Ce que l'auteur a écrit sur chaque illustration, gardé à part des
+			// fichiers : la liste se redessine à chaque retrait, et retaper trois
+			// légendes parce qu'on a enlevé une image ferait abandonner.
 			var illusMeta = <?php
 				$garde_illus = array();
-				$titres = $this->reprise();
-				$combien = isset( $titres['illus_titre'] ) ? count( (array) $titres['illus_titre'] ) : 0;
+				$combien     = isset( $reprise['illus_titre'] ) ? count( (array) $reprise['illus_titre'] ) : 0;
 				for ( $i = 0; $i < $combien; $i++ ) {
 					$garde_illus[] = array(
-						'titre'   => isset( $titres['illus_titre'][ $i ] ) ? $titres['illus_titre'][ $i ] : '',
-						'legende' => isset( $titres['illus_legende'][ $i ] ) ? $titres['illus_legende'][ $i ] : '',
-						'credits' => isset( $titres['illus_credits'][ $i ] ) ? $titres['illus_credits'][ $i ] : '',
+						'titre'   => isset( $reprise['illus_titre'][ $i ] ) ? $reprise['illus_titre'][ $i ] : '',
+						'legende' => isset( $reprise['illus_legende'][ $i ] ) ? $reprise['illus_legende'][ $i ] : '',
+						'credits' => isset( $reprise['illus_credits'][ $i ] ) ? $reprise['illus_credits'][ $i ] : '',
 					);
 				}
 				echo wp_json_encode( $garde_illus );
 			?>;
-
-			function champIllustration(idx, clef, libelle, lignes) {
-				var enveloppe = document.createElement('label');
-				enveloppe.textContent = libelle;
+			var AIDES_ILLUS = {
+				titre: 'Ce que montre la figure, en quelques mots' + NBSP + ': Plan général des vestiges.',
+				legende: 'Le texte qui accompagne la figure' + NBSP + ': ce qu’on y voit, l’échelle, l’orientation.',
+				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
+			};
+			function champIllustration(idx, clef, libelle, lignes, mention) {
+				var bloc = document.createElement('div');
+				var id = 'na-illus-' + (idx + 1) + '-' + clef;
+				var etiquette = document.createElement('label');
+				etiquette.htmlFor = id;
+				etiquette.textContent = libelle;
+				var aide = document.createElement('p');
+				aide.className = 'na-help';
+				aide.id = id + '-aide';
+				aide.textContent = AIDES_ILLUS[clef];
 				var champ = document.createElement(lignes ? 'textarea' : 'input');
-				if (lignes) {
-					champ.rows = lignes;
-				} else {
-					champ.type = 'text';
-				}
+				if (lignes) { champ.rows = lignes; } else { champ.type = 'text'; }
+				champ.id = id;
 				champ.name = 'illus_' + clef + '[]';
+				champ.setAttribute('aria-describedby', aide.id);
 				champ.value = illusMeta[idx] && illusMeta[idx][clef] ? illusMeta[idx][clef] : '';
 				champ.addEventListener('input', function () {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx][clef] = champ.value;
+					mention();
 				});
-				enveloppe.appendChild(champ);
-				return enveloppe;
+				bloc.appendChild(etiquette);
+				bloc.appendChild(aide);
+				bloc.appendChild(champ);
+				return bloc;
 			}
-
 			function renderFileList() {
 				fileList.innerHTML = '';
 				selected.forEach(function (f, idx) {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					var li = document.createElement('li');
-					li.className = 'na-illus';
-
-					var entete = document.createElement('div');
-					entete.className = 'na-illus-nom';
-					entete.textContent = 'Fig. ' + (idx + 1) + ' — ' + f.name
-						+ ' (' + formatMo(f.size) + ' Mo)';
-					var rm = document.createElement('span');
+					var groupe = document.createElement('fieldset');
+					groupe.className = 'na-illus';
+					var leg = document.createElement('legend');
+					leg.textContent = 'Figure ' + (idx + 1) + ' ';
+					var nom = document.createElement('span');
+					nom.className = 'na-illus-fichier';
+					nom.textContent = '— ' + f.name + ' (' + mo(f.size) + ')';
+					leg.appendChild(nom);
+					var rm = document.createElement('button');
+					rm.type = 'button';
 					rm.className = 'na-fileremove';
-					rm.textContent = 'x retirer';
+					rm.textContent = 'Retirer';
+					var sr = document.createElement('span');
+					sr.className = 'na-sr';
+					sr.textContent = ' la figure ' + (idx + 1) + ' (' + f.name + ')';
+					rm.appendChild(sr);
 					rm.addEventListener('click', function () {
 						selected.splice(idx, 1);
 						illusMeta.splice(idx, 1);
 						refreshFileInput();
+						annoncer('Figure ' + (idx + 1) + ' retirée.');
+						(fileList.querySelector('.na-fileremove') || fileInput).focus();
+						marquerModifie();
 					});
-					entete.appendChild(rm);
-					li.appendChild(entete);
-
+					// Une figure sans aucun texte part quand même : on le signale
+					// sans rien bloquer.
+					var avis = document.createElement('p');
+					avis.className = 'na-illus-mention';
+					function mention() {
+						var m = illusMeta[idx] || {};
+						avis.textContent = (vide(m.titre) && vide(m.legende) && vide(m.credits))
+							? 'Rien n’est encore dit de cette figure' + NBSP + ': elle partira quand même, mais sans titre ni légende.' : '';
+						avis.hidden = !avis.textContent;
+					}
 					var champs = document.createElement('div');
 					champs.className = 'na-illus-champs';
-					champs.appendChild(champIllustration(idx, 'titre', 'Titre', 0));
-					champs.appendChild(champIllustration(idx, 'legende', 'Légende', 2));
-					champs.appendChild(champIllustration(idx, 'credits', 'Crédits (auteur, source, droits)', 0));
-					li.appendChild(champs);
-
+					champs.appendChild(champIllustration(idx, 'titre', 'Titre', 0, mention));
+					champs.appendChild(champIllustration(idx, 'legende', 'Légende', 2, mention));
+					champs.appendChild(champIllustration(idx, 'credits', 'Crédits', 0, mention));
+					mention();
+					groupe.appendChild(leg);
+					groupe.appendChild(rm);
+					groupe.appendChild(champs);
+					groupe.appendChild(avis);
+					li.appendChild(groupe);
 					fileList.appendChild(li);
 				});
 				if (selected.length > 0) {
 					var total = document.createElement('li');
 					total.className = 'na-illus-total';
-					total.textContent = 'Total : ' + formatMo(totalSelectedSize()) + ' Mo / 20 Mo';
+					total.textContent = 'Total' + NBSP + ': ' + mo(totalSelectedSize()) + ' sur ' + mo(MAX_TOTAL_SIZE);
 					fileList.appendChild(total);
 				}
 			}
@@ -2259,38 +3195,31 @@ class Notice_Archeomed_Pactols {
 				var incoming = Array.prototype.slice.call(fileInput.files);
 				var refused = [];
 				incoming.forEach(function (f) {
-					var ext = extOf(f.name);
 					var dup = selected.some(function (s) { return s.name === f.name && s.size === f.size; });
 					if (dup) { return; }
-					if (selected.length >= MAX_FILES) {
-						refused.push(f.name + ' : 3 fichiers maximum');
-						return;
-					}
-					if (ALLOWED.indexOf(ext) === -1) {
-						refused.push(f.name + ' : format refusé');
-						return;
-					}
-					if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) {
-						refused.push(f.name + ' : limite totale de 20 Mo dépassée');
-						return;
-					}
+					if (selected.length >= MAX_FILES) { refused.push(guillemets(f.name) + ' n’a pas été ajouté' + NBSP + ': trois fichiers au plus.'); return; }
+					if (ALLOWED.indexOf(extOf(f.name)) === -1) { refused.push(guillemets(f.name) + ' n’est pas en JPEG, TIFF ou PDF.'); return; }
+					if (f.size > MAX_FILE_SIZE) { refused.push(guillemets(f.name) + ' dépasse ' + mo(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.'); return; }
+					if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) { refused.push(guillemets(f.name) + ' ferait dépasser ' + mo(MAX_TOTAL_SIZE) + ' en tout.'); return; }
 					selected.push(f);
 				});
 				refreshFileInput();
-				if (refused.length) {
-					alert('Certains fichiers ont été refusés :\n' + refused.join('\n'));
-				}
+				refuses.textContent = refused.join(' ');
 			});
-			// La pièce de vérification. Glissée dans son encoche, elle dépose la
-			// valeur scellée que le serveur attend. Le formulaire réclame déjà
-			// JavaScript pour son éditeur : on ne perd personne en le réclamant
-			// ici aussi.
+			['dragenter', 'dragover'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.add('na-survol'); }); });
+			['dragleave', 'drop'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.remove('na-survol'); }); });
+
+			// ── La pièce de vérification ───────────────────────────────────
+			// Glissée dans son encoche, elle dépose la valeur scellée que le
+			// serveur attend.
+			var puzzleFait = function () { return true; };
+			var puzzlePoignee = null;
 			(function () {
 				var bloc = document.getElementById('na-puzzle');
 				if (!bloc) { return; }
 				var toile   = document.getElementById('na-puzzle-fond');
 				var piece   = document.getElementById('na-puzzle-piece');
-				var poignee = document.getElementById('na-puzzle-poignee');
+				var poignee = puzzlePoignee = document.getElementById('na-puzzle-poignee');
 				var etat    = document.getElementById('na-puzzle-etat');
 				var champ   = document.getElementById('na-curseur-valeur');
 				var rejouer = document.getElementById('na-puzzle-rejouer');
@@ -2306,27 +3235,24 @@ class Notice_Archeomed_Pactols {
 				var pos = 0;                   // position courante, en centièmes
 				var gagne = false;
 
-				// ── Le tracé d'une pièce de puzzle : un carré arrondi, une languette à
-				// droite, une encoche en haut. Dessiné à l'origine, à charge de l'appelant
-				// de translater le contexte.
+				// Le tracé d'une pièce : un carré, une languette à droite, une
+				// encoche en haut. Dessiné à l'origine.
 				function tracer(ctx, c) {
-					var t = c * 0.22;                     // rayon des languettes
+					var t = c * 0.22;
 					var m = c / 2;
 					ctx.beginPath();
 					ctx.moveTo(0, 0);
 					ctx.lineTo(m - t, 0);
-					ctx.arc(m, 0, t, Math.PI, 0, true);   // encoche en haut (creux)
+					ctx.arc(m, 0, t, Math.PI, 0, true);
 					ctx.lineTo(c, 0);
 					ctx.lineTo(c, m - t);
-					ctx.arc(c, m, t, -Math.PI / 2, Math.PI / 2, false); // languette à droite
+					ctx.arc(c, m, t, -Math.PI / 2, Math.PI / 2, false);
 					ctx.lineTo(c, c);
 					ctx.lineTo(0, c);
 					ctx.closePath();
 				}
-
-				// ── Un fond dessiné plutôt qu'une image à servir : rien à téléverser, et
-				// il change à chaque affichage, ce qui rend la comparaison de pixels
-				// inutile à qui voudrait résoudre le défi de tête.
+				// Un fond dessiné, différent à chaque affichage : rien à servir, et
+				// la comparaison de pixels ne sert à rien.
 				function fond(ctx) {
 					var d = ctx.createLinearGradient(0, 0, L, H);
 					d.addColorStop(0, '#3b4a6b');
@@ -2343,19 +3269,12 @@ class Notice_Archeomed_Pactols {
 					}
 					ctx.globalAlpha = 1;
 				}
-
 				var scene = document.createElement('canvas');
 				scene.width = L; scene.height = H;
 				fond(scene.getContext('2d'));
-
-				// Le fond, avec le trou à la place de la pièce.
 				var cx = toile.getContext('2d');
 				var xCible = MARGE + Math.round(utile * CIBLE / 100);
 				cx.drawImage(scene, 0, 0);
-				cx.save();
-				cx.translate(xCible, posY);
-				tracer(cx, COTE);
-				cx.restore();
 				cx.save();
 				cx.translate(xCible, posY);
 				tracer(cx, COTE);
@@ -2365,10 +3284,8 @@ class Notice_Archeomed_Pactols {
 				cx.strokeStyle = 'rgba(255,255,255,0.65)';
 				cx.stroke();
 				cx.restore();
-
-				// La pièce : les pixels du fond qui manquent au trou. Son canevas doit
-				// être plus large que le côté — la languette déborde à droite, et elle
-				// était tout bonnement rognée.
+				// La pièce : les pixels du fond qui manquent au trou. Son canevas
+				// est plus large que le côté, pour la languette.
 				piece.width  = COTE + LANG;
 				piece.height = COTE + 2;
 				piece.style.width = (100 * (COTE + LANG) / L) + '%';
@@ -2385,17 +3302,18 @@ class Notice_Archeomed_Pactols {
 				px.stroke();
 				px.restore();
 
+				// La position dite en mots : sans la vue, le curseur n'annonçait
+				// que 0 à 100, sans cible. L'encoche est déjà dans la page
+				// (data-cible) : la dire n'ôte rien à la protection.
 				function placer(p) {
 					pos = Math.max(0, Math.min(100, p));
 					piece.style.left = (100 * (MARGE + utile * pos / 100) / L) + '%';
-					// La poignée reste dans la piste : posée à « pos % », elle se décale
-					// d'autant de sa propre largeur. À zéro elle affleure à gauche, à cent
-					// à droite, et jamais elle ne déborde du cadre.
 					poignee.style.left = pos + '%';
 					poignee.style.transform = 'translate(' + (-pos) + '%, -50%)';
 					poignee.setAttribute('aria-valuenow', Math.round(pos));
+					poignee.setAttribute('aria-valuetext', gagne ? 'Pièce en place.'
+						: 'Position ' + Math.round(pos) + FINE + '; l’encoche est à ' + CIBLE + '.');
 				}
-
 				function verifier() {
 					if (Math.abs(pos - CIBLE) <= TOLERANCE) {
 						gagne = true;
@@ -2404,23 +3322,17 @@ class Notice_Archeomed_Pactols {
 						etat.textContent = '✓ Vérification réussie';
 						placer(CIBLE);
 						poignee.setAttribute('aria-disabled', 'true');
+						reverifier('puzzle');
 						return true;
 					}
-					etat.textContent = 'Pas tout à fait : la pièce doit combler l’encoche.';
+					etat.textContent = 'Pas tout à fait' + NBSP + ': la pièce doit combler l’encoche.';
 					bloc.classList.add('na-rate');
 					window.setTimeout(function () { bloc.classList.remove('na-rate'); }, 600);
 					placer(0);
 					return false;
 				}
-
-				// ── Le déplacement. Événements pointeur : une seule écriture pour la
-				// souris, le doigt et le stylet, et le navigateur ne nous vole pas le
-				// geste en cours de route grâce à la capture.
 				var actif = false, depart = 0, posDepart = 0;
 				var piste = poignee.parentElement;
-				// La course de la poignée, en pixels d'écran. C'est la piste qu'on mesure,
-				// et non la scène : la poignée doit rester sous le doigt, et non avancer
-				// à la vitesse — plus lente — de la pièce sur son fond.
 				function courseEcran() {
 					return Math.max(1, piste.getBoundingClientRect().width
 						- poignee.getBoundingClientRect().width);
@@ -2436,8 +3348,7 @@ class Notice_Archeomed_Pactols {
 				});
 				poignee.addEventListener('pointermove', function (e) {
 					if (!actif) { return; }
-					var d = (e.clientX - depart) / courseEcran() * 100;
-					placer(posDepart + d);
+					placer(posDepart + (e.clientX - depart) / courseEcran() * 100);
 					e.preventDefault();
 				});
 				function relacher(e, valide) {
@@ -2445,21 +3356,23 @@ class Notice_Archeomed_Pactols {
 					actif = false;
 					bloc.classList.remove('na-prise');
 					try { poignee.releasePointerCapture(e.pointerId); } catch (err) {}
-					// Un geste interrompu — le navigateur reprend le pointeur pour faire
-					// défiler la page — n'est pas une tentative ratée : on remet la pièce
-					// sans rien reprocher.
+					// Un geste interrompu par le défilement n'est pas un échec.
 					if (valide) { verifier(); } else { placer(0); }
 				}
 				poignee.addEventListener('pointerup', function (e) { relacher(e, true); });
 				poignee.addEventListener('pointercancel', function (e) { relacher(e, false); });
-
-				// ── Au clavier : les flèches déplacent, Entrée ou Espace valide.
+				// Un clic sur la piste y porte la pièce : une alternative au
+				// glisser, pour qui ne peut pas maintenir un geste.
+				piste.addEventListener('click', function (e) {
+					if (gagne || e.target === poignee) { return; }
+					var r = piste.getBoundingClientRect();
+					var l = poignee.getBoundingClientRect().width;
+					placer((e.clientX - r.left - l / 2) / Math.max(1, r.width - l) * 100);
+					verifier();
+				});
 				poignee.addEventListener('keydown', function (e) {
 					if (gagne) { return; }
 					var pas = e.shiftKey ? 10 : 2;
-					// Les noms courts — « Right », « Left » — sont ceux des navigateurs
-					// d'avant la norme actuelle. Les accepter ne coûte rien et évite un
-					// clavier muet là où l'on ne pourra pas aller voir.
 					var k = e.key;
 					if (k === 'ArrowRight' || k === 'Right' || k === 'ArrowUp' || k === 'Up') { placer(pos + pas); }
 					else if (k === 'ArrowLeft' || k === 'Left' || k === 'ArrowDown' || k === 'Down') { placer(pos - pas); }
@@ -2469,62 +3382,392 @@ class Notice_Archeomed_Pactols {
 					else { return; }
 					e.preventDefault();
 				});
-
 				rejouer.addEventListener('click', function () {
 					if (!gagne) { placer(0); etat.textContent = 'À faire glisser'; }
 				});
-
 				placer(0);
-				window.naPuzzleFait = function () { return gagne; };
-				window.naPuzzleFocus = function () { poignee.focus(); };
+				puzzleFait = function () { return gagne; };
 			}());
-			document.getElementById('na-form').addEventListener('submit', function (e) {
+
+			// ── Les erreurs, dans la page ──────────────────────────────────
+			// Quatre canaux se partageaient les erreurs — bulles du navigateur,
+			// alertes, message du serveur, rien sur le champ. Il n'en reste
+			// qu'un : un récapitulatif en tête, et un message sous chaque libellé.
+			var recap = document.getElementById('na-recap');
+			var messageServeur = document.getElementById('na-message');
+			var titreDeLaPage = document.title;
+			var erreurs = {};
+			function courrielValide(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+			function normaliserRapport() {
+				var r = document.getElementById('na-rapport');
+				var v = r.value.trim();
+				// Une adresse copiée sans « https:// » était refusée par le
+				// navigateur ; on l'ajoute, comme le serveur le ferait.
+				if (v && !/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)) { v = 'https://' + v.replace(/^\/+/, ''); }
+				r.value = v;
+			}
+			document.getElementById('na-rapport').addEventListener('blur', normaliserRapport);
+			function el(id) { return document.getElementById(id); }
+			function uneValeur(sel) {
+				return [].some.call(form.querySelectorAll(sel), function (c) { return !vide(c.value); });
+			}
+			// Chaque contrôle rend vrai si le champ est juste. Même ordre que la
+			// page, qui est celui du récapitulatif.
+			var CONTROLES = {
+				commune: function () { return uneValeur('.na-commune'); },
+				departement: function () { return !vide(sansParentheses(deptInput.value)); },
+				lieu_dit: function () { return !vide(lieuDitInput.value); },
+				nature: function () { return !!form.querySelector('input[name="nature[]"]:checked'); },
+				annee: function () { return !vide(el('na-annee').value); },
+				organisme: function () { return uneValeur('.na-organisme'); },
+				rapport_lien: function () {
+					var v = el('na-rapport').value.trim();
+					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
+				},
+				resp_prenom: function () { return !vide(el('na-resp-prenom').value); },
+				resp_nom: function () { return !vide(el('na-resp-nom').value); },
+				resp_email: function () {
+					var v = el('na-resp-email').value.trim();
+					return v && courrielValide(v) ? true : (v ? 'forme' : false);
+				},
+				resp_inst: function () { return !vide(el('na-resp-inst').value); },
+				coresp_email: function () { var v = el('na-coresp-email').value.trim(); return !v || courrielValide(v); },
+				coauteur_email: function () { var v = el('na-coauteur-email').value.trim(); return !v || courrielValide(v); },
+				texte: function () { return !quill || !vide(quill.getText()); },
+				rubrique_principale: function () { return !vide(el('na-rubrique').value); },
+				puzzle: function () { return puzzleFait(); }
+			};
+			function cibleDe(cle) {
+				if (cle === 'nature') { return el('na-nature'); }
+				if (cle === 'texte') { return quill ? quill.root : el('na-texte'); }
+				return el(CHAMPS[cle][0]);
+			}
+			function focaliser(cle) {
+				var c = cle === 'nature' ? el('na-nature-1') : cibleDe(cle);
+				if (!c) { return; }
+				if (c.scrollIntoView) { c.scrollIntoView({ block: 'center' }); }
+				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
+			}
+			function messageDe(cle, resultat) {
+				if (cle === 'resp_email' && resultat === 'forme') { return CHAMPS.email_forme[1]; }
+				return CHAMPS[cle][1];
+			}
+			function signaler(cle, message) {
+				var cible = cibleDe(cle);
+				if (!cible) { return; }
+				var id = 'na-erreur-' + cle.replace(/_/g, '-');
+				var p = el(id);
+				if (!p) {
+					p = document.createElement('p');
+					p.id = id;
+					p.className = 'na-erreur-champ';
+					// Entre le libellé et la saisie : au-dessus du champ, ou du bloc
+					// qui le porte (liste de cases, éditeur, pièce de puzzle).
+					var conteneur = cible.closest('.na-champ');
+					var ancre = (conteneur && conteneur.querySelector('.na-ancre')) || cible;
+					ancre.parentNode.insertBefore(p, ancre);
+				}
+				p.textContent = message;
+				cible.setAttribute('aria-invalid', 'true');
+				ajouterDescription(cible, id);
+				var champ = cible.closest('.na-champ');
+				if (champ) { champ.classList.add('na-champ--erreur'); }
+				if (cle === 'texte') { el('na-texte').classList.add('na-texte--erreur'); }
+				erreurs[cle] = { cible: cible, p: p };
+			}
+			function effacer(cle) {
+				var e = erreurs[cle];
+				if (!e) { return; }
+				e.p.remove();
+				e.cible.removeAttribute('aria-invalid');
+				retirerDescription(e.cible, e.p.id);
+				var champ = e.cible.closest('.na-champ');
+				if (champ) { champ.classList.remove('na-champ--erreur'); }
+				if (cle === 'texte') { el('na-texte').classList.remove('na-texte--erreur'); }
+				delete erreurs[cle];
+				if (!Object.keys(erreurs).length) { document.title = titreDeLaPage; }
+			}
+			// Le message s'efface dès que le champ est juste.
+			function reverifier(cle) {
+				if (erreurs[cle] && CONTROLES[cle] && CONTROLES[cle]() === true) { effacer(cle); }
+			}
+			function effacerLErreurDe(c) {
+				Object.keys(erreurs).forEach(function (cle) {
+					var champ = erreurs[cle].cible.closest('.na-champ') || erreurs[cle].cible;
+					if (champ.contains(c)) { reverifier(cle); }
+				});
+			}
+			function rafraichir(e) { effacerLErreurDe(e.target); }
+			form.addEventListener('input', rafraichir);
+			form.addEventListener('change', rafraichir);
+			function valider() {
+				var liste = [];
+				Object.keys(CONTROLES).forEach(function (cle) {
+					if (!cibleDe(cle)) { return; }
+					effacer(cle);
+					var r = CONTROLES[cle]();
+					if (r === true) { return; }
+					var m = messageDe(cle, r);
+					signaler(cle, m);
+					liste.push({ cle: cle, message: m });
+				});
+				return liste;
+			}
+			function lienVers(cle, message) {
+				var li = document.createElement('li');
+				var a = document.createElement('a');
+				a.href = '#' + CHAMPS[cle][0];
+				a.textContent = message;
+				a.addEventListener('click', function (ev) { ev.preventDefault(); focaliser(cle); });
+				li.appendChild(a);
+				return li;
+			}
+			function montrerRecap(liste) {
+				recap.innerHTML = '';
+				var h = document.createElement('h2');
+				h.textContent = liste.length > 1 ? 'Il reste ' + liste.length + ' points à corriger' : 'Il reste un point à corriger';
+				var ul = document.createElement('ul');
+				liste.forEach(function (er) { ul.appendChild(lienVers(er.cle, er.message)); });
+				recap.appendChild(h);
+				recap.appendChild(ul);
+				recap.setAttribute('role', 'alert');
+				recap.hidden = false;
+				if (messageServeur) { messageServeur.hidden = true; }
+				document.title = 'Erreur' + NBSP + ': ' + titreDeLaPage;
+				recap.scrollIntoView({ block: 'start' });
+				try { recap.focus({ preventScroll: true }); } catch (e) { recap.focus(); }
+			}
+			// Au retour d'un refus, les champs que nomme le serveur se marquent
+			// comme ceux que le script aurait trouvés.
+			if (messageServeur) {
+				var signales = (messageServeur.getAttribute('data-champs') || '').split(',').filter(function (c) { return CHAMPS[c]; });
+				signales.forEach(function (cle) { signaler(cle, CHAMPS[cle][1]); });
+				if (signales.length) { document.title = 'Erreur' + NBSP + ': ' + titreDeLaPage; }
+				[].forEach.call(messageServeur.querySelectorAll('a[href^="#na-"]'), function (a) {
+					var id = a.getAttribute('href').slice(1);
+					Object.keys(CHAMPS).forEach(function (cle) {
+						if (CHAMPS[cle][0] === id) {
+							a.addEventListener('click', function (ev) { ev.preventDefault(); focaliser(cle); });
+						}
+					});
+				});
+				messageServeur.focus();
+			}
+
+			// ── Entrée ne soumet pas depuis un champ d'une ligne ───────────
+			// Une recherche Pactols ou une légende validée par Entrée envoyait
+			// la notice à moitié remplie. Les listes gardent leur propre Entrée.
+			form.addEventListener('keydown', function (e) {
+				if (e.key !== 'Enter' || e.defaultPrevented) { return; }
+				var t = e.target;
+				if (t.tagName === 'INPUT' && /^(text|email|url|search|tel|number)$/.test(t.type)) { e.preventDefault(); }
+			});
+
+			// ── Le brouillon gardé sur l'appareil ──────────────────────────
+			// Une requête trop lourde, une page fermée, une coupure : la saisie
+			// se perdait. Elle est gardée ici, dans le navigateur, et effacée
+			// quand la notice est déposée. La reprise du serveur passe toujours
+			// devant : le brouillon ne se propose que sur un formulaire vierge.
+			var CLE_BROUILLON = 'na_brouillon_' + window.location.pathname;
+			var brouillonActif = form.getAttribute('data-brouillon') === '1';
+			var modifie = false;
+			var avisBrouillon = null;
+			function lire() { try { return window.localStorage.getItem(CLE_BROUILLON); } catch (e) { return null; } }
+			function ecrireBrouillon(v) { try { window.localStorage.setItem(CLE_BROUILLON, v); return true; } catch (e) { return false; } }
+			function oublierBrouillon() { try { window.localStorage.removeItem(CLE_BROUILLON); } catch (e) {} }
+			function marquerModifie() { modifie = true; }
+			form.addEventListener('input', marquerModifie);
+			form.addEventListener('change', marquerModifie);
+			if (quill) { quill.on('text-change', function (d, o, source) { if (source === 'user') { marquerModifie(); } }); }
+			var EXCLUS = ['notice_archeomed_nonce', '_wp_http_referer', 'na_website', 'na_ts', 'reprise_jeton',
+				'na_curseur', 'na_preuve', 'texte_notice', 'cf-turnstile-response', 'notice_archeomed_envoi'];
+			function photographier() {
+				var champs = {};
+				[].forEach.call(form.elements, function (c) {
+					if (!c.name || EXCLUS.indexOf(c.name) !== -1 || c.name.indexOf('illus_') === 0
+						|| c.type === 'file' || c.type === 'submit' || c.type === 'button') { return; }
+					if (c.type === 'checkbox') {
+						if (!champs[c.name]) { champs[c.name] = []; }
+						if (c.checked) { champs[c.name].push(c.value); }
+						return;
+					}
+					if (/\[\]$/.test(c.name)) {
+						if (!champs[c.name]) { champs[c.name] = []; }
+						champs[c.name].push(c.value);
+						return;
+					}
+					champs[c.name] = c.value;
+				});
+				return { v: 1, quand: Date.now(), champs: champs, texte: quill ? quill.root.innerHTML : '', illus: illusMeta };
+			}
+			function contenuUtile(b) {
+				if (b.texte && !vide(b.texte.replace(/<[^>]*>/g, ''))) { return true; }
+				return Object.keys(b.champs || {}).some(function (nom) {
+					var v = b.champs[nom];
+					if (/^pactols_/.test(nom)) { return v && v !== '[]'; }
+					return Array.isArray(v) ? v.some(function (x) { return !vide(x); }) : !vide(v);
+				});
+			}
+			function enregistrer(force) {
+				if (!brouillonActif || (!modifie && !force)) { return; }
+				modifie = false;
+				var photo = photographier();
+				if (!contenuUtile(photo)) { return; }
+				if (ecrireBrouillon(JSON.stringify(photo)) && avisBrouillon) {
+					// L'ancien brouillon vient d'être remplacé : l'offre ne tient plus.
+					avisBrouillon.remove();
+					avisBrouillon = null;
+				}
+			}
+			function restaurer(b) {
+				var ch = b.champs || {};
+				var rangs = {};
+				[].forEach.call(form.elements, function (c) {
+					if (!c.name || !Object.prototype.hasOwnProperty.call(ch, c.name) || c.type === 'file') { return; }
+					var v = ch[c.name];
+					if (c.type === 'checkbox') { c.checked = Array.isArray(v) && v.indexOf(c.value) !== -1; return; }
+					if (/\[\]$/.test(c.name)) {
+						var i = rangs[c.name] || 0;
+						rangs[c.name] = i + 1;
+						c.value = (Array.isArray(v) && typeof v[i] === 'string') ? v[i] : '';
+						return;
+					}
+					if (typeof v === 'string') { c.value = v; }
+				});
+				if (quill && b.texte) { quill.clipboard.dangerouslyPasteHTML(b.texte); }
+				if (Array.isArray(b.illus)) { illusMeta = b.illus; renderFileList(); }
+				categories.forEach(function (c) { c.relire(); });
+				deptSaisiMain = !vide(deptInput.value);
+				ajusterLesReplis();
+				majApercu();
+				countWords();
+			}
+			function quandLisible(t) {
+				var d = new Date(t);
+				var jour = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+				var mn = d.getMinutes();
+				return 'le ' + jour + ' à ' + d.getHours() + NBSP + 'h' + NBSP + (mn < 10 ? '0' : '') + mn;
+			}
+			if (brouillonActif && form.getAttribute('data-reprise') === '0') {
+				var brouillon = null;
+				try { brouillon = JSON.parse(lire() || 'null'); } catch (e) { brouillon = null; }
+				if (brouillon && brouillon.champs && contenuUtile(brouillon)) {
+					avisBrouillon = document.createElement('div');
+					avisBrouillon.className = 'na-message na-avis';
+					avisBrouillon.id = 'na-brouillon';
+					var dit = document.createElement('p');
+					dit.textContent = 'Une saisie enregistrée sur cet appareil ' + quandLisible(brouillon.quand || Date.now()) + ' a été retrouvée.';
+					var choix = document.createElement('p');
+					choix.className = 'na-brouillon-choix';
+					var reprendre = document.createElement('button');
+					reprendre.type = 'button';
+					reprendre.className = 'na-bouton-lien';
+					reprendre.textContent = 'Reprendre cette saisie';
+					var jeter = document.createElement('button');
+					jeter.type = 'button';
+					jeter.className = 'na-bouton-lien';
+					jeter.textContent = 'L’effacer';
+					reprendre.addEventListener('click', function () {
+						restaurer(brouillon);
+						avisBrouillon.remove();
+						avisBrouillon = null;
+						annoncer('Saisie reprise.');
+						var premier = el('na-lieu-1');
+						if (premier) { premier.focus(); }
+					});
+					jeter.addEventListener('click', function () {
+						oublierBrouillon();
+						avisBrouillon.remove();
+						avisBrouillon = null;
+						annoncer('Saisie effacée.');
+						el('na-lieu-1').focus();
+					});
+					choix.appendChild(reprendre);
+					choix.appendChild(jeter);
+					avisBrouillon.appendChild(dit);
+					avisBrouillon.appendChild(choix);
+					form.insertBefore(avisBrouillon, el('na-intro'));
+				}
+			}
+			window.setInterval(enregistrer, 5000);
+
+			majApercu();
+
+			// ── L'envoi ────────────────────────────────────────────────────
+			var bouton = form.querySelector('button.na-submit');
+			var libelleBouton = bouton ? bouton.textContent : '';
+			form.addEventListener('submit', function (e) {
+				if (form.getAttribute('data-envoi') === '1') { e.preventDefault(); return; }
 				if (!quill) {
 					e.preventDefault();
-					showJsError('Erreur technique : l\u2019éditeur de texte ne s\u2019est pas chargé.');
+					showJsError('Erreur technique' + NBSP + ': l’éditeur de texte ne s’est pas chargé. Rechargez la page.');
 					return;
 				}
-				if (document.querySelectorAll('input[name="nature[]"]:checked').length === 0) {
+				normaliserRapport();
+				var plafond = [];
+				categories.forEach(function (c) { if (!c.garderLaSaisie()) { plafond.push(c); } });
+				var liste = valider();
+				plafond.forEach(function (c) {
+					var champ = c.champ;
+					var m = guillemets(net(champ.value)) + ' n’a pas été ajouté' + NBSP + ': dix termes au plus par catégorie' + FINE + '; retirez-en un, ou videz le champ';
+					var id = 'na-erreur-kw-' + c.type;
+					var p = el(id);
+					if (!p) {
+						p = document.createElement('p');
+						p.id = id;
+						p.className = 'na-erreur-champ';
+						champ.closest('.na-ancre').parentNode.insertBefore(p, champ.closest('.na-ancre'));
+					}
+					p.textContent = m;
+					champ.setAttribute('aria-invalid', 'true');
+					ajouterDescription(champ, id);
+					CHAMPS['kw_' + c.type] = [champ.id, m];
+					liste.push({ cle: 'kw_' + c.type, message: m });
+					champ.addEventListener('input', function efface() {
+						p.remove();
+						champ.removeAttribute('aria-invalid');
+						retirerDescription(champ, id);
+						champ.removeEventListener('input', efface);
+					});
+				});
+				if (liste.length) {
 					e.preventDefault();
-					alert('Merci de cocher au moins une nature d\'opération.');
+					montrerRecap(liste);
 					return;
 				}
-				if (window.naPuzzleFait && !window.naPuzzleFait()) {
-					e.preventDefault();
-					alert('Faites glisser la pièce dans son encoche avant d\u2019envoyer.');
-					window.naPuzzleFocus();
-					return;
-				}
-				if (hasUnselectedPactolsInput()) {
-					e.preventDefault();
-					document.getElementById('na-pactols-warning').style.display = 'block';
-					alert('Un ou plusieurs mots-clés Pactols ont été saisis sans sélection dans la liste. Merci de choisir une proposition afin de transmettre l\u2019ARK.');
-					return;
-				}
-				document.getElementById('pactols_periods').value = JSON.stringify(collectPactols('period'));
-				document.getElementById('pactols_subjects').value = JSON.stringify(collectPactols('subject'));
-				document.getElementById('pactols_places').value = JSON.stringify(collectPactols('place'));
+				recap.hidden = true;
+				categories.forEach(function (c) { c.ecrire(); });
 				var html = quill.root.innerHTML;
-				var b64 = btoa(unescape(encodeURIComponent(html)));
-				document.getElementById('na-texte-notice').value = 'b64:' + b64;
-				// Tous les contrôles sont passés : la page part pour de bon.
-				// On le montre, et l'on bloque le bouton — un second clic
-				// déposerait la notice deux fois.
-				var envoi = document.getElementById('na-envoi');
-				if (envoi) { envoi.classList.add('na-visible'); }
-				var bouton = document.querySelector('.na-submit');
+				document.getElementById('na-texte-notice').value = 'b64:' + btoa(unescape(encodeURIComponent(html)));
+				enregistrer(true);
+				// Tous les contrôles sont passés : la page part pour de bon. On
+				// bloque le bouton — un second clic déposerait la notice deux fois.
+				form.setAttribute('data-envoi', '1');
+				document.getElementById('na-envoi').hidden = false;
+				annoncer('Envoi en cours. Ne fermez pas cette page.');
 				if (bouton) {
 					bouton.disabled = true;
 					bouton.textContent = 'Envoi en cours…';
 				}
-				// Le bouton désactivé n'est plus envoyé avec le formulaire :
-				// son nom porte la valeur que le serveur attend, et il faut
-				// donc la poster autrement.
+				// Le bouton désactivé n'est plus envoyé avec le formulaire : son
+				// nom porte la valeur que le serveur attend, on la poste autrement.
 				var relais = document.createElement('input');
 				relais.type = 'hidden';
 				relais.name = 'notice_archeomed_envoi';
 				relais.value = '1';
-				this.appendChild(relais);
+				form.appendChild(relais);
+			});
+			// Revenu par le bouton Précédent, le navigateur rend la page telle
+			// qu'on l'a quittée : bouton bloqué, envoi « en cours ». On la rend
+			// utilisable.
+			window.addEventListener('pageshow', function (e) {
+				if (!e.persisted || !bouton) { return; }
+				form.removeAttribute('data-envoi');
+				bouton.disabled = false;
+				bouton.textContent = libelleBouton;
+				document.getElementById('na-envoi').hidden = true;
+				var relais = form.querySelector('input[type=hidden][name="notice_archeomed_envoi"]');
+				if (relais) { relais.remove(); }
 			});
 		});
 		</script>
@@ -3076,28 +4319,30 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Rend le nom du champ qui manque, ou une chaîne vide si tout est là.
+	 * Tous les champs obligatoires qui manquent, dans l'ordre de la page.
 	 *
-	 * Rendait « faux » sans dire quoi : l'auteur voyait un refus et
-	 * recommençait à l'identique, faute de savoir ce qu'on lui demandait.
+	 * On s'arrêtait au premier : l'auteur corrigeait, renvoyait, découvrait
+	 * le suivant — un aller-retour par oubli, et les illustrations à
+	 * redéposer à chaque fois. Avant encore, on rendait « faux » sans dire
+	 * quoi.
 	 */
-	private function validate_required_fields( $d ) {
-		$required = array( 'rubrique_principale', 'commune', 'departement', 'lieu_dit', 'annee', 'organisme', 'resp_prenom', 'resp_nom', 'resp_inst' );
-		foreach ( $required as $field ) {
-			if ( empty( $d[ $field ] ) || '' === trim( (string) $d[ $field ] ) ) {
-				return $field;
+	private function champs_manquants( $d ) {
+		$manquants = array();
+		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'nature', 'annee', 'organisme',
+			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'texte', 'rubrique_principale' );
+		foreach ( $ordre as $champ ) {
+			if ( 'resp_email' === $champ ) {
+				$vide = empty( $d['resp_email'] ) || ! is_email( $d['resp_email'] );
+			} elseif ( 'texte' === $champ ) {
+				$vide = empty( $d['texte_notice'] ) || '' === trim( wp_strip_all_tags( $d['texte_notice'] ) );
+			} else {
+				$vide = empty( $d[ $champ ] ) || '' === trim( (string) $d[ $champ ] );
+			}
+			if ( $vide ) {
+				$manquants[] = $champ;
 			}
 		}
-		if ( empty( $d['resp_email'] ) || ! is_email( $d['resp_email'] ) ) {
-			return 'resp_email';
-		}
-		if ( empty( $d['nature'] ) ) {
-			return 'nature';
-		}
-		if ( empty( $d['texte_notice'] ) || '' === trim( wp_strip_all_tags( $d['texte_notice'] ) ) ) {
-			return 'texte';
-		}
-		return '';
+		return $manquants;
 	}
 	/**
 	 * Met en gras l'intitulé d'une ligne de métadonnée (la partie avant " : ").
@@ -3374,7 +4619,9 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_feuille' );
-		$retour = Notice_Archeomed_Settings::url();
+		// Le retour se fait sur l'onglet de la feuille : c'est là que le
+		// message s'affiche, et non sur le premier onglet de la page.
+		$retour = Notice_Archeomed_Settings::url( 'feuille' );
 
 		if ( ! empty( $_POST['na_feuille_retirer'] ) ) {
 			foreach ( array( self::DOCX_TEMPLATE, self::RTF_TEMPLATE ) as $nom ) {
@@ -4094,6 +5341,31 @@ class Notice_Archeomed_Pactols {
 		return $out;
 	}
 
+	/**
+	 * Une requête plus lourde que « post_max_size » arrive vide : PHP jette
+	 * les champs et les fichiers sans rien dire.
+	 *
+	 * « handle_submission » ne trouvait pas le bouton d'envoi et rendait la
+	 * main : la page revenait avec un formulaire vierge, sans un mot, et la
+	 * saisie était perdue. On reconnaît le cas — une requête POST qui avait
+	 * un corps, dont PHP n'a rien gardé, adressée à la page du formulaire —
+	 * et l'on dit ce qui s'est passé.
+	 */
+	public function refuser_l_envoi_trop_lourd() {
+		if ( ! isset( $_SERVER['REQUEST_METHOD'] ) || 'POST' !== strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) ) {
+			return;
+		}
+		$longueur = isset( $_SERVER['CONTENT_LENGTH'] ) ? (int) $_SERVER['CONTENT_LENGTH'] : 0;
+		if ( $longueur <= 0 || ! empty( $_POST ) || ! empty( $_FILES ) ) {
+			return;
+		}
+		if ( ! $this->page_porte_le_formulaire() ) {
+			return;
+		}
+		error_log( 'Notice Archeomed: requête de ' . $longueur . ' octets vidée par post_max_size.' );
+		$this->redirect_result( false, 'trop_lourd' );
+	}
+
 	public function handle_submission() {
 		if ( ! isset( $_POST['notice_archeomed_envoi'] ) ) {
 			return;
@@ -4174,11 +5446,14 @@ class Notice_Archeomed_Pactols {
 			$this->redirect_result( false, 'texte' );
 		}
 		$d['texte_notice'] = $this->texte_notice_pose( $raw_texte );
-		$manquant = $this->validate_required_fields( $d );
-		if ( '' !== $manquant ) {
-			error_log( 'Notice Archeomed: missing required field: ' . $manquant );
-			$this->redirect_result( false, 'texte' === $manquant ? 'texte' : 'champs',
-				'texte' === $manquant ? '' : $manquant );
+		$manquants = $this->champs_manquants( $d );
+		if ( ! empty( $manquants ) ) {
+			error_log( 'Notice Archeomed: missing required fields: ' . implode( ', ', $manquants ) );
+			// « notice_champ » porte le premier champ, comme avant ; la liste
+			// entière part à côté, pour le récapitulatif.
+			$autres = array_values( array_diff( $manquants, array( 'texte' ) ) );
+			$this->redirect_result( false, array( 'texte' ) === $manquants ? 'texte' : 'champs',
+				empty( $autres ) ? '' : $autres[0], '', $manquants );
 		}
 		if ( ! $this->check_send_limit( $d['resp_email'] ) ) {
 			error_log( 'Notice Archeomed: send limit reached.' );
@@ -4188,7 +5463,7 @@ class Notice_Archeomed_Pactols {
 		$attachments = $this->handle_uploads( $upload_error );
 		if ( '' !== $upload_error ) {
 			error_log( 'Notice Archeomed: upload error: ' . $upload_error );
-			$this->redirect_result( false, 'fichiers' );
+			$this->redirect_result( false, $this->raison_du_televersement( $upload_error ) );
 		}
 		$notice = $this->build_notice( $d );
 		// Génération du fichier stylé Métopes, joint au courriel de la
@@ -4270,7 +5545,7 @@ class Notice_Archeomed_Pactols {
 				update_post_meta( $id, '_na_fichiers', $fichiers );
 				$this->record_send( $d['resp_email'] );
 				$this->file()->programmer( $id );
-				$this->redirect_result( true );
+				$this->redirect_result( true, '', '', $reference );
 			}
 			// L'inscription a échoué — base de données indisponible. Plutôt
 			// que de perdre la notice, on retombe sur l'envoi immédiat.
@@ -4286,7 +5561,7 @@ class Notice_Archeomed_Pactols {
 		if ( $envoyee ) {
 			$this->record_send( $d['resp_email'] );
 			$this->nettoyer( $produits );
-			$this->redirect_result( true );
+			$this->redirect_result( true, '', '', $reference );
 		}
 		$this->mettre_de_cote( $d, $produits, $reference );
 		error_log( 'Notice Archeomed: notice conservée sous la référence ' . $reference );
@@ -5087,18 +6362,23 @@ class Notice_Archeomed_Pactols {
 	 * méga-octets dans la requête qui envoie, sur un hébergement qui coupe à
 	 * trente secondes : la requête mourait après avoir pris la notice et
 	 * avant d'avoir rien noté, et l'essai suivant recommençait à l'identique.
+	 *
+	 * Rend l'issue en un mot — « partie », « refusee », « echec »,
+	 * « en_preparation » ou « occupee » — pour le bouton « Relancer l'envoi »,
+	 * qui disait « refusée » de tout ce qui n'était pas parti. Le
+	 * planificateur, lui, n'écoute pas la réponse.
 	 */
 	public function expedier_de_la_file( $id ) {
 		$id = (int) $id;
 		if ( ! $id ) {
-			return;
+			return '';
 		}
 		if ( $this->apercus_a_fabriquer( $id ) ) {
 			$this->programmer_les_apercus( $id );
-			return;
+			return 'en_preparation';
 		}
 		if ( ! $this->file()->prendre( $id ) ) {
-			return;
+			return 'occupee';
 		}
 		$d        = get_post_meta( $id, '_na_donnees', true );
 		$notice   = (string) get_post_meta( $id, '_na_notice', true );
@@ -5106,7 +6386,7 @@ class Notice_Archeomed_Pactols {
 		$document = (string) get_post_meta( $id, '_na_document', true );
 		if ( ! is_array( $d ) || empty( $d ) ) {
 			$this->file()->marquer( $id, 'echec', 'Notice illisible en réserve.' );
-			return;
+			return 'echec';
 		}
 		// Rattrapage des notices déposées avant que l'archivage ne se sépare
 		// de l'envoi : leurs illustrations attendent encore au répertoire
@@ -5157,9 +6437,10 @@ class Notice_Archeomed_Pactols {
 				@unlink( $document );
 				delete_post_meta( $id, '_na_document' );
 			}
-			return;
+			return 'partie';
 		}
 		$this->file()->compter_un_essai( $id, $pourquoi );
+		return 'refusee';
 	}
 
 	/**
@@ -5973,7 +7254,7 @@ class Notice_Archeomed_Pactols {
 		}
 	}
 
-	private function redirect_result( $ok, $raison = '', $champ = '', $reference = '' ) {
+	private function redirect_result( $ok, $raison = '', $champ = '', $reference = '', $champs = array() ) {
 		// Tout refus emporte la saisie avec lui : c'est vrai d'une vérification
 		// manquée comme d'une page expirée, et dans les deux cas la personne
 		// devant l'écran n'y est pour rien.
@@ -5986,7 +7267,12 @@ class Notice_Archeomed_Pactols {
 		if ( ! $ok && '' !== $champ ) {
 			$redirect = add_query_arg( 'notice_champ', rawurlencode( $champ ), $redirect );
 		}
-		if ( ! $ok && '' !== $reference ) {
+		if ( ! $ok && ! empty( $champs ) ) {
+			$redirect = add_query_arg( 'notice_champs', rawurlencode( implode( ',', $champs ) ), $redirect );
+		}
+		// Au succès aussi : la page de confirmation montre la référence, que
+		// l'auteur cite s'il écrit à la rédaction.
+		if ( '' !== $reference ) {
 			$redirect = add_query_arg( 'notice_ref', rawurlencode( $reference ), $redirect );
 		}
 		if ( '' !== $jeton ) {
@@ -6092,6 +7378,23 @@ class Notice_Archeomed_Pactols {
 		}
 		return $keys;
 	}
+	/**
+	 * La raison qu'on donne à l'auteur, d'après le refus du téléversement.
+	 *
+	 * Un seul message couvrait tout — « trois au plus, vingt méga-octets en
+	 * tout » —, faux pour qui avait respecté ces bornes.
+	 */
+	private function raison_du_televersement( $code ) {
+		$raisons = array(
+			'upload_ini_size'   => 'fichier_lourd',
+			'upload_partial'    => 'fichier_coupe',
+			'upload_too_many'   => 'fichiers_nombre',
+			'upload_total_size' => 'fichiers_total',
+			'upload_ext'        => 'fichier_format',
+			'upload_mime'       => 'fichier_format',
+		);
+		return isset( $raisons[ $code ] ) ? $raisons[ $code ] : 'fichiers';
+	}
 	private function handle_uploads( &$upload_error = '' ) {
 		$attachments = array();
 		$upload_error = '';
@@ -6127,7 +7430,16 @@ class Notice_Archeomed_Pactols {
 				continue;
 			}
 			if ( UPLOAD_ERR_OK !== $files['error'][ $i ] ) {
-				$upload_error = 'upload_error';
+				// La cause compte pour l'auteur : un fichier trop lourd pour le
+				// serveur ne se corrige pas comme une connexion coupée.
+				$code = (int) $files['error'][ $i ];
+				if ( UPLOAD_ERR_INI_SIZE === $code || UPLOAD_ERR_FORM_SIZE === $code ) {
+					$upload_error = 'upload_ini_size';
+				} elseif ( UPLOAD_ERR_PARTIAL === $code ) {
+					$upload_error = 'upload_partial';
+				} else {
+					$upload_error = 'upload_error';
+				}
 				return $attachments;
 			}
 			$total_size += (int) $files['size'][ $i ];

@@ -104,8 +104,8 @@ class Notice_Archeomed_Settings {
 
 	/** Les jetons admis dans le modèle de nom, et ce qu'ils valent. */
 	const JETONS_DE_NOM = array(
-		'{numero}'   => 'le numéro en préparation — « AM55 »',
-		'{rubrique}' => 'le rang de la rubrique — « 2 » pour la deuxième',
+		'{numero}'   => 'le numéro en préparation — « AM55 »',
+		'{rubrique}' => 'le rang de la rubrique — « 2 » pour la deuxième',
 		'{commune}'  => 'la commune de la notice',
 		'{lieu_dit}' => 'le lieu-dit — il distingue deux notices d’une même commune',
 		'{annee}'    => 'l’année de l’opération',
@@ -115,6 +115,7 @@ class Notice_Archeomed_Settings {
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
+		add_action( 'admin_post_na_essai', array( $this, 'faire_un_essai' ) );
 	}
 
 	/**
@@ -257,10 +258,40 @@ class Notice_Archeomed_Settings {
 	 * Elle était écrite en toutes lettres à quatre endroits, dont trois
 	 * bandeaux d'alerte. Déplacer le menu les aurait tous menés à une page
 	 * inexistante, et rien ne l'aurait dit avant qu'on clique.
+	 *
+	 * Avec l'onglet voulu, s'il y en a un : un bandeau qui dit « renseignez
+	 * la clé » doit mener à la clé, non au premier onglet de la page.
 	 */
-	public static function url() {
-		return admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT
+	public static function url( $onglet = '' ) {
+		$url = admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT
 			. '&page=' . self::PAGE_SLUG );
+		return ( '' !== $onglet && array_key_exists( $onglet, self::onglets() ) )
+			? add_query_arg( 'tab', $onglet, $url ) : $url;
+	}
+
+	/**
+	 * Les onglets de la page, dans l'ordre où l'on règle une installation.
+	 *
+	 * Une seule page de sept sections et quatre formulaires : on enregistrait
+	 * les réglages en croyant lancer un essai, ou l'inverse, et le bouton
+	 * « Enregistrer » se trouvait trois écrans plus bas que le champ touché.
+	 */
+	public static function onglets() {
+		return array(
+			'destinataires' => __( 'Destinataires', 'notice-archeomed' ),
+			'numero'        => __( 'Numéro et iconographie', 'notice-archeomed' ),
+			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
+			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
+			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
+			'maj'           => __( 'Mises à jour', 'notice-archeomed' ),
+			'diagnostic'    => __( 'Diagnostic', 'notice-archeomed' ),
+		);
+	}
+
+	/** L'onglet demandé dans l'adresse, ou le premier. */
+	private static function onglet_demande() {
+		$onglet = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		return array_key_exists( $onglet, self::onglets() ) ? $onglet : 'destinataires';
 	}
 
 	/**
@@ -274,8 +305,8 @@ class Notice_Archeomed_Settings {
 	public function add_menu() {
 		add_submenu_page(
 			'edit.php?post_type=' . Notice_Archeomed_File::CPT,
-			'Formulaire des notices d’archéologie médiévale',
-			'Réglages',
+			__( 'Réglages de la Chronique', 'notice-archeomed' ),
+			__( 'Réglages', 'notice-archeomed' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -347,7 +378,7 @@ class Notice_Archeomed_Settings {
 					'destinataires',
 					sprintf(
 						/* translators: %s : les adresses refusées, séparées par des virgules. */
-						'Adresse non valide, écartée de la liste : %s. Les autres ont bien été enregistrées.',
+						'Adresse non valide, écartée de la liste : %s. Les autres ont bien été enregistrées.',
 						esc_html( implode( ', ', $refuses ) )
 					),
 					'error'
@@ -357,14 +388,14 @@ class Notice_Archeomed_Settings {
 				add_settings_error(
 					self::OPTION_NAME,
 					'destinataires_vide',
-					'Aucun destinataire n\'est enregistré : les notices déposées seront conservées, mais aucune ne partira.',
+					'Aucun destinataire n’est enregistré : les notices déposées seront conservées, mais aucune ne partira.',
 					'warning'
 				);
 			} elseif ( empty( self::destinataires_de_la_liste( $liste, 'notices' ) ) ) {
 				add_settings_error(
 					self::OPTION_NAME,
 					'destinataires_sans_notices',
-					'Personne ne reçoit les notices : elles seront conservées sans être expédiées. Cochez « Notices » pour au moins un destinataire.',
+					'Personne ne reçoit les notices : elles seront conservées sans être expédiées. Cochez « Chaque notice » pour au moins un destinataire.',
 					'warning'
 				);
 			}
@@ -447,7 +478,7 @@ class Notice_Archeomed_Settings {
 				// qu'on voie pourquoi.
 				add_settings_error(
 					self::OPTION_NAME, 'github_depot',
-					'« compte/depot » est l’exemple du champ, non un dépôt : indiquez le vrai nom, par exemple « 2d2yrhrsf9-droid/notice-archeomed ». L’ancienne valeur a été conservée.',
+					'« compte/depot » est l’exemple du champ, non un dépôt : indiquez le vrai nom, par exemple « 2d2yrhrsf9-droid/notice-archeomed ». L’ancienne valeur a été conservée.',
 					'error'
 				);
 			} elseif ( '' === $depot || preg_match( '#^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$#', $depot ) ) {
@@ -455,7 +486,7 @@ class Notice_Archeomed_Settings {
 			} else {
 				add_settings_error(
 					self::OPTION_NAME, 'github_depot',
-					'Le dépôt s’écrit « compte/depot », sans adresse complète ni barre finale. L’ancienne valeur a été conservée.',
+					'Le dépôt s’écrit « compte/depot », sans adresse complète ni barre finale. L’ancienne valeur a été conservée.',
 					'error'
 				);
 			}
@@ -484,7 +515,7 @@ class Notice_Archeomed_Settings {
 			if ( '' === $modele || false === strpos( $modele, '{n}' ) ) {
 				add_settings_error(
 					self::OPTION_NAME, 'nom_modele',
-					'Le modèle de nom doit contenir « {n} », le rang de la figure : sans lui, deux illustrations d’une même notice porteraient le même nom. L’ancien modèle a été conservé.',
+					'Le modèle de nom doit contenir « {n} », le rang de la figure : sans lui, deux illustrations d’une même notice porteraient le même nom. L’ancien modèle a été conservé.',
 					'error'
 				);
 			} else {
@@ -497,7 +528,7 @@ class Notice_Archeomed_Settings {
 				if ( false === strpos( $modele, '{lieu_dit}' ) ) {
 					add_settings_error(
 						self::OPTION_NAME, 'nom_modele_lieu',
-						'Le modèle ne contient pas « {lieu_dit} » : deux notices d’une même commune et d’une même année donneraient des noms identiques. L’assemblage les distinguera par un suffixe, mais le lieu-dit se lit mieux.',
+						'Le modèle ne contient pas « {lieu_dit} » : deux notices d’une même commune et d’une même année donneraient des noms identiques. L’assemblage les distinguera par un suffixe, mais le lieu-dit se lit mieux.',
 						'warning'
 					);
 				}
@@ -568,7 +599,7 @@ class Notice_Archeomed_Settings {
 			) );
 			if ( is_wp_error( $reponse ) ) {
 				$message = $reponse->get_error_message();
-				$lignes[] = $nom . ' : injoignable — ' . $message;
+				$lignes[] = $nom . ' : injoignable — ' . $message;
 				// L'erreur 56 derrière un CONNECT est la signature du proxy
 				// filtrant, celle que Cloudflare renvoie déjà.
 				if ( false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' ) ) {
@@ -577,7 +608,7 @@ class Notice_Archeomed_Settings {
 				continue;
 			}
 			++$joints;
-			$lignes[] = $nom . ' : joint (code HTTP ' . (int) wp_remote_retrieve_response_code( $reponse ) . ').';
+			$lignes[] = $nom . ' : joint (code HTTP ' . (int) wp_remote_retrieve_response_code( $reponse ) . ').';
 		}
 		$total = count( $hotes );
 		if ( $joints === $total ) {
@@ -597,7 +628,7 @@ class Notice_Archeomed_Settings {
 		return array(
 			'ok'      => false,
 			'message' => 'GitHub n’est joignable qu’à moitié. ' . implode( ' ', $lignes )
-				. ' Le site saurait qu’une version existe mais ne pourrait pas la télécharger : il faut les deux.',
+				. ' Le site saurait qu’une version existe mais ne pourrait pas la télécharger : il faut les deux.',
 		);
 	}
 
@@ -624,7 +655,7 @@ class Notice_Archeomed_Settings {
 		if ( is_wp_error( $response ) ) {
 			return array(
 				'ok'      => false,
-				'message' => 'Impossible de joindre Cloudflare : ' . $response->get_error_message(),
+				'message' => 'Impossible de joindre Cloudflare : ' . $response->get_error_message(),
 			);
 		}
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
@@ -708,12 +739,12 @@ class Notice_Archeomed_Settings {
 		// — Les formats qu'Imagick veut bien traiter —
 		if ( $magick ) {
 			foreach ( array(
-				'TIFF' => 'Les aperçus intégrés aux EPS sont des TIFF : c\'est par eux que passent les basses définitions.',
+				'TIFF' => 'Les aperçus intégrés aux EPS sont des TIFF : c\'est par eux que passent les basses définitions.',
 				'JPEG' => 'Le format des illustrations livrées à la mise en page.',
 				'PNG'  => 'Fréquent pour les dessins au trait.',
 			) as $format => $pourquoi ) {
 				$su = (array) Imagick::queryFormats( $format );
-				$ligne( 'Imagick : ' . $format, 'accepté',
+				$ligne( 'Imagick : ' . $format, 'accepté',
 					! empty( $su ) ? 'accepté' : 'refusé', ! empty( $su ), $pourquoi );
 			}
 			// PDF et EPS passent par Ghostscript, que la politique
@@ -721,12 +752,12 @@ class Notice_Archeomed_Settings {
 			// signale sans le réclamer : le plugin sait s'en passer.
 			$ps = (array) Imagick::queryFormats( 'PDF' );
 			$lignes[] = array(
-				'quoi'     => 'Imagick : PDF et EPS',
+				'quoi'     => 'Imagick : PDF et EPS',
 				'requis'   => 'facultatif',
 				'constate' => ! empty( $ps ) ? 'accepté' : 'refusé',
 				'etat'     => 'note',
 				'ecart'    => '',
-				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. Le plugin s\'en passe : il tire la basse définition de l\'aperçu intégré à l\'EPS, et garde l\'original en haute définition.',
+				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. Le plugin s\'en passe : il tire la basse définition de l\'aperçu intégré à l\'EPS, et garde l\'original en haute définition.',
 			);
 		}
 
@@ -789,959 +820,1132 @@ class Notice_Archeomed_Settings {
 		return $lignes;
 	}
 
+	/**
+	 * Les essais de la page, faits hors de la page, puis renvoi vers elle.
+	 *
+	 * Ils se faisaient pendant l'affichage, sur le POST même : recharger la
+	 * page — le premier geste de qui attend — renvoyait l'essai, et l'essai
+	 * de poids repartait avec ses vingt méga-octets. Ici l'essai se fait une
+	 * fois, son résultat se garde quelques minutes pour l'utilisateur, et la
+	 * page qu'on recharge n'est plus qu'une lecture.
+	 */
+	public function faire_un_essai() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_essai' );
+		$quoi    = isset( $_REQUEST['na_quoi'] ) ? sanitize_key( wp_unslash( $_REQUEST['na_quoi'] ) ) : '';
+		$onglets = array(
+			'turnstile' => 'formulaire',
+			'envoi'     => 'courriel',
+			'etapes'    => 'courriel',
+			'poids'     => 'courriel',
+			'github'    => 'maj',
+			'maj'       => 'maj',
+		);
+		if ( ! isset( $onglets[ $quoi ] ) ) {
+			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
+		}
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 120 );
+		}
+		// L'instance créée en fin de fichier principal.
+		global $notice_archeomed_plugin, $notice_archeomed_maj;
+		$plugin = ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols )
+			? $notice_archeomed_plugin : null;
+		$absent = array( 'ok' => false, 'message' => 'Le plugin n’est pas chargé.' );
+		$vers   = isset( $_POST['na_essai_vers'] )
+			? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
+		if ( 'turnstile' === $quoi ) {
+			$resultat = $this->test_secret( self::get( 'turnstile_secret' ) );
+		} elseif ( 'envoi' === $quoi ) {
+			$resultat = $plugin ? $plugin->tester_l_envoi( $vers ) : $absent;
+		} elseif ( 'etapes' === $quoi ) {
+			$resultat = $plugin ? $plugin->essais_successifs() : array();
+		} elseif ( 'poids' === $quoi ) {
+			$mo       = isset( $_POST['na_poids_essai'] ) ? (int) $_POST['na_poids_essai'] : 0;
+			$resultat = $plugin ? $plugin->essayer_le_poids( $vers, $mo ) : $absent;
+		} elseif ( 'github' === $quoi ) {
+			$resultat = $this->test_github();
+		} else {
+			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
+				$notice_archeomed_maj->oublier();
+			}
+			$resultat = array( 'ok' => true,
+				'message' => 'Les réserves sont vidées : l’état ci-dessous vient d’être relu sur GitHub.' );
+		}
+		set_transient( 'na_essai_' . get_current_user_id(),
+			array( 'quoi' => $quoi, 'resultat' => $resultat ), 10 * MINUTE_IN_SECONDS );
+		wp_safe_redirect( add_query_arg( 'na_essai', $quoi, self::url( $onglets[ $quoi ] ) ) );
+		exit;
+	}
+
+	/** Le résultat d'essai qui attend d'être lu, une seule fois. */
+	private function essai_a_montrer() {
+		if ( ! isset( $_GET['na_essai'] ) ) {
+			return array( 'quoi' => '', 'resultat' => null );
+		}
+		$cle   = 'na_essai_' . get_current_user_id();
+		$essai = get_transient( $cle );
+		delete_transient( $cle );
+		return ( is_array( $essai ) && isset( $essai['quoi'] ) )
+			? $essai : array( 'quoi' => '', 'resultat' => null );
+	}
+
+	/** Un résultat d'essai, dans le corps de la page, en mot et en couleur. */
+	private static function resultat( $resultat ) {
+		if ( ! is_array( $resultat ) || ! isset( $resultat['ok'] ) ) {
+			return;
+		}
+		echo '<div class="notice inline notice-' . ( $resultat['ok'] ? 'success' : 'error' ) . '"><p>'
+			. Notice_Archeomed_File::verdict( $resultat['ok'] ) . ' '
+			. esc_html( $resultat['message'] ) . '</p></div>';
+	}
+
+	/** Le début d'un formulaire de réglages : chaque onglet a le sien. */
+	private static function ouvrir_les_reglages() {
+		echo '<form method="post" action="options.php">';
+		// Le jeton porte l'adresse de la page, onglet compris : c'est elle
+		// que WordPress rejoint après l'enregistrement.
+		settings_fields( self::OPTION_GROUP );
+	}
+
+	/** Le bouton principal de l'onglet, et la fin de son formulaire. */
+	private static function fermer_les_reglages() {
+		submit_button( __( 'Enregistrer', 'notice-archeomed' ) );
+		echo '</form>';
+	}
+
+	/** Le formulaire d'un essai, adressé au gestionnaire des essais. */
+	private static function ouvrir_un_essai() {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
+			. '<input type="hidden" name="action" value="na_essai">';
+		wp_nonce_field( 'na_essai' );
+	}
+
 	public function render_page() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-
-		$test_result = null;
-		if ( isset( $_POST['na_test_turnstile'] ) ) {
-			check_admin_referer( 'na_test_turnstile' );
-			$test_result = $this->test_secret( self::get( 'turnstile_secret' ) );
-		}
-		// Un lien plutôt qu'un bouton : l'état des mises à jour se lit dans le
-		// tableau des réglages, donc à l'intérieur du formulaire principal.
-		// Un formulaire dans un formulaire n'existe pas en HTML — le
-		// navigateur en abandonne un, et le jeton de sécurité partait sans
-		// son formulaire : « le lien que vous avez suivi a expiré ».
-		if ( isset( $_GET['na_chercher_maj'] ) ) {
-			check_admin_referer( 'na_chercher_maj' );
-			global $notice_archeomed_maj;
-			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
-				$notice_archeomed_maj->oublier();
-			}
-		}
-		$essais_successifs = null;
-		if ( isset( $_POST['na_essais_successifs'] ) ) {
-			check_admin_referer( 'na_test_envoi' );
-			global $notice_archeomed_plugin;
-			if ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols ) {
-				$essais_successifs = $notice_archeomed_plugin->essais_successifs();
-			}
-		}
-		$essai_poids = null;
-		if ( isset( $_POST['na_essai_poids'] ) ) {
-			check_admin_referer( 'na_test_envoi' );
-			$vers = isset( $_POST['na_essai_vers'] )
-				? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
-			$mo   = isset( $_POST['na_poids_essai'] ) ? (int) $_POST['na_poids_essai'] : 0;
-			global $notice_archeomed_plugin;
-			$essai_poids = ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols )
-				? $notice_archeomed_plugin->essayer_le_poids( $vers, $mo )
-				: array( 'ok' => false, 'message' => 'Le plugin n’est pas chargé.' );
-		}
-		$test_envoi = null;
-		if ( isset( $_POST['na_test_envoi'] ) ) {
-			check_admin_referer( 'na_test_envoi' );
-			$vers = isset( $_POST['na_essai_vers'] )
-				? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
-			// L'instance créée en fin de fichier principal.
-			global $notice_archeomed_plugin;
-			$test_envoi = ( $notice_archeomed_plugin instanceof Notice_Archeomed_Pactols )
-				? $notice_archeomed_plugin->tester_l_envoi( $vers )
-				: array( 'ok' => false, 'message' => 'Le plugin n’est pas chargé.' );
-		}
-		$test_github = null;
-		if ( isset( $_POST['na_test_github'] ) ) {
-			check_admin_referer( 'na_test_github' );
-			$test_github = $this->test_github();
-		}
-
-		$secret_locked = self::is_locked( 'turnstile_secret' );
-		$site_locked   = self::is_locked( 'turnstile_site' );
-		$email_locked  = self::destinataires_verrouilles();
-		$options       = get_option( self::OPTION_NAME, array() );
-		$has_secret    = '' !== trim( self::get( 'turnstile_secret' ) );
-		// Le formulaire n'est hors service que si Turnstile est bien ce sur
-		// quoi il s'appuie. Avec la protection locale, il fonctionne sans clé.
-		$turnstile_sert = in_array(
-			self::get( 'protection' ), array( 'turnstile', 'les_deux' ), true );
+		$onglet = self::onglet_demande();
+		$essai  = $this->essai_a_montrer();
 		?>
 		<div class="wrap">
-			<h1>Formulaire des notices d’archéologie médiévale</h1>
+			<h1><?php esc_html_e( 'Réglages de la Chronique', 'notice-archeomed' ); ?></h1>
 
-			<?php if ( $turnstile_sert && ! $has_secret ) : ?>
-				<div class="notice notice-error">
-					<p><strong>Le formulaire est actuellement hors service.</strong> Sans clé secrète Turnstile, toutes les soumissions sont refusées. Renseignez la clé ci-dessous.</p>
-				</div>
-			<?php endif; ?>
-
-			<?php if ( null !== $test_result ) : ?>
-				<div class="notice notice-<?php echo $test_result['ok'] ? 'success' : 'error'; ?>">
-					<p><?php echo esc_html( $test_result['message'] ); ?></p>
-				</div>
-			<?php endif; ?>
-
-			<?php settings_errors( self::OPTION_NAME ); ?>
-
-			<form method="post" action="options.php">
-				<?php settings_fields( self::OPTION_GROUP ); ?>
-
-				<h2>Protection anti-robot</h2>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">Comment le formulaire se protège</th>
-						<td>
-							<?php $prot = self::get( 'protection' ); $prot_locked = self::is_locked( 'protection' ); ?>
-							<label style="display:block;margin-bottom:6px">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
-									value="locale" <?php checked( 'locale' === $prot ); ?>
-									<?php disabled( $prot_locked ); ?>>
-								Curseur à glisser dans le formulaire <strong>(ne dépend de rien)</strong>
-							</label>
-							<label style="display:block;margin-bottom:6px">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
-									value="turnstile" <?php checked( 'turnstile' === $prot ); ?>
-									<?php disabled( $prot_locked ); ?>>
-								Cloudflare Turnstile seul
-							</label>
-							<label style="display:block">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
-									value="les_deux" <?php checked( 'les_deux' === $prot ); ?>
-									<?php disabled( $prot_locked ); ?>>
-								Les deux
-							</label>
-							<p class="description">
-								<?php if ( $prot_locked ) : ?>
-									Valeur imposée par la constante <code>NA_PROTECTION</code>.
-								<?php else : ?>
-									Turnstile suppose que <strong>le serveur</strong> puisse joindre
-									Cloudflare. Derrière un proxy filtrant — hébergement institutionnel —
-									il ne le peut pas&nbsp;: la vérification échoue, le plugin laisse
-									passer pour ne pas perdre de notice, et la protection n'en est plus
-									une. Le curseur posé dans le formulaire se vérifie sur place et
-									fonctionne partout. Le test ci-dessous dit si Cloudflare est
-									joignable depuis ce serveur.
-								<?php endif; ?>
-							</p>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Cloudflare Turnstile</h2>
-				<p>Ces clés se créent gratuitement sur <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">le tableau de bord Cloudflare</a>, rubrique Turnstile. La clé de site est publique ; la clé secrète ne doit jamais être diffusée.</p>
-
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="na_site">Clé de site</label></th>
-						<td>
-							<input type="text" id="na_site" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[turnstile_site]"
-								value="<?php echo esc_attr( $site_locked ? self::get( 'turnstile_site' ) : ( isset( $options['turnstile_site'] ) ? $options['turnstile_site'] : self::get( 'turnstile_site' ) ) ); ?>"
-								<?php disabled( $site_locked ); ?>>
-							<?php if ( $site_locked ) : ?>
-								<p class="description">Valeur imposée par la constante <code>NA_TURNSTILE_SITE</code> définie dans <code>wp-config.php</code>.</p>
-							<?php endif; ?>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_secret">Clé secrète</label></th>
-						<td>
-							<?php if ( $secret_locked ) : ?>
-								<input type="text" class="regular-text" value="(définie dans wp-config.php)" disabled>
-								<p class="description">Valeur imposée par la constante <code>NA_TURNSTILE_SECRET</code>. Pour la modifier, éditez <code>wp-config.php</code>.</p>
-							<?php else : ?>
-								<input type="password" id="na_secret" class="regular-text" autocomplete="new-password"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[turnstile_secret]"
-									value="" placeholder="<?php echo $has_secret ? '••••••••••••  (clé enregistrée)' : 'aucune clé enregistrée'; ?>">
-								<p class="description">
-									<?php if ( $has_secret ) : ?>
-										Une clé est enregistrée. Laissez ce champ vide pour la conserver, ou saisissez-en une nouvelle pour la remplacer.
-									<?php else : ?>
-										Collez ici la clé secrète fournie par Cloudflare.
-									<?php endif; ?>
-								</p>
-								<?php if ( $has_secret ) : ?>
-									<p>
-										<label>
-											<input type="checkbox" value="1"
-												name="<?php echo esc_attr( self::OPTION_NAME ); ?>[clear_secret]">
-											Effacer la clé enregistrée
-										</label>
-									</p>
-								<?php endif; ?>
-							<?php endif; ?>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Qui reçoit quoi</h2>
-				<?php $destinataires = self::destinataires(); ?>
-				<?php if ( $email_locked ) : ?>
-					<p class="description">
-						Liste imposée par la constante <code>NA_DEST_EMAIL</code> de
-						<code>wp-config.php</code> : les adresses qui y figurent reçoivent
-						tout, notices comme récapitulatifs.
-					</p>
-					<ul style="margin-left:1.5em;list-style:disc">
-						<?php foreach ( $destinataires as $qui ) : ?>
-							<li><code><?php echo esc_html( $qui['email'] ); ?></code></li>
-						<?php endforeach; ?>
-					</ul>
-				<?php else : ?>
-					<p class="description" style="max-width:46em">
-						Deux sortes de courriels partent d'ici : <strong>une notice à chaque
-						dépôt</strong>, avec son document et ses illustrations, et
-						<strong>un récapitulatif quotidien</strong> qui liste ce qui est
-						arrivé dans la journée. Chacun choisit ce qu'il veut recevoir.
-					</p>
-					<table class="widefat striped" id="na-destinataires" style="max-width:48em;margin-top:10px">
-						<thead>
-							<tr>
-								<th style="width:55%">Adresse</th>
-								<th style="width:15%">Notices</th>
-								<th style="width:20%">Récapitulatif</th>
-								<th style="width:10%"></th>
-							</tr>
-						</thead>
-						<tbody>
-						<?php
-						// Une ligne vide en plus, pour qu'on puisse ajouter sans
-						// avoir à chercher le bouton du premier coup.
-						$lignes = $destinataires;
-						$lignes[] = array( 'email' => '', 'notices' => true, 'recap' => false );
-						foreach ( $lignes as $rang => $qui ) :
-							$nom = esc_attr( self::OPTION_NAME ) . '[destinataires][' . (int) $rang . ']';
-						?>
-							<tr class="na-destinataire">
-								<td>
-									<input type="email" class="regular-text" style="width:100%"
-										name="<?php echo $nom; ?>[email]"
-										value="<?php echo esc_attr( $qui['email'] ); ?>"
-										placeholder="adresse@exemple.fr">
-								</td>
-								<td style="text-align:center">
-									<input type="checkbox" value="1" name="<?php echo $nom; ?>[notices]"
-										<?php checked( ! empty( $qui['notices'] ) ); ?>>
-								</td>
-								<td style="text-align:center">
-									<input type="checkbox" value="1" name="<?php echo $nom; ?>[recap]"
-										<?php checked( ! empty( $qui['recap'] ) ); ?>>
-								</td>
-								<td style="text-align:center">
-									<button type="button" class="button-link na-oter"
-										aria-label="Retirer ce destinataire" title="Retirer ce destinataire">✕</button>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-						</tbody>
-					</table>
-					<p>
-						<button type="button" class="button" id="na-ajouter-destinataire">+ Ajouter un destinataire</button>
-						<span class="description" style="margin-left:8px">
-							<?php echo (int) self::MAX_DESTINATAIRES; ?> au plus. Une adresse effacée est retirée à l'enregistrement.
-						</span>
-					</p>
-					<?php
-					$pour_notices = self::destinataires_de( 'notices' );
-					$pour_recap   = self::destinataires_de( 'recap' );
-					?>
-					<p class="description">
-						<?php if ( empty( $pour_notices ) ) : ?>
-							<strong style="color:#b32d2e">Personne ne reçoit les notices</strong> :
-							les dépôts sont conservés, mais aucun ne part.
-						<?php else : ?>
-							Notices : <code><?php echo esc_html( implode( ', ', $pour_notices ) ); ?></code>.
-						<?php endif; ?>
-						<br>
-						<?php if ( empty( $pour_recap ) ) : ?>
-							Récapitulatif : personne. Il ne sera pas envoyé.
-						<?php else : ?>
-							Récapitulatif : <code><?php echo esc_html( implode( ', ', $pour_recap ) ); ?></code>.
-						<?php endif; ?>
-					</p>
-					<script>
-					(function () {
-						var table = document.getElementById('na-destinataires');
-						var corps = table.querySelector('tbody');
-						var bouton = document.getElementById('na-ajouter-destinataire');
-						var maximum = <?php echo (int) self::MAX_DESTINATAIRES; ?>;
-						var prefixe = <?php echo wp_json_encode( self::OPTION_NAME ); ?>;
-						// Le rang de la prochaine ligne : on ne réutilise pas ceux des
-						// lignes retirées, l'enregistrement renumérote de toute façon.
-						var suivant = corps.querySelectorAll('tr.na-destinataire').length;
-						function ajouter() {
-							if (corps.querySelectorAll('tr.na-destinataire').length >= maximum) {
-								bouton.disabled = true;
-								return;
-							}
-							var nom = prefixe + '[destinataires][' + (suivant++) + ']';
-							var tr = document.createElement('tr');
-							tr.className = 'na-destinataire';
-							tr.innerHTML =
-								'<td><input type="email" class="regular-text" style="width:100%" placeholder="adresse@exemple.fr" name="' + nom + '[email]"></td>' +
-								'<td style="text-align:center"><input type="checkbox" value="1" checked name="' + nom + '[notices]"></td>' +
-								'<td style="text-align:center"><input type="checkbox" value="1" name="' + nom + '[recap]"></td>' +
-								'<td style="text-align:center"><button type="button" class="button-link na-oter" aria-label="Retirer ce destinataire" title="Retirer ce destinataire">\u2715</button></td>';
-							corps.appendChild(tr);
-							tr.querySelector('input[type=email]').focus();
-							bouton.disabled = corps.querySelectorAll('tr.na-destinataire').length >= maximum;
-						}
-						bouton.addEventListener('click', ajouter);
-						corps.addEventListener('click', function (e) {
-							var b = e.target.closest('.na-oter');
-							if (!b) { return; }
-							var lignes = corps.querySelectorAll('tr.na-destinataire');
-							// La dernière ligne se vide plutôt que de disparaître : un
-							// tableau sans aucune ligne n'offre plus où saisir.
-							if (lignes.length <= 1) {
-								b.closest('tr').querySelectorAll('input[type=email]').forEach(function (i) { i.value = ''; });
-								return;
-							}
-							b.closest('tr').remove();
-							bouton.disabled = false;
-						});
-					}());
-					</script>
-				<?php endif; ?>
-
-				<h2>Rythme d'envoi</h2>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">Expédition des courriels</th>
-						<td>
-							<?php $mode = self::get( 'mode_envoi' ); $mode_locked = self::is_locked( 'mode_envoi' ); ?>
-							<label style="display:block;margin-bottom:6px">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
-									value="differe" <?php checked( 'immediat' !== $mode ); ?>
-									<?php disabled( $mode_locked ); ?>>
-								Différée <strong>(recommandé)</strong> — le formulaire rend la main aussitôt
-							</label>
-							<label style="display:block">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
-									value="immediat" <?php checked( 'immediat' === $mode ); ?>
-									<?php disabled( $mode_locked ); ?>>
-								Immédiate — le formulaire attend que le courriel soit parti
-							</label>
-							<p class="description">
-								<?php if ( $mode_locked ) : ?>
-									Valeur imposée par la constante <code>NA_MODE_ENVOI</code>.
-								<?php else : ?>
-									En différé, la notice est inscrite puis expédiée par le planificateur de
-									WordPress&nbsp;: plusieurs personnes peuvent déposer en même temps sans que
-									le site ralentisse, et un courriel qui échoue est represté tout seul. Ne
-									passer en immédiat que si le planificateur est désactivé sur cet
-									hébergement et qu'aucune tâche système ne le remplace — la liste
-									«&nbsp;Notices Archéomed&nbsp;» le dira en s'allongeant.
-								<?php endif; ?>
-							</p>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Acheminement du courriel</h2>
-				<p class="description" style="max-width:46em">
-					Tout le plugin en dépend : une notice qui ne part pas reste en file, puis
-					échoue. Si le serveur répond <em>« Impossible d’instancier la fonction
-					mail »</em>, c’est que <code>mail()</code> n’est pas configurée sur cet
-					hébergement — un relais SMTP contourne la question.
-				</p>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">Par quoi les courriels passent</th>
-						<td>
-							<?php $mode = self::get( 'envoi_mode' ); ?>
-							<label style="display:block;margin-bottom:6px">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
-									value="php" <?php checked( 'smtp' !== $mode ); ?>>
-								La fonction <code>mail()</code> du serveur <strong>(par défaut)</strong>
-							</label>
-							<label style="display:block">
-								<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
-									value="smtp" <?php checked( 'smtp' === $mode ); ?>>
-								Un relais SMTP
-							</label>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_smtp_hote">Relais SMTP</label></th>
-						<td>
-							<input type="text" id="na_smtp_hote" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_hote]"
-								value="<?php echo esc_attr( self::get( 'smtp_hote' ) ); ?>"
-								placeholder="smtp.exemple.fr">
-							&nbsp;port
-							<input type="number" min="1" max="65535" style="width:6em"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_port]"
-								value="<?php echo (int) self::get( 'smtp_port' ); ?>">
-							&nbsp;
-							<?php $chif = self::get( 'smtp_chiffrement' ); ?>
-							<select name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_chiffrement]">
-								<option value="tls" <?php selected( 'tls', $chif ); ?>>STARTTLS (587)</option>
-								<option value="ssl" <?php selected( 'ssl', $chif ); ?>>SSL (465)</option>
-								<option value="aucun" <?php selected( 'aucun', $chif ); ?>>aucun chiffrement (25)</option>
-							</select>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_smtp_user">Authentification</label></th>
-						<td>
-							<input type="text" id="na_smtp_user" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_utilisateur]"
-								value="<?php echo esc_attr( self::get( 'smtp_utilisateur' ) ); ?>"
-								placeholder="identifiant — laissez vide si le relais n’en demande pas">
-							<p>
-								<input type="password" class="regular-text" autocomplete="new-password"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_motdepasse]"
-									placeholder="<?php echo '' !== (string) self::get( 'smtp_motdepasse' ) ? 'enregistré — laissez vide pour le garder' : 'mot de passe'; ?>">
-								<?php if ( '' !== (string) self::get( 'smtp_motdepasse' ) ) : ?>
-									<label style="margin-left:8px"><input type="checkbox" value="1"
-										name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_motdepasse]"> effacer</label>
-								<?php endif; ?>
-							</p>
-							<p class="description">Un relais institutionnel accepte souvent ses propres machines sans identifiant.</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_smtp_from">Adresse d’expédition</label></th>
-						<td>
-							<input type="email" id="na_smtp_from" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_expediteur]"
-								value="<?php echo esc_attr( self::get( 'smtp_expediteur' ) ); ?>"
-								placeholder="notices@exemple.fr">
-							<input type="text" class="regular-text" style="max-width:16em"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_nom]"
-								value="<?php echo esc_attr( self::get( 'smtp_nom' ) ); ?>"
-								placeholder="nom affiché">
-							<p class="description">
-								Elle doit appartenir au domaine que le relais accepte, sans quoi il
-								refusera le message pour usurpation.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na-poids-courriel">Poids maximal d’un courriel</label></th>
-						<td>
-							<input type="number" id="na-poids-courriel" min="1" max="100" style="width:6em"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[poids_courriel]"
-								value="<?php echo esc_attr( (int) self::get( 'poids_courriel' ) ); ?>"> Mo
-							<p class="description">
-								Au-delà, le serveur de courriel refuse le message entier. Le plafond vaut
-								pour tout ce que le courriel porte : le document, puis chaque figure dans
-								son ordre — en version allégée, qui pèse peu, ou en original faute d’en
-								avoir une. Une figure qui ne tient plus reste sur le site, et le courriel
-								la nomme, avec le lien de la notice. Une pièce jointe grossit d’un tiers en
-								voyageant. L’« essai de poids », plus bas, mesure ce que le serveur accepte.
-							</p>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Mises à jour</h2>
-				<p class="description" style="max-width:46em">
-					Le plugin ne vit pas dans le répertoire de WordPress : sans cela, chaque
-					correction se téléverse à la main. Renseignez le dépôt, et les nouvelles
-					versions paraîtront dans <strong>Extensions</strong> comme pour n’importe
-					quelle autre. Testez d’abord la sortie vers GitHub, plus bas : derrière
-					le proxy d’un hébergement institutionnel, le site peut ne pas y accéder.
-				</p>
-				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_presente]" value="1">
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">Proposer les mises à jour</th>
-						<td>
-							<label>
-								<input type="checkbox" value="1"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_github]"
-									<?php checked( (int) self::get( 'maj_github' ), 1 ); ?>>
-								Interroger GitHub et annoncer les versions plus récentes
-							</label>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_depot">Dépôt</label></th>
-						<td>
-							<input type="text" id="na_depot" class="regular-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_depot]"
-								value="<?php echo esc_attr( self::get( 'github_depot' ) ); ?>"
-								placeholder="compte/depot">
-							<p class="description">
-								Sous la forme <code>compte/depot</code>, sans adresse complète.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_jeton">Jeton d’accès</label></th>
-						<td>
-							<input type="password" id="na_jeton" class="regular-text" autocomplete="new-password"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_jeton]"
-								placeholder="<?php echo '' !== trim( self::get( 'github_jeton' ) ) ? 'enregistré — laissez vide pour le garder' : 'inutile si le dépôt est public'; ?>">
-							<?php if ( '' !== trim( self::get( 'github_jeton' ) ) ) : ?>
-								<p><label><input type="checkbox" value="1"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_jeton]"> Effacer le jeton enregistré</label></p>
-							<?php endif; ?>
-							<p class="description">
-								Nécessaire seulement si le dépôt est privé. Il n’est envoyé qu’aux
-								hôtes de GitHub, jamais ailleurs.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">État</th>
-						<td>
-							<?php
-							// L'instance créée au chargement du plugin, et non une
-							// seconde : en fabriquer une ici enregistrerait ses
-							// filtres une deuxième fois.
-							global $notice_archeomed_maj;
-							$release = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
-								? $notice_archeomed_maj->derniere_release() : array();
-							$installee = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
-								? $notice_archeomed_maj->version() : '';
-							?>
-							<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
-							<p style="margin:8px 0">
-								<a class="button button-secondary" href="<?php
-									echo esc_url( wp_nonce_url(
-										add_query_arg( 'na_chercher_maj', '1', self::url() ),
-										'na_chercher_maj' ) ); ?>">Chercher une mise à jour maintenant</a>
-								<span class="description" style="margin-left:8px">
-									GitHub n’est interrogé qu’une fois toutes les six heures, et
-									WordPress garde sa propre réserve jusqu’à douze heures. Ce
-									bouton vide les deux.
-								</span>
-							</p>
-							<?php if ( ! empty( $release['echec'] ) ) : ?>
-								<p style="color:#b32d2e"><strong><?php echo esc_html( $release['echec'] ); ?></strong></p>
-							<?php elseif ( empty( $release['version'] ) ) : ?>
-								<p class="description">Aucune version publiée n’a pu être lue — dépôt non renseigné, ou mécanisme éteint.</p>
-							<?php else : ?>
-								<p>Dernière version publiée : <code><?php echo esc_html( $release['version'] ); ?></code></p>
-								<?php if ( empty( $release['propre'] ) ) : ?>
-									<p style="color:#b32d2e"><strong>La release ne porte pas d’archive <code>notice-archeomed.zip</code>.</strong>
-									Celle que GitHub fabrique seul s’ouvre sur le mauvais dossier et installerait le plugin
-									à côté de lui-même : la mise à jour n’est donc pas proposée. Joignez à la release
-									l’archive produite par <code>./empaqueter</code>.</p>
-								<?php elseif ( version_compare( $release['version'], $installee, '>' ) ) : ?>
-									<p style="color:#2f6b2f"><strong>Une mise à jour est disponible</strong> — elle paraît dans « Extensions ».</p>
-								<?php else : ?>
-									<p class="description">Le site est à jour.</p>
-								<?php endif; ?>
-							<?php endif; ?>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Iconographie</h2>
-				<p class="description" style="max-width:46em">
-					Ce qui gouverne le dossier <code>icono</code> d’un numéro : le nom
-					des fichiers, et les deux définitions qu’on en tire — la basse,
-					posée en lien dans le document Word, et la haute, qui part à la
-					mise en page.
-				</p>
-				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[icono_presente]" value="1">
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="na_numero">Numéro en préparation</label></th>
-						<td>
-							<input type="text" id="na_numero" class="regular-text" style="max-width:12em"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[numero]"
-								value="<?php echo esc_attr( self::get( 'numero' ) ); ?>"
-								placeholder="AM55">
-							<p class="description">Il ouvre le nom de chaque illustration. Laissé vide, le nom commence au rang de la rubrique.</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="na_nom_modele">Modèle de nom</label></th>
-						<td>
-							<input type="text" id="na_nom_modele" class="large-text"
-								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[nom_modele]"
-								value="<?php echo esc_attr( self::get( 'nom_modele' ) ); ?>">
-							<p class="description">
-								Jetons admis :
-								<?php
-								$jetons = array();
-								foreach ( self::JETONS_DE_NOM as $jeton => $quoi ) {
-									$jetons[] = '<code>' . esc_html( $jeton ) . '</code> ' . esc_html( $quoi );
-								}
-								echo wp_kses_post( implode( ' ; ', $jetons ) );
-								?>.
-								<br>
-								Ce qui n’est pas un jeton est recopié tel quel, puis tout le nom
-								passe à la règle : pas d’accent, pas d’espace, le souligné pour
-								seul séparateur. <strong><code>{n}</code> est obligatoire</strong> :
-								sans lui, deux illustrations d’une même notice porteraient le même nom.
-								<br>
-								Exemple : <code><?php echo esc_html( self::exemple_de_nom() ); ?></code>
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Basse définition (<code>icono/br</code>)</th>
-						<td>
-							<label>Largeur maximale
-								<input type="number" min="200" max="4000" step="10" style="width:7em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_largeur]"
-									value="<?php echo (int) self::get( 'br_largeur' ); ?>"> px</label>
-							&nbsp;&nbsp;
-							<label>Résolution
-								<input type="number" min="72" max="300" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_dpi]"
-									value="<?php echo (int) self::get( 'br_dpi' ); ?>"> dpi</label>
-							&nbsp;&nbsp;
-							<label>Poids maximal
-								<input type="number" min="50" max="20480" step="50" style="width:7em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_poids]"
-									value="<?php echo (int) self::get( 'br_poids' ); ?>"> Ko</label>
-							&nbsp;&nbsp;
-							<label>Tolérance
-								<input type="number" min="0" max="50" step="1" style="width:5em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_tolerance]"
-									value="<?php echo (int) self::get( 'br_tolerance' ); ?>"> %</label>
-							<p class="description">
-								Elle n’est pas destinée à l’impression : elle sert à voir la figure
-								à sa place dans le document. Le poids compte donc autant que la
-								largeur — cent figures liées dans un fascicule, et le dossier
-								devient intransportable.
-								<br>
-								<strong>La qualité ne se règle pas</strong> : le plugin part de la
-								meilleure et ne la baisse que si le fichier dépasse le plafond,
-								par paliers, en s’arrêtant au premier qui tient. La tolérance dit
-								jusqu’où descendre sans insister :
-								<?php
-								$plafond = (int) self::get( 'br_poids' );
-								$bas     = (int) round( $plafond * ( 100 - (int) self::get( 'br_tolerance' ) ) / 100 );
-								printf( 'on s’arrête dès que le fichier tient entre %d et %d Ko.',
-									(int) $bas, (int) $plafond );
-								?>
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Haute définition (<code>icono/hr</code>)<br>
-							<span class="description" style="font-weight:400">photographies</span></th>
-						<td>
-							<label>
-								<input type="checkbox" value="1"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_jpeg]"
-									<?php checked( (int) self::get( 'hr_photo_jpeg' ), 1 ); ?>>
-								Convertir en JPEG
-							</label>
-							&nbsp;&nbsp;
-							<label>Résolution
-								<input type="number" min="150" max="1200" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_dpi]"
-									value="<?php echo (int) self::get( 'hr_photo_dpi' ); ?>"> dpi</label>
-							&nbsp;&nbsp;
-							<label>Qualité
-								<input type="number" min="40" max="100" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_qualite]"
-									value="<?php echo (int) self::get( 'hr_photo_qualite' ); ?>"> %</label>
-							<p class="description">
-								Ce qui arrive en JPEG, TIFF ou PNG. La revue demande
-								10 × 15 cm à 300 dpi au minimum.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Haute définition (<code>icono/hr</code>)<br>
-							<span class="description" style="font-weight:400">dessins au trait et vectoriels</span></th>
-						<td>
-							<label>
-								<input type="checkbox" value="1"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_jpeg]"
-									<?php checked( (int) self::get( 'hr_trait_jpeg' ), 1 ); ?>>
-								Convertir en JPEG
-							</label>
-							&nbsp;&nbsp;
-							<label>Résolution
-								<input type="number" min="150" max="2400" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_dpi]"
-									value="<?php echo (int) self::get( 'hr_trait_dpi' ); ?>"> dpi</label>
-							&nbsp;&nbsp;
-							<label>Qualité
-								<input type="number" min="40" max="100" step="1" style="width:6em"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_qualite]"
-									value="<?php echo (int) self::get( 'hr_trait_qualite' ); ?>"> %</label>
-							<p class="description">
-								Ce qui arrive en PDF, EPS ou AI — c’est le format déposé qui range
-								l’illustration dans l’une ou l’autre famille. La revue demande
-								1200 dpi pour un trait, et <strong>le convertir en JPEG lui ôte
-								justement ce qu’on lui demande</strong> : décoché, l’original est
-								recopié tel quel.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Originaux</th>
-						<td>
-							<label>
-								<input type="checkbox" value="1"
-									name="<?php echo esc_attr( self::OPTION_NAME ); ?>[garder_originaux]"
-									<?php checked( (int) self::get( 'garder_originaux' ), 1 ); ?>>
-								Garder les fichiers d’origine dans <code>icono/originaux</code>
-							</label>
-							<p class="description">Rien de ce que l’auteur a envoyé ne disparaît alors dans une conversion.</p>
-						</td>
-					</tr>
-				</table>
-
-				<?php submit_button( 'Enregistrer les réglages' ); ?>
-			</form>
-
-			<hr>
-
-			<h2>Vérification</h2>
-			<p>Ce test interroge Cloudflare pour savoir si la clé secrète enregistrée est reconnue. Il n'envoie aucune notice.</p>
-			<form method="post">
-				<?php wp_nonce_field( 'na_test_turnstile' ); ?>
-				<?php submit_button( 'Tester la clé secrète', 'secondary', 'na_test_turnstile', false ); ?>
-			</form>
-
-			<hr>
-
-			<h2>Feuille de style Métopes</h2>
-			<p class="description" style="max-width:46em">
-				<a href="https://www.metopes.fr" target="_blank" rel="noopener">Métopes</a> —
-				chaîne d’édition XML créée par le Pôle document numérique et l’infrastructure
-				Métopes de l’université de Caen Normandie.
-			</p>
 			<?php
-			$messages = array(
-				'posee'    => array( 'success', 'La nouvelle feuille de style est en service.' ),
-				'retiree'  => array( 'success', 'La feuille déposée a été retirée : celle livrée avec le plugin reprend la main.' ),
-				'vide'     => array( 'error', 'Aucun fichier n’a été reçu.' ),
-				'format'   => array( 'error', 'Seuls les fichiers .docx et .rtf sont acceptés.' ),
-				'invalide' => array( 'error', 'Ce document ne porte pas de feuille de styles : ce n’est pas un gabarit Métopes. Rien n’a été changé.' ),
-				'ecriture' => array( 'error', 'Le fichier n’a pas pu être écrit dans le dossier des téléversements.' ),
-			);
-			$retour = isset( $_GET['na_feuille'] ) ? sanitize_key( wp_unslash( $_GET['na_feuille'] ) ) : '';
-			if ( isset( $messages[ $retour ] ) ) {
-				echo '<div class="notice notice-' . esc_attr( $messages[ $retour ][0] ) . '"><p>'
-					. esc_html( $messages[ $retour ][1] ) . '</p></div>';
+			// Tous les messages, et non ceux du seul réglage de l'extension :
+			// « Réglages enregistrés » est rangé par WordPress sous
+			// « general », et le filtre le faisait disparaître. On ne savait
+			// plus si le clic avait servi. Aucun autre appel sur cette page,
+			// qui n'est pas sous « Réglages » : rien ne s'affiche deux fois.
+			settings_errors();
+
+			// L'envoi immédiat met les auteurs en attente devant le formulaire,
+			// et deux dépôts simultanés peuvent alors se gêner : cela se dit
+			// sur chaque onglet tant qu'il dure, et non au seul endroit où il
+			// se règle.
+			if ( 'immediat' === self::get( 'mode_envoi' ) ) {
+				echo '<div class="notice inline notice-warning"><p><strong>'
+					. esc_html__( 'L’envoi immédiat est activé.', 'notice-archeomed' ) . '</strong> '
+					. esc_html__( 'Chaque auteur attend que le courriel soit parti avant de voir sa confirmation, et des dépôts simultanés peuvent ralentir le site. Revenez à l’envoi différé dès que possible : onglet « Diagnostic ».', 'notice-archeomed' )
+					. '</p></div>';
 			}
-			$feuille = Notice_Archeomed_Pactols::etat_de_la_feuille( 'docx' );
 			?>
-			<table class="widefat striped" style="max-width:46em">
-				<tbody>
-					<tr><td style="width:36%"><strong>En service</strong></td>
-						<td><?php echo $feuille['deposee']
-							? 'feuille déposée depuis cette page'
-							: 'feuille livrée avec le plugin'; ?></td></tr>
-					<?php if ( $feuille['presente'] ) : ?>
-						<tr><td><strong>Date du document</strong></td>
-							<td><?php echo '' !== $feuille['modifiee']
-								? esc_html( mysql2date( 'j F Y', str_replace( array( 'T', 'Z' ), array( ' ', '' ), $feuille['modifiee'] ) ) )
-								: '<span class="description">non renseignée dans le fichier</span>'; ?></td></tr>
-						<tr><td><strong>Posée sur le serveur le</strong></td>
-							<td><?php echo esc_html( date_i18n( 'j F Y à H:i', $feuille['posee'] ) ); ?></td></tr>
-						<tr><td><strong>Styles déclarés</strong></td>
-							<td><?php echo (int) $feuille['styles'] > 0
-								? (int) $feuille['styles'] : '<span class="description">illisible sans ZipArchive</span>'; ?></td></tr>
-						<tr><td><strong>Poids</strong></td>
-							<td><?php echo esc_html( size_format( $feuille['poids'] ) ); ?></td></tr>
-					<?php else : ?>
-						<tr><td colspan="2" style="color:#b32d2e"><strong>Aucune feuille de style trouvée.</strong>
-						Les notices partiront sans document mis en forme.</td></tr>
-					<?php endif; ?>
-				</tbody>
-			</table>
 
-			<p class="description" style="max-width:46em;margin-top:10px">
-				Quand Métopes fait évoluer sa feuille, déposez ici le nouveau gabarit :
-				inutile d’aller dans le dossier du plugin. Les styles sont reconnus par
-				leur nom, aucune modification du code n’est nécessaire.
-				<br>
-				<strong>La feuille déposée vit dans les téléversements, non dans le plugin</strong> —
-				une mise à jour de l’extension remplace son dossier en entier et
-				effacerait un gabarit qu’on y aurait posé.
-			</p>
+			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Parties des réglages', 'notice-archeomed' ); ?>">
+				<?php foreach ( self::onglets() as $cle => $libelle ) : ?>
+					<a href="<?php echo esc_url( self::url( $cle ) ); ?>"
+						class="nav-tab<?php echo $cle === $onglet ? ' nav-tab-active' : ''; ?>"
+						<?php echo $cle === $onglet ? 'aria-current="page"' : ''; ?>><?php echo esc_html( $libelle ); ?></a>
+				<?php endforeach; ?>
+			</nav>
 
-			<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<input type="hidden" name="action" value="na_feuille">
-				<?php wp_nonce_field( 'na_feuille' ); ?>
-				<p>
-					<input type="file" name="na_feuille" accept=".docx,.rtf">
-					<?php submit_button( 'Déposer cette feuille', 'secondary', '', false ); ?>
-				</p>
-				<?php if ( $feuille['deposee'] ) : ?>
-					<p>
-						<label><input type="checkbox" name="na_feuille_retirer" value="1">
-						Retirer la feuille déposée et revenir à celle du plugin</label>
-						<?php submit_button( 'Appliquer', 'secondary small', '', false ); ?>
-					</p>
-				<?php endif; ?>
-			</form>
+			<?php
+			$methode = 'onglet_' . $onglet;
+			$this->$methode( $essai );
+			?>
+		</div>
+		<?php
+	}
 
+	/** Qui reçoit chaque notice, et qui le récapitulatif du jour. */
+	private function onglet_destinataires( $essai ) {
+		$destinataires = self::destinataires();
+		?>
+		<h2>Qui reçoit quoi</h2>
+		<?php if ( self::destinataires_verrouilles() ) : ?>
 			<p class="description">
-				Après tout changement de gabarit, passez <code>./verifier-les-styles</code> :
-				un style disparu ne provoque aucune erreur, le paragraphe sort simplement
-				en Normal et l’on ne s’en aperçoit qu’à la relecture.
+				Liste imposée par la constante <code>NA_DEST_EMAIL</code> de
+				<code>wp-config.php</code> : les adresses qui y figurent reçoivent
+				tout, notices comme récapitulatifs.
 			</p>
-
-			<hr>
-
-			<h2>Essai d’envoi</h2>
-			<p style="max-width:46em">Ce bouton envoie un courriel et rapporte ce que le
-			serveur a répondu — sans déposer de notice ni attendre le planificateur.
-			Enregistrez d’abord les réglages ci-dessus.</p>
-			<form method="post">
-				<?php wp_nonce_field( 'na_test_envoi' ); ?>
-				<p>
-					<input type="email" name="na_essai_vers" class="regular-text"
-						value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>"
-						placeholder="adresse d’essai">
-					<?php submit_button( 'Envoyer un courriel d’essai', 'secondary', 'na_test_envoi', false ); ?>
-				</p>
-				<p>
-					<?php submit_button( 'Refaire l’envoi d’une notice, étape par étape', 'secondary', 'na_essais_successifs', false ); ?>
-					<span class="description" style="margin-left:8px">
-						Quand un essai simple part mais qu’une notice est refusée, celui-ci
-						dit lequel des écarts en est la cause : plusieurs destinataires, un
-						en-tête Reply-To, une pièce jointe.
-					</span>
-				</p>
-				<p>
-					<select name="na_poids_essai">
-						<?php foreach ( Notice_Archeomed_Pactols::TAILLES_ESSAI as $mo ) : ?>
-							<option value="<?php echo (int) $mo; ?>"><?php echo (int) $mo; ?> Mo</option>
-						<?php endforeach; ?>
-					</select>
-					<?php submit_button( 'Essai de poids', 'secondary', 'na_essai_poids', false ); ?>
-					<span class="description" style="margin-left:8px">
-						Un seul message, avec une pièce jointe de la taille choisie : il dit
-						jusqu’où le serveur de courriel accepte, sans rien d’autre qui varie.
-					</span>
-				</p>
-			</form>
-			<?php if ( null !== $essai_poids ) : ?>
-				<div class="notice notice-<?php echo $essai_poids['ok'] ? 'success' : 'error'; ?>">
-					<p><?php echo esc_html( $essai_poids['message'] ); ?></p>
-				</div>
-			<?php endif; ?>
+			<ul style="margin-left:1.5em;list-style:disc">
+				<?php foreach ( $destinataires as $qui ) : ?>
+					<li><code><?php echo esc_html( $qui['email'] ); ?></code></li>
+				<?php endforeach; ?>
+			</ul>
 			<?php
-			$poids_essayes = get_option( 'na_essais_de_poids', array() );
-			if ( is_array( $poids_essayes ) && ! empty( $poids_essayes ) ) :
-				$passe_max  = 0;
-				$refus_min  = 0;
-				foreach ( $poids_essayes as $mo => $e ) {
-					if ( ! empty( $e['ok'] ) ) {
-						$passe_max = max( $passe_max, (int) $mo );
-					} elseif ( ! $refus_min || (int) $mo < $refus_min ) {
-						$refus_min = (int) $mo;
-					}
-				}
-				?>
-				<table class="widefat striped" style="max-width:52em;margin-bottom:6px">
-					<thead><tr><th>Pièce jointe</th><th>Réponse du serveur</th><th>Le</th></tr></thead>
-					<tbody>
-					<?php foreach ( $poids_essayes as $mo => $e ) : ?>
-						<tr>
-							<td><strong><?php echo (int) $mo; ?> Mo</strong></td>
-							<td style="color:<?php echo ! empty( $e['ok'] ) ? '#2f6b2f' : '#b32d2e'; ?>">
-								<?php echo ! empty( $e['ok'] ) ? 'accepté' : 'refusé'; ?>
-							</td>
-							<td><?php echo esc_html( mysql2date( 'j F Y à H:i', $e['quand'] ) ); ?></td>
-						</tr>
-					<?php endforeach; ?>
-					</tbody>
-				</table>
-				<p class="description" style="max-width:52em">
-					<?php
-					if ( $passe_max && $refus_min && $passe_max < $refus_min ) {
-						echo esc_html( sprintf( 'La limite du serveur se situe entre %d et %d Mo de pièces jointes. '
-							. 'C’est le chiffre à donner à l’hébergeur ; et c’est d’après lui que se règle '
-							. '« Poids maximal d’un courriel », plus haut — en comptant un tiers de plus pour l’encodage.',
-							$passe_max, $refus_min ) );
-					} elseif ( $passe_max && ! $refus_min ) {
-						echo esc_html( sprintf( 'Le serveur accepte au moins %d Mo de pièces jointes. '
-							. 'Si le message arrive bien, « Poids maximal d’un courriel » peut être relevé.', $passe_max ) );
-					} elseif ( $refus_min && ! $passe_max ) {
-						echo esc_html( sprintf( 'Le serveur refuse dès %d Mo de pièces jointes : essayez une taille plus petite pour borner la limite.', $refus_min ) );
-					} else {
-						echo esc_html( 'Les essais se contredisent — un poids plus lourd accepté après un plus léger refusé : '
-							. 'la cause n’est peut-être pas le poids. Refaites-les à quelques minutes d’intervalle.' );
-					}
-					?>
-				</p>
-			<?php endif; ?>
-			<?php if ( is_array( $essais_successifs ) ) : ?>
-				<table class="widefat striped" style="max-width:52em;margin-bottom:12px">
-					<tbody>
-					<?php foreach ( $essais_successifs as $e ) : ?>
-						<tr>
-							<td style="width:34%"><strong><?php echo esc_html( $e['etape'] ); ?></strong></td>
-							<td style="color:<?php echo $e['ok'] ? '#2f6b2f' : '#b32d2e'; ?>">
-								<?php echo esc_html( $e['message'] ); ?>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-					</tbody>
-				</table>
-				<p class="description">La première ligne en rouge nomme ce qui fait échouer l’envoi.</p>
-			<?php endif; ?>
-			<?php if ( null !== $test_envoi ) : ?>
-				<div class="notice notice-<?php echo $test_envoi['ok'] ? 'success' : 'error'; ?>">
-					<p><?php echo esc_html( $test_envoi['message'] ); ?></p>
-				</div>
-			<?php endif; ?>
-
-			<hr>
-
-			<h2>Sortie vers GitHub</h2>
-			<p style="max-width:46em">Ce test dit si le serveur peut joindre GitHub — l’API
-			qui annonce les versions, et l’hôte qui sert les fichiers. C’est ce dont
-			dépendrait une mise à jour proposée dans « Extensions » plutôt que téléversée
-			à la main. Le même proxy empêche déjà de joindre Cloudflare.</p>
-			<form method="post">
-				<?php wp_nonce_field( 'na_test_github' ); ?>
-				<?php submit_button( 'Tester l’accès à GitHub', 'secondary', 'na_test_github', false ); ?>
-			</form>
-			<?php if ( null !== $test_github ) : ?>
-				<div class="notice notice-<?php echo $test_github['ok'] ? 'success' : 'error'; ?>">
-					<p><?php echo esc_html( $test_github['message'] ); ?></p>
-				</div>
-			<?php endif; ?>
-
-			<hr>
-
-			<h2>Ce que l’hébergement offre</h2>
-			<p>Ce tableau ne change rien : il regarde. Chaque ligne dit ce qu’il
-			faut, ce qu’il y a, et ce qui manque — de quoi savoir sur quoi
-			compter, et quoi demander à l’hébergeur.</p>
-			<?php
-			$etat = self::etat_du_serveur();
-			$manques = array_values( array_filter( $etat, function ( $l ) {
-				return 'manque' === $l['etat'];
-			} ) );
-			?>
-			<table class="widefat striped" style="max-width:60em">
+			return;
+		endif;
+		self::ouvrir_les_reglages();
+		?>
+			<p class="description" style="max-width:46em">
+				Deux sortes de courriels partent d’ici : <strong>chaque notice</strong>,
+				à mesure qu’elle est déposée, avec son document et ses illustrations,
+				et <strong>un récapitulatif du jour</strong>, qui liste ce qui est
+				arrivé depuis la veille. Chacun choisit ce qu’il veut recevoir.
+			</p>
+			<table class="widefat striped" id="na-destinataires" style="max-width:48em;margin-top:10px">
 				<thead>
 					<tr>
-						<th style="width:20%">Ce qu’il faut</th>
-						<th style="width:12%">Requis</th>
-						<th style="width:14%">Constaté</th>
-						<th style="width:14%">Écart</th>
-						<th>Pourquoi</th>
+						<th scope="col" style="width:55%">Adresse</th>
+						<th scope="col" style="width:15%">Chaque notice</th>
+						<th scope="col" style="width:20%">Récapitulatif du jour</th>
+						<th scope="col" style="width:10%"><span class="screen-reader-text">Retirer</span></th>
 					</tr>
 				</thead>
 				<tbody>
-				<?php foreach ( $etat as $l ) : ?>
-					<tr>
-						<td><strong><?php echo esc_html( $l['quoi'] ); ?></strong></td>
-						<td><?php echo esc_html( $l['requis'] ); ?></td>
-						<td<?php echo 'manque' === $l['etat'] ? ' style="color:#b32d2e;font-weight:600"' : ''; ?>>
-							<?php echo esc_html( $l['constate'] ); ?>
+				<?php
+				// Une ligne vide en plus, pour qu'on puisse ajouter sans avoir à
+				// chercher le bouton du premier coup.
+				$lignes   = $destinataires;
+				$lignes[] = array( 'email' => '', 'notices' => true, 'recap' => false );
+				foreach ( $lignes as $rang => $qui ) :
+					$nom = esc_attr( self::OPTION_NAME ) . '[destinataires][' . (int) $rang . ']';
+					$ici = 'na-dest-' . (int) $rang;
+					?>
+					<tr class="na-destinataire">
+						<td>
+							<label class="screen-reader-text" for="<?php echo esc_attr( $ici ); ?>">Adresse du destinataire <?php echo (int) $rang + 1; ?></label>
+							<input type="email" class="regular-text" style="width:100%" id="<?php echo esc_attr( $ici ); ?>"
+								name="<?php echo $nom; ?>[email]"
+								value="<?php echo esc_attr( $qui['email'] ); ?>"
+								placeholder="adresse@exemple.fr">
 						</td>
-						<td<?php echo '' !== $l['ecart'] ? ' style="color:#b32d2e"' : ''; ?>>
-							<?php echo '' !== $l['ecart'] ? esc_html( $l['ecart'] ) : '—'; ?>
+						<td style="text-align:center">
+							<label><input type="checkbox" value="1" name="<?php echo $nom; ?>[notices]"
+								<?php checked( ! empty( $qui['notices'] ) ); ?>><span class="screen-reader-text">Reçoit chaque notice</span></label>
 						</td>
-						<td class="description"><?php echo esc_html( $l['pourquoi'] ); ?></td>
+						<td style="text-align:center">
+							<label><input type="checkbox" value="1" name="<?php echo $nom; ?>[recap]"
+								<?php checked( ! empty( $qui['recap'] ) ); ?>><span class="screen-reader-text">Reçoit le récapitulatif du jour</span></label>
+						</td>
+						<td style="text-align:center">
+							<button type="button" class="button-link na-oter"
+								aria-label="Retirer ce destinataire" title="Retirer ce destinataire">✕</button>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>
-			<?php if ( empty( $manques ) ) : ?>
-				<p style="color:#2f6b2f"><strong>Rien ne manque.</strong></p>
-			<?php else : ?>
-				<p style="color:#b32d2e"><strong><?php echo (int) count( $manques ); ?>
-				<?php echo 1 === count( $manques ) ? 'point manque' : 'points manquent'; ?>.</strong>
-				Le reste du plugin fonctionne, mais ce qui en dépend restera hors d’atteinte.</p>
-			<?php endif; ?>
+			<p>
+				<button type="button" class="button" id="na-ajouter-destinataire">+ Ajouter un destinataire</button>
+				<span class="description" style="margin-left:8px">
+					<?php echo (int) self::MAX_DESTINATAIRES; ?> au plus. Une adresse effacée est retirée à l’enregistrement.
+				</span>
+			</p>
+			<?php
+			$pour_notices = self::destinataires_de( 'notices' );
+			$pour_recap   = self::destinataires_de( 'recap' );
+			?>
+			<p class="description">
+				<?php if ( empty( $pour_notices ) ) : ?>
+					<strong class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span> Personne ne reçoit les notices</strong> :
+					les dépôts sont conservés, mais aucun ne part.
+				<?php else : ?>
+					Chaque notice : <code><?php echo esc_html( implode( ', ', $pour_notices ) ); ?></code>.
+				<?php endif; ?>
+				<br>
+				<?php if ( empty( $pour_recap ) ) : ?>
+					Récapitulatif du jour : personne. Il ne sera pas envoyé.
+				<?php else : ?>
+					Récapitulatif du jour : <code><?php echo esc_html( implode( ', ', $pour_recap ) ); ?></code>.
+				<?php endif; ?>
+			</p>
+		<?php self::fermer_les_reglages(); ?>
+		<script>
+		(function () {
+			var table = document.getElementById('na-destinataires');
+			var corps = table.querySelector('tbody');
+			var bouton = document.getElementById('na-ajouter-destinataire');
+			var maximum = <?php echo (int) self::MAX_DESTINATAIRES; ?>;
+			var prefixe = <?php echo wp_json_encode( self::OPTION_NAME ); ?>;
+			// Le rang de la prochaine ligne : on ne réutilise pas ceux des
+			// lignes retirées, l'enregistrement renumérote de toute façon.
+			var suivant = corps.querySelectorAll('tr.na-destinataire').length;
+			function ajouter() {
+				if (corps.querySelectorAll('tr.na-destinataire').length >= maximum) {
+					bouton.disabled = true;
+					return;
+				}
+				var rang = suivant++;
+				var nom = prefixe + '[destinataires][' + rang + ']';
+				var ici = 'na-dest-' + rang;
+				var tr = document.createElement('tr');
+				tr.className = 'na-destinataire';
+				tr.innerHTML =
+					'<td><label class="screen-reader-text" for="' + ici + '">Adresse du destinataire ' + (rang + 1) + '</label>' +
+					'<input type="email" class="regular-text" style="width:100%" placeholder="adresse@exemple.fr" id="' + ici + '" name="' + nom + '[email]"></td>' +
+					'<td style="text-align:center"><label><input type="checkbox" value="1" checked name="' + nom + '[notices]"><span class="screen-reader-text">Reçoit chaque notice</span></label></td>' +
+					'<td style="text-align:center"><label><input type="checkbox" value="1" name="' + nom + '[recap]"><span class="screen-reader-text">Reçoit le récapitulatif du jour</span></label></td>' +
+					'<td style="text-align:center"><button type="button" class="button-link na-oter" aria-label="Retirer ce destinataire" title="Retirer ce destinataire">✕</button></td>';
+				corps.appendChild(tr);
+				tr.querySelector('input[type=email]').focus();
+				bouton.disabled = corps.querySelectorAll('tr.na-destinataire').length >= maximum;
+			}
+			bouton.addEventListener('click', ajouter);
+			corps.addEventListener('click', function (e) {
+				var b = e.target.closest('.na-oter');
+				if (!b) { return; }
+				var lignes = corps.querySelectorAll('tr.na-destinataire');
+				// La dernière ligne se vide plutôt que de disparaître : un
+				// tableau sans aucune ligne n'offre plus où saisir.
+				if (lignes.length <= 1) {
+					b.closest('tr').querySelectorAll('input[type=email]').forEach(function (i) { i.value = ''; });
+					return;
+				}
+				b.closest('tr').remove();
+				bouton.disabled = false;
+			});
+		}());
+		</script>
+		<?php
+	}
 
-			<h2>Utilisation</h2>
-			<p>Insérez le code court <code>[notice_archeomed_pactols]</code> dans la page devant accueillir le formulaire.</p>
+	/** Le numéro en préparation et ce qu'on fait des illustrations. */
+	private function onglet_numero( $essai ) {
+		self::ouvrir_les_reglages();
+		?>
+		<h2>Iconographie du numéro</h2>
+		<p class="description" style="max-width:46em">
+			Ce qui gouverne le dossier <code>icono</code> d’un numéro : le nom
+			des fichiers, et les deux définitions qu’on en tire — la basse,
+			posée en lien dans le document Word, et la haute, qui part à la
+			mise en page.
+		</p>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[icono_presente]" value="1">
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row"><label for="na_numero">Numéro en préparation</label></th>
+				<td>
+					<input type="text" id="na_numero" class="regular-text" style="max-width:12em"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[numero]"
+						value="<?php echo esc_attr( self::get( 'numero' ) ); ?>"
+						placeholder="AM55">
+					<p class="description">Il ouvre le nom de chaque illustration. Laissé vide, le nom commence au rang de la rubrique.</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_nom_modele">Modèle de nom</label></th>
+				<td>
+					<input type="text" id="na_nom_modele" class="large-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[nom_modele]"
+						value="<?php echo esc_attr( self::get( 'nom_modele' ) ); ?>">
+					<p class="description">
+						Jetons admis :
+						<?php
+						$jetons = array();
+						foreach ( self::JETONS_DE_NOM as $jeton => $quoi ) {
+							$jetons[] = '<code>' . esc_html( $jeton ) . '</code> ' . esc_html( $quoi );
+						}
+						echo wp_kses_post( implode( ' ; ', $jetons ) );
+						?>.
+						<br>
+						Ce qui n’est pas un jeton est recopié tel quel, puis tout le nom
+						passe à la règle : pas d’accent, pas d’espace, le souligné pour
+						seul séparateur. <strong><code>{n}</code> est obligatoire</strong> :
+						sans lui, deux illustrations d’une même notice porteraient le même nom.
+						<br>
+						Exemple : <code><?php echo esc_html( self::exemple_de_nom() ); ?></code>
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Basse définition (<code>icono/br</code>)</th>
+				<td>
+					<label>Largeur maximale
+						<input type="number" min="200" max="4000" step="10" style="width:7em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_largeur]"
+							value="<?php echo (int) self::get( 'br_largeur' ); ?>"> px</label>
+					&nbsp;&nbsp;
+					<label>Résolution
+						<input type="number" min="72" max="300" step="1" style="width:6em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_dpi]"
+							value="<?php echo (int) self::get( 'br_dpi' ); ?>"> dpi</label>
+					&nbsp;&nbsp;
+					<label>Poids maximal
+						<input type="number" min="50" max="20480" step="50" style="width:7em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_poids]"
+							value="<?php echo (int) self::get( 'br_poids' ); ?>"> Ko</label>
+					&nbsp;&nbsp;
+					<label>Tolérance
+						<input type="number" min="0" max="50" step="1" style="width:5em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_tolerance]"
+							value="<?php echo (int) self::get( 'br_tolerance' ); ?>"> %</label>
+					<p class="description">
+						Elle n’est pas destinée à l’impression : elle sert à voir la figure
+						à sa place dans le document. Le poids compte donc autant que la
+						largeur — cent figures liées dans un fascicule, et le dossier
+						devient intransportable.
+						<br>
+						<strong>La qualité ne se règle pas</strong> : le plugin part de la
+						meilleure et ne la baisse que si le fichier dépasse le plafond,
+						par paliers, en s’arrêtant au premier qui tient. La tolérance dit
+						jusqu’où descendre sans insister :
+						<?php
+						$plafond = (int) self::get( 'br_poids' );
+						$bas     = (int) round( $plafond * ( 100 - (int) self::get( 'br_tolerance' ) ) / 100 );
+						echo esc_html( sprintf( 'on s’arrête dès que le fichier tient entre %d et %d Ko.',
+							(int) $bas, (int) $plafond ) );
+						?>
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Haute définition (<code>icono/hr</code>)<br>
+					<span class="description" style="font-weight:400">photographies</span></th>
+				<td>
+					<label>
+						<input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_jpeg]"
+							<?php checked( (int) self::get( 'hr_photo_jpeg' ), 1 ); ?>>
+						Convertir en JPEG
+					</label>
+					&nbsp;&nbsp;
+					<label>Résolution
+						<input type="number" min="150" max="1200" step="1" style="width:6em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_dpi]"
+							value="<?php echo (int) self::get( 'hr_photo_dpi' ); ?>"> dpi</label>
+					&nbsp;&nbsp;
+					<label>Qualité
+						<input type="number" min="40" max="100" step="1" style="width:6em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_photo_qualite]"
+							value="<?php echo (int) self::get( 'hr_photo_qualite' ); ?>"> %</label>
+					<p class="description">
+						Ce qui arrive en JPEG, TIFF ou PNG. La revue demande
+						10 × 15 cm à 300 dpi au minimum.
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Haute définition (<code>icono/hr</code>)<br>
+					<span class="description" style="font-weight:400">dessins au trait et vectoriels</span></th>
+				<td>
+					<label>
+						<input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_jpeg]"
+							<?php checked( (int) self::get( 'hr_trait_jpeg' ), 1 ); ?>>
+						Convertir en JPEG
+					</label>
+					&nbsp;&nbsp;
+					<label>Résolution
+						<input type="number" min="150" max="2400" step="1" style="width:6em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_dpi]"
+							value="<?php echo (int) self::get( 'hr_trait_dpi' ); ?>"> dpi</label>
+					&nbsp;&nbsp;
+					<label>Qualité
+						<input type="number" min="40" max="100" step="1" style="width:6em"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_qualite]"
+							value="<?php echo (int) self::get( 'hr_trait_qualite' ); ?>"> %</label>
+					<p class="description">
+						Ce qui arrive en PDF, EPS ou AI — c’est le format déposé qui range
+						l’illustration dans l’une ou l’autre famille. La revue demande
+						1200 dpi pour un trait, et <strong>le convertir en JPEG lui ôte
+						justement ce qu’on lui demande</strong> : décoché, l’original est
+						recopié tel quel.
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Originaux</th>
+				<td>
+					<label>
+						<input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[garder_originaux]"
+							<?php checked( (int) self::get( 'garder_originaux' ), 1 ); ?>>
+						Garder les fichiers d’origine dans <code>icono/originaux</code>
+					</label>
+					<p class="description">Rien de ce que l’auteur a envoyé ne disparaît alors dans une conversion.</p>
+				</td>
+			</tr>
+		</table>
+		<?php
+		self::fermer_les_reglages();
+	}
+
+	/** La protection du formulaire, et où il paraît. */
+	private function onglet_formulaire( $essai ) {
+		$prot          = self::get( 'protection' );
+		$prot_locked   = self::is_locked( 'protection' );
+		$secret_locked = self::is_locked( 'turnstile_secret' );
+		$site_locked   = self::is_locked( 'turnstile_site' );
+		$options       = get_option( self::OPTION_NAME, array() );
+		$has_secret    = '' !== trim( self::get( 'turnstile_secret' ) );
+		// Les clés Turnstile ne concernent que qui a choisi Turnstile : elles
+		// se cachent sinon, sans quitter le formulaire, pour que
+		// l'enregistrement les garde telles quelles.
+		$turnstile_sert = in_array( $prot, array( 'turnstile', 'les_deux' ), true );
+		?>
+		<h2>Où paraît le formulaire</h2>
+		<p>
+			<label for="na-code-court">Code court à coller dans la page qui doit accueillir le formulaire :</label><br>
+			<input type="text" id="na-code-court" class="regular-text code" readonly
+				value="[notice_archeomed_pactols]" onfocus="this.select()" onclick="this.select()">
+		</p>
+
+		<?php self::ouvrir_les_reglages(); ?>
+		<h2>Protection anti-robot</h2>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Comment le formulaire se protège</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Comment le formulaire se protège</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
+								value="locale" <?php checked( 'locale' === $prot ); ?>
+								<?php disabled( $prot_locked ); ?>>
+							Pièce de puzzle à glisser — fonctionne partout
+						</label>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
+								value="turnstile" <?php checked( 'turnstile' === $prot ); ?>
+								<?php disabled( $prot_locked ); ?>>
+							Cloudflare Turnstile seul
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[protection]"
+								value="les_deux" <?php checked( 'les_deux' === $prot ); ?>
+								<?php disabled( $prot_locked ); ?>>
+							Les deux
+						</label>
+					</fieldset>
+					<p class="description">
+						<?php if ( $prot_locked ) : ?>
+							Valeur imposée par la constante <code>NA_PROTECTION</code>.
+						<?php else : ?>
+							Turnstile suppose que <strong>le serveur</strong> puisse joindre
+							Cloudflare. Derrière un proxy filtrant — hébergement institutionnel —
+							il ne le peut pas : la vérification échoue, le plugin laisse
+							passer pour ne pas perdre de notice, et la protection n’en est plus
+							une. La pièce de puzzle se vérifie sur place et fonctionne partout.
+						<?php endif; ?>
+					</p>
+				</td>
+			</tr>
+		</table>
+
+		<div id="na-turnstile"<?php echo $turnstile_sert ? '' : ' hidden'; ?>>
+			<h2>Cloudflare Turnstile</h2>
+			<p>Ces clés se créent gratuitement sur <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">le tableau de bord Cloudflare</a>, rubrique Turnstile. La clé de site est publique ; la clé secrète ne doit jamais être diffusée.</p>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><label for="na_site">Clé de site</label></th>
+					<td>
+						<input type="text" id="na_site" class="regular-text"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[turnstile_site]"
+							value="<?php echo esc_attr( $site_locked ? self::get( 'turnstile_site' ) : ( isset( $options['turnstile_site'] ) ? $options['turnstile_site'] : self::get( 'turnstile_site' ) ) ); ?>"
+							<?php disabled( $site_locked ); ?>>
+						<?php if ( $site_locked ) : ?>
+							<p class="description">Valeur imposée par la constante <code>NA_TURNSTILE_SITE</code> définie dans <code>wp-config.php</code>.</p>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="na_secret">Clé secrète</label></th>
+					<td>
+						<?php if ( $secret_locked ) : ?>
+							<input type="text" id="na_secret" class="regular-text" value="(définie dans wp-config.php)" disabled>
+							<p class="description">Valeur imposée par la constante <code>NA_TURNSTILE_SECRET</code>. Pour la modifier, éditez <code>wp-config.php</code>.</p>
+						<?php else : ?>
+							<input type="password" id="na_secret" class="regular-text" autocomplete="new-password"
+								name="<?php echo esc_attr( self::OPTION_NAME ); ?>[turnstile_secret]"
+								value="" placeholder="<?php echo $has_secret ? '••••••••••••  (clé enregistrée)' : 'aucune clé enregistrée'; ?>">
+							<p class="description">
+								<?php if ( $has_secret ) : ?>
+									Une clé est enregistrée. Laissez ce champ vide pour la conserver, ou saisissez-en une nouvelle pour la remplacer.
+								<?php else : ?>
+									Collez ici la clé secrète fournie par Cloudflare.
+								<?php endif; ?>
+							</p>
+							<?php if ( $has_secret ) : ?>
+								<p>
+									<label>
+										<input type="checkbox" value="1"
+											name="<?php echo esc_attr( self::OPTION_NAME ); ?>[clear_secret]">
+										Effacer la clé enregistrée
+									</label>
+								</p>
+							<?php endif; ?>
+						<?php endif; ?>
+					</td>
+				</tr>
+			</table>
 		</div>
+		<?php self::fermer_les_reglages(); ?>
+
+		<div id="na-turnstile-essai"<?php echo $turnstile_sert ? '' : ' hidden'; ?>>
+			<h2>Vérifier la clé secrète</h2>
+			<p>Cet essai demande à Cloudflare si la clé secrète <strong>enregistrée</strong> est reconnue, et dit du même coup si le serveur peut le joindre. Il n’envoie aucune notice.</p>
+			<?php self::ouvrir_un_essai(); ?>
+				<button type="submit" class="button" name="na_quoi" value="turnstile">Tester la clé secrète</button>
+			</form>
+			<?php
+			if ( 'turnstile' === $essai['quoi'] ) {
+				self::resultat( $essai['resultat'] );
+			}
+			?>
+		</div>
+		<script>
+		(function () {
+			var radios = document.querySelectorAll('input[name="<?php echo esc_js( self::OPTION_NAME ); ?>[protection]"]');
+			var blocs = [document.getElementById('na-turnstile'), document.getElementById('na-turnstile-essai')];
+			radios.forEach(function (r) {
+				r.addEventListener('change', function () {
+					var sert = r.checked && r.value !== 'locale';
+					if (!r.checked) { return; }
+					blocs.forEach(function (b) { if (b) { b.hidden = !sert; } });
+				});
+			});
+		}());
+		</script>
+		<?php
+	}
+
+	/** Par où partent les courriels, et les essais qui l'éprouvent. */
+	private function onglet_courriel( $essai ) {
+		$mode = self::get( 'envoi_mode' );
+		self::ouvrir_les_reglages();
+		?>
+		<h2>Acheminement du courriel</h2>
+		<p class="description" style="max-width:46em">
+			Tout le plugin en dépend : une notice qui ne part pas reste en file, puis
+			échoue. Si le serveur répond <em>« Impossible d’instancier la fonction
+			mail »</em>, c’est que <code>mail()</code> n’est pas configurée sur cet
+			hébergement — un relais SMTP contourne la question.
+		</p>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Par quoi les courriels passent</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Par quoi les courriels passent</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
+								value="php" <?php checked( 'smtp' !== $mode ); ?>>
+							La fonction <code>mail()</code> du serveur <strong>(par défaut)</strong>
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[envoi_mode]"
+								value="smtp" <?php checked( 'smtp' === $mode ); ?>>
+							Un relais SMTP
+						</label>
+					</fieldset>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_smtp_hote">Relais SMTP</label></th>
+				<td>
+					<input type="text" id="na_smtp_hote" class="regular-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_hote]"
+						value="<?php echo esc_attr( self::get( 'smtp_hote' ) ); ?>"
+						placeholder="smtp.exemple.fr">
+					<label for="na_smtp_port" style="margin-left:6px">port</label>
+					<input type="number" id="na_smtp_port" min="1" max="65535" style="width:6em"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_port]"
+						value="<?php echo (int) self::get( 'smtp_port' ); ?>">
+					<?php $chif = self::get( 'smtp_chiffrement' ); ?>
+					<label for="na_smtp_chiffrement" style="margin-left:6px">chiffrement</label>
+					<select id="na_smtp_chiffrement" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_chiffrement]">
+						<option value="tls" <?php selected( 'tls', $chif ); ?>>STARTTLS (587)</option>
+						<option value="ssl" <?php selected( 'ssl', $chif ); ?>>SSL (465)</option>
+						<option value="aucun" <?php selected( 'aucun', $chif ); ?>>aucun chiffrement (25)</option>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_smtp_user">Identifiant</label></th>
+				<td>
+					<input type="text" id="na_smtp_user" class="regular-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_utilisateur]"
+						value="<?php echo esc_attr( self::get( 'smtp_utilisateur' ) ); ?>"
+						placeholder="laissez vide si le relais n’en demande pas">
+					<p class="description">Un relais institutionnel accepte souvent ses propres machines sans identifiant.</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_smtp_mdp">Mot de passe</label></th>
+				<td>
+					<input type="password" id="na_smtp_mdp" class="regular-text" autocomplete="new-password"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_motdepasse]"
+						placeholder="<?php echo '' !== (string) self::get( 'smtp_motdepasse' ) ? 'enregistré — laissez vide pour le garder' : 'aucun'; ?>">
+					<?php if ( '' !== (string) self::get( 'smtp_motdepasse' ) ) : ?>
+						<label style="margin-left:8px"><input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_motdepasse]"> Effacer le mot de passe enregistré</label>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_smtp_from">Adresse d’expédition</label></th>
+				<td>
+					<input type="email" id="na_smtp_from" class="regular-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_expediteur]"
+						value="<?php echo esc_attr( self::get( 'smtp_expediteur' ) ); ?>"
+						placeholder="notices@exemple.fr">
+					<p class="description">
+						Elle doit appartenir au domaine que le relais accepte, sans quoi il
+						refusera le message pour usurpation.
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_smtp_nom">Nom affiché</label></th>
+				<td>
+					<input type="text" id="na_smtp_nom" class="regular-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_nom]"
+						value="<?php echo esc_attr( self::get( 'smtp_nom' ) ); ?>"
+						placeholder="Archéologie médiévale">
+					<p class="description">Le nom que le destinataire voit à côté de l’adresse d’expédition.</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na-poids-courriel">Poids maximal d’un courriel</label></th>
+				<td>
+					<input type="number" id="na-poids-courriel" min="1" max="100" style="width:6em"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[poids_courriel]"
+						value="<?php echo esc_attr( (int) self::get( 'poids_courriel' ) ); ?>"> Mo
+					<p class="description">
+						Au-delà, le serveur de courriel refuse le message entier. Le plafond vaut
+						pour tout ce que le courriel porte : le document, puis chaque figure dans
+						son ordre — en version allégée, qui pèse peu, ou en original faute d’en
+						avoir une. Une figure qui ne tient plus reste sur le site, et le courriel
+						la nomme, avec le lien de la notice. Une pièce jointe grossit d’un tiers en
+						voyageant. L’« essai de poids », plus bas, mesure ce que le serveur accepte.
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php self::fermer_les_reglages(); ?>
+
+		<hr>
+
+		<h2>Essais d’envoi</h2>
+		<p style="max-width:46em">Chacun envoie un courriel et rapporte ce que le
+		serveur a répondu — sans déposer de notice ni attendre le planificateur.
+		<strong>Enregistrez d’abord les réglages ci-dessus</strong> : les essais
+		se font avec ceux qui sont enregistrés.</p>
+		<?php self::ouvrir_un_essai(); ?>
+			<p>
+				<label for="na-essai-vers">Adresse d’essai</label><br>
+				<input type="email" id="na-essai-vers" name="na_essai_vers" class="regular-text"
+					value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>">
+			</p>
+			<p>
+				<button type="submit" class="button" name="na_quoi" value="envoi">Envoyer un courriel d’essai</button>
+			</p>
+			<p>
+				<label for="na-poids-essai">Pièce jointe de</label>
+				<select id="na-poids-essai" name="na_poids_essai">
+					<?php foreach ( Notice_Archeomed_Pactols::TAILLES_ESSAI as $mo ) : ?>
+						<option value="<?php echo (int) $mo; ?>"><?php echo (int) $mo; ?> Mo</option>
+					<?php endforeach; ?>
+				</select>
+				<button type="submit" class="button" name="na_quoi" value="poids">Essai de poids</button>
+				<span class="description" style="margin-left:8px">
+					Un seul message, avec une pièce jointe de la taille choisie : il dit
+					jusqu’où le serveur de courriel accepte, sans rien d’autre qui varie.
+				</span>
+			</p>
+			<p>
+				<button type="submit" class="button" name="na_quoi" value="etapes">Refaire l’envoi d’une notice, étape par étape</button>
+				<span class="description" style="margin-left:8px">
+					Vers les destinataires des notices. Quand un essai simple part mais
+					qu’une notice est refusée, celui-ci dit lequel des écarts en est la
+					cause : plusieurs destinataires, un en-tête Reply-To, une pièce jointe.
+				</span>
+			</p>
+		</form>
+		<?php
+		if ( in_array( $essai['quoi'], array( 'envoi', 'poids' ), true ) ) {
+			self::resultat( $essai['resultat'] );
+		}
+		if ( 'etapes' === $essai['quoi'] && is_array( $essai['resultat'] ) ) :
+			?>
+			<table class="widefat striped" style="max-width:52em;margin-bottom:12px">
+				<tbody>
+				<?php foreach ( $essai['resultat'] as $e ) : ?>
+					<tr>
+						<th scope="row" style="width:34%"><?php echo esc_html( $e['etape'] ); ?></th>
+						<td><?php echo Notice_Archeomed_File::verdict( ! empty( $e['ok'] ) ); ?>
+							<?php echo esc_html( $e['message'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p class="description">La première ligne marquée « échec » nomme ce qui fait échouer l’envoi.</p>
+			<?php
+		endif;
+
+		$poids_essayes = get_option( 'na_essais_de_poids', array() );
+		if ( ! is_array( $poids_essayes ) || empty( $poids_essayes ) ) {
+			return;
+		}
+		$passe_max = 0;
+		$refus_min = 0;
+		foreach ( $poids_essayes as $mo => $e ) {
+			if ( ! empty( $e['ok'] ) ) {
+				$passe_max = max( $passe_max, (int) $mo );
+			} elseif ( ! $refus_min || (int) $mo < $refus_min ) {
+				$refus_min = (int) $mo;
+			}
+		}
+		?>
+		<h3>Essais de poids déjà faits</h3>
+		<table class="widefat striped" style="max-width:52em;margin-bottom:6px">
+			<thead><tr><th scope="col">Pièce jointe</th><th scope="col">Réponse du serveur</th><th scope="col">Le</th></tr></thead>
+			<tbody>
+			<?php foreach ( $poids_essayes as $mo => $e ) : ?>
+				<tr>
+					<td><strong><?php echo (int) $mo; ?> Mo</strong></td>
+					<td><?php echo ! empty( $e['ok'] )
+						? '<span class="na-etat na-etat--ok"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span> accepté</span>'
+						: '<span class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span> refusé</span>'; ?></td>
+					<td><?php echo esc_html( Notice_Archeomed_File::date_lisible( $e['quand'] ) ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<p class="description" style="max-width:52em">
+			<?php
+			if ( $passe_max && $refus_min && $passe_max < $refus_min ) {
+				echo esc_html( sprintf( 'La limite du serveur se situe entre %d et %d Mo de pièces jointes. '
+					. 'C’est le chiffre à donner à l’hébergeur ; et c’est d’après lui que se règle '
+					. '« Poids maximal d’un courriel », plus haut — en comptant un tiers de plus pour l’encodage.',
+					$passe_max, $refus_min ) );
+			} elseif ( $passe_max && ! $refus_min ) {
+				echo esc_html( sprintf( 'Le serveur accepte au moins %d Mo de pièces jointes. '
+					. 'Si le message arrive bien, « Poids maximal d’un courriel » peut être relevé.', $passe_max ) );
+			} elseif ( $refus_min && ! $passe_max ) {
+				echo esc_html( sprintf( 'Le serveur refuse dès %d Mo de pièces jointes : essayez une taille plus petite pour borner la limite.', $refus_min ) );
+			} else {
+				echo esc_html( 'Les essais se contredisent — un poids plus lourd accepté après un plus léger refusé : '
+					. 'la cause n’est peut-être pas le poids. Refaites-les à quelques minutes d’intervalle.' );
+			}
+			?>
+		</p>
+		<?php
+	}
+
+	/** La feuille de styles Métopes en service, et comment la remplacer. */
+	private function onglet_feuille( $essai ) {
+		$messages = array(
+			'posee'    => array( 'success', 'La nouvelle feuille de styles est en service.' ),
+			'retiree'  => array( 'success', 'La feuille déposée a été retirée : celle livrée avec le plugin reprend la main.' ),
+			'vide'     => array( 'error', 'Aucun fichier n’a été reçu.' ),
+			'format'   => array( 'error', 'Seuls les fichiers .docx et .rtf sont acceptés.' ),
+			'invalide' => array( 'error', 'Ce document ne porte pas de feuille de styles : ce n’est pas un gabarit Métopes. Rien n’a été changé.' ),
+			'ecriture' => array( 'error', 'Le fichier n’a pas pu être écrit dans le dossier des téléversements.' ),
+		);
+		$retour = isset( $_GET['na_feuille'] ) ? sanitize_key( wp_unslash( $_GET['na_feuille'] ) ) : '';
+		$feuille = Notice_Archeomed_Pactols::etat_de_la_feuille( 'docx' );
+		?>
+		<h2>Feuille de styles Métopes</h2>
+		<?php
+		if ( isset( $messages[ $retour ] ) ) {
+			echo '<div class="notice inline notice-' . esc_attr( $messages[ $retour ][0] ) . '"><p>'
+				. esc_html( $messages[ $retour ][1] ) . '</p></div>';
+		}
+		?>
+		<p class="description" style="max-width:46em">
+			<a href="https://www.metopes.fr" target="_blank" rel="noopener">Métopes</a> —
+			chaîne d’édition XML créée par le Pôle document numérique et l’infrastructure
+			Métopes de l’université de Caen Normandie. Sa feuille de styles donne leur
+			forme aux notices et aux fascicules.
+		</p>
+		<table class="widefat striped" style="max-width:46em">
+			<tbody>
+				<tr><th scope="row" style="width:36%">En service</th>
+					<td><?php echo $feuille['deposee']
+						? 'la feuille déposée depuis cette page'
+						: 'la feuille livrée avec le plugin'; ?></td></tr>
+				<?php if ( $feuille['presente'] ) : ?>
+					<tr><th scope="row">Date du document</th>
+						<td><?php echo '' !== $feuille['modifiee']
+							? esc_html( mysql2date( 'j F Y', str_replace( array( 'T', 'Z' ), array( ' ', '' ), $feuille['modifiee'] ) ) )
+							: '<span class="description">non renseignée dans le fichier</span>'; ?></td></tr>
+					<tr><th scope="row">Posée sur le serveur le</th>
+						<td><?php echo esc_html( Notice_Archeomed_File::date_lisible( wp_date( 'Y-m-d H:i:s', (int) $feuille['posee'] ) ) ); ?></td></tr>
+					<tr><th scope="row">Styles déclarés</th>
+						<td><?php echo (int) $feuille['styles'] > 0
+							? (int) $feuille['styles'] : '<span class="description">illisibles sur cet hébergement (il y manque ZipArchive)</span>'; ?></td></tr>
+					<tr><th scope="row">Poids</th>
+						<td><?php echo esc_html( size_format( $feuille['poids'] ) ); ?></td></tr>
+				<?php else : ?>
+					<tr><td colspan="2"><span class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span> Aucune feuille de styles trouvée.</span>
+					Les notices partiront sans document mis en forme.</td></tr>
+				<?php endif; ?>
+			</tbody>
+		</table>
+
+		<h3>Remplacer la feuille</h3>
+		<p class="description" style="max-width:46em">
+			Quand Métopes fait évoluer sa feuille, déposez ici le nouveau gabarit
+			(<code>.docx</code>) : inutile d’aller dans le dossier du plugin. Les
+			styles sont reconnus par leur nom, aucune modification du code n’est
+			nécessaire. La feuille déposée vit dans les téléversements du site : une
+			mise à jour de l’extension ne l’efface pas.
+		</p>
+		<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="na_feuille">
+			<?php wp_nonce_field( 'na_feuille' ); ?>
+			<p>
+				<label for="na-feuille-fichier">Nouveau gabarit</label><br>
+				<input type="file" id="na-feuille-fichier" name="na_feuille" accept=".docx,.rtf">
+				<?php submit_button( 'Déposer cette feuille', 'primary', '', false ); ?>
+			</p>
+			<?php if ( $feuille['deposee'] ) : ?>
+				<p>
+					<label><input type="checkbox" name="na_feuille_retirer" value="1">
+					Retirer la feuille déposée et revenir à celle du plugin</label>
+					<?php submit_button( 'Appliquer', 'secondary small', '', false ); ?>
+				</p>
+			<?php endif; ?>
+		</form>
+
+		<div class="notice inline notice-info" style="max-width:46em"><p>
+			<strong>Après chaque nouveau gabarit, vérifiez un fascicule.</strong>
+			Téléchargez celui d’une rubrique depuis la liste des notices, ouvrez-le
+			dans Word, et regardez si les titres, les auteurs et les légendes ont
+			gardé leur mise en forme. Si Métopes a renommé un style, rien ne le
+			signale : le paragraphe sort simplement en « Normal ». Dans ce cas,
+			revenez à la feuille du plugin (case ci-dessus) et prévenez la personne
+			qui assure la maintenance.
+		</p></div>
+		<details style="max-width:46em;margin-top:10px">
+			<summary>Pour la maintenance</summary>
+			<p>
+				Depuis le dépôt du plugin, passez <code>./verifier-les-styles</code>
+				après tout changement de <code>modele-metopes.docx</code> : il liste
+				les styles qu’emploie le code et que le gabarit ne déclare plus.
+			</p>
+		</details>
+		<?php
+	}
+
+	/** D'où viennent les nouvelles versions, et si le site peut les joindre. */
+	private function onglet_maj( $essai ) {
+		// L'instance créée au chargement du plugin, et non une seconde : en
+		// fabriquer une ici enregistrerait ses filtres une deuxième fois.
+		global $notice_archeomed_maj;
+		self::ouvrir_les_reglages();
+		?>
+		<h2>Mises à jour</h2>
+		<p class="description" style="max-width:46em">
+			Le plugin ne vit pas dans le répertoire de WordPress : sans cela, chaque
+			correction se téléverse à la main. Renseignez le dépôt, et les nouvelles
+			versions paraîtront dans <strong>Extensions</strong> comme pour n’importe
+			quelle autre. Testez d’abord la sortie vers GitHub, plus bas : derrière
+			le proxy d’un hébergement institutionnel, le site peut ne pas y accéder.
+		</p>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_presente]" value="1">
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Proposer les mises à jour</th>
+				<td>
+					<label>
+						<input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[maj_github]"
+							<?php checked( (int) self::get( 'maj_github' ), 1 ); ?>>
+						Interroger GitHub et annoncer les versions plus récentes
+					</label>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_depot">Dépôt</label></th>
+				<td>
+					<input type="text" id="na_depot" class="regular-text"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_depot]"
+						value="<?php echo esc_attr( self::get( 'github_depot' ) ); ?>"
+						placeholder="compte/depot">
+					<p class="description">
+						Sous la forme <code>compte/depot</code>, sans adresse complète.
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="na_jeton">Jeton d’accès</label></th>
+				<td>
+					<input type="password" id="na_jeton" class="regular-text" autocomplete="new-password"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[github_jeton]"
+						placeholder="<?php echo '' !== trim( self::get( 'github_jeton' ) ) ? 'enregistré — laissez vide pour le garder' : 'inutile si le dépôt est public'; ?>">
+					<?php if ( '' !== trim( self::get( 'github_jeton' ) ) ) : ?>
+						<p><label><input type="checkbox" value="1"
+							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[effacer_jeton]"> Effacer le jeton enregistré</label></p>
+					<?php endif; ?>
+					<p class="description">
+						Nécessaire seulement si le dépôt est privé. Il n’est envoyé qu’aux
+						hôtes de GitHub, jamais ailleurs.
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php self::fermer_les_reglages(); ?>
+
+		<hr>
+
+		<h2>État</h2>
+		<?php
+		$release   = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
+			? $notice_archeomed_maj->derniere_release() : array();
+		$installee = ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour )
+			? $notice_archeomed_maj->version() : '';
+		if ( 'maj' === $essai['quoi'] ) {
+			self::resultat( $essai['resultat'] );
+		}
+		?>
+		<p>Version installée : <code><?php echo esc_html( $installee ); ?></code></p>
+		<?php if ( ! empty( $release['echec'] ) ) : ?>
+			<p><span class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span> <?php echo esc_html( $release['echec'] ); ?></span></p>
+		<?php elseif ( empty( $release['version'] ) ) : ?>
+			<p class="description">Aucune version publiée n’a pu être lue — dépôt non renseigné, ou mécanisme éteint.</p>
+		<?php else : ?>
+			<p>Dernière version publiée : <code><?php echo esc_html( $release['version'] ); ?></code></p>
+			<?php if ( empty( $release['propre'] ) ) : ?>
+				<p><span class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span> La release ne porte pas d’archive <code>notice-archeomed.zip</code>.</span>
+				Celle que GitHub fabrique seul s’ouvre sur le mauvais dossier et installerait le plugin
+				à côté de lui-même : la mise à jour n’est donc pas proposée. Joignez à la release
+				l’archive produite par <code>./empaqueter</code>.</p>
+			<?php elseif ( version_compare( $release['version'], $installee, '>' ) ) : ?>
+				<p><span class="na-etat na-etat--ok"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span> Une mise à jour est disponible</span> — elle paraît dans « Extensions ».</p>
+			<?php else : ?>
+				<p class="description">Le site est à jour.</p>
+			<?php endif; ?>
+		<?php endif; ?>
+		<p style="margin:8px 0">
+			<a class="button" href="<?php
+				echo esc_url( wp_nonce_url(
+					add_query_arg( array( 'action' => 'na_essai', 'na_quoi' => 'maj' ), admin_url( 'admin-post.php' ) ),
+					'na_essai' ) ); ?>">Chercher une mise à jour maintenant</a>
+			<span class="description" style="margin-left:8px">
+				GitHub n’est interrogé qu’une fois toutes les six heures, et
+				WordPress garde sa propre réserve jusqu’à douze heures. Ce
+				bouton vide les deux.
+			</span>
+		</p>
+
+		<h2>Sortie vers GitHub</h2>
+		<p style="max-width:46em">Cet essai dit si le serveur peut joindre GitHub — l’API
+		qui annonce les versions, et l’hôte qui sert les fichiers. C’est ce dont
+		dépend une mise à jour proposée dans « Extensions » plutôt que téléversée
+		à la main. Le même proxy empêche déjà de joindre Cloudflare.</p>
+		<?php self::ouvrir_un_essai(); ?>
+			<button type="submit" class="button" name="na_quoi" value="github">Tester l’accès à GitHub</button>
+		</form>
+		<?php
+		if ( 'github' === $essai['quoi'] ) {
+			self::resultat( $essai['resultat'] );
+		}
+	}
+
+	/** Le rythme d'envoi et ce que l'hébergement offre : pour dépanner. */
+	private function onglet_diagnostic( $essai ) {
+		$mode        = self::get( 'mode_envoi' );
+		$mode_locked = self::is_locked( 'mode_envoi' );
+		self::ouvrir_les_reglages();
+		?>
+		<h2>Rythme d’envoi</h2>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Expédition des courriels</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Expédition des courriels</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
+								value="differe" <?php checked( 'immediat' !== $mode ); ?>
+								<?php disabled( $mode_locked ); ?>>
+							Différée <strong>(recommandé)</strong> — le formulaire rend la main aussitôt
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
+								value="immediat" <?php checked( 'immediat' === $mode ); ?>
+								<?php disabled( $mode_locked ); ?>>
+							Immédiate — le formulaire attend que le courriel soit parti
+						</label>
+					</fieldset>
+					<p class="description">
+						<?php if ( $mode_locked ) : ?>
+							Valeur imposée par la constante <code>NA_MODE_ENVOI</code>.
+						<?php else : ?>
+							En différé, la notice est inscrite puis expédiée par le planificateur de
+							WordPress (WP-Cron) : plusieurs personnes peuvent déposer en même temps
+							sans que le site ralentisse, et un courriel qui échoue est retenté de
+							lui-même. Ne passer en immédiat que si le planificateur est désactivé sur cet
+							hébergement (<code>DISABLE_WP_CRON</code>) et qu’aucune tâche système ne
+							le remplace — la liste « Chronique ▸ Notices reçues » le dira en
+							s’allongeant.
+						<?php endif; ?>
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php self::fermer_les_reglages(); ?>
+
+		<hr>
+
+		<h2>Ce que l’hébergement offre</h2>
+		<p>Ce tableau ne change rien : il regarde. Chaque ligne dit ce qu’il
+		faut, ce qu’il y a, et ce qui manque — de quoi savoir sur quoi
+		compter, et quoi demander à l’hébergeur.</p>
+		<?php
+		$etat    = self::etat_du_serveur();
+		$manques = array_values( array_filter( $etat, function ( $l ) {
+			return 'manque' === $l['etat'];
+		} ) );
+		$mots    = array(
+			'ok'     => array( 'ok', 'dashicons-yes-alt', 'suffit' ),
+			'manque' => array( 'echec', 'dashicons-warning', 'manque' ),
+			'note'   => array( 'attente', 'dashicons-info', 'à noter' ),
+		);
+		?>
+		<table class="widefat striped" style="max-width:66em">
+			<thead>
+				<tr>
+					<th scope="col" style="width:18%">Ce qu’il faut</th>
+					<th scope="col" style="width:11%">Requis</th>
+					<th scope="col" style="width:13%">Constaté</th>
+					<th scope="col" style="width:11%">Verdict</th>
+					<th scope="col" style="width:12%">Écart</th>
+					<th scope="col">Pourquoi</th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach ( $etat as $l ) : ?>
+				<?php $mot = isset( $mots[ $l['etat'] ] ) ? $mots[ $l['etat'] ] : $mots['note']; ?>
+				<tr>
+					<th scope="row"><?php echo esc_html( $l['quoi'] ); ?></th>
+					<td><?php echo esc_html( $l['requis'] ); ?></td>
+					<td><?php echo esc_html( $l['constate'] ); ?></td>
+					<td><span class="na-etat na-etat--<?php echo esc_attr( $mot[0] ); ?>"><span class="dashicons <?php echo esc_attr( $mot[1] ); ?>" aria-hidden="true"></span> <?php echo esc_html( $mot[2] ); ?></span></td>
+					<td><?php echo '' !== $l['ecart'] ? esc_html( $l['ecart'] ) : '—'; ?></td>
+					<td class="description"><?php echo esc_html( $l['pourquoi'] ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php if ( empty( $manques ) ) : ?>
+			<p><span class="na-etat na-etat--ok"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span> Rien ne manque.</span></p>
+		<?php else : ?>
+			<p><span class="na-etat na-etat--echec"><span class="dashicons dashicons-warning" aria-hidden="true"></span>
+			<?php echo (int) count( $manques ); ?>
+			<?php echo 1 === count( $manques ) ? 'point manque.' : 'points manquent.'; ?></span>
+			Le reste du plugin fonctionne, mais ce qui en dépend restera hors d’atteinte.</p>
+		<?php endif; ?>
+		<p class="description" style="max-width:46em">
+			L’envoi d’une notice précise se diagnostique depuis sa fiche, dans
+			l’encart « Dépannage ».
+		</p>
 		<?php
 	}
 }
