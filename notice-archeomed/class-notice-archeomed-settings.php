@@ -284,7 +284,11 @@ class Notice_Archeomed_Settings {
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
 			'maj'           => __( 'Mises à jour', 'notice-archeomed' ),
-			'diagnostic'    => __( 'Diagnostic', 'notice-archeomed' ),
+			// « Diagnostic » se lisait « rien à régler ici », et c'est là que
+			// vivait le rythme d'envoi. Il est passé à l'onglet Courriel ; ne
+			// reste que le constat de l'hébergement. La clé ne change pas : les
+			// liens déjà donnés mènent toujours au même endroit.
+			'diagnostic'    => __( 'Hébergement', 'notice-archeomed' ),
 		);
 	}
 
@@ -948,7 +952,7 @@ class Notice_Archeomed_Settings {
 			if ( 'immediat' === self::get( 'mode_envoi' ) ) {
 				echo '<div class="notice inline notice-warning"><p><strong>'
 					. esc_html__( 'L’envoi immédiat est activé.', 'notice-archeomed' ) . '</strong> '
-					. esc_html__( 'Chaque auteur attend que le courriel soit parti avant de voir sa confirmation, et des dépôts simultanés peuvent ralentir le site. Revenez à l’envoi différé dès que possible : onglet « Diagnostic ».', 'notice-archeomed' )
+					. esc_html__( 'Chaque auteur attend que le courriel soit parti avant de voir sa confirmation, et des dépôts simultanés peuvent ralentir le site. Revenez à l’envoi différé dès que possible : onglet « Courriel ».', 'notice-archeomed' )
 					. '</p></div>';
 			}
 			?>
@@ -1415,9 +1419,56 @@ class Notice_Archeomed_Settings {
 
 	/** Par où partent les courriels, et les essais qui l'éprouvent. */
 	private function onglet_courriel( $essai ) {
-		$mode = self::get( 'envoi_mode' );
+		$mode        = self::get( 'envoi_mode' );
+		$rythme      = self::get( 'mode_envoi' );
+		$mode_locked = self::is_locked( 'mode_envoi' );
+		// Le rythme d'envoi vivait sous « Diagnostic », qui se lit « rien à
+		// régler ici » : c'est pourtant lui qui garantit que deux dépôts
+		// simultanés ne se gênent pas. Il ouvre l'onglet, avec son propre
+		// bouton.
 		self::ouvrir_les_reglages();
 		?>
+		<h2>Quand les courriels partent</h2>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Expédition des courriels</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Expédition des courriels</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
+								value="differe" <?php checked( 'immediat' !== $rythme ); ?>
+								<?php disabled( $mode_locked ); ?>>
+							Différée <strong>(recommandé)</strong> — le formulaire rend la main aussitôt
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
+								value="immediat" <?php checked( 'immediat' === $rythme ); ?>
+								<?php disabled( $mode_locked ); ?>>
+							Immédiate — le formulaire attend que le courriel soit parti
+						</label>
+					</fieldset>
+					<p class="description">
+						<?php if ( $mode_locked ) : ?>
+							Valeur imposée par la constante <code>NA_MODE_ENVOI</code>.
+						<?php else : ?>
+							En différé, la notice est inscrite puis expédiée par le planificateur de
+							WordPress (WP-Cron) : plusieurs personnes peuvent déposer en même temps
+							sans que le site ralentisse, et un courriel qui échoue est retenté de
+							lui-même. Ne passer en immédiat que si le planificateur est désactivé sur cet
+							hébergement (<code>DISABLE_WP_CRON</code>) et qu’aucune tâche système ne
+							le remplace — la liste « Chronique ▸ Notices reçues » le dira en
+							s’allongeant.
+						<?php endif; ?>
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php self::fermer_les_reglages(); ?>
+
+		<hr>
+
+		<?php self::ouvrir_les_reglages(); ?>
 		<h2>Acheminement du courriel</h2>
 		<p class="description" style="max-width:46em">
 			Tout le plugin en dépend : une notice qui ne part pas reste en file, puis
@@ -1444,7 +1495,7 @@ class Notice_Archeomed_Settings {
 					</fieldset>
 				</td>
 			</tr>
-			<tr>
+			<tr data-si="smtp">
 				<th scope="row"><label for="na_smtp_hote">Relais SMTP</label></th>
 				<td>
 					<input type="text" id="na_smtp_hote" class="regular-text"
@@ -1464,7 +1515,7 @@ class Notice_Archeomed_Settings {
 					</select>
 				</td>
 			</tr>
-			<tr>
+			<tr data-si="smtp">
 				<th scope="row"><label for="na_smtp_user">Identifiant</label></th>
 				<td>
 					<input type="text" id="na_smtp_user" class="regular-text"
@@ -1474,7 +1525,7 @@ class Notice_Archeomed_Settings {
 					<p class="description">Un relais institutionnel accepte souvent ses propres machines sans identifiant.</p>
 				</td>
 			</tr>
-			<tr>
+			<tr data-si="smtp">
 				<th scope="row"><label for="na_smtp_mdp">Mot de passe</label></th>
 				<td>
 					<input type="password" id="na_smtp_mdp" class="regular-text" autocomplete="new-password"
@@ -1486,7 +1537,7 @@ class Notice_Archeomed_Settings {
 					<?php endif; ?>
 				</td>
 			</tr>
-			<tr>
+			<tr data-si="smtp">
 				<th scope="row"><label for="na_smtp_from">Adresse d’expédition</label></th>
 				<td>
 					<input type="email" id="na_smtp_from" class="regular-text"
@@ -1499,7 +1550,7 @@ class Notice_Archeomed_Settings {
 					</p>
 				</td>
 			</tr>
-			<tr>
+			<tr data-si="smtp">
 				<th scope="row"><label for="na_smtp_nom">Nom affiché</label></th>
 				<td>
 					<input type="text" id="na_smtp_nom" class="regular-text"
@@ -1527,6 +1578,23 @@ class Notice_Archeomed_Settings {
 			</tr>
 		</table>
 		<?php self::fermer_les_reglages(); ?>
+		<script>
+		// Les champs du relais restaient offerts quand « mail() » était coché :
+		// on les remplissait pour rien, en croyant qu'ils servaient. Ils se
+		// cachent tant que le relais n'est pas choisi ; sans script, tout reste
+		// visible.
+		(function () {
+			var radios = document.querySelectorAll('input[name="<?php echo esc_js( self::OPTION_NAME ); ?>[envoi_mode]"]');
+			var lignes = document.querySelectorAll('tr[data-si="smtp"]');
+			function maj() {
+				var smtp = false;
+				radios.forEach(function (r) { if (r.checked && r.value === 'smtp') { smtp = true; } });
+				lignes.forEach(function (l) { l.hidden = !smtp; });
+			}
+			radios.forEach(function (r) { r.addEventListener('change', maj); });
+			maj();
+		}());
+		</script>
 
 		<hr>
 
@@ -1848,52 +1916,9 @@ class Notice_Archeomed_Settings {
 		}
 	}
 
-	/** Le rythme d'envoi et ce que l'hébergement offre : pour dépanner. */
+	/** Ce que l'hébergement offre : un constat, pour dépanner. */
 	private function onglet_diagnostic( $essai ) {
-		$mode        = self::get( 'mode_envoi' );
-		$mode_locked = self::is_locked( 'mode_envoi' );
-		self::ouvrir_les_reglages();
 		?>
-		<h2>Rythme d’envoi</h2>
-		<table class="form-table" role="presentation">
-			<tr>
-				<th scope="row">Expédition des courriels</th>
-				<td>
-					<fieldset>
-						<legend class="screen-reader-text">Expédition des courriels</legend>
-						<label style="display:block;margin-bottom:6px">
-							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
-								value="differe" <?php checked( 'immediat' !== $mode ); ?>
-								<?php disabled( $mode_locked ); ?>>
-							Différée <strong>(recommandé)</strong> — le formulaire rend la main aussitôt
-						</label>
-						<label style="display:block">
-							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[mode_envoi]"
-								value="immediat" <?php checked( 'immediat' === $mode ); ?>
-								<?php disabled( $mode_locked ); ?>>
-							Immédiate — le formulaire attend que le courriel soit parti
-						</label>
-					</fieldset>
-					<p class="description">
-						<?php if ( $mode_locked ) : ?>
-							Valeur imposée par la constante <code>NA_MODE_ENVOI</code>.
-						<?php else : ?>
-							En différé, la notice est inscrite puis expédiée par le planificateur de
-							WordPress (WP-Cron) : plusieurs personnes peuvent déposer en même temps
-							sans que le site ralentisse, et un courriel qui échoue est retenté de
-							lui-même. Ne passer en immédiat que si le planificateur est désactivé sur cet
-							hébergement (<code>DISABLE_WP_CRON</code>) et qu’aucune tâche système ne
-							le remplace — la liste « Chronique ▸ Notices reçues » le dira en
-							s’allongeant.
-						<?php endif; ?>
-					</p>
-				</td>
-			</tr>
-		</table>
-		<?php self::fermer_les_reglages(); ?>
-
-		<hr>
-
 		<h2>Ce que l’hébergement offre</h2>
 		<p>Ce tableau ne change rien : il regarde. Chaque ligne dit ce qu’il
 		faut, ce qu’il y a, et ce qui manque — de quoi savoir sur quoi

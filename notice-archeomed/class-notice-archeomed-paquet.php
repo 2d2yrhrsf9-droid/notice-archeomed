@@ -451,6 +451,40 @@ class Notice_Archeomed_Paquet {
 	}
 
 	/**
+	 * Ce qu'une image d'écran demande et qu'une haute définition ne veut
+	 * pas : les couleurs d'écran et le bon sens de lecture.
+	 *
+	 * Un TIFF en CMJN donnait une basse définition en CMJN, aux couleurs
+	 * fausses dans un navigateur et dans Word. Une photo de téléphone porte
+	 * son orientation dans ses métadonnées, que la chaîne ignore : elle
+	 * paraissait couchée. On fait tourner les pixels. La haute définition,
+	 * elle, reste telle que l'auteur l'a donnée : c'est un choix d'imprimeur.
+	 */
+	private static function pour_l_ecran( $image ) {
+		try {
+			if ( Imagick::COLORSPACE_CMYK === $image->getImageColorspace() ) {
+				$image->transformImageColorspace( Imagick::COLORSPACE_SRGB );
+			}
+			switch ( $image->getImageOrientation() ) {
+				case Imagick::ORIENTATION_BOTTOMRIGHT:
+					$image->rotateImage( '#ffffff', 180 );
+					break;
+				case Imagick::ORIENTATION_RIGHTTOP:
+					$image->rotateImage( '#ffffff', 90 );
+					break;
+				case Imagick::ORIENTATION_LEFTBOTTOM:
+					$image->rotateImage( '#ffffff', 270 );
+					break;
+			}
+			$image->setImageOrientation( Imagick::ORIENTATION_TOPLEFT );
+		} catch ( Exception $e ) {
+			// Une image qu'on ne sait pas redresser part telle quelle : mieux
+			// vaut une figure couchée qu'une figure absente.
+			unset( $e );
+		}
+	}
+
+	/**
 	 * Réduit une image jusqu'à tenir sous le plafond de poids.
 	 *
 	 * La qualité baisse par paliers, et l'on s'arrête dès que le fichier
@@ -459,7 +493,7 @@ class Notice_Archeomed_Paquet {
 	 *
 	 * Rend vrai si la cible a été écrite.
 	 */
-	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance ) {
+	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance, $ecran = false ) {
 		if ( ! class_exists( 'Imagick' ) ) {
 			return false;
 		}
@@ -468,6 +502,14 @@ class Notice_Archeomed_Paquet {
 		$image = null;
 		try {
 			$image = new Imagick();
+			// Un PDF se dessine à la résolution qu'on lui donne avant de le
+			// lire : sans elle, Imagick le rend à 72 ppp, et un plan au trait
+			// devenait une image floue étiquetée 1 200. Plafonnée à 600 : une
+			// page A4 à 1 200 ppp tiendrait un demi-gigaoctet en mémoire.
+			if ( 'pdf' === strtolower( pathinfo( $source, PATHINFO_EXTENSION ) ) ) {
+				$rendu = $ecran ? 150 : min( 600, max( 150, (int) $dpi ) );
+				$image->setResolution( $rendu, $rendu );
+			}
 			// « [0] » demande la première vue seulement. Un PDF de deux pages
 			// ou un TIFF multi-images chargeait toutes ses vues, que
 			// « flattenImages » superposait ensuite en une bouillie : ce
@@ -487,6 +529,9 @@ class Notice_Archeomed_Paquet {
 				$image->clear();
 				$image->destroy();
 				$image = $plat;
+			}
+			if ( $ecran ) {
+				self::pour_l_ecran( $image );
 			}
 			$image->setImageFormat( 'jpeg' );
 			if ( $image->getImageWidth() > $largeur ) {
@@ -592,7 +637,7 @@ class Notice_Archeomed_Paquet {
 			$source = $provisoire;
 		}
 		$fait = $this->reduire( $source, $cible, self::LARGEUR_APERCU,
-			self::QUALITE_HAUTE, 96, self::POIDS_APERCU, 10 );
+			self::QUALITE_HAUTE, 96, self::POIDS_APERCU, 10, true );
 		if ( '' !== $provisoire ) {
 			@unlink( $provisoire );
 		}
@@ -666,7 +711,7 @@ class Notice_Archeomed_Paquet {
 		$dpi_br   = (int) $reglage( 'br_dpi' );
 		$fait_br  = $this->reduire( $source_br, $cible_br,
 			(int) $reglage( 'br_largeur' ), self::QUALITE_HAUTE,
-			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ) );
+			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ), true );
 		if ( '' !== $provisoire ) {
 			@unlink( $provisoire );
 		}

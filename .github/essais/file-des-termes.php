@@ -468,6 +468,41 @@ na_verifier( '2004-2005' === na_appel( $plugin, 'annee_normalisee', array( '2004
 	&& '2024' === na_appel( $plugin, 'annee_normalisee', array( ' 2024 ' ) ),
 	'une opération sur plusieurs années s\'écrit 2004-2005' );
 
+WP_CLI::log( 'Les contrôles du dépôt' );
+$C = 'Notice_Archeomed_Controles';
+$avis_ponct = $C::ponctuation_finale( array( 'Certaines de ces', 'structures sont datées.', 'Une fin sans point' ) );
+na_verifier( 2 === count( $avis_ponct ) && false !== strpos( $avis_ponct[0], 'suivant reprend' )
+	&& false !== strpos( $avis_ponct[1], 'aucune ponctuation' ),
+	'le paragraphe coupé et le texte tronqué se nomment chacun', $avis_ponct );
+$avis_fig = $C::appels_de_figure( 'Voir fig. 1-2 et la figure 3.', 2 );
+na_verifier( 1 === count( $avis_fig ) && false !== strpos( $avis_fig[0], 'fig. 3' ),
+	'un appel à une figure qui n\'est pas jointe', $avis_fig );
+na_verifier( array( 'La fig. 2 n’est appelée nulle part dans le texte.' ) === $C::appels_de_figure( 'Voir fig. 1.', 2 )
+	&& array() === $C::appels_de_figure( 'Aucun appel ici.', 2 ),
+	'une figure jamais appelée, et rien sans appel du tout' );
+$ordinaux = $C::ordinaux_fautifs( array( 'Au XIIème siècle, la 1ère phase, la 2nde tour, la Mère.' ) );
+na_verifier( array( '« XIIème » s’abrège « XIIe ».', '« 1ère » s’abrège « 1re ».', '« 2nde » s’abrège « 2de ».' ) === $ordinaux,
+	'les ordinaux fautifs, et « Mère » laissée tranquille', $ordinaux );
+na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis abandonné' ) ) )
+	&& 1 === count( $C::siecles_en_bas_de_casse( array( 'au xiie s. et au XIIIe s., mais en ce siècle et le siècle suivant' ) ) ),
+	'l\'année espacée et le siècle en bas de casse' );
+$avis_images = $C::figures( array(
+	array( 'rang' => 1, 'pixels' => array( 1000, 800 ), 'titre' => 'Plan', 'legende' => '', 'credits' => 'X' ),
+	array( 'rang' => 2, 'pixels' => array( 1800, 1200 ), 'titre' => 'Vue', 'legende' => '', 'credits' => '' ),
+) );
+na_verifier( 2 === count( $avis_images ) && false !== strpos( $avis_images[0], 'Fig. 1' ) && false !== strpos( $avis_images[1], 'pas de crédits' ),
+	'une figure trop petite pour la norme, une autre sans crédits', $avis_images );
+$avis_personnes = $C::personnes( array( 'resp_prenom' => 'Aude', 'resp_nom' => 'FERRAND', 'resp_inst' => 'Inrap',
+	'coauteur_prenom' => '', 'coauteur_nom' => 'Jean Dupont, Marie Martin', 'coauteur_inst' => 'a@b.fr' ) );
+na_verifier( 3 === count( $avis_personnes ), 'le nom en capitales, deux personnes dans un champ, une adresse dans l\'institution', $avis_personnes );
+na_verifier( 'Rue de Reviers' === $C::sans_point_final( 'Rue de Reviers.' ) && 'Le XXe s.' === $C::sans_point_final( 'Le XXe s.' )
+	&& 'Plan' === $C::titre_sans_numero( 'Fig. 1 : Plan', 1 ) && 'Fig. 2 Plan' === $C::titre_sans_numero( 'Fig. 2 Plan', 1 ),
+	'le point final du titre et le numéro retapé, abréviations et autre numéro laissés' );
+$relecture = na_appel( $plugin, 'typographie_du_html', array( '<p>le <em>castrum</em>: il</p>' ) );
+na_verifier( false !== strpos( $relecture, "</em>\u{00A0}: il" ), 'la page de relecture pose la typographie par-dessus les balises', $relecture );
+$nom_doc = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->char_run( 'TEI_archeoCHR_name:fld', 'J.-M. Poisson' );
+na_verifier( false !== strpos( $nom_doc, 'J.-M. Poisson' ), 'un nom d\'autorité garde son espace ordinaire, que la chaîne coupe', $nom_doc );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

@@ -303,6 +303,12 @@ class Notice_Archeomed_DOCX {
 		// non dans « esc », qui sert aussi aux noms de styles et aux adresses.
 		if ( isset( $run['typo'] ) ) {
 			$text = self::esc( $run['typo'] );
+		} elseif ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) ) {
+			// Un nom d'autorité a déjà ses insécables, posées où il faut : la
+			// chaîne coupe le nom sur la dernière espace ordinaire. La règle
+			// des initiales soudait « J.-M. Poisson », et le prénom entier
+			// passait dans le nom de famille.
+			$text = isset( $run['text'] ) ? self::esc( $run['text'] ) : '';
 		} else {
 			$text = isset( $run['text'] ) ? self::esc( self::typographie( $run['text'] ) ) : '';
 		}

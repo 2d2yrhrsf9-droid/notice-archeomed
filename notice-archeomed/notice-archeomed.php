@@ -20,6 +20,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-paquet.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-maj.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
@@ -113,20 +114,14 @@ add_action(
 				. esc_html__( 'cet hébergement n’a pas l’extension ZipArchive, le document doit donc se fabriquer en RTF — et le gabarit modele-metopes.rtf est introuvable.', 'notice-archeomed' )
 				. '</p></div>';
 		}
+		// L'adresse de destination manquante se dit ailleurs, en tête de
+		// toutes les pages et avec ce qu'elle retient : voir
+		// Notice_Archeomed_File::signaler_l_adresse_manquante().
+		//
 		// Sans clé secrète, Turnstile rejette toutes les soumissions. On ne le
 		// signale que si Turnstile est effectivement la protection retenue :
 		// un bandeau rouge permanent sur une installation qui se protège
 		// autrement finirait par ne plus être lu du tout.
-		// Sans adresse de destination, les notices s'accumulent en file sans
-		// que rien ne parte. C'est le premier réglage d'une installation, et
-		// celui qu'on oublie : il se signale donc en rouge et sur toutes les
-		// pages, tant qu'il manque.
-		if ( empty( Notice_Archeomed_Settings::destinataires_de( 'notices' ) ) ) {
-			$lien = Notice_Archeomed_Settings::url( 'destinataires' );
-			echo '<div class="notice notice-error"><p><strong>Chronique&nbsp;:</strong> '
-				. esc_html__( 'l\'adresse de la rédaction n\'est pas renseignée. Les notices déposées sont conservées, mais aucune ne peut être expédiée tant qu\'elle manque.', 'notice-archeomed' )
-				. ' <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Renseigner l\'adresse', 'notice-archeomed' ) . '</a></p></div>';
-		}
 		$protection = Notice_Archeomed_Settings::get( 'protection' );
 		$turnstile_sert = in_array( $protection, array( 'turnstile', 'les_deux' ), true );
 		if ( $turnstile_sert && '' === trim( Notice_Archeomed_Settings::get( 'turnstile_secret' ) ) ) {
@@ -776,7 +771,9 @@ class Notice_Archeomed_Pactols {
 			// Le texte a déjà traversé « clean_richtext » au dépôt : il ne
 			// porte que huit balises. On le repasse au même tamis plutôt que
 			// de s'en remettre à ce qui est en base.
-			$h .= '<div class="texte">' . $this->clean_richtext( $d['texte_notice'] ) . '</div>';
+			// La même typographie que le document : la page montrait le texte
+			// tel qu'il avait été tapé, le Word du même dossier corrigé.
+			$h .= '<div class="texte">' . self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) . '</div>';
 			// La mention de responsabilité, que le document accroche au
 			// dernier paragraphe : la page l'omettait.
 			$h .= '<p class="meta">(' . esc_html( $this->responsables_inline( $d ) ) . ')</p>';
@@ -789,9 +786,11 @@ class Notice_Archeomed_Pactols {
 				} else {
 					$h .= '<p class="absente">Pas de basse définition pour cette figure.</p>';
 				}
+				// « Fig. 1 Titre », comme le document le compose.
 				$h .= '<figcaption><strong>Fig. ' . (int) $item['rang'] . '</strong>';
-				if ( '' !== $item['titre'] ) {
-					$h .= ' — ' . esc_html( $item['titre'] );
+				$titre_fig = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $item['rang'] );
+				if ( '' !== $titre_fig ) {
+					$h .= ' ' . esc_html( Notice_Archeomed_Typographie::corriger( $titre_fig ) );
 				}
 				if ( '' !== $item['legende'] ) {
 					$h .= '<br>' . esc_html( $item['legende'] );
@@ -800,6 +799,13 @@ class Notice_Archeomed_Pactols {
 					$h .= '<br><em>' . esc_html( $item['credits'] ) . '</em>';
 				}
 				$h .= '</figcaption></figure>';
+			}
+			if ( ! empty( $d['avis'] ) ) {
+				$h .= '<aside class="avis"><strong>À vérifier</strong><ul>';
+				foreach ( (array) $d['avis'] as $un_avis ) {
+					$h .= '<li>' . esc_html( $un_avis ) . '</li>';
+				}
+				$h .= '</ul></aside>';
 			}
 			$h .= '</article>';
 		}
@@ -821,6 +827,8 @@ class Notice_Archeomed_Pactols {
 			. 'figure{margin:1.5em 0;padding:0}'
 			. 'figure img{max-width:100%;height:auto;border:1px solid #ddd}'
 			. 'figcaption{font-family:Arial,sans-serif;font-size:.82em;color:#444;margin-top:.4em}'
+			. '.avis{font-family:Arial,sans-serif;font-size:.82em;background:#fdf6e3;border-left:4px solid #8a6d3b;padding:.6em 1em;margin:1em 0}'
+			. '.avis ul{margin:.4em 0 0;padding-left:1.2em}@media print{.avis{display:none}}'
 			. '.absente{font-family:Arial,sans-serif;font-size:.82em;color:#b32d2e;'
 			. 'background:#f8e6e6;border:1px solid #b32d2e;padding:.6em .8em}'
 			. '.note{font-family:Arial,sans-serif;font-size:.8em;color:#666;font-style:italic}'
@@ -1107,6 +1115,18 @@ class Notice_Archeomed_Pactols {
 				$garde[ $champ ] = array_map( 'sanitize_textarea_field',
 					array_map( 'strval', wp_unslash( $_POST[ $champ ] ) ) );
 			}
+		}
+		// Le nom de chaque fichier, dans l'ordre des légendes : au retour, les
+		// légendes se rattachent au fichier redéposé qui porte ce nom, et non
+		// à son rang. Redéposés dans l'autre ordre, deux fichiers échangeaient
+		// leurs légendes sans que rien ne le dise.
+		if ( isset( $garde['illus_titre'] ) && isset( $_FILES['illustrations']['name'] )
+			&& is_array( $_FILES['illustrations']['name'] ) ) {
+			// Le nom tel que le navigateur le redonnera : sanitize_file_name()
+			// le réécrirait (« fig 1.jpg » en « fig-1.jpg »), et plus rien ne
+			// se rattacherait. PHP ne l'échappe pas, comme le reste de $_FILES.
+			$garde['illus_nom'] = array_map( 'sanitize_text_field',
+				array_map( 'strval', $_FILES['illustrations']['name'] ) );
 		}
 		if ( empty( $garde ) ) {
 			return '';
@@ -1478,13 +1498,14 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Les espaces que la typographie française veut insécables : avant les
-	 * deux-points, et une espace fine avant « ; », « ! » et « ? ». Sans
-	 * elles, la ponctuation se retrouvait seule en tête de ligne.
+	 * Les espaces que la typographie française veut insécables, avant « : »,
+	 * « ; », « ! » et « ? ». Sans elles, la ponctuation se retrouvait seule
+	 * en tête de ligne. L'insécable ordinaire partout, comme dans le reste de
+	 * l'extension : l'espace fine manque à certaines polices et s'affichait
+	 * en carré.
 	 */
 	private function typo( $texte ) {
-		$texte = preg_replace( '/ :(?=\s|$)/u', "\u{00A0}:", (string) $texte );
-		return preg_replace( '/ ([;!?])(?=\s|$)/u', "\u{202F}$1", $texte );
+		return preg_replace( '/ ([:;!?])(?=\s|$|<)/u', "\u{00A0}$1", (string) $texte );
 	}
 
 	/**
@@ -1573,6 +1594,18 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Les fichiers à redéposer, nommés : « fig1.jpg, plan.tif ». Vide pour
+	 * une reprise d'avant les noms gardés.
+	 */
+	private function fichiers_a_redeposer() {
+		$garde = $this->reprise();
+		if ( empty( $garde['illus_nom'] ) || ! is_array( $garde['illus_nom'] ) ) {
+			return '';
+		}
+		return implode( ', ', array_filter( array_map( 'strval', $garde['illus_nom'] ) ) );
+	}
+
+	/**
 	 * Les messages qui ouvrent le formulaire au retour d'un refus, ou quand
 	 * il se rouvre pour une correction.
 	 *
@@ -1608,10 +1641,12 @@ class Notice_Archeomed_Pactols {
 				$suite = '<strong>Votre saisie est conservée : le formulaire est '
 					. 'rempli comme vous l’aviez laissé.</strong>';
 				if ( ! empty( $reprise['illus_titre'] ) ) {
-					$suite .= ' Les fichiers, eux, sont à redéposer — aucun '
-						. 'navigateur ne permet de les remettre en place. Ce que '
-						. 'vous aviez écrit à leur sujet revient dès que vous les '
-						. 'aurez rechoisis.';
+					$noms   = $this->fichiers_a_redeposer();
+					$suite .= ' Les fichiers, eux, sont à redéposer'
+						. ( '' !== $noms ? ' (' . esc_html( $noms ) . ')' : '' )
+						. ' — aucun navigateur ne permet de les remettre en place. '
+						. 'Ce que vous aviez écrit à leur sujet revient dès que vous '
+						. 'les aurez rechoisis, quel que soit l’ordre.';
 				}
 				$corps .= '<p>' . $suite . '</p>';
 			}
@@ -1631,7 +1666,9 @@ class Notice_Archeomed_Pactols {
 			$html .= '<div class="na-message na-avis"><p>' . $this->typo( '<strong>Vous corrigez la notice déposée '
 				. 'sous la référence ' . esc_html( $reprise['remplace'] ) . '.</strong> '
 				. 'Le formulaire est rempli de votre saisie ; les illustrations sont à '
-				. 'redéposer, aucun navigateur ne permettant de les remettre en place. '
+				. 'redéposer' . ( '' !== $this->fichiers_a_redeposer()
+					? ' (' . esc_html( $this->fichiers_a_redeposer() ) . ')' : '' )
+				. ', aucun navigateur ne permettant de les remettre en place. '
 				. 'En le renvoyant, vous produisez un nouveau dépôt : la rédaction sera '
 				. 'avertie qu’il remplace le précédent, et supprimera celui-ci.' ) . '</p></div>';
 		}
@@ -1680,7 +1717,7 @@ class Notice_Archeomed_Pactols {
 			<?php if ( '' !== $ref ) : ?>
 				<p class="na-fin-ref">Référence&nbsp;: <strong><?php echo esc_html( $ref ); ?></strong></p>
 			<?php endif; ?>
-			<p>Une copie part dans quelques minutes à l’adresse du responsable d’opération, et à celles des autres personnes dont vous avez donné l’adresse. Elle contient un lien pour corriger la notice pendant un mois.</p>
+			<p>Une copie part dans quelques minutes à l’adresse du responsable d’opération, et à celles des autres personnes dont vous avez donné l’adresse. Elle contient un lien pour corriger la notice pendant un mois. Si vous avez déposé pour le responsable, c’est lui qui la reçoit&nbsp;: demandez-lui de vous la transmettre.</p>
 			<h3>Et ensuite&nbsp;?</h3>
 			<p>La rédaction harmonise la forme des notices sans vous consulter&nbsp;; elle ne vous écrira que pour une question de fond.</p>
 			<p>Pas de copie d’ici une heure&nbsp;? Regardez dans vos courriers indésirables, puis écrivez à
@@ -1699,6 +1736,30 @@ class Notice_Archeomed_Pactols {
 		</script>
 		<?php
 		return ob_get_clean();
+	}
+
+	/**
+	 * Un entier à la française, les milliers séparés par une insécable :
+	 * « 1 772 ». number_format_i18n() suit la langue du site, et un site en
+	 * anglais aurait écrit « 1,772 ».
+	 */
+	private static function entier( $n ) {
+		return number_format( (float) $n, 0, ',', "\u{00A0}" );
+	}
+
+	/**
+	 * La norme des illustrations, dite dans l'aide d'après les constantes que
+	 * le contrôle emploie : l'aide annonçait « 10 × 15 cm à 300 ppp » en dur,
+	 * et rien ne l'aurait fait suivre si la norme avait changé.
+	 */
+	private function norme_des_illustrations() {
+		list( $petit, $grand ) = Notice_Archeomed_Controles::pixels_de_la_norme();
+		return sprintf( 'Photographies : %1$s × %2$s cm au moins à %3$s ppp, soit %4$s × %5$s pixels ; dessins au trait : %6$s ppp.',
+			self::entier( Notice_Archeomed_Controles::PHOTO_LARGEUR_CM ),
+			self::entier( Notice_Archeomed_Controles::PHOTO_HAUTEUR_CM ),
+			self::entier( Notice_Archeomed_Controles::PHOTO_PPP ),
+			self::entier( $petit ), self::entier( $grand ),
+			self::entier( Notice_Archeomed_Controles::TRAIT_PPP ) );
 	}
 
 	/**
@@ -1742,7 +1803,7 @@ class Notice_Archeomed_Pactols {
 				--na-avis: #7a4d00; --na-avis-bord: #b07a1a; --na-avis-fond: #fdf5e4;
 				--na-inerte: #6b645d; --na-inerte-fond: #ece8e1;
 				--na-t-s: max(14px, .875rem); --na-t-m: max(16px, 1rem);
-				--na-t-l: max(18px, 1.125rem); --na-t-xl: max(21px, 1.3125rem);
+				--na-t-l: max(18px, 1.125rem); --na-t-xl: max(24px, 1.5rem);
 				--na-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
 				--na-e1: .25rem; --na-e2: .5rem; --na-e3: .75rem; --na-e4: 1rem;
 				--na-e5: 1.5rem; --na-e6: 2rem; --na-e7: 3rem;
@@ -1776,16 +1837,25 @@ class Notice_Archeomed_Pactols {
 				font-weight: 600; line-height: 1.25; letter-spacing: -.005em; color: var(--na-encre); text-transform: none; }
 			.na-form#na-form h2.na-section-titre .na-section-num { flex: none; min-width: 1.1em; font-family: var(--na-serif);
 				font-style: italic; font-weight: 400; font-size: 1.45em; line-height: 1; color: var(--na-accent); }
-			.na-form#na-form h2.na-section-titre .na-facultatif,
-			.na-form#na-form h3.na-sous-titre .na-facultatif { font-size: var(--na-t-m); }
+			.na-form#na-form h2.na-section-titre .na-facultatif { font-size: var(--na-t-m); }
 			.na-form#na-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 			.na-form#na-form legend { float: left; width: 100%; margin: 0 0 var(--na-e1); padding: 0; color: var(--na-encre); }
 			.na-form#na-form fieldset > legend + * { clear: both; }
 			.na-form#na-form .na-sous-groupe { margin-top: var(--na-e5); }
+			/* Section à 21 px, sous-groupe à 18, libellé à 16, tous en demi-gras :
+			   « Le titre de la notice » et « Commune ou territoire » se
+			   confondaient. La section grandit, le sous-groupe passe en petites
+			   capitales espacées, et le libellé reste ce qu'on lit. */
 			.na-form#na-form .na-sous-groupe > legend,
 			.na-form#na-form h3.na-sous-titre { margin: 0 0 var(--na-e1); padding: 0; font-family: inherit;
-				font-size: var(--na-t-l); font-weight: 600; line-height: 1.3; letter-spacing: normal; color: var(--na-encre); text-transform: none; }
+				font-size: var(--na-t-s); font-weight: 700; line-height: 1.4; letter-spacing: .08em; color: var(--na-sourd); text-transform: uppercase; }
+			.na-form#na-form .na-sous-groupe > legend .na-facultatif,
+			.na-form#na-form h3.na-sous-titre .na-facultatif { font-weight: 400; letter-spacing: normal; text-transform: none; }
 			.na-form#na-form .na-sous-groupe > legend { margin-bottom: var(--na-e2); }
+			/* « Nature de l'opération » est une question, non un regroupement :
+			   elle garde l'allure d'un libellé. */
+			.na-form#na-form .na-sous-groupe.na-champ > legend { font-size: var(--na-t-m); font-weight: 600; letter-spacing: normal;
+				color: var(--na-encre); text-transform: none; }
 			.na-form#na-form .na-bloc { padding: var(--na-e3) 0 var(--na-e1) var(--na-e4); border-left: 3px solid var(--na-filet-doux); }
 
 			/* ── Champ : libellé, aide, saisie, erreur ── */
@@ -1815,8 +1885,13 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form input[type=text]:focus, .na-form#na-form input[type=email]:focus,
 			.na-form#na-form select:focus, .na-form#na-form textarea:focus {
 				border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; box-shadow: none; color: var(--na-encre); }
-			.na-form#na-form [aria-invalid="true"]:not(fieldset) { border-color: var(--na-erreur); box-shadow: inset 4px 0 0 var(--na-erreur); }
-			.na-form#na-form .na-champ--erreur { padding-left: var(--na-e3); border-left: 4px solid var(--na-erreur); }
+			/* Un seul filet rouge, posé dans la marge. Le bloc en portait un et le
+			   champ un second, parallèle ; et le bloc glissait de seize pixels à
+			   chaque erreur, puis revenait quand elle s'effaçait. */
+			.na-form#na-form [aria-invalid="true"]:not(fieldset) { border-color: var(--na-erreur); box-shadow: 0 0 0 1px var(--na-erreur); }
+			.na-form#na-form .na-champ--erreur { position: relative; }
+			.na-form#na-form .na-champ--erreur::before { content: ""; position: absolute; top: 0; bottom: 0;
+				left: calc(-1 * (var(--na-e3) + 4px)); width: 0; border-left: 4px solid var(--na-erreur); border-radius: 2px; }
 			.na-form#na-form .na-erreur-champ { display: flex; gap: .45em; align-items: flex-start; max-width: var(--na-mesure);
 				margin: 0 0 var(--na-e2); font-size: var(--na-t-s); font-weight: 600; line-height: 1.4; color: var(--na-erreur); }
 			.na-form#na-form .na-erreur-champ::before { content: "!"; flex: none; display: inline-grid; place-items: center;
@@ -1974,9 +2049,41 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-illus-champs { clear: both; display: grid; gap: var(--na-e3); }
 			.na-form#na-form .na-illus-champs label { margin: 0; font-size: var(--na-t-s); }
 			.na-form#na-form .na-illus-champs .na-help { margin: 0 0 var(--na-e1); }
-			.na-form#na-form .na-illus-mention { margin-top: var(--na-e3); font-size: var(--na-t-s); color: var(--na-avis); }
 			.na-form#na-form .na-illus-total { font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
-			.na-form#na-form .na-illus-droits { margin-top: var(--na-e3); }
+			.na-form#na-form .na-illus-vignette { display: block; max-width: 8rem; max-height: 6rem; width: auto; height: auto;
+				margin: 0 0 var(--na-e3); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r1); }
+			/* Le champ d'autorisation était le seul bouton natif de la page, gris
+			   et étranger au reste : il prend l'allure du bouton de dépôt. */
+			.na-form#na-form .na-illus-autorisation input[type=file] { display: block; max-width: 100%; font: inherit;
+				font-size: var(--na-t-s); color: var(--na-sourd); }
+			.na-form#na-form .na-illus-autorisation input[type=file]::file-selector-button { min-height: var(--na-cible);
+				margin: 0 var(--na-e3) 0 0; padding: .5rem 1rem; font: inherit; font-size: var(--na-t-m); font-weight: 600;
+				color: var(--na-accent); background: var(--na-papier); border: 1px solid var(--na-accent); border-radius: var(--na-r1); cursor: pointer; }
+			.na-form#na-form .na-illus-autorisation input[type=file]::-webkit-file-upload-button { min-height: var(--na-cible);
+				margin: 0 var(--na-e3) 0 0; padding: .5rem 1rem; font: inherit; font-size: var(--na-t-m); font-weight: 600;
+				color: var(--na-accent); background: var(--na-papier); border: 1px solid var(--na-accent); border-radius: var(--na-r1); cursor: pointer; }
+			.na-form#na-form .na-illus-autorisation input[type=file]:hover::file-selector-button { background: var(--na-accent-voile); }
+			.na-form#na-form .na-illus-autorisation input[type=file]:focus-visible { outline: var(--na-anneau); outline-offset: 2px; }
+			/* Les légendes qui attendent leur fichier, après une reprise. */
+			.na-form#na-form .na-illus-attente { margin-top: var(--na-e3); padding: var(--na-e3) var(--na-e4); font-size: var(--na-t-s);
+				background: var(--na-fond); border: 1px dashed var(--na-filet); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus-attente li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--na-e3); margin-top: var(--na-e1); }
+			.na-form#na-form .na-illus-attente-nom { font-weight: 600; overflow-wrap: anywhere; }
+
+			/* ── Avis : à vérifier, sans rien bloquer ──
+			   Distincts des erreurs : ambre et non rouge, un « i » et non un
+			   « ! », et jamais dans le récapitulatif. Ils paraissent à la sortie
+			   du champ, jamais pendant la frappe. */
+			.na-form#na-form .na-conseils { max-width: var(--na-mesure); margin: var(--na-e2) 0 0; padding: var(--na-e2) var(--na-e3);
+				font-size: var(--na-t-s); line-height: 1.45; color: var(--na-avis); background: var(--na-avis-fond);
+				border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
+			.na-form#na-form .na-conseils-titre { display: flex; gap: .45em; align-items: center; font-weight: 600; }
+			.na-form#na-form .na-conseils-titre::before { content: "i"; flex: none; display: inline-grid; place-items: center;
+				width: 1.3em; height: 1.3em; border-radius: 50%; font-family: var(--na-serif); font-style: italic; font-size: .9em;
+				font-weight: 700; color: #fff; background: var(--na-avis-bord); }
+			.na-form#na-form .na-conseils li { position: relative; margin-top: var(--na-e1); padding-left: 1.1em; }
+			.na-form#na-form .na-conseils li::before { content: "–"; position: absolute; left: 0; }
+			.na-form#na-form .na-conseils button.na-bouton-lien { min-height: 2rem; margin: 0 0 0 var(--na-e1); color: var(--na-accent); }
 
 			/* ── Vérification (pièce de puzzle) ── */
 			.na-form#na-form .na-question { padding: var(--na-e4) var(--na-e5); background: var(--na-fond);
@@ -2039,7 +2146,8 @@ class Notice_Archeomed_Pactols {
 			/* ── Téléphone ── */
 			@media (max-width: 40em) {
 				.na-form#na-form .na-section { margin-top: var(--na-e6); }
-				.na-form#na-form h2.na-section-titre { font-size: max(19px, 1.1875rem); }
+				.na-form#na-form h2.na-section-titre { font-size: max(21px, 1.3125rem); }
+				.na-form#na-form .na-champ--erreur::before { left: calc(-1 * (var(--na-e2) + 4px)); }
 				.na-form#na-form .na-question, .na-form#na-form .na-kw, .na-form#na-form .na-intro,
 				.na-form#na-form .na-message, .na-form#na-form .na-recap { padding: var(--na-e3) var(--na-e4); }
 				.na-form#na-form .na-checkboxes { grid-template-columns: 1fr; }
@@ -2078,7 +2186,7 @@ class Notice_Archeomed_Pactols {
 					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’autorisation et son identifiant Patriarche&nbsp;;</li>
 					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout), avec leurs légendes et crédits.</li>
 				</ul>
-				<p>Tous les champs sont obligatoires, sauf ceux marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, vous recevrez une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
+				<p>Tous les champs sont obligatoires, sauf ceux marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, le responsable d’opération — et, s’il y a lieu, le co-responsable et le co-auteur — reçoit une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
 			</div>
 			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
 			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
@@ -2221,7 +2329,7 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<div class="na-champ">
 						<label for="na-resp-email">Adresse électronique</label>
-						<p class="na-help" id="na-resp-email-aide">La copie de la notice et le lien pour la corriger y seront envoyés.</p>
+						<p class="na-help" id="na-resp-email-aide">La copie de la notice et le lien pour la corriger partiront à cette adresse. Si vous déposez pour le responsable, c’est lui qui les recevra.</p>
 						<input type="email" id="na-resp-email" name="resp_email" required autocomplete="email" spellcheck="false"
 							aria-describedby="na-resp-email-aide" value="<?php echo esc_attr( $this->repris( 'resp_email' ) ); ?>">
 					</div>
@@ -2306,11 +2414,11 @@ class Notice_Archeomed_Pactols {
 					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
 					<div class="na-half">
 						<div class="na-champ">
-							<label for="na-renvoi-1">Premier renvoi <span class="na-facultatif">(facultatif)</span></label>
+							<label for="na-renvoi-1">Premier renvoi</label>
 							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_1' ), 'Aucun renvoi' ); ?></select>
 						</div>
 						<div class="na-champ">
-							<label for="na-renvoi-2">Second renvoi <span class="na-facultatif">(facultatif)</span></label>
+							<label for="na-renvoi-2">Second renvoi</label>
 							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, $this->repris( 'renvoi_2' ), 'Aucun renvoi' ); ?></select>
 						</div>
 					</div>
@@ -2342,7 +2450,8 @@ class Notice_Archeomed_Pactols {
 
 			<section class="na-section" aria-labelledby="na-s5">
 				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
-				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. Photographies&nbsp;: 10&nbsp;×&nbsp;15&nbsp;cm au moins à 300&nbsp;ppp&nbsp;; dessins au trait&nbsp;: 1&nbsp;200&nbsp;ppp.</p>
+				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?></p>
+				<div class="na-illus-attente" id="na-illus-attente" hidden></div>
 				<label class="na-sr" for="na-illustrations">Choisir des fichiers</label>
 				<div class="na-depot-fichiers" id="na-depot-zone">
 					<input type="file" name="illustrations[]" id="na-illustrations" multiple accept=".jpg,.jpeg,.tiff,.tif,.pdf" aria-describedby="na-illus-aide">
@@ -2350,7 +2459,6 @@ class Notice_Archeomed_Pactols {
 				</div>
 				<p class="na-fichiers-refuses" id="na-fichiers-refuses" role="alert"></p>
 				<ul class="na-filelist" id="na-filelist"></ul>
-				<p class="na-help na-illus-droits">Chaque figure a son champ pour l’autorisation de reproduction, à remplir si vous ne détenez pas ses droits.</p>
 
 				<div class="na-champ">
 					<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
@@ -2421,6 +2529,19 @@ class Notice_Archeomed_Pactols {
 			var MAX_FILE_SIZE = <?php echo (int) $plafonds['fichier']; ?>;
 			var ALLOWED = <?php echo wp_json_encode( self::ALLOWED_EXT ); ?>;
 			var KW_MAX = <?php echo (int) self::PACTOLS_FIELD_COUNT; ?>;
+			// La norme des photographies vient du serveur, qui la contrôle aussi :
+			// recopiée ici, elle aurait fini par dire autre chose que lui.
+			var NORME = <?php
+				list( $norme_petit, $norme_grand ) = Notice_Archeomed_Controles::pixels_de_la_norme();
+				echo wp_json_encode( array(
+					'petit'     => $norme_petit,
+					'grand'     => $norme_grand,
+					'largeurCm' => Notice_Archeomed_Controles::PHOTO_LARGEUR_CM,
+					'hauteurCm' => Notice_Archeomed_Controles::PHOTO_HAUTEUR_CM,
+					'ppp'       => Notice_Archeomed_Controles::PHOTO_PPP,
+					'traitPpp'  => Notice_Archeomed_Controles::TRAIT_PPP,
+				) );
+			?>;
 			var PACTOLS = 'https://pactols.frantiq.fr/';
 			var NBSP = ' ', FINE = ' ';
 
@@ -2471,6 +2592,99 @@ class Notice_Archeomed_Pactols {
 				return Promise.race([appel, attente]).then(
 					function (v) { window.clearTimeout(minuterie); return v; },
 					function (e) { window.clearTimeout(minuterie); throw e; });
+			}
+
+			// ── Les avis : à vérifier, sans rien bloquer ───────────────────
+			// Ce que la rédaction trouvait à la relecture — un texte coupé au
+			// collage, « XIIème », une figure appelée qui manque — et devait
+			// écrire à l'auteur pour le faire corriger. Le serveur le dit à la
+			// rédaction ; le navigateur le dit ici à l'auteur, avec les mêmes
+			// mots. Ce ne sont jamais des erreurs : ni récapitulatif, ni envoi
+			// retenu, et rien ne paraît pendant qu'on tape.
+			//
+			// Les lettres accentuées ne sont pas des lettres pour « \b » : les
+			// motifs disent « ni lettre ni chiffre » avec \p{L}, et le drapeau
+			// « u ». Un navigateur qui ne le connaîtrait pas perd les avis, non
+			// le formulaire.
+			function motif(source, drapeaux) {
+				try { return new RegExp(source, drapeaux); } catch (e) { return null; }
+			}
+			function points(t) { return Array.from ? Array.from(String(t)) : String(t).split(''); }
+			function extrait(t, n) {
+				var c = points(t);
+				return (n < 0 ? c.slice(n) : c.slice(0, n)).join('');
+			}
+			function entier(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP); }
+			function decimal1(x) { return (Math.round(x * 10) / 10).toFixed(1).replace('.', ','); }
+			function ajouterEnFin(el, id) {
+				var ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+				if (ids.indexOf(id) === -1) { ids.push(id); }
+				el.setAttribute('aria-describedby', ids.join(' '));
+			}
+			// Un cadre d'avis sous le champ : une liste, parfois un bouton qui
+			// ne fait rien tant qu'on ne l'a pas pressé.
+			function zoneDeConseils(id, apres) {
+				var z = document.getElementById(id);
+				if (!z) {
+					z = document.createElement('div');
+					z.id = id;
+					z.className = 'na-conseils';
+					z.hidden = true;
+					apres.parentNode.insertBefore(z, apres.nextSibling);
+				}
+				return z;
+			}
+			function montrerConseils(z, liste, champs) {
+				var vus = {}, propres = [];
+				liste.forEach(function (m) {
+					var t = typeof m === 'string' ? m : m.texte;
+					if (t && !vus[t]) { vus[t] = true; propres.push(m); }
+				});
+				z.innerHTML = '';
+				(champs || []).forEach(function (c) { if (c) { retirerDescription(c, z.id); } });
+				if (!propres.length) { z.hidden = true; return; }
+				var titre = document.createElement('p');
+				titre.className = 'na-conseils-titre';
+				titre.textContent = 'À vérifier — rien n’empêche l’envoi';
+				var ul = document.createElement('ul');
+				propres.forEach(function (m) {
+					var li = document.createElement('li');
+					li.appendChild(document.createTextNode(typeof m === 'string' ? m : m.texte));
+					if (m.bouton) {
+						var b = document.createElement('button');
+						b.type = 'button';
+						b.className = 'na-bouton-lien';
+						b.textContent = m.bouton;
+						b.addEventListener('click', m.action);
+						li.appendChild(document.createTextNode(' '));
+						li.appendChild(b);
+					}
+					ul.appendChild(li);
+				});
+				z.appendChild(titre);
+				z.appendChild(ul);
+				z.hidden = false;
+				(champs || []).forEach(function (c) { if (c) { ajouterEnFin(c, z.id); } });
+			}
+			// Un nom tout en capitales : au moins quatre lettres, aucune minuscule.
+			var NON_LETTRE = motif('\\P{L}', 'gu');
+			var MINUSCULE = motif('\\p{Ll}', 'u');
+			function enCapitales(t) {
+				if (!NON_LETTRE || !MINUSCULE) { return false; }
+				var lettres = String(t || '').replace(NON_LETTRE, '');
+				return points(lettres).length >= 4 && !MINUSCULE.test(lettres);
+			}
+			// « DUPONT-MARTIN » en « Dupont-Martin », « D'ARCY » en « D'arcy » :
+			// une proposition, que l'auteur accepte ou non — « McLean » ne se
+			// reconstitue pas.
+			function casseDeTitre(t) {
+				var avant = '';
+				return points(String(t).toLowerCase()).map(function (ch) {
+					var lettre = ch.toLowerCase() !== ch.toUpperCase();
+					var debut = lettre && !(avant && (avant.toLowerCase() !== avant.toUpperCase() || /['’]/.test(avant)));
+					avant = ch;
+					return debut ? ch.toUpperCase() : ch;
+				}).join('');
 			}
 
 			var jsErrorBox = document.getElementById('na-js-error');
@@ -2744,7 +2958,7 @@ class Notice_Archeomed_Pactols {
 				var ark = ligne.querySelector('.na-commune-ark');
 				var boite = ligne.querySelector('.na-suggestions');
 				if (!champ || !ark || !boite) { return; }
-				var cb = armerCombobox(champ, boite, function (c) {
+				function retenir(c) {
 					champ.value = c.label;
 					ark.value = c.uri;
 					annoncer(guillemets(c.label) + ' retenu.');
@@ -2752,11 +2966,28 @@ class Notice_Archeomed_Pactols {
 					majApercu();
 					marquerModifie();
 					if (0 === rang) { remplirDept(c.uri); }
+				}
+				var cb = armerCombobox(champ, boite, retenir);
+				// « Caen » tapé en entier puis quitté par Tab restait sans
+				// identifiant, alors que la liste proposait Caen. Le lieu identique
+				// à une proposition — une seule : deux homonymes ne se départagent
+				// pas ainsi — est retenu à la sortie du champ, ou par Entrée.
+				var derniers = [];
+				function prendreLIdentique() {
+					if (ark.value || vide(champ.value)) { return false; }
+					var c = exactDans(derniers, champ.value);
+					if (c) { retenir(c); }
+					return !!c;
+				}
+				champ.addEventListener('change', prendreLIdentique);
+				champ.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter' && !e.defaultPrevented && prendreLIdentique()) { cb.fermer(); }
 				});
 				var minuterie = null, tour = 0;
 				champ.addEventListener('input', function () {
 					var q = champ.value.trim();
 					ark.value = '';
+					derniers = [];
 					majApercu();
 					if (minuterie) { window.clearTimeout(minuterie); }
 					var ce = ++tour;
@@ -2769,6 +3000,10 @@ class Notice_Archeomed_Pactols {
 								(Array.isArray(data) ? data : []).forEach(function (c) {
 									if (c && c.label && c.uri && !vus[c.uri]) { vus[c.uri] = true; items.push(c); }
 								});
+								derniers = items;
+								// La réponse arrive après qu'on a quitté le champ : le
+								// lieu identique se retient quand même.
+								if (document.activeElement !== champ) { prendreLIdentique(); cb.fermer(); return; }
 								cb.ouvrir(items.slice(0, 20), function (li, c, i) {
 									var nom = document.createElement('span');
 									nom.textContent = c.label;
@@ -2939,6 +3174,19 @@ class Notice_Archeomed_Pactols {
 					})
 					.catch(function () {});
 			}
+			// La proposition dont le libellé est mot pour mot ce qu'on a tapé, à
+			// la casse et aux apostrophes près. Deux homonymes — deux communes
+			// « Saint-Martin » — ne se départagent pas ainsi : on n'en prend
+			// aucun.
+			function plier(t) {
+				t = net(t).replace(/[’‘`]/g, '\'').toLowerCase();
+				return t.normalize ? t.normalize('NFC') : t;
+			}
+			function exactDans(liste, t) {
+				var cle = plier(t);
+				var pareils = (liste || []).filter(function (it) { return it && plier(it.label) === cle; });
+				return pareils.length === 1 ? pareils[0] : null;
+			}
 			function Categorie(fs) {
 				var cat = this;
 				cat.fs = fs;
@@ -3031,26 +3279,34 @@ class Notice_Archeomed_Pactols {
 					dessiner();
 					dire(guillemets(neuf.label) + ' remplace ' + guillemets(ancien.label) + '.');
 				};
+				// Les dernières propositions de Pactols, et ce qu'on avait tapé pour
+				// les obtenir : un terme tapé en entier, identique à l'une d'elles,
+				// est cette proposition-là.
+				var derniers = [], derniersPour = '';
 				// Le texte laissé dans le champ au moment d'envoyer devient un
 				// terme libre : il bloquait l'envoi, par une alerte qui ne disait
-				// pas où regarder.
+				// pas où regarder. S'il est mot pour mot une proposition, il en
+				// prend l'identifiant.
 				cat.garderLaSaisie = function () {
 					var t = net(champ.value);
 					if (!t) { return true; }
-					return ajouter({ label: t, ark: '', idConcept: '', fullpath: '' });
+					return ajouter(exactDans(derniers, t) || { label: t, ark: '', idConcept: '', fullpath: '' });
 				};
 				cat.ecrire = ecrire;
 				var cb = armerCombobox(champ, liste, function (item) { ajouter(item); }, dire);
 				var minuterie = null, tour = 0;
 				champ.addEventListener('input', function () {
 					var q = champ.value.trim();
-					if (minuterie) { window.clearTimeout(minuterie); }
+					if (minuterie) { window.clearTimeout(minuterie); minuterie = null; }
 					var ce = ++tour;
 					if (q.length < 3) { cb.fermer(); dire(''); return; }
 					minuterie = window.setTimeout(function () {
+						minuterie = null;
 						dire('Recherche dans Pactols…');
 						pactolsSearch(cat.type, q).then(function (res) {
 							if (ce !== tour) { return; }
+							derniers = res;
+							derniersPour = net(q);
 							if (!res.length) {
 								cb.fermer();
 								dire('Aucun terme Pactols ne correspond. Essayez un mot plus court ou un synonyme, ou appuyez sur Entrée pour garder ' + guillemets(q) + ' tel quel.');
@@ -3066,6 +3322,8 @@ class Notice_Archeomed_Pactols {
 							});
 						}, function () {
 							if (ce !== tour) { return; }
+							derniers = [];
+							derniersPour = net(q);
 							cb.fermer();
 							dire('Pactols ne répond pas pour l’instant. Appuyez sur Entrée pour garder ' + guillemets(q) + ' tel quel, sans identifiant.');
 						});
@@ -3073,14 +3331,38 @@ class Notice_Archeomed_Pactols {
 				});
 				// Entrée sans option choisie garde le texte tel quel ; elle ne
 				// soumet jamais le formulaire.
+				//
+				// Qui a tapé « Moyen Âge » en entier et presse Entrée, alors que la
+				// liste propose « Moyen Âge », veut ce terme : il recevait un terme
+				// libre, sans identifiant, que rien ne distinguait à l'œil. Le
+				// terme identique est pris ; si la réponse n'est pas encore
+				// arrivée, on la demande tout de suite, et l'on attend.
 				champ.addEventListener('keydown', function (e) {
 					if (e.key !== 'Enter' || e.defaultPrevented) { return; }
 					e.preventDefault();
 					if (vide(champ.value)) { return; }
-					if (minuterie) { window.clearTimeout(minuterie); }
-					tour++;
+					var q = net(champ.value);
+					if (minuterie) { window.clearTimeout(minuterie); minuterie = null; }
+					var ce = ++tour;
 					cb.fermer();
-					cat.garderLaSaisie();
+					var exact = exactDans(derniers, q);
+					if (exact || q.length < 3 || derniersPour === q) {
+						cat.garderLaSaisie();
+						return;
+					}
+					dire('Recherche dans Pactols…');
+					pactolsSearch(cat.type, q).then(function (res) {
+						if (ce !== tour) { return; }
+						derniers = res;
+						derniersPour = q;
+						dire('');
+						cat.garderLaSaisie();
+					}, function () {
+						if (ce !== tour) { return; }
+						derniers = [];
+						derniersPour = q;
+						cat.garderLaSaisie();
+					});
 				});
 				cat.relire();
 			}
@@ -3091,6 +3373,7 @@ class Notice_Archeomed_Pactols {
 			var fileList = document.getElementById('na-filelist');
 			var refuses = document.getElementById('na-fichiers-refuses');
 			var zone = document.getElementById('na-depot-zone');
+			var attente = document.getElementById('na-illus-attente');
 			var selected = [];
 			function extOf(name) {
 				var parts = name.toLowerCase().split('.');
@@ -3120,7 +3403,15 @@ class Notice_Archeomed_Pactols {
 			// Ce que l'auteur a écrit sur chaque illustration, gardé à part des
 			// fichiers : la liste se redessine à chaque retrait, et retaper trois
 			// légendes parce qu'on a enlevé une image ferait abandonner.
-			var illusMeta = <?php
+			//
+			// Chaque texte porte le nom de son fichier. Rangé par son seul rang,
+			// il passait au mauvais fichier quand on redéposait les images dans
+			// un autre ordre après une reprise : « Plan du château » sous la coupe
+			// du fossé, sans un mot, et publié ainsi. Il se rattache maintenant
+			// par le nom ; celui dont le fichier n'est pas encore revenu attend
+			// au-dessus de la zone de dépôt.
+			var illusMeta = [];
+			var orphelins = <?php
 				$garde_illus = array();
 				$combien     = isset( $reprise['illus_titre'] ) ? count( (array) $reprise['illus_titre'] ) : 0;
 				for ( $i = 0; $i < $combien; $i++ ) {
@@ -3128,21 +3419,102 @@ class Notice_Archeomed_Pactols {
 						'titre'   => isset( $reprise['illus_titre'][ $i ] ) ? $reprise['illus_titre'][ $i ] : '',
 						'legende' => isset( $reprise['illus_legende'][ $i ] ) ? $reprise['illus_legende'][ $i ] : '',
 						'credits' => isset( $reprise['illus_credits'][ $i ] ) ? $reprise['illus_credits'][ $i ] : '',
+						'nom'     => isset( $reprise['illus_nom'][ $i ] ) ? $reprise['illus_nom'][ $i ] : '',
 					);
 				}
 				echo wp_json_encode( $garde_illus );
-			?>;
+			?>.filter(function (m) { return m && (m.nom || aDuTexte(m)); });
+			function aDuTexte(m) { return !!m && !(vide(m.titre) && vide(m.legende) && vide(m.credits)); }
+			// Chaque fichier choisi reprend le texte qui porte son nom ; à défaut
+			// — un brouillon d'avant les noms —, le premier texte sans nom, dans
+			// l'ordre : c'était la règle d'avant, et elle ne fait pas pire.
+			function rattacher() {
+				var libres = illusMeta.concat(orphelins);
+				var neuf = [];
+				selected.forEach(function (f, i) {
+					var j = -1, k;
+					for (k = 0; k < libres.length && j === -1; k++) {
+						if (libres[k] && libres[k].nom === f.name) { j = k; }
+					}
+					for (k = 0; k < libres.length && j === -1; k++) {
+						if (libres[k] && !libres[k].nom && aDuTexte(libres[k])) { j = k; }
+					}
+					var m = j === -1 ? {} : libres.splice(j, 1)[0];
+					m.nom = f.name;
+					neuf[i] = m;
+				});
+				orphelins = libres.filter(function (m) { return m && (m.nom || aDuTexte(m)); });
+				illusMeta = neuf;
+				dessinerLAttente();
+			}
+			function dessinerLAttente() {
+				attente.innerHTML = '';
+				if (!orphelins.length) { attente.hidden = true; return; }
+				var dit = document.createElement('p');
+				dit.textContent = orphelins.length > 1
+					? 'Illustrations à redéposer : leurs titres, légendes et crédits reviendront d’eux-mêmes, dans n’importe quel ordre.'
+					: 'Illustration à redéposer : son titre, sa légende et ses crédits reviendront d’eux-mêmes.';
+				var ul = document.createElement('ul');
+				orphelins.forEach(function (m) {
+					var li = document.createElement('li');
+					var nom = document.createElement('span');
+					nom.className = 'na-illus-attente-nom';
+					nom.textContent = m.nom || 'Fichier au nom inconnu';
+					li.appendChild(nom);
+					var texte = net(m.titre) || net(m.legende) || net(m.credits);
+					if (texte) {
+						var ext = document.createElement('span');
+						ext.textContent = guillemets(extrait(texte, 60) + (points(texte).length > 60 ? '…' : ''));
+						li.appendChild(ext);
+					}
+					var oublier = document.createElement('button');
+					oublier.type = 'button';
+					oublier.className = 'na-bouton-lien';
+					oublier.textContent = 'Oublier';
+					oublier.setAttribute('aria-label', 'Oublier ce qui était écrit pour ' + (m.nom || 'ce fichier'));
+					oublier.addEventListener('click', function () {
+						orphelins.splice(orphelins.indexOf(m), 1);
+						dessinerLAttente();
+						marquerModifie();
+						annoncer('Texte oublié.');
+						(attente.querySelector('button') || fileInput).focus();
+					});
+					li.appendChild(oublier);
+					ul.appendChild(li);
+				});
+				attente.appendChild(dit);
+				attente.appendChild(ul);
+				attente.hidden = false;
+			}
+			// Ce que l'on sait de chaque fichier : sa définition, lue une fois, et
+			// ce que l'auteur en a déjà quitté — un avis ne paraît qu'à la sortie
+			// d'un champ, jamais pendant qu'on le remplit.
+			var etats = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+			var etatsDeSecours = [];
+			function etatDe(f) {
+				var e = etats ? etats.get(f) : null;
+				if (!etats) {
+					for (var i = 0; i < etatsDeSecours.length; i++) { if (etatsDeSecours[i][0] === f) { e = etatsDeSecours[i][1]; } }
+				}
+				if (!e) {
+					e = { px: null, quittee: false, vus: {}, vignette: '' };
+					if (etats) { etats.set(f, e); } else { etatsDeSecours.push([f, e]); }
+				}
+				return e;
+			}
 			var AIDES_ILLUS = {
 				titre: 'Ce que montre la figure, en quelques mots' + NBSP + ': Plan général des vestiges.',
 				legende: 'Le texte qui accompagne la figure' + NBSP + ': ce qu’on y voit, l’échelle, l’orientation.',
 				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
 			};
-			function champIllustration(idx, clef, libelle, lignes, mention) {
+			// Les trois champs sont facultatifs, et l'introduction dit que ce qui
+			// l'est porte la mention : ils ne la portaient pas.
+			function champIllustration(idx, clef, libelle, lignes) {
 				var bloc = document.createElement('div');
 				var id = 'na-illus-' + (idx + 1) + '-' + clef;
 				var etiquette = document.createElement('label');
 				etiquette.htmlFor = id;
-				etiquette.textContent = libelle;
+				etiquette.innerHTML = libelle + ' <span class="na-facultatif">(facultatif)</span>';
 				var aide = document.createElement('p');
 				aide.className = 'na-help';
 				aide.id = id + '-aide';
@@ -3156,12 +3528,11 @@ class Notice_Archeomed_Pactols {
 				champ.addEventListener('input', function () {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx][clef] = champ.value;
-					mention();
 				});
 				bloc.appendChild(etiquette);
 				bloc.appendChild(aide);
 				bloc.appendChild(champ);
-				return bloc;
+				return { bloc: bloc, champ: champ };
 			}
 			function champAutorisation(idx) {
 				var bloc = document.createElement('div');
@@ -3204,10 +3575,15 @@ class Notice_Archeomed_Pactols {
 				bloc.appendChild(champ);
 				return bloc;
 			}
+			// Les cartes affichées, pour y reposer les avis sans tout redessiner.
+			var cartes = [];
 			function renderFileList() {
 				fileList.innerHTML = '';
+				cartes = [];
 				selected.forEach(function (f, idx) {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
+					illusMeta[idx].nom = f.name;
+					var etat = etatDe(f);
 					var li = document.createElement('li');
 					var groupe = document.createElement('fieldset');
 					groupe.className = 'na-illus';
@@ -3233,30 +3609,49 @@ class Notice_Archeomed_Pactols {
 						annoncer('Figure ' + (idx + 1) + ' retirée.');
 						(fileList.querySelector('.na-fileremove') || fileInput).focus();
 						marquerModifie();
+						majConseilsDuTexte();
 					});
-					// Une figure sans aucun texte part quand même : on le signale
-					// sans rien bloquer.
-					var avis = document.createElement('p');
-					avis.className = 'na-illus-mention';
-					function mention() {
-						var m = illusMeta[idx] || {};
-						avis.textContent = (vide(m.titre) && vide(m.legende) && vide(m.credits))
-							? 'Rien n’est encore dit de cette figure' + NBSP + ': elle partira quand même, mais sans titre ni légende.' : '';
-						avis.hidden = !avis.textContent;
+					groupe.appendChild(leg);
+					groupe.appendChild(rm);
+					// Une vignette, pour qu'on sache de quelle image on écrit la
+					// légende : « Figure 1 », c'est ce que le texte cite. Un TIFF ne
+					// s'affiche pas dans un navigateur ; il garde son seul nom.
+					if (/^image\/(jpeg|png)$/.test(f.type) && window.URL && URL.createObjectURL) {
+						if (!etat.vignette) { etat.vignette = URL.createObjectURL(f); }
+						var im = document.createElement('img');
+						im.src = etat.vignette;
+						im.alt = '';
+						im.className = 'na-illus-vignette';
+						groupe.appendChild(im);
 					}
 					var champs = document.createElement('div');
 					champs.className = 'na-illus-champs';
-					champs.appendChild(champIllustration(idx, 'titre', 'Titre', 0, mention));
-					champs.appendChild(champIllustration(idx, 'legende', 'Légende', 2, mention));
-					champs.appendChild(champIllustration(idx, 'credits', 'Crédits', 0, mention));
+					var titre = champIllustration(idx, 'titre', 'Titre', 0);
+					var legende = champIllustration(idx, 'legende', 'Légende', 2);
+					var credits = champIllustration(idx, 'credits', 'Crédits', 0);
+					champs.appendChild(titre.bloc);
+					champs.appendChild(legende.bloc);
+					champs.appendChild(credits.bloc);
 					champs.appendChild(champAutorisation(idx));
-					mention();
-					groupe.appendChild(leg);
-					groupe.appendChild(rm);
+					var conseils = document.createElement('div');
+					conseils.className = 'na-conseils';
+					conseils.id = 'na-illus-' + (idx + 1) + '-conseils';
+					conseils.hidden = true;
 					groupe.appendChild(champs);
-					groupe.appendChild(avis);
+					groupe.appendChild(conseils);
+					// L'avis « rien n'est dit » paraissait dès le choix du fichier,
+					// avant qu'on ait pu écrire un mot : il attend qu'on ait quitté
+					// la carte.
+					groupe.addEventListener('focusout', function (e) {
+						var cle = /^illus_(titre|legende|credits)/.exec(e.target.name || '');
+						if (cle) { etat.vus[cle[1]] = true; }
+						if (!(e.relatedTarget && groupe.contains(e.relatedTarget))) { etat.quittee = true; }
+						majFigure(idx);
+					});
 					li.appendChild(groupe);
 					fileList.appendChild(li);
+					cartes[idx] = { zone: conseils, titre: titre.champ, legende: legende.champ, credits: credits.champ };
+					majFigure(idx);
 				});
 				if (selected.length > 0) {
 					var total = document.createElement('li');
@@ -3265,9 +3660,57 @@ class Notice_Archeomed_Pactols {
 					fileList.appendChild(total);
 				}
 			}
+			// Les avis d'une figure : sa définition, le numéro retapé, le crédit
+			// resté dans la légende, les crédits qui manquent.
+			function majFigure(idx) {
+				var c = cartes[idx], f = selected[idx];
+				if (!c || !f) { return; }
+				var e = etatDe(f), m = illusMeta[idx] || {}, rang = idx + 1, liste = [];
+				if (e.px) {
+					var avis = avisDeDefinition(rang, e.px);
+					if (avis) { liste.push(avis); }
+				}
+				if (e.vus.titre) {
+					var numero = numeroRetape(m.titre, rang);
+					if (numero) { liste.push(numero); }
+				}
+				var deplacer = null;
+				['titre', 'legende'].forEach(function (clef) {
+					if (deplacer || !e.vus[clef] || !vide(m.credits)) { return; }
+					var coupe = creditEnFin(m[clef] || '');
+					if (!coupe) { return; }
+					deplacer = {
+						texte: (clef === 'titre' ? 'Le titre' : 'La légende') + ' semble finir par un crédit ('
+							+ guillemets(coupe.credit) + ')' + NBSP + ': sa place est dans Crédits.',
+						bouton: 'Déplacer dans Crédits',
+						action: function () {
+							var source = clef === 'titre' ? c.titre : c.legende;
+							source.value = coupe.reste;
+							c.credits.value = coupe.credit;
+							m[clef] = coupe.reste;
+							m.credits = coupe.credit;
+							illusMeta[idx] = m;
+							marquerModifie();
+							majFigure(idx);
+							annoncer('Crédit déplacé dans le champ Crédits de la figure ' + rang + '.');
+							c.credits.focus();
+						}
+					};
+				});
+				if (deplacer) { liste.push(deplacer); }
+				if (e.quittee && !deplacer) {
+					if (!aDuTexte(m)) {
+						liste.push('Rien n’est encore dit de cette figure' + NBSP + ': elle partira quand même, mais sans titre ni légende.');
+					} else if (vide(m.credits)) {
+						liste.push('Fig.' + NBSP + rang + NBSP + ': pas de crédits (auteur, détenteur des droits).');
+					}
+				}
+				montrerConseils(c.zone, liste, [c.titre, c.legende, c.credits]);
+			}
 			fileInput.addEventListener('change', function () {
 				var incoming = Array.prototype.slice.call(fileInput.files);
 				var refused = [];
+				var ajoutes = [];
 				incoming.forEach(function (f) {
 					var dup = selected.some(function (s) { return s.name === f.name && s.size === f.size; });
 					if (dup) { return; }
@@ -3276,12 +3719,361 @@ class Notice_Archeomed_Pactols {
 					if (f.size > MAX_FILE_SIZE) { refused.push(guillemets(f.name) + ' dépasse ' + mo(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.'); return; }
 					if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) { refused.push(guillemets(f.name) + ' ferait dépasser ' + mo(MAX_TOTAL_SIZE) + ' en tout.'); return; }
 					selected.push(f);
+					ajoutes.push(f);
 				});
+				rattacher();
 				refreshFileInput();
 				refuses.textContent = refused.join(' ');
+				majConseilsDuTexte();
+				// La définition se lit dans l'en-tête, sans charger l'image.
+				ajoutes.forEach(function (f) {
+					lireLaDefinition(f).then(function (px) {
+						if (!px) { return; }
+						etatDe(f).px = px;
+						var i = selected.indexOf(f);
+						if (i !== -1) { majFigure(i); }
+					});
+				});
 			});
 			['dragenter', 'dragover'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.add('na-survol'); }); });
 			['dragleave', 'drop'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.remove('na-survol'); }); });
+			dessinerLAttente();
+
+			// ── La définition des images ───────────────────────────────────
+			// L'aide annonçait une norme que rien ne vérifiait : on découvrait à
+			// la mise en page qu'une photographie de 800 pixels ne tiendrait qu'en
+			// timbre-poste. C'est le nombre de pixels qui décide, non la densité
+			// inscrite dans le fichier. On ne lit que l'en-tête — quelques octets
+			// —, jamais l'image entière. Les PDF ne se lisent pas ainsi : on les
+			// laisse.
+			function tranche(f, debut, fin) {
+				var b = f.slice(debut, fin);
+				if (b.arrayBuffer) { return b.arrayBuffer().then(function (a) { return new DataView(a); }); }
+				return new Promise(function (ok, ko) {
+					var r = new FileReader();
+					r.onload = function () { ok(new DataView(r.result)); };
+					r.onerror = ko;
+					r.readAsArrayBuffer(b);
+				});
+			}
+			function lireLaDefinition(f) {
+				var ext = extOf(f.name);
+				var lu = (ext === 'jpg' || ext === 'jpeg') ? definitionJpeg(f)
+					: ((ext === 'tif' || ext === 'tiff') ? definitionTiff(f) : Promise.resolve(null));
+				return lu.catch(function () { return null; });
+			}
+			// Un JPEG est une suite de segments ; la taille est dans le premier
+			// segment « SOF », souvent après l'EXIF et le profil de couleur. On
+			// saute de segment en segment, en ne lisant que leurs en-têtes.
+			function definitionJpeg(f) {
+				var tours = 0;
+				function segment(pos) {
+					if (++tours > 300 || pos + 4 > f.size) { return Promise.resolve(null); }
+					return tranche(f, pos, pos + 9).then(function (d) {
+						if (d.byteLength < 4 || d.getUint8(0) !== 0xFF) { return null; }
+						var marque = d.getUint8(1);
+						if (marque === 0xFF) { return segment(pos + 1); }
+						if (marque === 0x01 || (marque >= 0xD0 && marque <= 0xD8)) { return segment(pos + 2); }
+						if (marque === 0xD9 || marque === 0xDA) { return null; }
+						if (marque >= 0xC0 && marque <= 0xCF && marque !== 0xC4 && marque !== 0xC8 && marque !== 0xCC) {
+							return d.byteLength < 9 ? null : { largeur: d.getUint16(7), hauteur: d.getUint16(5) };
+						}
+						return segment(pos + 2 + d.getUint16(2));
+					});
+				}
+				return tranche(f, 0, 2).then(function (d) {
+					return (d.byteLength === 2 && d.getUint16(0) === 0xFFD8) ? segment(2) : null;
+				});
+			}
+			// Un TIFF dit son ordre des octets (« II » ou « MM »), puis où commence
+			// son premier répertoire, où les balises 256 et 257 portent la
+			// largeur et la hauteur.
+			function definitionTiff(f) {
+				return tranche(f, 0, 8).then(function (d) {
+					if (d.byteLength < 8) { return null; }
+					var ordre = d.getUint16(0);
+					var petit = ordre === 0x4949;
+					if (!petit && ordre !== 0x4D4D) { return null; }
+					if (d.getUint16(2, petit) !== 42) { return null; }   // 43 : BigTIFF, qu'on laisse
+					var ifd = d.getUint32(4, petit);
+					return tranche(f, ifd, ifd + 2).then(function (c) {
+						if (c.byteLength < 2) { return null; }
+						var n = Math.min(c.getUint16(0, petit), 500);
+						return tranche(f, ifd + 2, ifd + 2 + n * 12).then(function (t) {
+							var l = 0, h = 0;
+							for (var i = 0; i + 12 <= t.byteLength; i += 12) {
+								var balise = t.getUint16(i, petit), type = t.getUint16(i + 2, petit);
+								var v = type === 3 ? t.getUint16(i + 8, petit) : (type === 4 ? t.getUint32(i + 8, petit) : 0);
+								if (balise === 256) { l = v; } else if (balise === 257) { h = v; }
+							}
+							return l && h ? { largeur: l, hauteur: h } : null;
+						});
+					});
+				});
+			}
+			function avisDeDefinition(rang, px) {
+				var l = px.largeur, h = px.hauteur;
+				if (Math.min(l, h) >= NORME.petit && Math.max(l, h) >= NORME.grand) { return ''; }
+				function cm(p) { return decimal1(p / NORME.ppp * 2.54); }
+				return 'Fig.' + NBSP + rang + NBSP + ': ' + entier(l) + NBSP + '×' + NBSP + entier(h) + NBSP + 'pixels, soit '
+					+ cm(l) + NBSP + '×' + NBSP + cm(h) + NBSP + 'cm à ' + entier(NORME.ppp) + NBSP + 'ppp — sous la norme de '
+					+ entier(NORME.largeurCm) + NBSP + '×' + NBSP + entier(NORME.hauteurCm) + NBSP
+					+ 'cm. À vérifier s’il s’agit d’une photographie.';
+			}
+
+			// ── Les champs des figures ─────────────────────────────────────
+			// « Fig. 1 : Plan » donnait « Fig. 1 Fig. 1 : Plan » : le numéro
+			// s'ajoute de lui-même.
+			var DEJA_NUMEROTE = motif('^\\s*((?:fig(?:ure)?s?|ill(?:ustration)?s?|pl(?:anche)?s?|tabl(?:eau)?x?)\\.?\\s*(\\d+))', 'iu');
+			function numeroRetape(titre, rang) {
+				var m = DEJA_NUMEROTE ? DEJA_NUMEROTE.exec(titre || '') : null;
+				if (!m) { return ''; }
+				return parseInt(m[2], 10) === rang
+					? guillemets(net(m[1])) + ' s’ajoute de lui-même devant le titre' + NBSP + ': inutile de le taper.'
+					: 'Le titre commence par ' + guillemets(net(m[1])) + ', mais c’est la figure ' + rang
+						+ NBSP + ': le numéro s’ajoute de lui-même, d’après l’ordre des fichiers. Retirez-le du titre.';
+			}
+			// Un crédit resté en fin de légende. Il doit clore le texte et venir
+			// après une légende d'une certaine longueur : une parenthèse au
+			// milieu — « L'orthostate (photo S. Cassen) vu depuis le sud » — est
+			// une incise, et une parenthèse jamais fermée ne tranche rien. Hors
+			// parenthèse, le mot veut sa capitale : « en photo » est de la phrase.
+			var CREDIT_AU_MOINS = 20;
+			var CREDITS = [
+				motif('©', 'y'),
+				motif('\\((?:©|photo|cliché|dao|dessin|relevé|source|crédit)(?![\\p{L}\\d])', 'iuy'),
+				motif('(?:Photo|Cliché|DAO|Dessin|Relevé|Source|Crédit)(?!\\p{L})', 'uy')
+			].filter(Boolean);
+			function vaJusquAuBout(t, depart) {
+				var avant = t.slice(0, depart);
+				if (avant.split('(').length > avant.split(')').length) { return false; }
+				if (t.charAt(depart) !== '(') { return true; }
+				var profondeur = 0;
+				for (var i = depart; i < t.length; i++) {
+					if (t.charAt(i) === '(') { profondeur++; }
+					else if (t.charAt(i) === ')') {
+						profondeur--;
+						if (profondeur === 0) { return !t.slice(i + 1).replace(/[\s.;,:!?…»\u00A0\u202F]+/g, ''); }
+					}
+				}
+				return false;
+			}
+			function creditEnFin(t) {
+				t = String(t || '').replace(/\s+$/, '');
+				for (var i = CREDIT_AU_MOINS; i < t.length; i++) {
+					for (var k = 0; k < CREDITS.length; k++) {
+						CREDITS[k].lastIndex = i;
+						if (CREDITS[k].test(t) && vaJusquAuBout(t, i)) {
+							var credit = t.slice(i).trim();
+							if (credit.charAt(0) === '(') { credit = credit.replace(/^\(\s*/, '').replace(/\s*\)[\s.]*$/, ''); }
+							var reste = t.slice(0, i).replace(/[\s,;:—–-]+$/, '');
+							return credit && reste ? { credit: credit, reste: reste } : null;
+						}
+					}
+				}
+				return null;
+			}
+
+			// ── Les avis sur le texte ──────────────────────────────────────
+			// Les mêmes règles que le serveur, dans le même ordre, avec les mêmes
+			// mots : ce que la rédaction lira dans le courriel, l'auteur le lit
+			// ici avant d'envoyer.
+			var PONCTUATION_FINALE = '.!?…:;';
+			var FERMANTS = '»"\'’”)] \u00A0\u202F\u2009\u2007\u2008\u200A\u2002\u2003\u2005';
+			var OUVRANTS = motif('^[«“‘(\\[{\\u2009\\u00A0 ]+', 'u');
+			var BAS_DE_CASSE = motif('^\\p{Ll}', 'u');
+			function finitBien(t) {
+				t = String(t).trim();
+				while (t && FERMANTS.indexOf(t.charAt(t.length - 1)) !== -1) { t = t.slice(0, -1); }
+				return !!t && PONCTUATION_FINALE.indexOf(t.charAt(t.length - 1)) !== -1;
+			}
+			function reprendEnBasDeCasse(t) {
+				if (!OUVRANTS || !BAS_DE_CASSE) { return false; }
+				return BAS_DE_CASSE.test(String(t).replace(OUVRANTS, ''));
+			}
+			// Un paragraphe qui ne finit par aucune ponctuation : presque toujours
+			// une phrase tronquée au collage. Et le paragraphe coupé en deux, dont
+			// la suite reprend en bas de casse — un retour de trop, venu d'un PDF.
+			function ponctuationFinale(paras) {
+				var avis = [];
+				paras.forEach(function (p, i) {
+					if (finitBien(p)) { return; }
+					if (i + 1 < paras.length && reprendEnBasDeCasse(paras[i + 1])) {
+						avis.push('Le paragraphe ' + (i + 1) + ' s’arrête au milieu d’une phrase que le suivant reprend ('
+							+ guillemets('…' + extrait(p, -30)) + ' puis ' + guillemets(extrait(paras[i + 1], 30) + '…')
+							+ ')' + NBSP + ': un retour à la ligne de trop, sans doute.');
+					} else {
+						avis.push('Le paragraphe ' + (i + 1) + ' ne se termine par aucune ponctuation ('
+							+ guillemets('…' + extrait(p, -40)) + ')' + NBSP + ': texte tronqué' + NBSP + '?');
+					}
+				});
+				return avis;
+			}
+			// « fig. 3 » quand deux figures seulement sont jointes, ou une figure
+			// que le texte n'appelle jamais. « fig. 3-5 » vaut 3, 4 et 5.
+			var APPEL = motif('(^|[^\\p{L}\\d])(?:fig(?:ure)?s?\\.?|ill(?:ustration)?s?\\.?)\\s*(\\d+[a-z]?(?:\\s*(?:[-–—]|à|to|et|and|,|;|\\/)\\s*\\d+[a-z]?){0,12})', 'giu');
+			function developper(corps) {
+				corps = String(corps).trim().replace(/\s+/g, ' ');
+				var m = /^(\d+)\s*(?:[-–—]|à|to)\s*(\d+)$/i.exec(corps);
+				var out = [];
+				if (m && +m[1] <= +m[2] && +m[2] - +m[1] <= 100) {
+					for (var n = +m[1]; n <= +m[2]; n++) { out.push(n); }
+					return out;
+				}
+				(corps.match(/\d+/g) || []).forEach(function (x) { if (out.indexOf(+x) === -1) { out.push(+x); } });
+				return out;
+			}
+			function enLettres(n) {
+				return { 1: 'une figure', 2: 'deux figures', 3: 'trois figures' }[n] || (n + ' figures');
+			}
+			function appelsDeFigure(texte, combien) {
+				if (!APPEL) { return []; }
+				var appeles = {}, m;
+				APPEL.lastIndex = 0;
+				while ((m = APPEL.exec(texte)) !== null) {
+					developper(m[2]).forEach(function (n) { appeles[n] = true; });
+				}
+				var numeros = Object.keys(appeles).map(Number).sort(function (a, b) { return a - b; });
+				var avis = [];
+				numeros.forEach(function (n) {
+					if (n <= combien) { return; }
+					avis.push(0 === combien
+						? 'Le texte appelle la fig.' + NBSP + n + ', mais aucune figure n’est jointe.'
+						: 'Le texte appelle la fig.' + NBSP + n + ', mais ' + enLettres(combien) + ' seulement '
+							+ (1 === combien ? 'est jointe.' : 'sont jointes.'));
+				});
+				if (numeros.length) {
+					for (var rang = 1; rang <= combien; rang++) {
+						if (!appeles[rang]) { avis.push('La fig.' + NBSP + rang + ' n’est appelée nulle part dans le texte.'); }
+					}
+				}
+				return avis;
+			}
+			// « 2ème », « XIIème », « 1ère », « 2nde » : on le signale sans
+			// corriger, ce peut être une citation. Ni « Mère » ni « Cère ».
+			var ORDINAL = motif('(^|[^\\p{L}\\d])(?:(\\d+|[IVXLC]{1,6})(èmes?|emes?|ièmes?|iemes?|è)|(1|I)(ères?|eres?)|(\\d+)(nde|nd))(?![\\p{L}\\d])', 'gu');
+			function ordinauxFautifs(paras) {
+				var avis = [];
+				if (!ORDINAL) { return avis; }
+				paras.forEach(function (p) {
+					var m;
+					ORDINAL.lastIndex = 0;
+					while ((m = ORDINAL.exec(p)) !== null) {
+						var nombre = m[2] || m[4] || m[6];
+						var suite = m[3] || m[5] || m[7];
+						var pluriel = /s$/.test(suite) ? 's' : '';
+						suite = suite === 'nd' ? suite : suite.replace(/s+$/, '');
+						var juste;
+						if (suite === 'ère' || suite === 'ere') { juste = nombre + 're' + pluriel; }
+						else if (suite === 'nde' || suite === 'nd') { juste = nombre + 'de'; }
+						else if (nombre === '1' || nombre === 'I') { juste = nombre + 'er' + pluriel; }
+						else { juste = nombre + 'e' + pluriel; }
+						avis.push(guillemets(m[0].slice(m[1].length)) + ' s’abrège ' + guillemets(juste) + '.');
+					}
+				});
+				return avis;
+			}
+			// « vers 1 250 » : une année tapée avec une espace.
+			var DATE_ESPACEE = motif('(?:(^|[^\\p{L}\\d])(?:en|vers|an|années?|dès|depuis|jusqu’en|jusqu\'en|avant|après)\\s+([12] \\d{3})(?![\\p{L}\\d])|([12] \\d{3})\\s*(?:av\\.|apr?\\.|ap\\.)\\s*J\\.-C\\.)', 'giu');
+			function datesEspacees(paras) {
+				var avis = [];
+				if (!DATE_ESPACEE) { return avis; }
+				paras.forEach(function (p) {
+					var m;
+					DATE_ESPACEE.lastIndex = 0;
+					while ((m = DATE_ESPACEE.exec(p)) !== null) {
+						var annee = (m[2] || m[3]).trim();
+						avis.push(guillemets(annee) + NBSP + ': une année s’écrit sans espace, ' + guillemets(annee.replace(/ /g, '')) + '.');
+					}
+				});
+				return avis;
+			}
+			// « xiie s. » : les petites capitales se perdent au collage. « ce
+			// siècle » n'en est pas un.
+			var SIECLE = motif('(^|[^\\p{L}\\d])([ivxlc]+(?:e|er|re))[\\s\\u00A0]+(?:s\\.|siècles?(?![\\p{L}\\d]))', 'gu');
+			function sieclesEnBasDeCasse(paras) {
+				var avis = [];
+				if (!SIECLE) { return avis; }
+				paras.forEach(function (p) {
+					var m;
+					SIECLE.lastIndex = 0;
+					while ((m = SIECLE.exec(p)) !== null) {
+						var siecle = m[2];
+						if (siecle === 'ce') { continue; }
+						var chiffre = siecle.replace(/(e|er|re)$/, '');
+						avis.push(guillemets(siecle) + NBSP + ': un siècle en bas de casse, à rétablir en petites capitales ('
+							+ chiffre.toUpperCase() + siecle.slice(chiffre.length) + ').');
+					}
+				});
+				return avis;
+			}
+			var texteVu = false;
+			var zoneTexte = zoneDeConseils('na-texte-conseils', wc);
+			function majConseilsDuTexte() {
+				if (!texteVu || !quill) { return; }
+				var paras = quill.getText().split('\n').map(function (p) { return p.trim(); }).filter(Boolean);
+				montrerConseils(zoneTexte, [].concat(
+					ponctuationFinale(paras),
+					appelsDeFigure(paras.join('\n'), selected.length),
+					ordinauxFautifs(paras),
+					datesEspacees(paras),
+					sieclesEnBasDeCasse(paras)
+				), [quill.root]);
+			}
+			if (quill) {
+				quill.root.addEventListener('blur', function () { texteVu = true; majConseilsDuTexte(); });
+			}
+
+			// ── Les avis sur les personnes et le lieu-dit ──────────────────
+			// Métopes attend une personne par entrée, une institution qui n'est
+			// pas une adresse, un nom qui ne crie pas.
+			[['resp', 'du responsable'], ['coresp', 'du co-responsable'], ['coauteur', 'du co-auteur']].forEach(function (r) {
+				var cle = r[0], qui = r[1];
+				var bloc = el('na-' + cle);
+				var prenom = el('na-' + cle + '-prenom'), nom = el('na-' + cle + '-nom'), inst = el('na-' + cle + '-inst');
+				if (!bloc || !prenom || !nom || !inst) { return; }
+				var retirer = bloc.querySelector('.na-retirer');
+				var z = document.createElement('div');
+				z.className = 'na-conseils';
+				z.id = 'na-' + cle + '-conseils';
+				z.hidden = true;
+				bloc.insertBefore(z, retirer || null);
+				var quitte = false;
+				function maj() {
+					var p = net(prenom.value), n = net(nom.value), i = net(inst.value), liste = [];
+					var complet = net(p + ' ' + n);
+					if (complet) {
+						if (/[,;&]|\s(?:et|and)\s/.test(complet)) {
+							liste.push('Le nom ' + qui + ' semble contenir plusieurs personnes (' + guillemets(complet) + ')' + NBSP + ': une seule par champ.');
+						}
+						if (enCapitales(n)) {
+							liste.push('Le nom ' + qui + ' est en capitales (' + guillemets(n) + ')' + NBSP + ': à écrire '
+								+ guillemets(casseDeTitre(n)) + ' si c’est bien sa graphie.');
+						}
+						if (i && i.indexOf('@') !== -1) {
+							liste.push('L’institution ' + qui + ' contient une adresse électronique (' + guillemets(i) + ').');
+						}
+						if (!i && cle !== 'resp' && quitte) {
+							liste.push('Pas d’institution de rattachement pour le nom ' + qui + ' (' + guillemets(complet) + ').');
+						}
+					}
+					montrerConseils(z, liste, [prenom, nom, inst]);
+				}
+				bloc.addEventListener('focusout', function (e) {
+					if (!(e.relatedTarget && bloc.contains(e.relatedTarget))) { quitte = true; }
+					if (e.target === prenom || e.target === nom || e.target === inst) { maj(); }
+				});
+			});
+			(function () {
+				var z = zoneDeConseils('na-lieu-dit-conseils', lieuDitInput);
+				lieuDitInput.addEventListener('blur', function () {
+					var v = net(lieuDitInput.value);
+					montrerConseils(z, enCapitales(v)
+						? ['Le lieu-dit est en capitales (' + guillemets(v) + ')' + NBSP
+							+ ': il paraîtra ainsi dans le titre. Écrivez-le en minuscules, avec les capitales d’usage.']
+						: [], [lieuDitInput]);
+				});
+			}());
 
 			// ── La pièce de vérification ───────────────────────────────────
 			// Glissée dans son encoche, elle dépose la valeur scellée que le
@@ -3571,7 +4363,38 @@ class Notice_Archeomed_Pactols {
 				if (champ) { champ.classList.remove('na-champ--erreur'); }
 				if (cle === 'texte') { el('na-texte').classList.remove('na-texte--erreur'); }
 				delete erreurs[cle];
+				retirerDuRecap(cle);
 				if (!Object.keys(erreurs).length) { document.title = titreDeLaPage; }
+			}
+			// Le récapitulatif suit les corrections. Il affichait « Il reste 13
+			// points à corriger » quand on les avait tous corrigés, alors que les
+			// messages sous les champs, eux, s'effaçaient : on ne savait plus
+			// lequel croire.
+			function retirerDuRecap(cle) {
+				var liens = [];
+				if (recap) { liens = liens.concat([].slice.call(recap.querySelectorAll('a[data-cle="' + cle + '"]'))); }
+				if (messageServeur && CHAMPS[cle]) {
+					liens = liens.concat([].slice.call(messageServeur.querySelectorAll('a[href="#' + CHAMPS[cle][0] + '"]')));
+				}
+				if (!liens.length) { return; }
+				liens.forEach(function (a) { var li = a.closest('li'); if (li) { li.remove(); } });
+				[recap, messageServeur].forEach(function (boite) {
+					if (!boite || boite.hidden) { return; }
+					var ul = boite.querySelector('ul');
+					if (!ul) { return; }
+					// Réannoncer tout le cadre à chaque correction serait du bruit :
+					// il a été lu en entier quand il s'est ouvert.
+					boite.removeAttribute('role');
+					var n = ul.querySelectorAll('li').length;
+					var h = boite.querySelector('h2');
+					if (n) {
+						if (h) { h.textContent = n > 1 ? 'Il reste ' + n + ' points à corriger' : 'Il reste un point à corriger'; }
+						return;
+					}
+					if (h) { h.remove(); }
+					ul.remove();
+					if (vide(boite.textContent)) { boite.hidden = true; }
+				});
 			}
 			// Le message s'efface dès que le champ est juste.
 			function reverifier(cle) {
@@ -3603,6 +4426,7 @@ class Notice_Archeomed_Pactols {
 				var li = document.createElement('li');
 				var a = document.createElement('a');
 				a.href = '#' + CHAMPS[cle][0];
+				a.setAttribute('data-cle', cle);
 				a.textContent = message;
 				a.addEventListener('click', function (ev) { ev.preventDefault(); focaliser(cle); });
 				li.appendChild(a);
@@ -3684,10 +4508,16 @@ class Notice_Archeomed_Pactols {
 					}
 					champs[c.name] = c.value;
 				});
-				return { v: 1, quand: Date.now(), champs: champs, texte: quill ? quill.root.innerHTML : '', illus: illusMeta };
+				// Les textes des figures avec le nom de leur fichier, et ceux qui
+				// attendent encore le leur.
+				return { v: 2, quand: Date.now(), champs: champs, texte: quill ? quill.root.innerHTML : '',
+					illus: illusMeta.concat(orphelins) };
 			}
+			// Des légendes seules ne déclenchaient pas l'enregistrement : on
+			// perdait trois légendes tapées avant tout le reste.
 			function contenuUtile(b) {
 				if (b.texte && !vide(b.texte.replace(/<[^>]*>/g, ''))) { return true; }
+				if (Array.isArray(b.illus) && b.illus.some(aDuTexte)) { return true; }
 				return Object.keys(b.champs || {}).some(function (nom) {
 					var v = b.champs[nom];
 					if (/^pactols_/.test(nom)) { return v && v !== '[]'; }
@@ -3721,7 +4551,13 @@ class Notice_Archeomed_Pactols {
 					if (typeof v === 'string') { c.value = v; }
 				});
 				if (quill && b.texte) { quill.clipboard.dangerouslyPasteHTML(b.texte); }
-				if (Array.isArray(b.illus)) { illusMeta = b.illus; renderFileList(); }
+				// Les textes des figures attendent leur fichier : ils s'y
+				// rattacheront par son nom, dans quelque ordre qu'on les redépose.
+				if (Array.isArray(b.illus)) {
+					orphelins = orphelins.concat(b.illus.filter(function (m) { return m && (m.nom || aDuTexte(m)); }));
+					rattacher();
+					renderFileList();
+				}
 				categories.forEach(function (c) { c.relire(); });
 				deptSaisiMain = !vide(deptInput.value);
 				ajusterLesReplis();
@@ -3757,7 +4593,14 @@ class Notice_Archeomed_Pactols {
 						restaurer(brouillon);
 						avisBrouillon.remove();
 						avisBrouillon = null;
-						annoncer('Saisie reprise.');
+						// « Saisie reprise. » ne disait pas que les fichiers manquaient,
+						// et la liste des figures était vide.
+						var noms = orphelins.map(function (m) { return m.nom; }).filter(Boolean);
+						annoncer(noms.length
+							? 'Saisie reprise. ' + (noms.length > 1 ? 'Les illustrations sont à redéposer' : 'L’illustration est à redéposer')
+								+ NBSP + ': ' + noms.join(', ') + ' — ' + (noms.length > 1 ? 'leurs titres et légendes reviendront' : 'son titre et sa légende reviendront')
+								+ ' d’eux-mêmes.'
+							: 'Saisie reprise.');
 						var premier = el('na-lieu-1');
 						if (premier) { premier.focus(); }
 					});
@@ -3814,6 +4657,7 @@ class Notice_Archeomed_Pactols {
 						champ.removeAttribute('aria-invalid');
 						retirerDescription(champ, id);
 						champ.removeEventListener('input', efface);
+						retirerDuRecap('kw_' + c.type);
 					});
 				});
 				if (liste.length) {
@@ -4369,6 +5213,9 @@ class Notice_Archeomed_Pactols {
 				$valeur = isset( $liste[ $i ] ) ? sanitize_textarea_field( self::chevrons_a_garder( (string) $liste[ $i ] ) ) : '';
 				$item[ $clef ] = $this->limit_string( $valeur, 'legende' === $clef ? 1500 : 400 );
 			}
+			// « Fig. 1 : Plan » retapé dans le titre donnait « Fig. 1 Fig. 1 :
+			// Plan » : le numéro, c'est le plugin qui le pose.
+			$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $item['rang'] );
 			// L'autorisation de reproduction jointe à cette figure, s'il y en a
 			// une : le document le signale à la rédaction.
 			$item['autorisation'] = isset( $_FILES['illus_autorisation']['error'][ $i ] )
@@ -4408,6 +5255,57 @@ class Notice_Archeomed_Pactols {
 			return $m[1] . '-' . $fin;
 		}
 		return $annee;
+	}
+
+	/**
+	 * Les pixels de chaque figure, rangés sur sa ligne par le rang du fichier.
+	 * « getimagesize » ne lit que l'en-tête, pour le JPEG comme pour le TIFF ;
+	 * un PDF n'a pas de pixels, et rien n'est posé.
+	 */
+	private static function poser_les_pixels( $d, $fichiers ) {
+		if ( empty( $d['illustrations'] ) ) {
+			return $d;
+		}
+		foreach ( array_values( (array) $fichiers ) as $i => $fichier ) {
+			$mesure = @getimagesize( $fichier );
+			if ( empty( $mesure[0] ) || empty( $mesure[1] ) ) {
+				continue;
+			}
+			foreach ( $d['illustrations'] as $j => $item ) {
+				if ( (int) $item['rang'] === $i + 1 ) {
+					$d['illustrations'][ $j ]['pixels'] = array( (int) $mesure[0], (int) $mesure[1] );
+				}
+			}
+		}
+		return $d;
+	}
+
+	/**
+	 * La typographie posée sur le texte d'un fragment HTML, balises
+	 * laissées telles quelles. Chaque morceau voit le texte qui le précède
+	 * dans son paragraphe : une ponctuation qui suit un mot en italique
+	 * reçoit son insécable.
+	 */
+	private static function typographie_du_html( $html ) {
+		$morceaux = preg_split( '#(<[^>]+>)#', (string) $html, -1, PREG_SPLIT_DELIM_CAPTURE );
+		$rendu    = '';
+		$avant    = '';
+		foreach ( $morceaux as $morceau ) {
+			if ( '' === $morceau ) {
+				continue;
+			}
+			if ( '<' === $morceau[0] ) {
+				if ( preg_match( '#^</?(p|br|li|div)\b#i', $morceau ) ) {
+					$avant = '';
+				}
+				$rendu .= $morceau;
+				continue;
+			}
+			$texte  = html_entity_decode( $morceau, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+			$rendu .= esc_html( Notice_Archeomed_Typographie::corriger( $texte, $avant, 'fr', $avant ) );
+			$avant .= $texte;
+		}
+		return $rendu;
 	}
 
 	/** Le nombre de fichiers réellement joints au formulaire. */
@@ -4680,6 +5578,17 @@ class Notice_Archeomed_Pactols {
 		$html .= '<div style="' . $style_block . '">' . implode( '<br>', $admin_lines ) . '</div>';
 		if ( '' !== $contacts_block ) {
 			$html .= '<div style="' . $style_block . '">' . $contacts_block . '</div>';
+		}
+		// Ce que les contrôles du dépôt ont relevé : l'auteur le lit dans sa
+		// copie, avec le lien pour corriger, et la rédaction sait d'avance ce
+		// qu'elle aura à vérifier.
+		if ( ! empty( $d['avis'] ) ) {
+			$html .= '<div style="background:#fdf6e3;border-left:4px solid #8a6d3b;padding:10px 14px;margin:0 0 14px;' . $font . 'font-size:14px;">'
+				. '<strong>À vérifier :</strong><ul style="margin:6px 0 0;padding-left:20px;">';
+			foreach ( (array) $d['avis'] as $un_avis ) {
+				$html .= '<li>' . esc_html( $un_avis ) . '</li>';
+			}
+			$html .= '</ul></div>';
 		}
 		// Corps de notice : localisation + nature, puis texte (responsable collé au point final).
 		$style_corps = $font . 'font-size:15px;line-height:1.6;';
@@ -5117,6 +6026,7 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => self::figure_ouvrante() ) ) );
 			// « Fig. 1 Vue générale » et non « Fig. 1 : Vue générale » : c'est
 			// ainsi que la revue compose ses légendes.
+			$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $item['rang'] );
 			$numero = 'Fig. ' . (int) $item['rang'];
 			$titre  = $numero . ( '' !== $item['titre'] ? ' ' . $item['titre'] : '' );
 			// L'image, appelée en lien depuis « icono/br », entre le repère
@@ -5222,6 +6132,14 @@ class Notice_Archeomed_Pactols {
 		// occurrences », et tout le bloc s'ôte d'une touche. En RTF — le
 		// repli des hébergements sans ZipArchive — le style est inconnu et le
 		// paragraphe sort en Normal, sans que rien ne casse.
+		// Les avis du dépôt, en tête de ce qui s'ôte : c'est la première
+		// chose que la relecture a à regarder.
+		if ( ! empty( $d['avis'] ) ) {
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => 'À vérifier :', 'b' => true ) ) );
+			foreach ( (array) $d['avis'] as $un_avis ) {
+				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => '– ' . $un_avis ) ) );
+			}
+		}
 		$contacts = $this->contacts_list( $d );
 		if ( ! empty( $contacts ) ) {
 			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array( array( 'text' => 'Coordonnées des responsables :', 'b' => true ) ) );
@@ -5550,6 +6468,9 @@ class Notice_Archeomed_Pactols {
 		}
 		$d['departement'] = $this->sans_parentheses( $d['departement'] );
 		$d['annee'] = self::annee_normalisee( $d['annee'] );
+		// Un titre ne prend pas de point final : « Rue de Reviers. » donnait
+		// un titre pointé, au document comme au renvoi.
+		$d['lieu_dit'] = Notice_Archeomed_Controles::sans_point_final( $d['lieu_dit'] );
 		$d['lieux'] = $this->collect_lieux();
 		// « commune » reste le premier lieu : c'est lui qui donne le titre de
 		// la fiche, le nom du fichier, l'objet du courriel et le rang au
@@ -5603,6 +6524,11 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: autorisation refusée : ' . $upload_error );
 			$this->redirect_result( false, 'autorisation' );
 		}
+		// La définition réelle de chaque figure, lue dans l'en-tête du
+		// fichier — rien n'est décodé, le dépôt n'attend pas —, puis les avis
+		// que la rédaction lira avec la notice.
+		$d = self::poser_les_pixels( $d, $attachments );
+		$d['avis'] = Notice_Archeomed_Controles::avis( $d );
 		$notice = $this->build_notice( $d );
 		// Génération du fichier stylé Métopes, joint au courriel de la
 		// rédaction. C'est rapide — quelques dizaines de millisecondes — et

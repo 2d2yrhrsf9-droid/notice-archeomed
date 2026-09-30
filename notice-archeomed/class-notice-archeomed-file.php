@@ -65,6 +65,9 @@ class Notice_Archeomed_File {
 		add_action( 'init', array( $this, 'declarer_le_type' ) );
 		add_action( self::HOOK_RELANCE, array( $this, 'relancer' ) );
 		add_action( self::HOOK_RECAP, array( $this, 'recapituler' ) );
+		// La cause avant ses effets : sans adresse, les bandeaux d'échec et de
+		// retard poussaient à relancer ce qui ne pouvait pas partir.
+		add_action( 'admin_notices', array( $this, 'signaler_l_adresse_manquante' ), 5 );
 		add_action( 'admin_notices', array( $this, 'signaler_les_echecs' ) );
 		add_action( 'admin_notices', array( $this, 'signaler_les_retards' ) );
 		add_action( 'admin_notices', array( $this, 'rendre_compte' ) );
@@ -610,6 +613,19 @@ class Notice_Archeomed_File {
 			if ( 'en_attente' === $etat && $refus && '' !== $erreur ) {
 				echo '<p>' . esc_html( self::expliquer_l_erreur( $erreur ) ) . '</p>';
 			}
+			// Sans destinataire, la relance échoue à coup sûr : on offrait le
+			// bouton bleu, on cliquait, et l'échec suivant ne disait pas qu'il
+			// venait de là. Le seul geste utile est alors de renseigner
+			// l'adresse.
+			if ( ! self::quelqu_un_recoit_les_notices() ) {
+				echo '<p><a class="button button-primary" href="' . esc_url( Notice_Archeomed_Settings::url( 'destinataires' ) ) . '">'
+					. esc_html__( 'Renseigner d’abord l’adresse de la rédaction', 'notice-archeomed' ) . '</a></p>';
+				echo '<p class="description">'
+					. esc_html__( 'La relance échouerait tant que personne ne reçoit les notices. Une fois l’adresse enregistrée, revenez ici pour l’envoyer.', 'notice-archeomed' )
+					. '</p></div>';
+				$this->afficher_les_liens_de_correction( $id );
+				return;
+			}
 			// Le bouton paraît pour tout ce qui n'est pas parti — en échec
 			// comme en attente. Réservé au seul échec, il disparaissait
 			// précisément quand on en avait besoin : une notice en attente ne
@@ -622,10 +638,15 @@ class Notice_Archeomed_File {
 				. '</p>';
 		}
 		echo '</div>';
+		$this->afficher_les_liens_de_correction( $id );
+	}
 
-		// La correction et ce qu'elle corrige : la notice corrigée ne paraît
-		// plus au fascicule ni au dossier, et c'est ici qu'on la retrouve pour
-		// la mettre à la corbeille.
+	/**
+	 * La correction et ce qu'elle corrige : la notice corrigée ne paraît plus
+	 * au fascicule ni au dossier, et c'est ici qu'on la retrouve pour la
+	 * mettre à la corbeille.
+	 */
+	private function afficher_les_liens_de_correction( $id ) {
 		$remplace = strtoupper( trim( (string) get_post_meta( $id, '_na_remplace', true ) ) );
 		if ( '' !== $remplace ) {
 			$chercher = add_query_arg( array( 'post_type' => self::CPT, 's' => $remplace ),
@@ -672,7 +693,7 @@ class Notice_Archeomed_File {
 			if ( '' === trim( wp_strip_all_tags( $valeur ) ) ) {
 				continue;
 			}
-			echo '<tr><th scope="row"><strong>' . esc_html( $intitule ) . '</strong></th><td>'
+			echo '<tr><th scope="row">' . esc_html( $intitule ) . '</th><td>'
 				. $valeur . '</td></tr>';
 		}
 		echo '</tbody></table>';
@@ -1033,67 +1054,123 @@ class Notice_Archeomed_File {
 	 * On ne relit pas quarante notices dans quarante courriels : on les ouvre
 	 * une à une, on perd le fil, et l'on ne voit ni les doublons ni les
 	 * communes qui se suivent mal.
+	 *
+	 * Les liens tenaient en deux lignes de chiffres romains, « I · II · III »,
+	 * larges de dix pixels : la rubrique ne se nommait qu'au survol, rien ne
+	 * disait combien de notices elle portait — on téléchargeait un fascicule
+	 * vide —, et sur un téléphone la page s'élargissait jusqu'à cacher la
+	 * moitié des liens. Un tableau les range : la rubrique en toutes lettres,
+	 * son nombre de notices, et un lien par usage.
 	 */
 	public function liens_des_fascicules( $vues ) {
 		$rubriques = $this->rubriques_presentes();
 		if ( empty( $rubriques ) ) {
 			return $vues;
 		}
-		$liens   = array();
-		$paquets = array();
+		$comptes = $this->comptes_par_rubrique();
+		$lignes  = '';
 		foreach ( $rubriques as $rubrique ) {
-			$liens[] = $this->lien_de_rubrique( 'na_fascicule', $rubrique,
-				__( 'Télécharger le fascicule Word de la rubrique', 'notice-archeomed' ) );
-			// Le paquet complet, à côté du fascicule seul : le même document,
-			// plus les illustrations rangées aux dossiers de Métopes (chaîne
-			// d'édition XML créée par le Pôle document numérique et
-			// l'infrastructure Métopes de l'université de Caen Normandie,
-			// https://www.metopes.fr).
-			$paquets[] = $this->lien_de_rubrique( 'na_paquet', $rubrique,
-				__( 'Télécharger le dossier Métopes de la rubrique', 'notice-archeomed' ) );
+			$n = isset( $comptes[ $rubrique ] ) ? (int) $comptes[ $rubrique ] : 0;
+			$lignes .= '<tr><th scope="row">' . esc_html( $rubrique ) . '</th>'
+				. '<td class="na-dossiers-nombre">' . esc_html( number_format_i18n( $n ) )
+				. '<span class="na-dossiers-mot"> ' . esc_html( $n > 1 ? __( 'notices', 'notice-archeomed' ) : __( 'notice', 'notice-archeomed' ) ) . '</span></td>'
+				. '<td>' . $this->lien_de_rubrique( 'na_fascicule', $rubrique,
+					__( 'Fascicule Word', 'notice-archeomed' ) ) . '</td>'
+				// Le paquet complet, à côté du fascicule seul : le même document,
+				// plus les illustrations rangées aux dossiers de Métopes (chaîne
+				// d'édition XML créée par le Pôle document numérique et
+				// l'infrastructure Métopes de l'université de Caen Normandie,
+				// https://www.metopes.fr).
+				. '<td>' . $this->lien_de_rubrique( 'na_paquet', $rubrique,
+					__( 'Dossier Métopes (zip)', 'notice-archeomed' ) ) . '</td></tr>';
 		}
-		// Les deux lignes tiennent dans une seule entrée. WordPress sépare les
-		// vues par une barre verticale : posées séparément, elles recevaient
-		// ce séparateur entre elles et l'alignement sautait. Un seul bloc, une
-		// grille à deux colonnes, et les intitulés s'alignent pour de bon.
-		$ligne = function ( $intitule, $liens, $apres = '' ) {
-			return '<span style="display:table-row">'
-				. '<strong style="display:table-cell;padding:1px 10px 1px 0;white-space:nowrap">'
-				. esc_html( $intitule ) . '</strong>'
-				. '<span style="display:table-cell">' . implode( ' · ', $liens )
-				. ( '' !== $apres ? ' <span class="description">' . esc_html( $apres ) . '</span>' : '' )
-				. '</span></span>';
-		};
-		// Le bloc passe en tête, sur sa propre ligne, contre la marge gauche.
-		// WordPress écrit les vues comme une ligne de texte — « Tous | Privées »
-		// — et le bloc, posé à la suite, démarrait après ces liens : sa
-		// seconde ligne se retrouvait décalée sous la première, et rien
-		// n'était aligné à gauche. La règle ci-dessous en fait un bloc à part
-		// entière ; la taille de police nulle efface la barre « | » que
-		// WordPress ajoute après chaque vue, et que le bloc n'a pas à porter.
-		$bloc = '<style>ul.subsubsub li.na_dossiers{display:block;font-size:0;margin:0 0 6px}'
-			. 'ul.subsubsub li.na_dossiers>span{font-size:13px}</style>'
-			. '<span style="display:table;margin:8px 0 0">'
-			. $ligne( __( 'Fascicule en Word stylé :', 'notice-archeomed' ), $liens )
-			. $ligne( __( 'Dossier Métopes (zip) :', 'notice-archeomed' ), $paquets,
-				__( 'document, illustrations en haute et basse définition, arborescence icono.', 'notice-archeomed' ) )
-			. '</span>'
+		// Le bloc passe en tête des vues, sur sa propre ligne. WordPress écrit
+		// les vues comme une ligne de texte — « Tous | Privées » — et ajoute
+		// une barre après chacune : la taille de police nulle efface celle-ci,
+		// que le tableau n'a pas à porter. Sur un téléphone, c'est le tableau
+		// qui défile, non la page.
+		// WordPress interdit aussi le retour à la ligne dans les vues : la
+		// phrase sous le tableau débordait de l'écran.
+		$bloc = '<style>ul.subsubsub li.na_dossiers{display:block;width:100%;font-size:0;margin:0 0 10px;white-space:normal}'
+			. 'ul.subsubsub li.na_dossiers>*{font-size:13px}'
+			. '.na-dossiers-cadre{max-width:52rem}'
+			. '.na-dossiers{margin:8px 0 4px}'
+			. 'table.na-dossiers>tbody>tr>th,table.na-dossiers>tbody>tr>td{vertical-align:middle;padding-top:6px;padding-bottom:6px}'
+			. 'table.na-dossiers>tbody>tr>th{font-weight:400}'
+			. '.na-dossiers .na-dossiers-nombre{text-align:right;font-variant-numeric:tabular-nums;width:5em}'
+			. '.na-dossiers a.na-telechargement{display:inline-block;padding:4px 0}'
+			. '.na-dossiers-mot{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}'
+			// Sur un téléphone, chaque rubrique devient un petit bloc : son nom,
+			// puis le compte et les deux liens. Un tableau à quatre colonnes y
+			// élargissait la page entière.
+			. '@media screen and (max-width:782px){'
+			// La liste des vues flotte, et prenait la largeur de sa plus longue
+			// ligne : c'est elle qui élargissait la page.
+			. 'ul.subsubsub{float:none;max-width:100%}'
+			. 'table.na-dossiers>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}'
+			. 'table.na-dossiers,table.na-dossiers>tbody,table.na-dossiers>tbody>tr{display:block}'
+			. 'table.na-dossiers>tbody>tr>th{display:block;padding:10px 10px 0;font-weight:600}'
+			. 'table.na-dossiers>tbody>tr>td{display:inline-block;width:auto;padding:4px 10px 10px}'
+			. 'table.na-dossiers .na-dossiers-mot{position:static;width:auto;height:auto;overflow:visible;clip:auto}'
+			. 'table.na-dossiers a.na-telechargement{min-height:24px;padding:6px 0}}</style>'
+			. '<div class="na-dossiers-cadre">'
+			. '<table class="widefat striped na-dossiers">'
+			. '<caption class="screen-reader-text">' . esc_html__( 'Fascicules et dossiers Métopes, par rubrique', 'notice-archeomed' ) . '</caption>'
+			. '<thead><tr><th scope="col">' . esc_html__( 'Rubrique', 'notice-archeomed' ) . '</th>'
+			. '<th scope="col" class="na-dossiers-nombre">' . esc_html__( 'Notices', 'notice-archeomed' ) . '</th>'
+			. '<th scope="col">' . esc_html__( 'Pour relire', 'notice-archeomed' ) . '</th>'
+			. '<th scope="col">' . esc_html__( 'Pour la mise en page', 'notice-archeomed' ) . '</th></tr></thead>'
+			. '<tbody>' . $lignes . '</tbody></table></div>'
+			. '<p class="description">' . esc_html__( 'Le dossier Métopes réunit le document, les illustrations en haute et basse définition, et l’arborescence icono.', 'notice-archeomed' ) . '</p>'
 			// Où s'annonce l'attente, hors du lien : un lien marqué « occupé »
 			// fait taire ce qu'il contient, pas ce qui est à côté.
-			. '<span class="na-attente" role="status" aria-live="polite"></span>';
+			. '<p class="na-attente" role="status" aria-live="polite"></p>';
 		return array( 'na_dossiers' => $bloc ) + $vues;
 	}
 
 	/**
-	 * Un lien de rubrique : « I » à l'écran, la phrase entière pour qui
+	 * Combien de notices chaque rubrique portera, en une seule requête.
+	 *
+	 * Le compte suit le fascicule : les notices privées, moins celles qu'une
+	 * correction remplace. Une lecture par notice aurait coûté trois cents
+	 * requêtes à chaque ouverture de la liste.
+	 */
+	private function comptes_par_rubrique() {
+		global $wpdb;
+		$rangs = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT r.meta_value AS rubrique, f.meta_value AS reference
+				 FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} r ON r.post_id = p.ID AND r.meta_key = '_na_rubrique'
+				 LEFT JOIN {$wpdb->postmeta} f ON f.post_id = p.ID AND f.meta_key = '_na_reference'
+				 WHERE p.post_type = %s AND p.post_status = %s",
+				self::CPT,
+				'private'
+			),
+			ARRAY_A
+		);
+		$remplacees = $this->references_remplacees();
+		$comptes    = array();
+		foreach ( (array) $rangs as $rang ) {
+			if ( isset( $remplacees[ (string) $rang['reference'] ] ) ) {
+				continue;
+			}
+			$cle = (string) $rang['rubrique'];
+			$comptes[ $cle ] = isset( $comptes[ $cle ] ) ? $comptes[ $cle ] + 1 : 1;
+		}
+		return $comptes;
+	}
+
+	/**
+	 * Un lien de rubrique : l'usage à l'écran, la rubrique en plus pour qui
 	 * l'entend lire.
 	 *
-	 * Un lecteur d'écran annonçait « I, lien », « II, lien » : quinze liens
-	 * pareils, sans dire lequel donne le fascicule et lequel le dossier. La
-	 * phrase entoure le numéro, si bien que ce qui s'entend contient ce qui
-	 * se voit — on peut encore le désigner à la voix.
+	 * Hors du tableau, un lecteur d'écran qui parcourt les liens annoncerait
+	 * « Fascicule Word » autant de fois qu'il y a de rubriques. La rubrique
+	 * suit donc, pour lui seul : ce qui s'entend contient ce qui se voit, et
+	 * l'on peut encore désigner le lien à la voix.
 	 */
-	private function lien_de_rubrique( $action, $rubrique, $devant ) {
+	private function lien_de_rubrique( $action, $rubrique, $libelle ) {
 		$url = wp_nonce_url(
 			add_query_arg(
 				array( 'action' => $action, 'rubrique' => rawurlencode( $rubrique ) ),
@@ -1101,14 +1178,9 @@ class Notice_Archeomed_File {
 			),
 			$action
 		);
-		// Le numéro suffit à désigner la rubrique, et tient sur une ligne.
-		$court = trim( (string) strtok( $rubrique, '.' ) );
-		$reste = (string) substr( $rubrique, strlen( $court ) );
-		return '<a class="na-telechargement" href="' . esc_url( $url ) . '" title="'
-			. esc_attr( $rubrique ) . '">'
-			. '<span class="screen-reader-text">' . esc_html( $devant ) . ' </span>'
-			. esc_html( $court )
-			. '<span class="screen-reader-text">' . esc_html( $reste ) . '</span></a>';
+		return '<a class="na-telechargement" href="' . esc_url( $url ) . '">'
+			. esc_html( $libelle )
+			. '<span class="screen-reader-text"> — ' . esc_html( $rubrique ) . '</span></a>';
 	}
 
 	/**
@@ -1835,24 +1907,38 @@ class Notice_Archeomed_File {
 					__( 'Ouvrir la fiche de « %s »', 'notice-archeomed' ), $titre ) ) . '">'
 				. esc_html__( 'Ouvrir la fiche', 'notice-archeomed' ) . '</a>';
 		}
-		if ( 'trash' === $post->post_status || ! current_user_can( 'manage_options' )
-			|| ! $this->a_un_document( $post->ID ) ) {
+		if ( 'trash' === $post->post_status || ! current_user_can( 'manage_options' ) ) {
 			return $actions;
 		}
-		$word = array(
-			'na_word' => '<a href="' . esc_url( $this->url_du_document( $post->ID ) ) . '" aria-label="'
+		$ajouts = array();
+		if ( $this->a_un_document( $post->ID ) ) {
+			$ajouts['na_word'] = '<a href="' . esc_url( $this->url_du_document( $post->ID ) ) . '" aria-label="'
 				. esc_attr( sprintf( /* translators: %s : le titre de la notice. */
 					__( 'Télécharger « %s » en Word', 'notice-archeomed' ), $titre ) ) . '">'
-				. esc_html__( 'Télécharger (Word)', 'notice-archeomed' ) . '</a>',
-		);
+				. esc_html__( 'Télécharger (Word)', 'notice-archeomed' ) . '</a>';
+		}
+		// L'état disait « à relancer », et il fallait ouvrir la fiche pour le
+		// faire. Rien n'est offert sans destinataire : la relance échouerait.
+		$etat = (string) get_post_meta( $post->ID, '_na_etat', true );
+		if ( in_array( $etat, array( 'echec', 'en_attente' ), true ) && self::quelqu_un_recoit_les_notices() ) {
+			$ajouts['na_relancer'] = '<a href="' . esc_url( $this->url_de_relance( $post->ID ) ) . '" aria-label="'
+				. esc_attr( sprintf( /* translators: %s : le titre de la notice. */
+					__( 'Relancer l’envoi de « %s »', 'notice-archeomed' ), $titre ) ) . '">'
+				. esc_html__( 'Relancer l’envoi', 'notice-archeomed' ) . '</a>';
+		}
+		if ( empty( $ajouts ) ) {
+			return $actions;
+		}
 		$nouvelles = array();
+		$poses     = false;
 		foreach ( $actions as $clef => $action ) {
 			$nouvelles[ $clef ] = $action;
 			if ( 'edit' === $clef ) {
-				$nouvelles += $word;
+				$nouvelles += $ajouts;
+				$poses      = true;
 			}
 		}
-		return isset( $nouvelles['na_word'] ) ? $nouvelles : $word + $nouvelles;
+		return $poses ? $nouvelles : $ajouts + $nouvelles;
 	}
 
 	/** « Modifier » en masse ouvrait la même modification rapide, pour dix notices à la fois. */
@@ -1905,9 +1991,14 @@ class Notice_Archeomed_File {
 	/**
 	 * Les couleurs des états, sur les seuls écrans de l'extension.
 	 *
-	 * Vert, ambre, rouge : ceux de WordPress, assez sombres pour se lire sur
-	 * blanc. Ils ne portent jamais seuls le sens — chaque état a son icône et
-	 * son mot.
+	 * Vert, ambre, rouge, assez sombres pour se lire sur le gris des lignes
+	 * alternées et sur le rose d'un bandeau d'erreur : ceux de WordPress
+	 * (#008a20, #d63638) y tombaient sous 4,5:1. Ils ne portent jamais seuls
+	 * le sens — chaque état a son icône et son mot.
+	 *
+	 * Sur un téléphone, WordPress ne montre d'une ligne que son titre : l'état
+	 * de l'envoi, qui est ce qu'on vient chercher, se dépliait à la main. Il
+	 * reste visible sous le titre.
 	 */
 	public function poser_les_styles() {
 		$ecran = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
@@ -1917,7 +2008,13 @@ class Notice_Archeomed_File {
 		echo '<style>'
 			. '.na-etat{font-weight:600}'
 			. '.na-etat .dashicons{font-size:18px;width:18px;height:18px;vertical-align:text-bottom}'
-			. '.na-etat--ok{color:#008a20}.na-etat--attente{color:#996800}.na-etat--echec{color:#d63638}'
+			. '.na-etat--ok{color:#007017}.na-etat--attente{color:#825900}.na-etat--echec{color:#b32d2e}'
+			// L'encart de suivi est étroit : l'adresse insécable et l'intitulé
+			// en gras le faisaient déborder de vingt pixels.
+			. '#na_suivi .widefat th{width:6.5em;white-space:normal;font-weight:600}'
+			. '#na_suivi .widefat td{overflow-wrap:anywhere}'
+			. '@media screen and (max-width:782px){'
+			. 'body.post-type-na_notice .wp-list-table tr:not(.inline-edit-row):not(.no-items) .column-primary~td.column-na_etat{display:block}}'
 			. '#poststuff h2.na-titre-fiche{font-size:1.5em;line-height:1.3;margin:.2em 0 .6em;padding:0}'
 			. '.na-bandeau>p:first-child{font-size:1.1em}'
 			. '.fixed .column-na_etat{width:17em}.fixed .column-na_recue{width:11em}'
@@ -1971,6 +2068,61 @@ class Notice_Archeomed_File {
 		<?php
 	}
 
+	/** Quelqu'un est-il inscrit pour recevoir chaque notice ? */
+	public static function quelqu_un_recoit_les_notices() {
+		return ! empty( Notice_Archeomed_Settings::destinataires_de( 'notices' ) );
+	}
+
+	/**
+	 * Sans destinataire, aucune notice ne part : un seul bandeau, en tête de
+	 * toutes les pages, qui dit la cause et ce qu'elle retient.
+	 *
+	 * Trois bandeaux s'empilaient — « 1 notice n'a pas pu être envoyée »,
+	 * « 2 notices attendent… Les envoyer maintenant », puis, en dernier, la
+	 * cause. On cliquait sur le deuxième, l'envoi échouait, et rien ne
+	 * reliait l'échec à l'adresse manquante.
+	 */
+	public function signaler_l_adresse_manquante() {
+		if ( ! current_user_can( 'manage_options' ) || self::quelqu_un_recoit_les_notices() ) {
+			return;
+		}
+		$comptes  = $this->compter_les_etats();
+		$attente  = (int) $comptes['file'];
+		$echec    = (int) $comptes['echec'];
+		$retenues = array();
+		if ( $attente > 0 ) {
+			$retenues[] = 1 === $attente
+				? __( '1 notice attend', 'notice-archeomed' )
+				: sprintf( /* translators: %d : nombre de notices. */
+					__( '%d notices attendent', 'notice-archeomed' ), $attente );
+		}
+		if ( $echec > 0 ) {
+			$retenues[] = 1 === $echec
+				? __( '1 a échoué', 'notice-archeomed' )
+				: sprintf( /* translators: %d : nombre de notices. */
+					__( '%d ont échoué', 'notice-archeomed' ), $echec );
+		}
+		if ( 0 === $attente && $echec > 0 ) {
+			$retenues = array( 1 === $echec
+				? __( '1 notice a échoué', 'notice-archeomed' )
+				: sprintf( /* translators: %d : nombre de notices. */
+					__( '%d notices ont échoué', 'notice-archeomed' ), $echec ) );
+		}
+		$cause = empty( Notice_Archeomed_Settings::destinataires() )
+			? __( 'Aucune notice ne peut partir : l’adresse de la rédaction manque.', 'notice-archeomed' )
+			: __( 'Aucune notice ne peut partir : aucune adresse n’est cochée pour recevoir chaque notice.', 'notice-archeomed' );
+		$suite = empty( $retenues )
+			? __( 'Les notices déposées seront conservées en attendant.', 'notice-archeomed' )
+			: sprintf( /* translators: %s : « 2 notices attendent et 1 a échoué ». */
+				__( '%s ; elles seront à envoyer une fois l’adresse enregistrée.', 'notice-archeomed' ),
+				implode( __( ' et ', 'notice-archeomed' ), $retenues ) );
+		echo '<div class="notice notice-error"><p><strong>'
+			. esc_html__( 'Chronique :', 'notice-archeomed' ) . '</strong> '
+			. esc_html( $cause . ' ' . $suite )
+			. ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'destinataires' ) ) . '">'
+			. esc_html__( 'Renseigner l’adresse', 'notice-archeomed' ) . '</a></p></div>';
+	}
+
 	/**
 	 * Des notices en échec, dites où on les verra : sur le tableau de bord
 	 * et sur les écrans de l'extension.
@@ -1979,7 +2131,8 @@ class Notice_Archeomed_File {
 	 * la liste, et l'on pouvait rester une semaine sans l'ouvrir.
 	 */
 	public function signaler_les_echecs() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		// Sans destinataire, le bandeau de l'adresse porte déjà ce compte.
+		if ( ! current_user_can( 'manage_options' ) || ! self::quelqu_un_recoit_les_notices() ) {
 			return;
 		}
 		$ecran = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
@@ -2014,7 +2167,9 @@ class Notice_Archeomed_File {
 	 * pouvait attendre des jours sans que rien ne le dise.
 	 */
 	public function signaler_les_retards() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		// « Les envoyer maintenant » échouerait tant que personne ne les
+		// reçoit : le bandeau de l'adresse le dit à sa place.
+		if ( ! current_user_can( 'manage_options' ) || ! self::quelqu_un_recoit_les_notices() ) {
 			return;
 		}
 		$attente = $this->en_attente( 50 );

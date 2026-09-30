@@ -156,18 +156,21 @@ lettres — refuser « sept » parce qu'on attendait « 7 » serait une brimade.
 
 ## Réglage indispensable avant la mise en service
 
-Après activation, aller dans **Réglages > Notice Archéomed** et coller la
-clé secrète Turnstile. Tant qu'elle est absente, le formulaire refuse toutes
-les soumissions et un bandeau rouge le signale dans l'administration.
-
-Un bouton « Tester la clé secrète » interroge Cloudflare et confirme que la
-clé est reconnue, sans envoyer de notice.
-
-La même page porte la liste des destinataires, **qui n'a pas de valeur par
+Après activation, aller dans **Chronique ▸ Réglages**, onglet
+**Destinataires**. La liste des destinataires **n'a pas de valeur par
 défaut**. Tant que personne n'y reçoit les notices, les dépôts sont conservés
 en file mais aucun ne part, et un bandeau rouge le signale sur toutes les
-pages de l'administration. C'est donc le premier réglage à faire après
-l'installation.
+pages de l'administration, et la fiche d'une notice propose de renseigner
+l'adresse plutôt que de relancer un envoi qui échouerait. C'est donc le
+premier réglage à faire après l'installation.
+
+Si l'on choisit Cloudflare Turnstile dans l'onglet **Formulaire**, il faut
+aussi y coller sa clé secrète ; un bouton « Tester la clé » la vérifie sans
+envoyer de notice. La pièce de puzzle, choisie par défaut, ne demande rien.
+
+Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
+Formulaire, Courriel (avec le rythme d'envoi), Feuille de styles, Mises à
+jour, Hébergement. Chacun s'enregistre pour son compte.
 
 ## Qui reçoit quoi
 
@@ -367,8 +370,11 @@ basse définition y paraît en rouge, plutôt qu'en blanc.
 
 ## Le bloc « à supprimer »
 
-Les coordonnées des responsables et l'indexation Pactols avec ses ARK restent
-en dessous : la rédaction en a besoin, le lecteur non. Elles portent donc un
+Tout ce qui sert à la rédaction et non au lecteur : l'avis de correction, les
+avis du dépôt (« À vérifier »), le message de l'auteur, la mention d'une
+autorisation de reproduction jointe, le lien vers les originaux, une figure
+déposée sans titre ni légende, les coordonnées des responsables et
+l'indexation Pactols avec ses ARK : la rédaction en a besoin, le lecteur non. Elles portent donc un
 style de paragraphe nommé **« à supprimer »**, gris à l'écran.
 
 Dans Word : clic droit sur ce style dans le volet des styles, puis
@@ -389,20 +395,30 @@ les paragraphes sortent en Normal, sans que rien ne casse.
 
 | Bloc de la notice | Style Métopes |
 |---|---|
-| Avis de correction (dépôt corrigé) | Normal |
+| Avis de correction (dépôt corrigé) | à supprimer |
 | Rubrique principale (tête de notice) | `Title` |
 | Sous-rubrique (famille d'opérations) | `TEI_Titre 1+rubrique` |
-| Renvois vers d'autres rubriques | Normal |
-| Commune (département), lieu-dit | `TEI_Titre 2+notice` |
+| Renvoi vers une autre rubrique (fascicule) | `TEI_Titre 2+notice` |
+| Commune (département). Lieu-dit | `TEI_Titre 2+notice` |
 | Nature de l'opération | `TEI_archeoCHR_fieldwork_method` |
+| Autres lieux | `TEI_keywords_subjects:geography` |
+| Période historique | `TEI_archeoCHR_keywords_subjects:chronology` |
 | Année de l'opération | `TEI_archeoCHR_fieldwork_year` |
-| Numéro d'autorisation | `TEI_archeoCHR_IDpatriarche` |
+| Numéro d'autorisation, identifiant Patriarche | `TEI_archeoCHR_IDpatriarche` |
+| Rapport final (lien) | `TEI_archeoCHR_reportlink` |
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
+| Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
-| Titre d'une illustration | `TEI_figure_title` |
+| Image d'une illustration | Normal |
+| Titre d'une illustration, numéro en `TEI_figure_num_inline` | `TEI_figure_title` |
 | Légende d'une illustration | `TEI_figure_caption` |
 | Crédits d'une illustration | `TEI_figure_credits` |
-| Indexation Pactols, contacts | Normal |
+| Avis, commentaires, autorisations, contacts, indexation | à supprimer |
+
+Les renvois prennent le style du titre de notice : ce sont des entrées sans
+corps. Métopes n'a pas de style pour un contenu qu'on voudrait taire à
+l'écran, et ses styles locaux redeviennent un paragraphe ordinaire à l'export,
+qui se rangerait alors dans la notice précédente.
 
 Styles de caractère appliqués dans le bloc de responsabilité et dans la
 liste des contacts :
@@ -431,15 +447,17 @@ l'identifiant (`26678/pcrtd1Ms3ERUXz`).
 
 ## Nom du fichier joint
 
-`notice-archeomed-<Commune>-<Année>-<aléa>.rtf`, par exemple
-`notice-archeomed-Caen-2025-87f1ea09.rtf`. La commune et l'année en clair
-facilitent le classement par rubrique avant montage du volume.
-
-Le fichier est supprimé du serveur aussitôt après l'envoi.
+`notice-archeomed-<Commune>-<Année>-<aléa>.docx` (`.rtf` sur un hébergement
+sans `ZipArchive`), par exemple `notice-archeomed-Caen-2025-87f1ea09.docx`.
+La commune et l'année en clair facilitent le classement par rubrique avant
+montage du volume. Ses propriétés portent le titre de la notice ; la page est
+en A4 ; chaque image a pour texte de remplacement le titre de sa figure.
 
 ## Texte saisi dans l'éditeur
 
-Gras, italique, exposant et indice sont convertis. Les entités HTML sont
+Gras, italique, exposant et indice sont convertis. Une liste, un intertitre
+ou une citation collés depuis Word deviennent chacun un paragraphe, au lieu de
+se souder au suivant. Les entités HTML sont
 résolues. Les caractères accentués et typographiques (œ, €, guillemets,
 apostrophes courbes) sont encodés en notation Unicode RTF, que Word et
 LibreOffice lisent sans réglage particulier. Un balisage mal équilibré est
@@ -524,7 +542,7 @@ Métopes — trois styles distincts que la chaîne XML sait séparer, là où to
 partait dans le seul titre de figure :
 
 ```
-[TEI_figure_title]    Fig. 1 : Vue générale du chantier
+[TEI_figure_title]    Fig. 1 Vue générale du chantier
 [TEI_figure_caption]  Le mur de terrasse vu depuis le sud, en fin de fouille.
 [TEI_figure_credits]  Cliché A. Dupont, université de Caen.
 ```
@@ -535,7 +553,18 @@ figure commence et finit, et qu'un préparateur passant d'un outil à l'autre
 retrouve la même chose sous les yeux.
 
 Les lignes vides ne produisent rien : une illustration sans crédits n'a pas de
-paragraphe de crédits.
+paragraphe de crédits. Une figure déposée sans aucun texte garde pourtant son
+bloc et son numéro, avec un avis « à supprimer » : on la jetait, et la
+suivante prenait sa place. Un « Fig. 1 : » retapé par l'auteur en tête de son
+titre s'ôte, puisque le numéro est posé par le plugin.
+
+Chaque figure peut porter son **autorisation de reproduction** (PDF, JPEG ou
+PNG, 10 Mo au plus) : elle se garde avec la notice, se télécharge depuis la
+fiche sous sa figure, et part dans le courriel si elle tient dans le poids
+permis. Des originaux trop lourds pour le formulaire ? L'auteur en joint des
+versions allégées et donne un **lien de téléchargement** des originaux
+(FileSender de RENATER, espace de partage de son établissement), qui arrive
+dans le courriel et le document.
 
 L'auteur reçoit **le fichier Word en pièce jointe** de son accusé de
 réception : c'est le même que celui de la rédaction. Il voit ce qui a été
@@ -697,7 +726,15 @@ suivi (état, référence, responsable, dates, pièces jointes encore présentes
 Les encarts des autres extensions sont écartés de cet écran : une notice reçue
 n'est ni un article ni un produit.
 
-Une notice qui n'a pas pu partir se represente d'elle-même, cinq fois, en
+Des vues donnent d'un clic ce qui attend un geste : **À traiter**, **En
+échec**, **En file d'envoi**, **Envoyées**. L'état de chaque notice se dit en
+mots, avec la raison d'un échec traduite en clair ; la réponse exacte du
+serveur reste dans l'encart « Dépannage » de la fiche. Une notice qu'une
+correction remplace le dit, et ne paraît plus au fascicule ni au dossier.
+Les fascicules et dossiers Métopes se téléchargent rubrique par rubrique, un
+seul à la fois : un second clic pendant l'assemblage est refusé poliment.
+
+Une notice qui n'a pas pu partir se retente d'elle-même, cinq fois, en
 espaçant les essais. Si la file s'allonge sans redescendre, c'est que le
 planificateur de WordPress ne tourne pas sur cet hébergement : un bandeau le
 signale dans l'administration, avec un bouton **Expédier maintenant**, et
@@ -710,6 +747,40 @@ université sortent tous par la même. Compter serré revenait à bloquer un
 institut entier dès le sixième dépôt, un jour de campagne. La barrière contre
 les robots est Turnstile ; les compteurs ne sont qu'un garde-fou contre le
 martèlement, et seul celui de l'adresse électronique reste serré.
+
+## La typographie
+
+Le texte imprimé du document reçoit la typographie française : espace
+insécable devant la ponctuation double et à l'intérieur des guillemets (jamais
+d'espace fine, qui devient insécable), apostrophe courbe, points de
+suspension, insécables dans les nombres et avant les unités (« 10 000 m »,
+« 50 % »), dans « p. 12 », « fig. 3 », « XIIe s. », « av. J.-C. », « n° 3 »,
+et entre une initiale et son nom. Les adresses, les heures (« 14:30 ») et les
+titres anglais cités (« Weapons of the Weak: … ») sont laissés tels quels.
+Chaque fragment se corrige en voyant ses voisins : un deux-points qui suit un
+mot en italique reçoit bien son insécable. Les noms du bloc de responsabilité
+gardent leur espace ordinaire entre prénom et nom, que la chaîne coupe.
+
+Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
+
+## Les contrôles du dépôt
+
+Au dépôt, la notice est relue par des règles qui **avertissent sans jamais
+refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), un
+paragraphe coupé en deux, une figure appelée dans le texte qui n'est pas
+jointe ou une figure jamais appelée, une photographie sous la norme annoncée
+(10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
+fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée
+« 1 250 », un siècle en bas de casse, un nom en capitales, deux personnes
+dans un même champ, une adresse dans le champ de l'institution.
+
+Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ, et
+partent sous « À vérifier » dans le courriel, dans le document (style « à
+supprimer ») et dans la page de relecture du dossier. La norme des
+photographies est posée en un seul endroit, qui sert à l'aide et au contrôle.
+
+Le lieu-dit perd le point final qu'on y met par habitude, sauf abréviation ;
+une opération sur plusieurs années s'écrit « 2004-2005 ».
 
 ## Le thésaurus Pactols
 
