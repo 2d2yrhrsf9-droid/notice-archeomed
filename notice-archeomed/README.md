@@ -761,6 +761,16 @@ Chaque fragment se corrige en voyant ses voisins : un deux-points qui suit un
 mot en italique reçoit bien son insécable. Les noms du bloc de responsabilité
 gardent leur espace ordinaire entre prénom et nom, que la chaîne coupe.
 
+**Les siècles sortent en petites capitales**, l'ordinal en exposant : « xii »
+en petites capitales puis « e » en exposant, forme que la chaîne rend en
+`<hi rend="small-caps">`. L'auteur peut les taper en capitales (« XIIe s. »),
+en bas de casse (« xiie siècle », quand les petites capitales se sont perdues
+au collage) ou l'ordinal en exposant : tous se reconnaissent à ce qui les
+suit — « s. », « siècle », « millénaire », ou une suite « IIIe-IVe s. ». Un
+chiffre romain sans siècle derrière (« la tour XII ») ne bouge pas, ni « ce
+siècle ». Les termes Pactols de période et la page de relecture suivent la
+même règle.
+
 Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 
 ## Les contrôles du dépôt
@@ -771,7 +781,7 @@ paragraphe coupé en deux, une figure appelée dans le texte qui n'est pas
 jointe ou une figure jamais appelée, une photographie sous la norme annoncée
 (10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
 fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée
-« 1 250 », un siècle en bas de casse, un nom en capitales, deux personnes
+« 1 250 », un nom en capitales, deux personnes
 dans un même champ, une adresse dans le champ de l'institution.
 
 Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ, et

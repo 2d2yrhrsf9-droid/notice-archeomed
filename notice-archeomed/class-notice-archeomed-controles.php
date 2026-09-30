@@ -60,7 +60,6 @@ class Notice_Archeomed_Controles {
 			self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) ),
 			self::ordinaux_fautifs( $paragraphes ),
 			self::dates_espacees( $paragraphes ),
-			self::siecles_en_bas_de_casse( $paragraphes ),
 			self::figures( $figures ),
 			self::personnes( $d )
 		);
@@ -186,28 +185,6 @@ class Notice_Archeomed_Controles {
 				foreach ( $trouves as $m ) {
 					$annee  = trim( ! empty( $m[1] ) ? $m[1] : $m[2] );
 					$avis[] = sprintf( '« %1$s » : une année s’écrit sans espace, « %2$s ».', $annee, str_replace( ' ', '', $annee ) );
-				}
-			}
-		}
-		return $avis;
-	}
-
-	/**
-	 * « xiie s. » : les petites capitales se perdent au collage, et le siècle
-	 * arrive en bas de casse. La mise en page doit le rétablir.
-	 */
-	public static function siecles_en_bas_de_casse( $paragraphes ) {
-		$avis = array();
-		foreach ( $paragraphes as $p ) {
-			if ( preg_match_all( '/(*UCP)\b([ivxlc]+(?:e|er|re))[\s\x{A0}]+(?:s\.|siècles?\b)/u', $p, $trouves ) ) {
-				foreach ( $trouves[1] as $siecle ) {
-					// « ce siècle », « le siècle » : un chiffre romain fait
-					// seulement de L ou de C n'est pas un siècle de l'ère.
-					if ( preg_match( '/^[lc]+(?:e|er|re)$/u', $siecle ) ) {
-						continue;
-					}
-					$avis[] = sprintf( '« %1$s » : un siècle en bas de casse, à rétablir en petites capitales (%2$s).',
-						$siecle, strtoupper( preg_replace( '/(e|er|re)$/u', '', $siecle ) ) . substr( $siecle, strlen( preg_replace( '/(e|er|re)$/u', '', $siecle ) ) ) );
 				}
 			}
 		}

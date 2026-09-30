@@ -773,7 +773,7 @@ class Notice_Archeomed_Pactols {
 			// de s'en remettre à ce qui est en base.
 			// La même typographie que le document : la page montrait le texte
 			// tel qu'il avait été tapé, le Word du même dossier corrigé.
-			$h .= '<div class="texte">' . self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) . '</div>';
+			$h .= '<div class="texte">' . self::siecles_du_html( self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) ) . '</div>';
 			// La mention de responsabilité, que le document accroche au
 			// dernier paragraphe : la page l'omettait.
 			$h .= '<p class="meta">(' . esc_html( $this->responsables_inline( $d ) ) . ')</p>';
@@ -3988,25 +3988,6 @@ class Notice_Archeomed_Pactols {
 				});
 				return avis;
 			}
-			// « xiie s. » : les petites capitales se perdent au collage. « ce
-			// siècle » n'en est pas un.
-			var SIECLE = motif('(^|[^\\p{L}\\d])([ivxlc]+(?:e|er|re))[\\s\\u00A0]+(?:s\\.|siècles?(?![\\p{L}\\d]))', 'gu');
-			function sieclesEnBasDeCasse(paras) {
-				var avis = [];
-				if (!SIECLE) { return avis; }
-				paras.forEach(function (p) {
-					var m;
-					SIECLE.lastIndex = 0;
-					while ((m = SIECLE.exec(p)) !== null) {
-						var siecle = m[2];
-						if (siecle === 'ce') { continue; }
-						var chiffre = siecle.replace(/(e|er|re)$/, '');
-						avis.push(guillemets(siecle) + NBSP + ': un siècle en bas de casse, à rétablir en petites capitales ('
-							+ chiffre.toUpperCase() + siecle.slice(chiffre.length) + ').');
-					}
-				});
-				return avis;
-			}
 			var texteVu = false;
 			var zoneTexte = zoneDeConseils('na-texte-conseils', wc);
 			function majConseilsDuTexte() {
@@ -4016,8 +3997,7 @@ class Notice_Archeomed_Pactols {
 					ponctuationFinale(paras),
 					appelsDeFigure(paras.join('\n'), selected.length),
 					ordinauxFautifs(paras),
-					datesEspacees(paras),
-					sieclesEnBasDeCasse(paras)
+					datesEspacees(paras)
 				), [quill.root]);
 			}
 			if (quill) {
@@ -5278,6 +5258,29 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		return $d;
+	}
+
+	/**
+	 * Les siècles en petites capitales dans la page de relecture, comme le
+	 * document les compose : « xii » en petites capitales, « e » en exposant.
+	 * Ne sert que sur le texte de la notice, qui n'a pas d'attributs où un
+	 * siècle pourrait se trouver.
+	 */
+	private static function siecles_du_html( $html ) {
+		$blanc   = '(?:[\s\x{A0}]|&nbsp;)';
+		$annonce = '(?=(?:' . $blanc . '*(?:-|–|—|et|à|ou)' . $blanc . '*(?:<sup>)?(?:[IVXLC]+|[ivxlc]+)(?:</sup>)?(?:<sup>)?(?:er|re|e)(?:</sup>)?)*' . $blanc . '+(?:s\.|siècles?\b|millénaires?\b))';
+		$html = preg_replace_callback(
+			'#(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(?:<sup>(er|re|e)</sup>|(er|re|e)(?![\pL\d]))' . $annonce . '#u',
+			function ( $m ) {
+				if ( preg_match( '/^[lcLC]+$/', $m[1] ) ) {
+					return $m[0];
+				}
+				$ordinal = '' !== $m[2] ? $m[2] : $m[3];
+				return '<span style="font-variant:small-caps">' . strtolower( $m[1] ) . '</span><sup>' . $ordinal . '</sup>';
+			},
+			(string) $html
+		);
+		return null === $html ? '' : $html;
 	}
 
 	/**

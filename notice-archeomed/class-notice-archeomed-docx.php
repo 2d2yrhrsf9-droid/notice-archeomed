@@ -237,6 +237,98 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
+	 * Les siècles en petites capitales, l'ordinal en exposant : « xii » en
+	 * petites capitales puis « e » en exposant, comme la revue les compose.
+	 *
+	 * L'auteur les tape en capitales, « XIIe s. », parfois l'ordinal en
+	 * exposant depuis l'éditeur, parfois en bas de casse quand ses petites
+	 * capitales se sont perdues au collage. Revenir en petites capitales à
+	 * la main, siècle par siècle, trois cents notices par an, est le genre de
+	 * travail qu'une règle fait mieux. On reconnaît un siècle, un millénaire,
+	 * ou une suite « IIIe-IVe s. », à ce qui le suit : « s. », « siècle »,
+	 * « millénaire ». Un chiffre fait seulement de L ou de C n'en est pas un :
+	 * « ce siècle », « le siècle ».
+	 *
+	 * Les fragments reçus portent déjà leur typographie (« typo ») ; ceux
+	 * d'un nom de personne ne se touchent pas.
+	 */
+	private static function siecles( $runs ) {
+		$runs  = array_values( $runs );
+		$suite = function ( $depuis, $texte_apres ) use ( &$runs ) {
+			$reste = $texte_apres;
+			for ( $k = $depuis; $k < count( $runs ); $k++ ) {
+				$reste .= isset( $runs[ $k ]['typo'] ) ? $runs[ $k ]['typo'] : ( isset( $runs[ $k ]['text'] ) ? $runs[ $k ]['text'] : '' );
+				if ( strlen( $reste ) > 40 ) {
+					break;
+				}
+			}
+			return $reste;
+		};
+		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|ou)[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
+		$touchable = function ( $run ) {
+			return is_array( $run ) && empty( $run['raw'] ) && isset( $run['typo'] )
+				&& ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
+		};
+
+		// L'ordinal déjà en exposant, dans son propre fragment : le chiffre
+		// est à la fin du fragment d'avant.
+		for ( $i = 1; $i < count( $runs ); $i++ ) {
+			$exposant = $runs[ $i ];
+			if ( ! $touchable( $exposant ) || empty( $exposant['sup'] )
+				|| ! in_array( trim( $exposant['typo'] ), array( 'e', 'er', 're' ), true )
+				|| ! $touchable( $runs[ $i - 1 ] ) || ! empty( $runs[ $i - 1 ]['sup'] )
+				|| ! preg_match( '/(*UCP)(?<!\pL)([IVXLC]+|[ivxlc]+)$/u', $runs[ $i - 1 ]['typo'], $m )
+				|| preg_match( '/^[lcLC]+$/u', $m[1] )
+				|| ! preg_match( $annonce, $suite( $i + 1, '' ) ) ) {
+				continue;
+			}
+			$avant = $runs[ $i - 1 ];
+			$tete  = substr( $avant['typo'], 0, -strlen( $m[1] ) );
+			$chiffre         = $avant;
+			$chiffre['typo'] = strtolower( $m[1] );
+			$chiffre['pc']   = true;
+			$remplace = array( $chiffre );
+			if ( '' !== $tete ) {
+				$avant['typo'] = $tete;
+				array_unshift( $remplace, $avant );
+			}
+			array_splice( $runs, $i - 1, 1, $remplace );
+			$i += count( $remplace ) - 1;
+		}
+
+		// Le chiffre et son ordinal dans le même fragment.
+		$motif = '/(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(er|re|e)(?![\pL\d])/u';
+		$rendus = array();
+		foreach ( $runs as $i => $run ) {
+			if ( ! $touchable( $run ) || ! empty( $run['sup'] )
+				|| ! preg_match_all( $motif, $run['typo'], $trouves, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+				$rendus[] = $run;
+				continue;
+			}
+			$texte  = $run['typo'];
+			$depuis = 0;
+			foreach ( $trouves as $t ) {
+				$chiffre = $t[1][0];
+				$fin     = $t[0][1] + strlen( $t[0][0] );
+				if ( preg_match( '/^[lcLC]+$/u', $chiffre )
+					|| ! preg_match( $annonce, $suite( $i + 1, substr( $texte, $fin ) ) ) ) {
+					continue;
+				}
+				if ( $t[0][1] > $depuis ) {
+					$rendus[] = array_merge( $run, array( 'typo' => substr( $texte, $depuis, $t[0][1] - $depuis ) ) );
+				}
+				$rendus[] = array_merge( $run, array( 'typo' => strtolower( $chiffre ), 'pc' => true ) );
+				$rendus[] = array_merge( $run, array( 'typo' => $t[2][0], 'sup' => true ) );
+				$depuis   = $fin;
+			}
+			if ( $depuis < strlen( $texte ) ) {
+				$rendus[] = array_merge( $run, array( 'typo' => substr( $texte, $depuis ) ) );
+			}
+		}
+		return $rendus;
+	}
+
+	/**
 	 * Les fragments d'un paragraphe, corrigés chacun en voyant ses voisins.
 	 *
 	 * Un paragraphe se coupe à chaque changement de mise en forme : « le
@@ -325,6 +417,11 @@ class Notice_Archeomed_DOCX {
 		if ( ! empty( $run['i'] ) ) {
 			$props .= '<w:i/>';
 		}
+		// Les petites capitales d'un siècle : la chaîne les rend en
+		// « <hi rend="small-caps"> ».
+		if ( ! empty( $run['pc'] ) ) {
+			$props .= '<w:smallCaps/>';
+		}
 		if ( ! empty( $run['sup'] ) ) {
 			$props .= '<w:vertAlign w:val="superscript"/>';
 		}
@@ -352,7 +449,7 @@ class Notice_Archeomed_DOCX {
 	public function add_paragraph( $style_name, $runs ) {
 		$xml = '<w:p>' . $this->paragraph_props( $style_name );
 		if ( is_array( $runs ) ) {
-			foreach ( self::typographie_des_fragments( $runs ) as $run ) {
+			foreach ( self::siecles( self::typographie_des_fragments( $runs ) ) as $run ) {
 				$xml .= $this->render_run( $run );
 			}
 		} else {
@@ -523,10 +620,17 @@ class Notice_Archeomed_DOCX {
 		$style               = isset( $this->char_styles['Hyperlink'] )
 			? '<w:rStyle w:val="' . self::esc( $this->char_styles['Hyperlink'] ) . '"/>'
 			: '';
-		return '<w:hyperlink r:id="' . $rid . '">'
-			. '<w:r><w:rPr>' . $style . '</w:rPr>'
-			. self::text_nodes( self::esc( self::typographie( $label ) ) )
-			. '</w:r></w:hyperlink>';
+		// Un terme de période — « XIIe siècle » — a son siècle en petites
+		// capitales comme le texte : le lien peut donc porter plusieurs runs.
+		$morceaux = self::siecles( array( array( 'text' => $label, 'typo' => self::typographie( $label ) ) ) );
+		$xml      = '';
+		foreach ( $morceaux as $morceau ) {
+			$props = $style . ( ! empty( $morceau['pc'] ) ? '<w:smallCaps/>' : '' )
+				. ( ! empty( $morceau['sup'] ) ? '<w:vertAlign w:val="superscript"/>' : '' );
+			$xml  .= '<w:r><w:rPr>' . $props . '</w:rPr>'
+				. self::text_nodes( self::esc( $morceau['typo'] ) ) . '</w:r>';
+		}
+		return '<w:hyperlink r:id="' . $rid . '">' . $xml . '</w:hyperlink>';
 	}
 
 	/**
@@ -603,7 +707,7 @@ class Notice_Archeomed_DOCX {
 		}
 		// Les fragments du paragraphe se corrigent ensemble : l'italique
 		// d'un mot ne doit pas couper le deux-points qui le suit de ce mot.
-		foreach ( self::typographie_des_fragments( $runs ) as $run ) {
+		foreach ( self::siecles( self::typographie_des_fragments( $runs ) ) as $run ) {
 			$xml .= $this->render_run( $run );
 		}
 		return $xml;

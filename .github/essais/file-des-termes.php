@@ -483,9 +483,26 @@ na_verifier( array( 'La fig. 2 n’est appelée nulle part dans le texte.' ) ===
 $ordinaux = $C::ordinaux_fautifs( array( 'Au XIIème siècle, la 1ère phase, la 2nde tour, la Mère.' ) );
 na_verifier( array( '« XIIème » s’abrège « XIIe ».', '« 1ère » s’abrège « 1re ».', '« 2nde » s’abrège « 2de ».' ) === $ordinaux,
 	'les ordinaux fautifs, et « Mère » laissée tranquille', $ordinaux );
-na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis abandonné' ) ) )
-	&& 1 === count( $C::siecles_en_bas_de_casse( array( 'au xiie s. et au XIIIe s., mais en ce siècle et le siècle suivant' ) ) ),
-	'l\'année espacée et le siècle en bas de casse' );
+na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis abandonné' ) ) ),
+	'l\'année espacée' );
+// Les siècles en petites capitales : tapés en capitales, en bas de casse ou
+// l'ordinal en exposant, ils sortent « xii » en petites capitales et « e » en
+// exposant. « ce siècle » et un « XII » sans siècle derrière ne bougent pas.
+$doc_siecles = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$siecles_xml = $doc_siecles->html_to_paragraphs( '<p>Au XIIe s., au xiiie siècle, au XIV<sup>e</sup> siècle, aux IIIe-IVe s., au Ier millénaire ; en ce siècle, la tour XII.</p>' );
+$siecles_xml = implode( '', $siecles_xml );
+$pc = function ( $chiffre ) {
+	return '<w:smallCaps/></w:rPr><w:t xml:space="preserve">' . $chiffre . '</w:t>';
+};
+$sup = function ( $ordinal ) {
+	return '<w:vertAlign w:val="superscript"/></w:rPr><w:t xml:space="preserve">' . $ordinal . '</w:t>';
+};
+na_verifier( false !== strpos( $siecles_xml, $pc( 'xii' ) ) && false !== strpos( $siecles_xml, $pc( 'xiii' ) )
+	&& false !== strpos( $siecles_xml, $pc( 'xiv' ) ) && false !== strpos( $siecles_xml, $pc( 'iii' ) )
+	&& false !== strpos( $siecles_xml, $pc( 'iv' ) ) && false !== strpos( $siecles_xml, $pc( 'i' ) )
+	&& false !== strpos( $siecles_xml, $sup( 'er' ) ) && 6 === substr_count( $siecles_xml, '<w:smallCaps/>' )
+	&& false !== strpos( $siecles_xml, 'tour XII.' ),
+	'les siècles en petites capitales, l\'ordinal en exposant, et rien d\'autre', $siecles_xml );
 $avis_images = $C::figures( array(
 	array( 'rang' => 1, 'pixels' => array( 1000, 800 ), 'titre' => 'Plan', 'legende' => '', 'credits' => 'X' ),
 	array( 'rang' => 2, 'pixels' => array( 1800, 1200 ), 'titre' => 'Vue', 'legende' => '', 'credits' => '' ),
@@ -502,6 +519,10 @@ $relecture = na_appel( $plugin, 'typographie_du_html', array( '<p>le <em>castrum
 na_verifier( false !== strpos( $relecture, "</em>\u{00A0}: il" ), 'la page de relecture pose la typographie par-dessus les balises', $relecture );
 $nom_doc = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->char_run( 'TEI_archeoCHR_name:fld', 'J.-M. Poisson' );
 na_verifier( false !== strpos( $nom_doc, 'J.-M. Poisson' ), 'un nom d\'autorité garde son espace ordinaire, que la chaîne coupe', $nom_doc );
+
+$relu = na_appel( $plugin, 'siecles_du_html', array( '<p>Au XII<sup>e</sup>&nbsp;siècle et au xiiie s., en ce siècle.</p>' ) );
+na_verifier( 2 === substr_count( $relu, 'small-caps' ) && false !== strpos( $relu, '>xii</span><sup>e</sup>' ),
+	'la page de relecture montre aussi les siècles en petites capitales', $relu );
 
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
