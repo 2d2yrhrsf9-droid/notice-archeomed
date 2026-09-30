@@ -19,6 +19,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-nommage.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-paquet.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-maj.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
@@ -160,6 +161,10 @@ class Notice_Archeomed_Pactols {
 	const MAX_SENDS_PER_EMAIL   = 25;    // par personne : là, une IP vaut bien une personne
 	const MAX_LOOKUPS_PER_HOUR  = 400;
 	const MAX_FILES           = 3;
+	// Une autorisation de reproduction est une lettre ou un formulaire signé :
+	// dix méga-octets suffisent largement.
+	const MAX_AUTORISATION    = 10485760;
+	const AUTORISATION_EXT    = array( 'pdf', 'jpg', 'jpeg', 'png' );
 	// L'espace de noms de l'enveloppe des blocs d'index : un nom, non une
 	// adresse à consulter.
 	const ESPACE_INDEXATION   = 'https://archeomed.cnrs.fr/ns/indexation';
@@ -873,7 +878,13 @@ class Notice_Archeomed_Pactols {
 				'text' => $this->rubrique_sans_numero( $d['rubrique_principale'] ),
 				'i'    => true ) )
 			. $doc->plain( '.' );
-		$doc->add_raw_paragraph( 'Normal', $contenu );
+		// Le style du titre d'une notice, comme une entrée sans corps. En
+		// Normal, la ligne n'avait pas de titre pour l'ouvrir, et la
+		// conversion la rangeait dans la notice précédente. Métopes n'a pas de
+		// style pour un contenu qu'on voudrait taire à l'écran : ses styles
+		// locaux retombent en paragraphe ordinaire à l'export, ce qui
+		// reproduirait le défaut.
+		$doc->add_raw_paragraph( 'TEI_Titre 2+notice', $contenu );
 	}
 
 	/**
@@ -1070,7 +1081,7 @@ class Notice_Archeomed_Pactols {
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'annee',
-			'num_autorisation', 'id_patriarche', 'rapport_lien', 'commentaires',
+			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'commentaires',
 			'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 		);
 		foreach ( $simples as $champ ) {
@@ -1450,6 +1461,7 @@ class Notice_Archeomed_Pactols {
 			'fichiers_nombre' => 'Trois fichiers au plus peuvent être joints.',
 			'fichiers_total'  => 'Les fichiers joints dépassent ' . $total . ' en tout. Joignez des versions plus légères.',
 			'fichier_format'  => 'Un fichier joint n’est pas en JPEG, TIFF ou PDF, ou son contenu ne correspond pas à son extension.',
+			'autorisation'    => 'Une autorisation de reproduction n’est pas en PDF, JPEG ou PNG, ou dépasse ' . size_format( self::MAX_AUTORISATION ) . '.',
 			'trop_lourd'      => 'Votre envoi dépassait ce que le serveur accepte (' . $serveur . ' en tout) : rien n’a été reçu. Joignez des illustrations plus légères, puis renvoyez. Si votre saisie a été gardée sur cet appareil, elle vous est proposée juste en dessous.',
 			'envoi'           => 'Le courriel n’a pas pu partir, mais votre notice n’est pas perdue : elle est conservée sur le serveur, fichier stylé compris.',
 		);
@@ -1504,6 +1516,7 @@ class Notice_Archeomed_Pactols {
 			'coauteur_email'      => array( 'na-coauteur-email', 'Saisissez une adresse électronique complète pour le co-auteur, par exemple prenom.nom@exemple.fr' ),
 			'texte'               => array( 'na-texte', 'Saisissez ou collez le texte de la notice' ),
 			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
+			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
 		);
 	}
@@ -1668,9 +1681,9 @@ class Notice_Archeomed_Pactols {
 				<p class="na-fin-ref">Référence&nbsp;: <strong><?php echo esc_html( $ref ); ?></strong></p>
 			<?php endif; ?>
 			<p>Une copie part dans quelques minutes à l’adresse du responsable d’opération, et à celles des autres personnes dont vous avez donné l’adresse. Elle contient un lien pour corriger la notice pendant un mois.</p>
-			<h3>Et ensuite&#8239;?</h3>
-			<p>La rédaction harmonise la forme des notices sans vous consulter&#8239;; elle ne vous écrira que pour une question de fond.</p>
-			<p>Pas de copie d’ici une heure&#8239;? Regardez dans vos courriers indésirables, puis écrivez à
+			<h3>Et ensuite&nbsp;?</h3>
+			<p>La rédaction harmonise la forme des notices sans vous consulter&nbsp;; elle ne vous écrira que pour une question de fond.</p>
+			<p>Pas de copie d’ici une heure&nbsp;? Regardez dans vos courriers indésirables, puis écrivez à
 				<?php if ( '' !== $redaction ) : ?>
 					<a href="mailto:<?php echo esc_attr( antispambot( $redaction ) ); ?>"><?php echo esc_html( antispambot( $redaction ) ); ?></a><?php else : ?>la rédaction de la revue<?php endif; ?><?php echo '' !== $ref ? ' en citant la référence.' : '.'; ?></p>
 			<p class="na-fin-autre"><a href="<?php echo esc_url( $autre ); ?>">Déposer une autre notice</a></p>
@@ -2061,11 +2074,11 @@ class Notice_Archeomed_Pactols {
 				<p>Ce formulaire transmet votre notice à la rédaction de la Chronique d’<em>Archéologie médiévale</em>. Comptez une vingtaine de minutes si votre texte est prêt.</p>
 				<p><strong>Ayez sous la main&nbsp;:</strong></p>
 				<ul>
-					<li>le texte de la notice (300 à 700&nbsp;mots), à coller depuis votre traitement de texte&#8239;;</li>
-					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’autorisation et son identifiant Patriarche&#8239;;</li>
+					<li>le texte de la notice (300 à 700&nbsp;mots), à coller depuis votre traitement de texte&nbsp;;</li>
+					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’autorisation et son identifiant Patriarche&nbsp;;</li>
 					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout), avec leurs légendes et crédits.</li>
 				</ul>
-				<p>Tous les champs sont obligatoires, sauf ceux marqués «&#8239;facultatif&#8239;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, vous recevrez une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
+				<p>Tous les champs sont obligatoires, sauf ceux marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, vous recevrez une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
 			</div>
 			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
 			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
@@ -2113,7 +2126,7 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<div class="na-champ">
 						<label for="na-departement">Entre parenthèses&nbsp;: département ou région</label>
-						<p class="na-help" id="na-departement-aide">Le plus souvent le département&nbsp;: Calvados. Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Rempli d’après la commune choisie&#8239;; vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&#8239;Autres lieux&#8239;» (section&nbsp;4).</p>
+						<p class="na-help" id="na-departement-aide">Le plus souvent le département&nbsp;: Calvados. Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Rempli d’après la commune choisie&nbsp;; vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&nbsp;Autres lieux&nbsp;» (section&nbsp;4).</p>
 						<input type="text" id="na-departement" name="departement" required
 							aria-describedby="na-departement-aide na-departement-auto"
 							value="<?php echo esc_attr( $this->repris( 'departement' ) ); ?>">
@@ -2121,7 +2134,7 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<div class="na-champ">
 						<label for="na-lieu-dit">Après le point&nbsp;: lieu-dit, adresse ou nom du projet</label>
-						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&#8239;; 12, rue des Carmes&#8239;; ou le titre d’un projet collectif de recherche.</p>
+						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&nbsp;; 12, rue des Carmes&nbsp;; ou le titre d’un projet collectif de recherche.</p>
 						<input type="text" id="na-lieu-dit" name="lieu_dit" required
 							aria-describedby="na-lieu-dit-aide na-apercu"
 							value="<?php echo esc_attr( $this->repris( 'lieu_dit' ) ); ?>">
@@ -2136,7 +2149,7 @@ class Notice_Archeomed_Pactols {
 
 				<div class="na-champ na-court">
 					<label for="na-annee">Année de l’opération</label>
-					<p class="na-help" id="na-annee-aide">Par exemple&nbsp;: 2024.</p>
+					<p class="na-help" id="na-annee-aide">Par exemple&nbsp;: 2024, ou 2004-2005 pour une opération sur plusieurs années.</p>
 					<input type="text" id="na-annee" name="annee" required aria-describedby="na-annee-aide"
 						value="<?php echo esc_attr( $this->repris( 'annee' ) ); ?>">
 				</div>
@@ -2273,7 +2286,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice</p>
-					<p class="na-help" id="na-texte-aide">300 à 700&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&#8239;; titres et listes deviennent des paragraphes. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes.</p>
+					<p class="na-help" id="na-texte-aide">300 à 700&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; titres et listes deviennent des paragraphes. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes.</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -2329,7 +2342,7 @@ class Notice_Archeomed_Pactols {
 
 			<section class="na-section" aria-labelledby="na-s5">
 				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
-				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. Photographies&nbsp;: 10&nbsp;×&nbsp;15&nbsp;cm au moins à 300&nbsp;ppp&#8239;; dessins au trait&nbsp;: 1&#8239;200&nbsp;ppp.</p>
+				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. Photographies&nbsp;: 10&nbsp;×&nbsp;15&nbsp;cm au moins à 300&nbsp;ppp&nbsp;; dessins au trait&nbsp;: 1&nbsp;200&nbsp;ppp.</p>
 				<label class="na-sr" for="na-illustrations">Choisir des fichiers</label>
 				<div class="na-depot-fichiers" id="na-depot-zone">
 					<input type="file" name="illustrations[]" id="na-illustrations" multiple accept=".jpg,.jpeg,.tiff,.tif,.pdf" aria-describedby="na-illus-aide">
@@ -2337,7 +2350,15 @@ class Notice_Archeomed_Pactols {
 				</div>
 				<p class="na-fichiers-refuses" id="na-fichiers-refuses" role="alert"></p>
 				<ul class="na-filelist" id="na-filelist"></ul>
-				<p class="na-help na-illus-droits">Pour les documents dont vous ne détenez pas les droits, joignez les autorisations de reproduction. Des originaux trop lourds pour ce formulaire&#8239;? Transmettez-les à la rédaction par un autre moyen.</p>
+				<p class="na-help na-illus-droits">Chaque figure a son champ pour l’autorisation de reproduction, à remplir si vous ne détenez pas ses droits.</p>
+
+				<div class="na-champ">
+					<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
+					<p class="na-help" id="na-originaux-aide">Des originaux trop lourds pour ce formulaire&nbsp;? Joignez-en ici des versions allégées, et déposez les originaux sur un service de transfert — FileSender de RENATER, ou l’espace de partage de votre établissement. Collez ici le lien de téléchargement, qui doit rester valable quelques semaines.</p>
+					<input type="text" inputmode="url" id="na-originaux" name="originaux_lien" autocomplete="off"
+						spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
+						value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">
+				</div>
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s6">
@@ -2401,7 +2422,7 @@ class Notice_Archeomed_Pactols {
 			var ALLOWED = <?php echo wp_json_encode( self::ALLOWED_EXT ); ?>;
 			var KW_MAX = <?php echo (int) self::PACTOLS_FIELD_COUNT; ?>;
 			var PACTOLS = 'https://pactols.frantiq.fr/';
-			var NBSP = ' ', FINE = ' ';
+			var NBSP = ' ', FINE = ' ';
 
 			// ── Petits outils ──────────────────────────────────────────────
 			function vide(v) { return !v || !String(v).replace(/\s+/g, '').length; }
@@ -3075,8 +3096,18 @@ class Notice_Archeomed_Pactols {
 				var parts = name.toLowerCase().split('.');
 				return parts.length > 1 ? parts.pop() : '';
 			}
+			// Les champs d'autorisation, un par figure. Ils se gardent d'un dessin
+			// de la liste à l'autre : un champ de fichier recréé perd le fichier
+			// choisi, et l'auteur ne le verrait pas.
+			var illusAuto = [];
+			var MAX_AUTORISATION = <?php echo (int) self::MAX_AUTORISATION; ?>;
+			function poidsAutorisations() {
+				return illusAuto.reduce(function (sum, champ) {
+					return sum + (champ && champ.files && champ.files[0] ? champ.files[0].size : 0);
+				}, 0);
+			}
 			function totalSelectedSize() {
-				return selected.reduce(function (sum, f) { return sum + f.size; }, 0);
+				return selected.reduce(function (sum, f) { return sum + f.size; }, 0) + poidsAutorisations();
 			}
 			function refreshFileInput() {
 				try {
@@ -3132,6 +3163,47 @@ class Notice_Archeomed_Pactols {
 				bloc.appendChild(champ);
 				return bloc;
 			}
+			function champAutorisation(idx) {
+				var bloc = document.createElement('div');
+				bloc.className = 'na-illus-autorisation';
+				var id = 'na-illus-' + (idx + 1) + '-autorisation';
+				if (!illusAuto[idx]) {
+					var nouveau = document.createElement('input');
+					nouveau.type = 'file';
+					nouveau.name = 'illus_autorisation[]';
+					nouveau.accept = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+					nouveau.addEventListener('change', function () {
+						var f = nouveau.files && nouveau.files[0];
+						var refus = '';
+						if (f && ['pdf', 'jpg', 'jpeg', 'png'].indexOf(extOf(f.name)) === -1) {
+							refus = guillemets(f.name) + ' n’est pas en PDF, JPEG ou PNG.';
+						} else if (f && f.size > MAX_AUTORISATION) {
+							refus = guillemets(f.name) + ' dépasse ' + mo(MAX_AUTORISATION) + '.';
+						} else if (f && totalSelectedSize() > MAX_TOTAL_SIZE) {
+							refus = guillemets(f.name) + ' ferait dépasser ' + mo(MAX_TOTAL_SIZE) + ' en tout.';
+						}
+						if (refus) { nouveau.value = ''; }
+						refuses.textContent = refus;
+						marquerModifie();
+					});
+					illusAuto[idx] = nouveau;
+				}
+				var champ = illusAuto[idx];
+				champ.id = id;
+				var etiquette = document.createElement('label');
+				etiquette.htmlFor = id;
+				etiquette.innerHTML = 'Autorisation de reproduction <span class="na-facultatif">(facultatif)</span>';
+				var aide = document.createElement('p');
+				aide.className = 'na-help';
+				aide.id = id + '-aide';
+				aide.textContent = 'Seulement si vous ne détenez pas les droits de cette figure' + NBSP
+					+ ': l’accord écrit de leur détenteur, en PDF, JPEG ou PNG.';
+				champ.setAttribute('aria-describedby', aide.id);
+				bloc.appendChild(etiquette);
+				bloc.appendChild(aide);
+				bloc.appendChild(champ);
+				return bloc;
+			}
 			function renderFileList() {
 				fileList.innerHTML = '';
 				selected.forEach(function (f, idx) {
@@ -3156,6 +3228,7 @@ class Notice_Archeomed_Pactols {
 					rm.addEventListener('click', function () {
 						selected.splice(idx, 1);
 						illusMeta.splice(idx, 1);
+						illusAuto.splice(idx, 1);
 						refreshFileInput();
 						annoncer('Figure ' + (idx + 1) + ' retirée.');
 						(fileList.querySelector('.na-fileremove') || fileInput).focus();
@@ -3176,6 +3249,7 @@ class Notice_Archeomed_Pactols {
 					champs.appendChild(champIllustration(idx, 'titre', 'Titre', 0, mention));
 					champs.appendChild(champIllustration(idx, 'legende', 'Légende', 2, mention));
 					champs.appendChild(champIllustration(idx, 'credits', 'Crédits', 0, mention));
+					champs.appendChild(champAutorisation(idx));
 					mention();
 					groupe.appendChild(leg);
 					groupe.appendChild(rm);
@@ -3398,15 +3472,22 @@ class Notice_Archeomed_Pactols {
 			var titreDeLaPage = document.title;
 			var erreurs = {};
 			function courrielValide(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
-			function normaliserRapport() {
-				var r = document.getElementById('na-rapport');
+			function normaliserUneAdresse(r) {
+				if (!r) { return; }
 				var v = r.value.trim();
 				// Une adresse copiée sans « https:// » était refusée par le
 				// navigateur ; on l'ajoute, comme le serveur le ferait.
 				if (v && !/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)) { v = 'https://' + v.replace(/^\/+/, ''); }
 				r.value = v;
 			}
+			function normaliserRapport() {
+				normaliserUneAdresse(document.getElementById('na-rapport'));
+				normaliserUneAdresse(document.getElementById('na-originaux'));
+			}
 			document.getElementById('na-rapport').addEventListener('blur', normaliserRapport);
+			if (document.getElementById('na-originaux')) {
+				document.getElementById('na-originaux').addEventListener('blur', normaliserRapport);
+			}
 			function el(id) { return document.getElementById(id); }
 			function uneValeur(sel) {
 				return [].some.call(form.querySelectorAll(sel), function (c) { return !vide(c.value); });
@@ -3435,6 +3516,11 @@ class Notice_Archeomed_Pactols {
 				coauteur_email: function () { var v = el('na-coauteur-email').value.trim(); return !v || courrielValide(v); },
 				texte: function () { return !quill || !vide(quill.getText()); },
 				rubrique_principale: function () { return !vide(el('na-rubrique').value); },
+				originaux_lien: function () {
+					var c = el('na-originaux');
+					var v = c ? c.value.trim() : '';
+					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
+				},
 				puzzle: function () { return puzzleFait(); }
 			};
 			function cibleDe(cle) {
@@ -4153,7 +4239,7 @@ class Notice_Archeomed_Pactols {
 			array( 'nature_items',           'archeoCHR_fieldwork_method',             'pactols:Sujets',      false ),
 			array( 'pactols_periods_items',  'archeoCHR_keywords_subjects:chronology', 'pactols:Chronologie', true ),
 			array( 'pactols_subjects_items', 'archeoCHR_keywords_subjects',            'pactols:Sujets',      false ),
-			array( 'pactols_places_items',   'archeoCHR_keywords_subjects',            'pactols:Lieux',       true ),
+			array( 'pactols_places_items',   'keywords_subjects:geography',            'pactols:Lieux',       true ),
 		);
 		$corps = '';
 		foreach ( $zones as $zone ) {
@@ -4283,6 +4369,10 @@ class Notice_Archeomed_Pactols {
 				$valeur = isset( $liste[ $i ] ) ? sanitize_textarea_field( self::chevrons_a_garder( (string) $liste[ $i ] ) ) : '';
 				$item[ $clef ] = $this->limit_string( $valeur, 'legende' === $clef ? 1500 : 400 );
 			}
+			// L'autorisation de reproduction jointe à cette figure, s'il y en a
+			// une : le document le signale à la rédaction.
+			$item['autorisation'] = isset( $_FILES['illus_autorisation']['error'][ $i ] )
+				&& UPLOAD_ERR_OK === (int) $_FILES['illus_autorisation']['error'][ $i ];
 			// Une ligne vide sans fichier en face ne dit rien : c'est le seul
 			// cas où on ne la garde pas.
 			if ( $i >= $this->fichiers_deposes()
@@ -4302,6 +4392,22 @@ class Notice_Archeomed_Pactols {
 	 */
 	private static function chevrons_a_garder( $texte ) {
 		return (string) preg_replace( '/<(?=[\d=])/', '&lt;', (string) $texte );
+	}
+
+	/**
+	 * L'année, ou les années d'une opération pluriannuelle : « 2004-2005 ».
+	 *
+	 * On voit arriver « 2004 - 2005 », « 2004/2005 », « 2004 à 2005 » ou un
+	 * tiret long : la revue écrit « 2004-2005 », et le classement comme le
+	 * titre du fichier veulent une seule forme.
+	 */
+	private static function annee_normalisee( $annee ) {
+		$annee = trim( (string) $annee );
+		if ( preg_match( '/^(\d{4})\s*(?:-|‐|‑|–|—|\/|à|au|et)\s*(\d{2,4})$/u', $annee, $m ) ) {
+			$fin = 2 === strlen( $m[2] ) ? substr( $m[1], 0, 2 ) . $m[2] : $m[2];
+			return $m[1] . '-' . $fin;
+		}
+		return $annee;
 	}
 
 	/** Le nombre de fichiers réellement joints au formulaire. */
@@ -4465,6 +4571,9 @@ class Notice_Archeomed_Pactols {
 		}
 		if ( ! empty( $d['id_patriarche'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Identifiant Patriarche', $d['id_patriarche'] );
+		}
+		if ( ! empty( $d['originaux_lien'] ) ) {
+			$admin_lines[] = $this->meta_line( 'Originaux des figures à télécharger', $d['originaux_lien'] );
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Rapport final', $d['rapport_lien'] );
@@ -4898,11 +5007,16 @@ class Notice_Archeomed_Pactols {
 		// n'avaient de place que dans le bloc d'indexation, avec leur ARK en
 		// clair. Portés ici, ils se lisent et gardent leur identifiant en
 		// lien, comme les autres termes indexés.
+		//
+		// Leur style est celui de l'index géographique de Métopes, que la
+		// documentation rattache à l'index « Géographie » d'OpenEdition. Ils
+		// portaient celui des mots-clés sujets : deux paragraphes du même style,
+		// que rien ne distinguait sinon leur intitulé.
 		$autres_lieux = $this->termes_pactols_lies( $doc,
 			isset( $d['pactols_places_items'] ) ? $d['pactols_places_items'] : array(),
 			true );
 		if ( ! empty( $autres_lieux ) ) {
-			$doc->add_raw_paragraph( 'TEI_archeoCHR_keywords_subjects',
+			$doc->add_raw_paragraph( 'TEI_keywords_subjects:geography',
 				$doc->plain( 1 === count( $autres_lieux ) ? 'Autre lieu : ' : 'Autres lieux : ' )
 					. implode( $doc->plain( ', ' ), $autres_lieux ) );
 		}
@@ -5062,12 +5176,24 @@ class Notice_Archeomed_Pactols {
 			// Une figure déposée sans un mot : le bloc reste, pour que la
 			// numérotation tienne, et la rédaction lit ce qui manque dans le
 			// style qui s'ôte d'un geste avant l'import.
+			if ( ! empty( $item['autorisation'] ) ) {
+				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
+					array( array( 'text' => 'Autorisation de reproduction jointe au dépôt : elle se télécharge depuis la fiche de la notice.' ) ) );
+			}
 			if ( '' === trim( $item['titre'] . $item['legende'] . $item['credits'] ) ) {
 				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 					array( array( 'text' => 'Titre, légende et crédits manquants : à demander à l’auteur.', 'b' => true ) ) );
 			}
 			$doc->add_paragraph( 'TEI_figure_end',
 				array( array( 'text' => self::figure_fermante() ) ) );
+		}
+
+		// Les originaux déposés ailleurs, trop lourds pour le formulaire : un
+		// renseignement pour la rédaction, qui s'ôte avec le reste.
+		if ( ! empty( $d['originaux_lien'] ) ) {
+			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
+				$doc->plain( 'Originaux des figures à télécharger : ' )
+					. $doc->hyperlink( $d['originaux_lien'], $d['originaux_lien'] ) );
 		}
 
 		// 8. Commentaires de l'auteur, adressés à la rédaction : ils ne
@@ -5411,6 +5537,11 @@ class Notice_Archeomed_Pactols {
 		$d['rapport_lien'] = isset( $_POST['rapport_lien'] )
 			? esc_url_raw( trim( wp_unslash( $_POST['rapport_lien'] ) ), array( 'http', 'https' ) ) : '';
 		$d['rapport_lien'] = $this->limit_string( $d['rapport_lien'], 500 );
+		// Le lien de téléchargement des originaux trop lourds pour le
+		// formulaire : la rédaction le trouve dans le courriel et le document.
+		$d['originaux_lien'] = isset( $_POST['originaux_lien'] )
+			? esc_url_raw( trim( wp_unslash( $_POST['originaux_lien'] ) ), array( 'http', 'https' ) ) : '';
+		$d['originaux_lien'] = $this->limit_string( $d['originaux_lien'], 500 );
 		$d['resp_email'] = isset( $_POST['resp_email'] ) ? sanitize_email( wp_unslash( $_POST['resp_email'] ) ) : '';
 		$d['coresp_email'] = isset( $_POST['coresp_email'] ) ? sanitize_email( wp_unslash( $_POST['coresp_email'] ) ) : '';
 		$d['coauteur_email'] = isset( $_POST['coauteur_email'] ) ? sanitize_email( wp_unslash( $_POST['coauteur_email'] ) ) : '';
@@ -5418,6 +5549,7 @@ class Notice_Archeomed_Pactols {
 			$d[ $field ] = $this->limit_string( $d[ $field ], $max );
 		}
 		$d['departement'] = $this->sans_parentheses( $d['departement'] );
+		$d['annee'] = self::annee_normalisee( $d['annee'] );
 		$d['lieux'] = $this->collect_lieux();
 		// « commune » reste le premier lieu : c'est lui qui donne le titre de
 		// la fiche, le nom du fichier, l'objet du courriel et le rang au
@@ -5465,6 +5597,12 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: upload error: ' . $upload_error );
 			$this->redirect_result( false, $this->raison_du_televersement( $upload_error ) );
 		}
+		$autorisations = $this->recevoir_les_autorisations( $upload_error );
+		if ( '' !== $upload_error ) {
+			$this->nettoyer( $attachments );
+			error_log( 'Notice Archeomed: autorisation refusée : ' . $upload_error );
+			$this->redirect_result( false, 'autorisation' );
+		}
 		$notice = $this->build_notice( $d );
 		// Génération du fichier stylé Métopes, joint au courriel de la
 		// rédaction. C'est rapide — quelques dizaines de millisecondes — et
@@ -5501,12 +5639,17 @@ class Notice_Archeomed_Pactols {
 		// stylé se suit à part — c'est le seul qui repart aux auteurs — plutôt
 		// que d'être repêché en fin de liste, ce qui tenait à l'ordre.
 		$illustrations = $this->mettre_a_labri( $attachments );
+		// Une par une, pour garder le rang de la figure en clef.
+		foreach ( $autorisations as $rang => $fichier ) {
+			$mise = $this->mettre_a_labri( array( $fichier ) );
+			$autorisations[ $rang ] = ! empty( $mise ) ? $mise[0] : $fichier;
+		}
 		$document      = '';
 		if ( '' !== $rtf_file ) {
 			$mis      = $this->mettre_a_labri( array( $rtf_file ) );
 			$document = ! empty( $mis ) ? $mis[0] : '';
 		}
-		$produits = $illustrations;
+		$produits = array_merge( $illustrations, array_values( $autorisations ) );
 		if ( '' !== $document ) {
 			$produits[] = $document;
 		}
@@ -5538,7 +5681,9 @@ class Notice_Archeomed_Pactols {
 				// que le courriel joindra, et eux que le dossier Métopes
 				// trouvera même si le courriel ne part jamais.
 				$gardees = $this->archiver_les_illustrations( $id, $illustrations );
-				$fichiers = $gardees;
+				// Les autorisations suivent les figures dans le courriel, et
+				// se retrouvent sur la fiche de la notice.
+				$fichiers = array_merge( $gardees, $this->archiver_les_autorisations( $id, $autorisations ) );
 				if ( '' !== $document ) {
 					$fichiers[] = $document;
 				}
@@ -6484,8 +6629,11 @@ class Notice_Archeomed_Pactols {
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
 		$rang = isset( $_GET['rang'] ) ? (int) $_GET['rang'] : -1;
-		check_admin_referer( 'na_illustration_' . $id . '_' . $rang );
-		$gardees = (array) get_post_meta( $id, '_na_illustrations', true );
+		// La même porte sert l'autorisation de reproduction d'une figure,
+		// rangée par le numéro de la figure et non par sa position.
+		$autorisation = ! empty( $_GET['autorisation'] );
+		check_admin_referer( 'na_illustration_' . $id . '_' . $rang . ( $autorisation ? '_autorisation' : '' ) );
+		$gardees = (array) get_post_meta( $id, $autorisation ? '_na_autorisations' : '_na_illustrations', true );
 		if ( ! isset( $gardees[ $rang ] ) ) {
 			wp_die( esc_html__( 'Illustration introuvable.', 'notice-archeomed' ) );
 		}
@@ -6521,6 +6669,7 @@ class Notice_Archeomed_Pactols {
 		$this->effacer_des_apercus(
 			$this->apercus_de( $id, get_post_meta( $id, '_na_donnees', true ) ) );
 		$this->effacer_dans_le_depot( (array) get_post_meta( $id, '_na_illustrations', true ) );
+		$this->effacer_dans_le_depot( (array) get_post_meta( $id, '_na_autorisations', true ) );
 	}
 
 	/**
@@ -7379,6 +7528,69 @@ class Notice_Archeomed_Pactols {
 		return $keys;
 	}
 	/**
+	 * Les autorisations de reproduction, une par figure au plus, par leur
+	 * rang : le champ « illus_autorisation[] » suit les figures dans l'ordre.
+	 *
+	 * Rend « rang => fichier temporaire ». Un fichier refusé arrête le dépôt,
+	 * comme une illustration refusée : l'auteur le croirait joint.
+	 */
+	private function recevoir_les_autorisations( &$erreur = '' ) {
+		$erreur = '';
+		$recues = array();
+		if ( empty( $_FILES['illus_autorisation']['name'] ) || ! is_array( $_FILES['illus_autorisation']['name'] ) ) {
+			return $recues;
+		}
+		$f       = $_FILES['illus_autorisation'];
+		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
+		wp_mkdir_p( $dossier );
+		$combien = min( count( $f['name'] ), self::MAX_FILES );
+		for ( $i = 0; $i < $combien; $i++ ) {
+			$code = isset( $f['error'][ $i ] ) ? (int) $f['error'][ $i ] : UPLOAD_ERR_NO_FILE;
+			if ( UPLOAD_ERR_NO_FILE === $code ) {
+				continue;
+			}
+			$nom = sanitize_file_name( (string) $f['name'][ $i ] );
+			$ext = strtolower( pathinfo( $nom, PATHINFO_EXTENSION ) );
+			if ( UPLOAD_ERR_OK !== $code || (int) $f['size'][ $i ] > self::MAX_AUTORISATION
+				|| ! in_array( $ext, self::AUTORISATION_EXT, true )
+				|| ! $this->mime_is_allowed( $f['tmp_name'][ $i ], $nom, $ext ) ) {
+				$erreur = 'autorisation_' . ( $i + 1 );
+				$this->nettoyer( array_values( $recues ) );
+				return array();
+			}
+			$cible = trailingslashit( $dossier ) . 'notice-archeomed-autorisation-fig-' . ( $i + 1 ) . '-'
+				. wp_generate_password( 12, false, false ) . '.' . $ext;
+			if ( ! move_uploaded_file( $f['tmp_name'][ $i ], $cible ) ) {
+				$erreur = 'autorisation_deplacement';
+				$this->nettoyer( array_values( $recues ) );
+				return array();
+			}
+			$recues[ $i + 1 ] = $cible;
+		}
+		return $recues;
+	}
+
+	/**
+	 * Range les autorisations à demeure, près des illustrations, et les
+	 * retient par le rang de leur figure.
+	 */
+	private function archiver_les_autorisations( $id, $autorisations ) {
+		$dossier = $this->dossier_des_illustrations();
+		$gardees = array();
+		foreach ( (array) $autorisations as $rang => $fichier ) {
+			if ( ! file_exists( $fichier ) ) {
+				continue;
+			}
+			$cible = '' === $dossier ? $fichier : $dossier . (int) $id . '-' . basename( $fichier );
+			$gardees[ (int) $rang ] = ( $cible === $fichier || ! @rename( $fichier, $cible ) ) ? $fichier : $cible;
+		}
+		if ( $id && ! empty( $gardees ) ) {
+			update_post_meta( $id, '_na_autorisations', $gardees );
+		}
+		return array_values( $gardees );
+	}
+
+	/**
 	 * La raison qu'on donne à l'auteur, d'après le refus du téléversement.
 	 *
 	 * Un seul message couvrait tout — « trois au plus, vingt méga-octets en
@@ -7519,6 +7731,9 @@ class Notice_Archeomed_Pactols {
 			'tif' => array( 'image/tiff' ),
 			'tiff' => array( 'image/tiff' ),
 			'pdf' => array( 'application/pdf', 'application/x-pdf' ),
+			// Pour les autorisations de reproduction seulement : une
+			// illustration en PNG est écartée avant, par son extension.
+			'png' => array( 'image/png' ),
 		);
 		if ( ! isset( $expected[ $ext ] ) ) {
 			return false;

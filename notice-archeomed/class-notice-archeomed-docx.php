@@ -230,6 +230,47 @@ class Notice_Archeomed_DOCX {
 		return (string) preg_replace( '/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $text );
 	}
 
+	/** Le texte à imprimer, en typographie française. */
+	private static function typographie( $texte ) {
+		return class_exists( 'Notice_Archeomed_Typographie' )
+			? Notice_Archeomed_Typographie::corriger( $texte ) : (string) $texte;
+	}
+
+	/**
+	 * Les fragments d'un paragraphe, corrigés chacun en voyant ses voisins.
+	 *
+	 * Un paragraphe se coupe à chaque changement de mise en forme : « le
+	 * *castrum* : il » arrive en trois fragments, et le deux-points tombe en
+	 * tête du dernier, loin du mot qu'il suit. Corrigé seul, le fragment ne
+	 * saurait ni qu'un mot plein le précède, ni si l'on est dans un titre
+	 * anglais cité. On lui donne donc le texte d'avant et celui d'après.
+	 */
+	private static function typographie_des_fragments( $runs ) {
+		if ( ! class_exists( 'Notice_Archeomed_Typographie' ) ) {
+			return $runs;
+		}
+		$textes = array();
+		foreach ( $runs as $i => $run ) {
+			$textes[ $i ] = ( is_array( $run ) && empty( $run['raw'] ) && isset( $run['text'] ) )
+				? (string) $run['text'] : ( is_string( $run ) ? $run : '' );
+		}
+		$paragraphe = implode( '', $textes );
+		$position   = 0;
+		foreach ( $runs as $i => $run ) {
+			$texte = $textes[ $i ];
+			if ( '' === $texte ) {
+				continue;
+			}
+			$avant = substr( $paragraphe, 0, $position );
+			$apres = substr( $paragraphe, $position + strlen( $texte ) );
+			$run   = is_array( $run ) ? $run : array( 'text' => $run );
+			$run['typo'] = Notice_Archeomed_Typographie::corriger( $texte, $avant, 'fr', $avant, $apres );
+			$runs[ $i ]  = $run;
+			$position   += strlen( $texte );
+		}
+		return $runs;
+	}
+
 	/**
 	 * Encapsule du texte dans un <w:t>, en préservant les espaces de bord et
 	 * en convertissant les sauts de ligne en <w:br/>.
@@ -258,7 +299,13 @@ class Notice_Archeomed_DOCX {
 		if ( ! empty( $run['raw'] ) ) {
 			return $run['raw'];
 		}
-		$text = isset( $run['text'] ) ? self::esc( $run['text'] ) : '';
+		// La typographie française se pose ici, sur le texte qui s'imprime, et
+		// non dans « esc », qui sert aussi aux noms de styles et aux adresses.
+		if ( isset( $run['typo'] ) ) {
+			$text = self::esc( $run['typo'] );
+		} else {
+			$text = isset( $run['text'] ) ? self::esc( self::typographie( $run['text'] ) ) : '';
+		}
 		if ( '' === $text ) {
 			return '';
 		}
@@ -299,7 +346,7 @@ class Notice_Archeomed_DOCX {
 	public function add_paragraph( $style_name, $runs ) {
 		$xml = '<w:p>' . $this->paragraph_props( $style_name );
 		if ( is_array( $runs ) ) {
-			foreach ( $runs as $run ) {
+			foreach ( self::typographie_des_fragments( $runs ) as $run ) {
 				$xml .= $this->render_run( $run );
 			}
 		} else {
@@ -472,7 +519,7 @@ class Notice_Archeomed_DOCX {
 			: '';
 		return '<w:hyperlink r:id="' . $rid . '">'
 			. '<w:r><w:rPr>' . $style . '</w:rPr>'
-			. self::text_nodes( self::esc( $label ) )
+			. self::text_nodes( self::esc( self::typographie( $label ) ) )
 			. '</w:r></w:hyperlink>';
 	}
 
@@ -516,6 +563,7 @@ class Notice_Archeomed_DOCX {
 		$parts = preg_split( '#(<[^>]+>)#', $fragment, -1, PREG_SPLIT_DELIM_CAPTURE );
 		$stack = array();
 		$xml   = '';
+		$runs  = array();
 		foreach ( $parts as $part ) {
 			if ( '' === $part ) {
 				continue;
@@ -545,6 +593,11 @@ class Notice_Archeomed_DOCX {
 			foreach ( $stack as $attr ) {
 				$run[ $attr ] = true;
 			}
+			$runs[] = $run;
+		}
+		// Les fragments du paragraphe se corrigent ensemble : l'italique
+		// d'un mot ne doit pas couper le deux-points qui le suit de ce mot.
+		foreach ( self::typographie_des_fragments( $runs ) as $run ) {
 			$xml .= $this->render_run( $run );
 		}
 		return $xml;

@@ -431,6 +431,43 @@ unset( $_POST['illus_titre'], $_POST['illus_legende'], $_POST['illus_credits'] )
 na_verifier( 2 === count( $figures ) && 1 === $figures[0]['rang'] && 'Plan' === $figures[1]['titre'],
 	'une figure déposée sans légende garde sa place et son numéro', $figures );
 
+WP_CLI::log( 'La typographie et les années' );
+$nb = "\u{00A0}";
+$typo = Notice_Archeomed_Typographie::corriger( "Le mur : l'état du site ; voir « fossé » p. 12, XIIe s. et 10 000 m... Voir https://hal.science/a:b?c=d ; ok ?" );
+na_verifier( false !== strpos( $typo, 'mur' . $nb . ':' ) && false !== strpos( $typo, "l\u{2019}état" )
+	&& false !== strpos( $typo, '«' . $nb . 'fossé' . $nb . '»' ) && false !== strpos( $typo, 'p.' . $nb . '12' )
+	&& false !== strpos( $typo, 'XIIe' . $nb . 's.' ) && false !== strpos( $typo, '10' . $nb . '000' . $nb . 'm…' )
+	&& false !== strpos( $typo, 'https://hal.science/a:b?c=d' ) && false !== strpos( $typo, 'ok' . $nb . '?' ),
+	'la ponctuation, les guillemets, les renvois et les nombres, les adresses laissées intactes', $typo );
+na_verifier( "14:30 (?) R\u{2019}n" === Notice_Archeomed_Typographie::corriger( "14:30 (?) R'n" )
+	&& "a\u{00A0}; b" === Notice_Archeomed_Typographie::corriger( "a\u{202F}; b" ),
+	'l\'heure collée, le point d\'interrogation entre parenthèses, et pas de fine' );
+// Le corpus de référence de la typographie : chaque entrée, la sortie
+// attendue. Un écart dit qu'une règle a changé de sens.
+$corpus = json_decode( file_get_contents( __DIR__ . '/typographie.json' ), true );
+$ordres = array(
+	'corriger'                   => array( 'texte', 'avant', 'langue', 'contexte_avant', 'contexte_apres' ),
+	'retablir_insecables'        => array( 'texte', 'langue', 'contexte_avant', 'contexte_apres' ),
+	'apostrophes_typographiques' => array( 'texte' ),
+);
+$defauts = array( 'avant' => '', 'langue' => 'fr', 'contexte_avant' => '', 'contexte_apres' => '' );
+$ecarts  = array();
+foreach ( (array) $corpus as $n => $cas ) {
+	$args = array();
+	foreach ( $ordres[ $cas['f'] ] as $i => $nom ) {
+		$args[] = isset( $cas['a'][ $i ] ) ? $cas['a'][ $i ] : ( isset( $cas['k'][ $nom ] ) ? $cas['k'][ $nom ] : $defauts[ $nom ] );
+	}
+	if ( call_user_func_array( array( 'Notice_Archeomed_Typographie', $cas['f'] ), $args ) !== $cas['r'] ) {
+		$ecarts[] = $n;
+	}
+}
+na_verifier( ! empty( $corpus ) && empty( $ecarts ),
+	'le corpus de typographie rend exactement ce qu\'il doit (' . count( (array) $corpus ) . ' cas)', $ecarts );
+na_verifier( '2004-2005' === na_appel( $plugin, 'annee_normalisee', array( '2004 – 2005' ) )
+	&& '2004-2005' === na_appel( $plugin, 'annee_normalisee', array( '2004/05' ) )
+	&& '2024' === na_appel( $plugin, 'annee_normalisee', array( ' 2024 ' ) ),
+	'une opération sur plusieurs années s\'écrit 2004-2005' );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

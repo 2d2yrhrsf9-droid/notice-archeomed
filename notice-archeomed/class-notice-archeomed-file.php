@@ -821,13 +821,37 @@ class Notice_Archeomed_File {
 				. esc_html( sprintf( 'Fig. %d', $rang + 1 ) ) . '</a>'
 				. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
 				. ' <span class="description">('
-				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span></li>';
+				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span>'
+				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids ) . '</li>';
 		}
 		echo '</ul>';
 		echo '<p class="description">' . esc_html( sprintf(
 			/* translators: %s : poids total, déjà mis en forme. */
 			__( '%s sur le serveur. Supprimer la notice les efface aussi.', 'notice-archeomed' ),
 			size_format( $poids ) ) ) . '</p>';
+	}
+
+	/**
+	 * Le lien vers l'autorisation de reproduction d'une figure, s'il y en a
+	 * une. Son poids s'ajoute à celui des illustrations.
+	 */
+	private function lien_de_l_autorisation( $id, $figure, &$poids ) {
+		$autorisations = (array) get_post_meta( $id, '_na_autorisations', true );
+		if ( empty( $autorisations[ $figure ] ) || ! is_string( $autorisations[ $figure ] )
+			|| ! file_exists( $autorisations[ $figure ] ) ) {
+			return '';
+		}
+		$poids += (int) filesize( $autorisations[ $figure ] );
+		$url = wp_nonce_url(
+			add_query_arg(
+				array( 'action' => 'na_illustration', 'post' => (int) $id,
+					'rang' => (int) $figure, 'autorisation' => 1 ),
+				admin_url( 'admin-post.php' )
+			),
+			'na_illustration_' . (int) $id . '_' . (int) $figure . '_autorisation'
+		);
+		return '<br><span class="dashicons dashicons-media-document" aria-hidden="true"></span> <a href="'
+			. esc_url( $url ) . '">' . esc_html__( 'Autorisation de reproduction', 'notice-archeomed' ) . '</a>';
 	}
 
 	/**
@@ -1920,7 +1944,7 @@ class Notice_Archeomed_File {
 			var bloc = document.querySelector('li.na_dossiers');
 			if (!bloc) { return; }
 			var etat = bloc.querySelector('.na-attente');
-			var texte = <?php echo wp_json_encode( __( 'Préparation… une à trois minutes. Le téléchargement démarrera seul ; ne cliquez qu’une fois.', 'notice-archeomed' ) ); ?>;
+			var texte = <?php echo wp_json_encode( __( 'Préparation… une à trois minutes. Le téléchargement démarrera seul ; ne cliquez qu’une fois.', 'notice-archeomed' ) ); ?>;
 			bloc.addEventListener('click', function (e) {
 				var lien = e.target.closest('a.na-telechargement');
 				if (!lien) { return; }
@@ -2072,7 +2096,7 @@ class Notice_Archeomed_File {
 		if ( 'partie' === $issue ) {
 			self::avis( 'success', __( 'La notice est partie à la rédaction.', 'notice-archeomed' ) );
 		} elseif ( 'en_preparation' === $issue ) {
-			self::avis( 'info', __( 'Les versions allégées des figures sont en préparation ; l’envoi suivra de lui-même dans quelques minutes.', 'notice-archeomed' ) );
+			self::avis( 'info', __( 'Les versions allégées des figures sont en préparation ; l’envoi suivra de lui-même dans quelques minutes.', 'notice-archeomed' ) );
 		} elseif ( 'occupee' === $issue ) {
 			self::avis( 'warning', __( 'Un envoi de cette notice est déjà en cours. Rechargez la page dans une minute.', 'notice-archeomed' ) );
 		} elseif ( 'refusee' === $issue ) {

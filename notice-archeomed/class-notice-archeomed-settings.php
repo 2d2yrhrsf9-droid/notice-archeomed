@@ -1149,7 +1149,7 @@ class Notice_Archeomed_Settings {
 						foreach ( self::JETONS_DE_NOM as $jeton => $quoi ) {
 							$jetons[] = '<code>' . esc_html( $jeton ) . '</code> ' . esc_html( $quoi );
 						}
-						echo wp_kses_post( implode( ' ; ', $jetons ) );
+						echo wp_kses_post( implode( ' ; ', $jetons ) );
 						?>.
 						<br>
 						Ce qui n’est pas un jeton est recopié tel quel, puis tout le nom
@@ -1338,7 +1338,7 @@ class Notice_Archeomed_Settings {
 
 		<div id="na-turnstile"<?php echo $turnstile_sert ? '' : ' hidden'; ?>>
 			<h2>Cloudflare Turnstile</h2>
-			<p>Ces clés se créent gratuitement sur <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">le tableau de bord Cloudflare</a>, rubrique Turnstile. La clé de site est publique ; la clé secrète ne doit jamais être diffusée.</p>
+			<p>Ces clés se créent gratuitement sur <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">le tableau de bord Cloudflare</a>, rubrique Turnstile. La clé de site est publique ; la clé secrète ne doit jamais être diffusée.</p>
 			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><label for="na_site">Clé de site</label></th>
@@ -1620,7 +1620,7 @@ class Notice_Archeomed_Settings {
 			<?php
 			if ( $passe_max && $refus_min && $passe_max < $refus_min ) {
 				echo esc_html( sprintf( 'La limite du serveur se situe entre %d et %d Mo de pièces jointes. '
-					. 'C’est le chiffre à donner à l’hébergeur ; et c’est d’après lui que se règle '
+					. 'C’est le chiffre à donner à l’hébergeur ; et c’est d’après lui que se règle '
 					. '« Poids maximal d’un courriel », plus haut — en comptant un tiers de plus pour l’encodage.',
 					$passe_max, $refus_min ) );
 			} elseif ( $passe_max && ! $refus_min ) {
