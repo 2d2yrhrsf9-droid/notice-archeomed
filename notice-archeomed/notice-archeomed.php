@@ -4233,7 +4233,7 @@ class Notice_Archeomed_Pactols {
 				alt: 'Pour qui ne voit pas l’image' + NBSP + ': en quelques mots, l’information visuelle utile. Il ne répète pas la légende. '
 					+ 'Ne commencez pas par «' + NBSP + 'Image de' + NBSP + '» ou «' + NBSP + 'Photo de' + NBSP + '», '
 					+ 'et citez un texte important visible dans l’image.',
-				description: 'Pour une figure complexe' + NBSP + ': ce qu’un lecteur qui ne la voit pas doit en savoir — organisation, repères, données.',
+				description: 'Pour une figure complexe' + NBSP + ': ce qu’un lecteur qui ne la voit pas doit en savoir — organisation, repères, données. Elle est publiée à la suite de la légende.',
 				legende: 'Le texte qui accompagne la figure. Reprenez-y ce qu’un lecteur qui ne voit pas l’image doit savoir' + NBSP
 					+ ': la clé d’un plan ou d’une carte, les inscriptions, les étiquettes, l’échelle, l’orientation.',
 				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
@@ -7484,8 +7484,26 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Le texte alternatif et la description détaillée d'une figure, à la fin
-	 * de son bloc, juste avant le repère de fermeture.
+	 * La description détaillée d'une figure, en fin de légende : c'est la
+	 * seule place qui passe aujourd'hui à la publication, un seul texte
+	 * alternatif suivant l'image. Elle s'ouvre sur « Description : », pour
+	 * que le lecteur sache ce qu'il lit et que la mise en page la retrouve ;
+	 * le bloc « figure_description » des styles en décide le style.
+	 */
+	private function poser_la_description( $doc, $item ) {
+		$description = isset( $item['description'] ) && is_scalar( $item['description'] ) ? trim( (string) $item['description'] ) : '';
+		if ( '' === $description ) {
+			return;
+		}
+		foreach ( self::paragraphes_simples( $description ) as $i => $paragraphe ) {
+			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_description' ),
+				array( array( 'text' => ( 0 === $i ? "Description\u{00A0}: " : '' ) . $paragraphe ) ) );
+		}
+	}
+
+	/**
+	 * Le texte alternatif d'une figure, à la fin de son bloc, juste avant le
+	 * repère de fermeture.
 	 *
 	 * Le texte alternatif est toujours dans le texte de remplacement de
 	 * l'image : c'est là que Métopes le lit et le convertit en « figDesc ».
@@ -7494,28 +7512,14 @@ class Notice_Archeomed_Pactols {
 	 * conversion le paragraphe « TEI_figure_alttext », et Métopes n'affiche
 	 * le sien, sous l'image, qu'à la relecture.
 	 *
-	 * La description détaillée part donc toujours « à supprimer », quel que
-	 * soit ce style : la rédaction la lit et décide de sa place (la légende),
-	 * plutôt que de la voir disparaître à la conversion. L'un et l'autre sont
-	 * du texte simple, en romain : ni siècles en petites capitales ni
+	 * C'est du texte simple, en romain : ni siècles en petites capitales ni
 	 * exposant, que le lecteur d'écran lirait de travers ; les insécables
 	 * seules s'appliquent.
 	 */
-	private function poser_les_textes_d_accessibilite( $doc, $item, $alt ) {
+	private function poser_le_texte_alternatif( $doc, $item, $alt ) {
 		$style = Notice_Archeomed_Styles::de( 'figure_alttext' );
 		if ( '' !== $alt && Notice_Archeomed_Styles::AUCUN !== $style ) {
 			$doc->add_paragraph( $style, array( array( 'text' => $alt, 'sans_siecles' => true ) ) );
-		}
-		$description = isset( $item['description'] ) && is_scalar( $item['description'] ) ? trim( (string) $item['description'] ) : '';
-		if ( '' === $description ) {
-			return;
-		}
-		foreach ( self::paragraphes_simples( $description ) as $i => $paragraphe ) {
-			$runs = array( array( 'text' => $paragraphe, 'sans_siecles' => true ) );
-			if ( 0 === $i ) {
-				array_unshift( $runs, array( 'text' => 'Description détaillée : ', 'b' => true ) );
-			}
-			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $runs );
 		}
 	}
 
@@ -7842,6 +7846,7 @@ class Notice_Archeomed_Pactols {
 				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_legende' ),
 					array( array( 'text' => $item['legende'] ) ) );
 			}
+			$this->poser_la_description( $doc, $item );
 			if ( '' !== $item['credits'] ) {
 				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_credits' ),
 					array( array( 'text' => $item['credits'] ) ) );
@@ -7857,7 +7862,7 @@ class Notice_Archeomed_Pactols {
 				$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
 					array( array( 'text' => 'Titre, légende et crédits manquants : à demander à l’auteur.', 'b' => true ) ) );
 			}
-			$this->poser_les_textes_d_accessibilite( $doc, $item, $alt );
+			$this->poser_le_texte_alternatif( $doc, $item, $alt );
 			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_fin' ),
 				array( array( 'text' => self::figure_fermante() ) ) );
 		}

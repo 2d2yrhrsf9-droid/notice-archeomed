@@ -1424,10 +1424,11 @@ $suite_alt = $bloc_de_figure( $xml_alt );
 na_verifier( false !== strpos( $xml_alt, 'descr="Plan des murs &amp; du fossé"' ) && false !== strpos( $xml_alt, 'descr="Fig. 2 Vue"' )
 	&& false === strpos( $xml_alt, 'TEIfigurealttext' ),
 	'au Word, « descr » porte le texte alternatif, ou le titre d\'une figure ancienne ; pas de paragraphe par défaut', $suite_alt );
-na_verifier( 2 === count( preg_grep( '/^naasupprimer (Description détaillée|Le fossé longe)/u', $suite_alt ) )
-	&& 0 === strpos( (string) end( $suite_alt ), 'TEIfigureend' ) && 0 === strpos( $suite_alt[ count( $suite_alt ) - 3 ], 'naasupprimer Description détaillée' )
-	&& 0 === strpos( $suite_alt[ count( $suite_alt ) - 4 ], 'TEIfigurecredits' ),
-	'sans style réglé, la description détaillée part « à supprimer », à la fin du bloc de figure', $suite_alt );
+$fin_alt = array_slice( $suite_alt, -5 );
+na_verifier( 'TEIfigurecaption Le plan.' === $fin_alt[0] && 0 === strpos( $fin_alt[1], 'TEIfigurecaption Description : Deux murs' )
+	&& 'TEIfigurecaption Le fossé longe le mur ouest.' === $fin_alt[2] && 0 === strpos( $fin_alt[3], 'TEIfigurecredits' )
+	&& 0 === strpos( $fin_alt[4], 'TEIfigureend' ) && false === strpos( $xml_alt, 'Description détaillée' ),
+	'la description détaillée se publie en fin de légende, ouverte par « Description : », avant les crédits', $suite_alt );
 list( $alt_choisi, $alt_refuse ) = $ST::nettoyer( array( 'figure_alttext' => 'TEI_figure_alttext' ) );
 list( $alt_aucun ) = $ST::nettoyer( array( 'figure_alttext' => '' ), $alt_choisi );
 na_verifier( array( 'figure_alttext' => 'TEI_figure_alttext' ) === $alt_choisi && empty( $alt_refuse ) && array() === $alt_aucun
@@ -1443,11 +1444,10 @@ update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_alt );
 $ST::oublier();
 $suite_alt2 = $bloc_de_figure( $xml_alt2 );
 na_verifier( 1 === substr_count( $xml_alt2, '<w:pStyle w:val="TEIfigurealttext"/></w:pPr><w:r><w:t xml:space="preserve">Plan des murs' )
-	&& array( 'TEIfigurecaption Le plan.', 'TEIfigurecredits DAO A.', 'TEIfigurealttext Plan des murs & du fossé',
-		'naasupprimer Description détaillée : Deux murs parall', 'naasupprimer Le fossé longe le mur ouest.' )
-		=== array_slice( $suite_alt2, -6, 5 )
+	&& array( 'TEIfigurecaption Le fossé longe le mur ouest.', 'TEIfigurecredits DAO A.', 'TEIfigurealttext Plan des murs & du fossé' )
+		=== array_slice( $suite_alt2, -4, 3 )
 	&& 0 === strpos( (string) end( $suite_alt2 ), 'TEIfigureend' ) && 1 === substr_count( $xml_alt2, 'TEIfigurealttext' ),
-	'réglé, le texte alternatif a son paragraphe stylé à la fin du bloc ; la description reste « à supprimer », que la conversion ne perdrait pas ; une figure ancienne n\'en a pas',
+	'réglé, le texte alternatif a son paragraphe stylé à la fin du bloc, après la légende et sa description ; une figure ancienne n\'en a pas',
 	$suite_alt2 );
 $relu_alt = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_alt ) ) );
 $courriel_alt = na_appel( $plugin, 'illustrations_block', array( $saisie_alt ) );

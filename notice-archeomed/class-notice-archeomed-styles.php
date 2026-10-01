@@ -94,6 +94,7 @@ class Notice_Archeomed_Styles {
 					'figure_titre'   => array( 'libelle' => 'Titre de la figure', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_title' ),
 					'figure_numero'  => array( 'libelle' => 'Numéro « Fig. 1 » dans le titre', 'type' => 'caractere', 'defaut' => 'TEI_figure_num_inline' ),
 					'figure_legende' => array( 'libelle' => 'Légende', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_caption' ),
+					'figure_description' => array( 'libelle' => 'Description détaillée, en fin de légende', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_caption' ),
 					'figure_credits' => array( 'libelle' => 'Crédits', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_credits' ),
 					'figure_fin'     => array( 'libelle' => 'Fermeture du bloc de figure', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_end' ),
 				),

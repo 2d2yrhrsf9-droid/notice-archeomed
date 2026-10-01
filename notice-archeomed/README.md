@@ -431,9 +431,12 @@ document stylé pour Métopes perd à la conversion le paragraphe
 `TEI_figure_alttext`, et `TEI_figure-alttext` n'est pas reconnu. Si la
 rédaction lui choisit tout de même un style, il se pose **à la fin du bloc de
 figure**, après le titre, la légende et les crédits, juste avant
-`TEI_figure_end`. La description détaillée part toujours « à supprimer » :
-la rédaction la lit et décide de sa place, la légende étant la seule qui
-passe aujourd'hui à la publication.
+`TEI_figure_end`. La **description détaillée** se publie en fin de légende :
+un ou plusieurs paragraphes `TEI_figure_caption` qui suivent la légende et
+précèdent les crédits, le premier ouvert par « Description : ». C'est la
+seule place qui passe aujourd'hui à la publication ; le bloc « Description
+détaillée » de l'onglet Styles en change le style (« à supprimer », par
+exemple, pour la tenir hors de l'imprimé).
 
 | Bloc de la notice | Style Métopes |
 |---|---|
@@ -452,7 +455,8 @@ passe aujourd'hui à la publication.
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
 | Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
-| Texte alternatif puis description détaillée, à la fin du bloc de figure | aucun paragraphe (réglable) ; la description « à supprimer » |
+| Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
+| Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
 | Sous-rubrique de la rubrique V : « V. A1. – Céramique, terres cuites architecturales, verrerie : opération de terrain » | `TEI_Titre 1+rubrique` |
 | Matière à choisir (notice V d'avant les matières) | à supprimer |
 | Titre d'une illustration, numéro en `TEI_figure_num_inline` | `TEI_figure_title` |
