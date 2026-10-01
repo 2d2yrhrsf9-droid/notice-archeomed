@@ -1011,6 +1011,123 @@ na_verifier( false === strpos( $differe['vers'] . $immediat['vers'] . $immediat_
 	&& '' !== $immediat_etat['correction'],
 	'ni le retour ni le lien de correction ne suivent un référent étranger', array( $differe['vers'], $immediat_etat['correction'] ) );
 
+WP_CLI::log( 'Les siècles liés par « au début du », « ou début »' );
+// Le premier siècle de ces liaisons restait en capitales au Word.
+$doc_liaisons = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$liaisons_vues = array();
+foreach ( array(
+	'du XIIe au début du XIIIe s.' => 'du [xii]^e au début du [xiii]^e_s.',
+	'fin XIe ou début XIIe s.'     => 'fin [xi]^e ou début [xii]^e_s.',
+	'entre le XIe et le XIIe siècle' => 'entre le [xi]^e et le [xii]^e_s.',
+) as $saisi => $attendu ) {
+	$obtenu = $sans_balises( implode( '', $doc_liaisons->html_to_paragraphs( '<p>' . $saisi . '</p>' ) ) );
+	if ( $obtenu !== $attendu ) {
+		$liaisons_vues[ $saisi ] = $obtenu;
+	}
+}
+na_verifier( empty( $liaisons_vues ), 'chaque siècle d\'une liaison passe en petites capitales, le premier compris', $liaisons_vues );
+
+WP_CLI::log( 'Le titre de figure sous les normes' );
+$doc_figure = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_figure, array_merge( $saisie_styles, array( 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan de l\'enceinte au XIIe siècle', 'legende' => '', 'credits' => '' ) ) ) ) ) );
+$xml_figure = implode( '', $corps->getValue( $doc_figure ) );
+na_verifier( false === strpos( $xml_figure, 'au XIIe siècle' ) && false !== strpos( $xml_figure, '<w:smallCaps/></w:rPr><w:t xml:space="preserve">xii</w:t>' )
+	&& false !== strpos( $xml_figure, "l\u{2019}enceinte" ),
+	'le titre d\'une figure prend apostrophe et siècles', $xml_figure );
+
+WP_CLI::log( 'Un concept que Pactols dit « non retiré »' );
+// « owl:deprecated » à « false » se lisait comme retiré : la présence de la
+// propriété comptait, non sa valeur.
+$ark_vif    = 'https://ark.frantiq.fr/ark:/26678/pcrtVif';
+$ark_racine = 'https://ark.frantiq.fr/ark:/26678/pcrtVifRacine';
+$retire_vaut = 'false';
+$simuler_retire = function ( $pre, $args, $url ) use ( $ark_vif, $ark_racine, &$retire_vaut ) {
+	if ( false === strpos( $url, 'pactols.frantiq.fr' ) ) {
+		return $pre;
+	}
+	$graphe = array(
+		$ark_vif    => array(
+			Notice_Archeomed_Thesaurus::DCT . 'identifier' => array( array( 'value' => '4343' ) ),
+			Notice_Archeomed_Thesaurus::SKOS . 'prefLabel' => array( array( 'value' => 'terme', 'lang' => 'fr' ) ),
+			Notice_Archeomed_Thesaurus::SKOS . 'broader'   => array( array( 'value' => $ark_racine ) ),
+			Notice_Archeomed_Thesaurus::OWL . 'deprecated' => array( array( 'value' => $retire_vaut ) ),
+		),
+		$ark_racine => array( Notice_Archeomed_Thesaurus::SKOS . 'prefLabel' => array( array( 'value' => 'racine', 'lang' => 'fr' ) ) ),
+	);
+	return array( 'headers' => array(), 'body' => wp_json_encode( $graphe ), 'cookies' => array(), 'filename' => null,
+		'response' => array( 'code' => 200, 'message' => 'OK' ) );
+};
+add_filter( 'pre_http_request', $simuler_retire, 10, 3 );
+$vif = Notice_Archeomed_Thesaurus::resoudre( $ark_vif, '4343', 'TH_1' );
+delete_transient( na_appel( 'Notice_Archeomed_Thesaurus', 'clef', array( $ark_vif, '4343', 'TH_1' ) ) );
+$retire_vaut = 'true';
+$mort = Notice_Archeomed_Thesaurus::resoudre( $ark_vif, '4343', 'TH_1' );
+delete_transient( na_appel( 'Notice_Archeomed_Thesaurus', 'clef', array( $ark_vif, '4343', 'TH_1' ) ) );
+remove_filter( 'pre_http_request', $simuler_retire, 10 );
+na_verifier( is_array( $vif ) && false === $vif['deprecie'] && is_array( $mort ) && true === $mort['deprecie'],
+	'« false » laisse le concept vivant, « true » le dit retiré', array( $vif, $mort ) );
+
+WP_CLI::log( 'Les identifiants Pactols reçus du navigateur' );
+$_POST['pactols_subjects'] = wp_slash( wp_json_encode( array(
+	array( 'label' => 'forgé', 'ark' => 'https://exemple.org/ark:/26678/pcrtX', 'idConcept' => '12' ),
+	array( 'label' => 'chemin', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrtY', 'idConcept' => '../../thesaurus' ),
+	array( 'label' => 'en http', 'ark' => 'http://ark.frantiq.fr/ark:/26678/pcrtZ', 'idConcept' => '77' ),
+) ) );
+$_POST['commune']     = array( 'Caen', 'Vire' );
+$_POST['commune_ark'] = array( 'javascript:alert(1)', 'https://ark.frantiq.fr/ark:/26678/pcrtkeqj9I3nbw' );
+$recus_termes = na_appel( $plugin, 'collect_pactols_keywords', array( 'pactols_subjects' ) );
+$recus_lieux  = na_appel( $plugin, 'collect_lieux' );
+unset( $_POST['pactols_subjects'], $_POST['commune'], $_POST['commune_ark'] );
+na_verifier( array( '', 'https://ark.frantiq.fr/ark:/26678/pcrtY', 'https://ark.frantiq.fr/ark:/26678/pcrtZ' ) === array_column( $recus_termes, 'ark' )
+	&& array( '', '', '77' ) === array_column( $recus_termes, 'idConcept' )
+	&& array( '', 'https://ark.frantiq.fr/ark:/26678/pcrtkeqj9I3nbw' ) === array_column( $recus_lieux, 'ark' ),
+	'un ARK étranger ou forgé ne se garde pas, un ARK en http passe en https, un identifiant non numérique tombe', array( $recus_termes, $recus_lieux ) );
+
+WP_CLI::log( 'Le bloc d\'index d\'une commune homonyme' );
+$homonyme = na_notice( array_merge( $saisie_styles, array( 'lieu_dit' => 'Château', 'departement' => 'Calvados',
+	'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ) ), 'commune' => 'Falaise (Calvados)' ) ),
+	array( $a => $concept( $a, '2026-10-01' ), $b => $concept( $b, '2026-10-01' ) ) );
+update_post_meta( $homonyme, '_na_reference', 'HOMONY' );
+$bloc_homonyme = na_appel( $plugin, 'indexation_de', array( $homonyme, na_appel( $plugin, 'saisie_de', array( $homonyme, false ) ) ) );
+na_appel( $plugin, 'sortir_de_l_attente', array( $homonyme ) );
+wp_delete_post( $homonyme, true );
+na_verifier( false !== strpos( $bloc_homonyme, 'notice="Falaise Château"' ) && false !== strpos( $bloc_homonyme, 'ref="HOMONY"' ),
+	'le bloc d\'index nomme la commune sans redire sa parenthèse, et porte la référence', substr( $bloc_homonyme, 0, 600 ) );
+
+WP_CLI::log( 'Le formulaire dit qu\'un lien de correction a servi, ou expiré' );
+$reprise_prop->setValue( $plugin, null );
+$_GET['notice_reprise'] = 'jetonrendu01';
+set_transient( 'na_reprise_faite_jetonrendu01', 'REFAIT', 60 );
+$rendu_servi = $plugin->render_form();
+$reprise_prop->setValue( $plugin, null );
+$_GET['notice_reprise'] = 'jetonrendu02';
+$rendu_expire = $plugin->render_form();
+$reprise_prop->setValue( $plugin, null );
+$_GET['notice_reprise'] = 'jetonrendu01';
+$_GET['notice_envoyee'] = '1';
+$rendu_fin = $plugin->render_form();
+unset( $_GET['notice_reprise'], $_GET['notice_envoyee'] );
+$reprise_prop->setValue( $plugin, null );
+delete_transient( 'na_reprise_faite_jetonrendu01' );
+na_verifier( false !== strpos( $rendu_servi, 'a déjà servi' ) && false !== strpos( $rendu_servi, 'REFAIT' )
+	&& false !== strpos( $rendu_expire, 'a expiré' ) && false === strpos( $rendu_fin, 'a déjà servi' ),
+	'lien servi : la référence du dépôt ; lien inconnu : expiré ; rien sur la page de fin',
+	array( false !== strpos( $rendu_servi, 'a déjà servi' ), false !== strpos( $rendu_expire, 'a expiré' ), false !== strpos( $rendu_fin, 'a déjà servi' ) ) );
+
+WP_CLI::log( 'La limite annoncée des illustrations' );
+// L'annonce ne promet jamais plus que ce que le serveur accepte : trois
+// fichiers de 2 Mo font 6 Mo, non les 20 du plafond général.
+$deux_mo = function () {
+	return 2 * MB_IN_BYTES;
+};
+add_filter( 'upload_size_limit', $deux_mo, 99 );
+$rendu_limite = $plugin->render_form();
+remove_filter( 'upload_size_limit', $deux_mo, 99 );
+na_verifier( false !== strpos( $rendu_limite, '6&nbsp;Mo en tout, 2&nbsp;Mo par fichier' ) && false === strpos( $rendu_limite, '20&nbsp;Mo en tout' ),
+	'trois fichiers de 2 Mo s\'annoncent « 6 Mo en tout, 2 Mo par fichier »',
+	preg_match( '#[\d,]+&nbsp;Mo en tout[^<)]*#', $rendu_limite, $m_limite ) ? $m_limite[0] : '' );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),
