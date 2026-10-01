@@ -442,7 +442,7 @@ class Notice_Archeomed_RTF {
 				if ( preg_match( '#^</\s*([a-zA-Z0-9]+)#', $part, $m ) ) {
 					$tag = strtolower( $m[1] );
 					// On ne ferme que si la balise a bien été ouverte.
-					if ( isset( $open_tags[ $tag ] ) && ! empty( $stack ) ) {
+					if ( ( isset( $open_tags[ $tag ] ) || 'span' === $tag ) && ! empty( $stack ) ) {
 						$last = array_pop( $stack );
 						if ( $last === $tag ) {
 							$rtf .= '}';
@@ -453,8 +453,13 @@ class Notice_Archeomed_RTF {
 					}
 				} elseif ( preg_match( '#^<\s*([a-zA-Z0-9]+)#', $part, $m ) ) {
 					$tag = strtolower( $m[1] );
-					// Balise auto-fermante : aucun effet ici (les <br> ont déjà été traités).
-					if ( isset( $open_tags[ $tag ] ) && ! preg_match( '#/\s*>$#', $part ) ) {
+					if ( 'span' === $tag && ! preg_match( '#/\s*>$#', $part ) ) {
+						// Les petites capitales de l'éditeur ; un autre « span »
+						// ouvre un groupe neutre, que sa fermeture referme.
+						$rtf    .= preg_match( '#\bclass\s*=\s*["\'][^"\']*\bna-pc\b#i', $part ) ? '{\\scaps ' : '{';
+						$stack[] = 'span';
+					} elseif ( isset( $open_tags[ $tag ] ) && ! preg_match( '#/\s*>$#', $part ) ) {
+						// Balise auto-fermante : aucun effet ici (les <br> ont déjà été traités).
 						$rtf    .= $open_tags[ $tag ];
 						$stack[] = $tag;
 					}

@@ -112,6 +112,9 @@ class Notice_Archeomed_Settings {
 		'{n}'        => 'le rang de la figure dans la notice',
 	);
 
+	/** La dernière valeur rendue par sanitize(), que add_option repasse. */
+	private static $dernier_nettoye = null;
+
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
@@ -337,6 +340,14 @@ class Notice_Archeomed_Settings {
 	 * quand l'utilisateur enregistre la page sans retoucher ce champ.
 	 */
 	public function sanitize( $input ) {
+		// Tant que l'option est absente ou vide, WordPress passe par
+		// add_option, qui renettoie la valeur déjà nettoyée : sans les
+		// témoins d'onglet (« styles_presents », « normes_presentes »…), ce
+		// second passage repartait de l'option vide, et la page disait
+		// « Réglages enregistrés » sans rien garder.
+		if ( null !== self::$dernier_nettoye && $input === self::$dernier_nettoye ) {
+			return $input;
+		}
 		$current = get_option( self::OPTION_NAME, array() );
 		$out     = is_array( $current ) ? $current : array();
 
@@ -597,6 +608,7 @@ class Notice_Archeomed_Settings {
 			$out['garder_originaux'] = empty( $input['garder_originaux'] ) ? 0 : 1;
 		}
 
+		self::$dernier_nettoye = $out;
 		return $out;
 	}
 
@@ -878,6 +890,7 @@ class Notice_Archeomed_Settings {
 			'poids'     => 'courriel',
 			'github'    => 'maj',
 			'maj'       => 'maj',
+			'pactols'   => 'diagnostic',
 		);
 		if ( ! isset( $onglets[ $quoi ] ) ) {
 			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
@@ -903,6 +916,8 @@ class Notice_Archeomed_Settings {
 			$resultat = $plugin ? $plugin->essayer_le_poids( $vers, $mo ) : $absent;
 		} elseif ( 'github' === $quoi ) {
 			$resultat = $this->test_github();
+		} elseif ( 'pactols' === $quoi ) {
+			$resultat = $this->test_pactols();
 		} else {
 			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
 				$notice_archeomed_maj->oublier();
@@ -1641,7 +1656,9 @@ class Notice_Archeomed_Settings {
 							lui-même. Ne passer en immédiat que si le planificateur est désactivé sur cet
 							hébergement (<code>DISABLE_WP_CRON</code>) et qu’aucune tâche système ne
 							le remplace — la liste « Chronique ▸ Notices reçues » le dira en
-							s’allongeant.
+							s’allongeant. Dans les deux cas, la notice est d’abord inscrite dans
+							cette liste, avec ses fichiers : un courriel refusé ne la perd pas, elle
+							y attend qu’on la relance.
 						<?php endif; ?>
 					</p>
 				</td>
@@ -2154,6 +2171,58 @@ class Notice_Archeomed_Settings {
 			L’envoi d’une notice précise se diagnostique depuis sa fiche, dans
 			l’encart « Dépannage ».
 		</p>
+
+		<h2>Sortie vers Pactols</h2>
+		<p style="max-width:46em">Cet essai dit si le serveur peut joindre le
+		thésaurus. Le navigateur de l’auteur l’interroge lui-même pour proposer
+		les termes&nbsp;; mais c’est le serveur qui lit ensuite leur forme préférée et
+		leur chaîne, d’où viennent les blocs d’index. Le proxy qui refuse
+		Cloudflare peut le refuser aussi.</p>
+		<?php self::ouvrir_un_essai(); ?>
+			<button type="submit" class="button" name="na_quoi" value="pactols">Tester l’accès à Pactols</button>
+		</form>
 		<?php
+		if ( 'pactols' === $essai['quoi'] ) {
+			self::resultat( $essai['resultat'] );
+		}
+	}
+
+	/**
+	 * Le serveur joint-il Pactols ?
+	 *
+	 * La résolution des termes ne se fait que là, dans une tâche : si le
+	 * proxy de l'hébergement refuse la sortie, aucun terme n'est jamais lu —
+	 * ni forme préférée, ni bloc d'index, ni terme retiré —, chaque notice
+	 * épuise ses essais, et le Word dit seulement « pas encore lu ». On
+	 * demande un concept connu, par la route même qu'emploie la résolution.
+	 */
+	private function test_pactols() {
+		$reponse = wp_remote_get( Notice_Archeomed_Thesaurus::BASE . 'concept/ark:/26678/pcrtRFSvuXH6BD', array(
+			'timeout' => 10,
+			'headers' => array( 'Accept' => 'application/json' ),
+		) );
+		if ( is_wp_error( $reponse ) ) {
+			$message = $reponse->get_error_message();
+			$proxy   = false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' );
+			return array(
+				'ok'      => false,
+				'message' => 'Pactols n’est pas joignable depuis ce serveur — ' . $message . '.'
+					. ( $proxy ? ' C’est le proxy de l’hébergement qui refuse la sortie, comme pour Cloudflare : il faut demander l’ouverture de pactols.frantiq.fr.' : '' )
+					. ' Les termes resteront « non lus » : ni forme préférée, ni bloc d’index.',
+			);
+		}
+		$code = (int) wp_remote_retrieve_response_code( $reponse );
+		$data = json_decode( wp_remote_retrieve_body( $reponse ), true );
+		if ( 200 !== $code || ! is_array( $data ) || empty( $data ) ) {
+			return array(
+				'ok'      => false,
+				'message' => 'Pactols répond, mais pas ce qu’on attend (code HTTP ' . $code . ') : '
+					. 'le serveur le joint, l’API peut être en panne ou avoir changé.',
+			);
+		}
+		return array(
+			'ok'      => true,
+			'message' => 'Pactols est joignable depuis ce serveur (code HTTP 200) : les termes des notices seront lus.',
+		);
 	}
 }

@@ -295,6 +295,24 @@ class Notice_Archeomed_Paquet {
 		}
 	}
 
+	/**
+	 * Efface les ateliers restés en plan, plus vieux que « $age » secondes.
+	 *
+	 * L'atelier ne s'efface qu'en fin de requête : un assemblage tué en route
+	 * — durée, mémoire — laissait pour toujours les figures d'une rubrique en
+	 * trois définitions, des centaines de méga-octets que la purge des
+	 * fichiers temporaires ne voyait pas, faute de regarder les dossiers.
+	 */
+	public static function purger_les_ateliers( $age ) {
+		$ateliers = glob( trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/atelier-*', GLOB_ONLYDIR );
+		$paquet   = new self();
+		foreach ( (array) $ateliers as $atelier ) {
+			if ( is_dir( $atelier ) && filemtime( $atelier ) < time() - (int) $age ) {
+				$paquet->effacer_le_dossier( $atelier );
+			}
+		}
+	}
+
 	/** Efface le dossier de travail une fois l'archive servie. */
 	public function nettoyer() {
 		if ( '' !== $this->atelier && is_dir( $this->atelier ) ) {

@@ -85,7 +85,9 @@ class Notice_Archeomed_Thesaurus {
 		if ( self::est_un_echec( $connu ) ) {
 			return null;   // échec récent : on n'insiste pas à chaque page
 		}
-		if ( is_array( $connu ) ) {
+		// Un concept gardé sans sa chaîne, avant que cela ne compte pour un
+		// échec, se relit au lieu de servir encore un mois.
+		if ( is_array( $connu ) && ! empty( $connu['chemin'] ) ) {
 			return $connu;
 		}
 
@@ -138,6 +140,28 @@ class Notice_Archeomed_Thesaurus {
 			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance, $coupe );
 			$ecourte = $ecourte || $coupe;
 			$noeud = ( is_array( $seul ) && isset( $seul[ $ark ] ) ) ? $seul[ $ark ] : null;
+			// L'expansion ne contenait pas le concept : un identifiant faux,
+			// un lieu de th17 lu comme TH_1. La route par ARK donne le vrai
+			// identifiant et le vrai thésaurus ; on refait l'expansion une fois
+			// avec eux.
+			$vrai   = self::valeur( $seul, $ark, self::DCT . 'identifier' );
+			$schema = self::valeur( $seul, $ark, self::SKOS . 'inScheme' );
+			$schema = ( '' !== $schema ) ? basename( $schema ) : $theso;
+			if ( null !== $noeud && '' !== $vrai && ( $vrai !== $id || $schema !== $theso ) && self::reste( $echeance ) >= 1 ) {
+				$graphe  = self::appeler( 'concept/' . $schema . '/' . rawurlencode( $vrai ) . '/expansion?way=top', $echeance, $coupe );
+				$ecourte = $ecourte || $coupe;
+				if ( is_array( $graphe ) && isset( $graphe[ $ark ] ) ) {
+					$chemin = self::remonter( $graphe, $ark );
+					$id     = $vrai;
+				}
+			}
+		}
+		// Un concept sans chaîne ascendante n'est pas résolu. Il se gardait un
+		// mois, et à demeure dans la notice : le bloc d'index manquait pour
+		// toujours, et rien ne le comptait parmi les termes non lus. Interrompu,
+		// il se reprend ; tombé, il compte comme un échec d'une heure.
+		if ( null !== $noeud && empty( $chemin ) ) {
+			$noeud = null;
 		}
 		if ( null === $noeud && $ecourte ) {
 			// Un appel dont l'échéance a raccourci le délai n'a pas échoué : on
@@ -169,7 +193,9 @@ class Notice_Archeomed_Thesaurus {
 			'id'         => $id,
 			'prefLabel'  => isset( $etiquettes['fr'] ) ? $etiquettes['fr'] : '',
 			'labels'     => $etiquettes,
-			'deprecie'   => '' !== self::premiere( $noeud, self::OWL . 'deprecated' ),
+			// « false » se lisait comme retiré : c'est la valeur, non la
+			// présence de la propriété, qui compte.
+			'deprecie'   => 'true' === strtolower( self::premiere( $noeud, self::OWL . 'deprecated' ) ),
 			'remplacant' => $remplacant,
 			'chemin'     => $chemin,
 			'lu_le'      => gmdate( 'Y-m-d' ),
@@ -354,6 +380,23 @@ class Notice_Archeomed_Thesaurus {
 	public static function partie_ark( $ark ) {
 		$pos = strpos( (string) $ark, 'ark:/' );
 		return ( false !== $pos ) ? substr( $ark, $pos + 5 ) : (string) $ark;
+	}
+
+	/**
+	 * Un ARK de Frantiq sous sa forme d'usage, ou une chaîne vide.
+	 *
+	 * Rien ne le contrôlait : un lieu gardait « javascript:… », un terme un
+	 * ARK d'un autre hôte, et l'un comme l'autre partait en lien dans le
+	 * Word. Un « http:// » ne se résolvait jamais, les clefs de l'API étant en
+	 * https : il est ramené à https. Le reste n'est pas un identifiant, et le
+	 * terme se garde sans lui.
+	 */
+	public static function ark_propre( $ark ) {
+		$ark = trim( (string) $ark );
+		if ( 0 === stripos( $ark, 'http://' ) ) {
+			$ark = 'https://' . substr( $ark, 7 );
+		}
+		return preg_match( '#^https://ark\.frantiq\.fr/ark:/26678/[A-Za-z0-9_-]+$#', $ark ) ? $ark : '';
 	}
 
 	/**

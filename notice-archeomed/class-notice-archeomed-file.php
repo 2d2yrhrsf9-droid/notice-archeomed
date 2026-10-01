@@ -250,7 +250,12 @@ class Notice_Archeomed_File {
 	 * coûtent plus une notice.
 	 */
 	public function deposer( $donnees, $notice_html, $fichiers, $document, $reference ) {
-		$titre = trim( $donnees['commune'] . ' (' . $donnees['departement'] . ') — ' . $donnees['annee'] );
+		// Le titre de la liste porte le lieu-dit : trois « Argentan (Orne) —
+		// 2025 » ne se distinguaient pas. Les notices déjà reçues gardent le
+		// leur.
+		$plugin = $this->plugin();
+		$titre  = ( null !== $plugin ) ? $plugin->titre_de_liste( $donnees )
+			: trim( $donnees['commune'] . ' (' . $donnees['departement'] . ') — ' . $donnees['annee'] );
 		$id    = wp_insert_post(
 			array(
 				'post_type'   => self::CPT,
@@ -1263,8 +1268,10 @@ class Notice_Archeomed_File {
 			$corps .= '<p><strong>' . esc_html( $rubrique ) . '</strong></p><ul>';
 			foreach ( $liste as $id ) {
 				$famille = (string) get_post_meta( $id, '_na_famille', true );
+				// Le titre seul : « get_the_title » le préfixe de « Privé : »,
+				// que le courriel répétait à chaque ligne.
 				$corps .= '<li><a href="' . esc_url( get_edit_post_link( $id, '' ) ) . '">'
-					. esc_html( get_the_title( $id ) ) . '</a>'
+					. esc_html( get_post_field( 'post_title', $id ) ) . '</a>'
 					. ( '' !== $famille ? ' — ' . esc_html( $famille ) : '' )
 					. ' — ' . esc_html( (string) get_post_meta( $id, '_na_responsable', true ) )
 					// L'état, dans les mêmes mots que la liste : une notice en

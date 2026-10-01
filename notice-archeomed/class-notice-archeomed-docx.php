@@ -287,7 +287,11 @@ class Notice_Archeomed_DOCX {
 			}
 			return $reste;
 		};
-		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|ou)[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
+		// « du Xe au XIIe siècle », « entre le XIe et le XIIe siècle », « fin
+		// du XIIe-début du XIIIe siècle » : la liaison, le moment et l'article
+		// qui les suivent. Sans eux, seul le dernier siècle passait en petites
+		// capitales, et le premier restait en capitales.
+		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|au|aux|ou)(?:[\s\x{A0}]*(?:début|milieu|fin))?(?:[\s\x{A0}]+(?:le|la|les|du|des))?[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
 		$touchable = function ( $run ) {
 			return is_array( $run ) && empty( $run['raw'] ) && isset( $run['typo'] )
 				&& empty( $run['nom'] ) && empty( $run['brut'] ) && ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
@@ -327,7 +331,10 @@ class Notice_Archeomed_DOCX {
 				$texte = $rendu . substr( $texte, $depuis );
 				$runs[ $i ]['typo'] = $texte;
 			}
-			if ( 'abrege' === $mot && preg_match_all( '/(*UCP)[\s\x{A0}]+siècles?(?![\pL\d])\.?/u', $texte, $trouves, PREG_OFFSET_CAPTURE ) ) {
+			// « s. » déjà abrégé prend aussi son insécable : « xiie s. », tapé
+			// en bas de casse, gardait l'espace ordinaire que « XIIe s. »
+			// perdait.
+			if ( 'abrege' === $mot && preg_match_all( '/(*UCP)[\s\x{A0}]+(?:siècles?(?![\pL\d])\.?|s\.)/u', $texte, $trouves, PREG_OFFSET_CAPTURE ) ) {
 				$rendu  = '';
 				$depuis = 0;
 				foreach ( $trouves[0] as $t ) {
@@ -538,6 +545,23 @@ class Notice_Archeomed_DOCX {
 		}
 		$xml         .= '</w:p>';
 		$this->body[] = $xml;
+	}
+
+	/**
+	 * Des fragments rendus comme dans un paragraphe : typographie, puis
+	 * siècles.
+	 *
+	 * Le lieu-dit du titre et le titre d'une figure se composent morceau par
+	 * morceau, à côté d'un lien ou d'un numéro : ils sortaient sans
+	 * apostrophe courbe ni siècle en petites capitales, quand la légende
+	 * voisine les avait.
+	 */
+	public function fragments( $runs ) {
+		$xml = '';
+		foreach ( self::siecles( self::typographie_des_fragments( (array) $runs ) ) as $run ) {
+			$xml .= $this->render_run( $run );
+		}
+		return $xml;
 	}
 
 	/**
@@ -767,7 +791,15 @@ class Notice_Archeomed_DOCX {
 			if ( '<' === $part[0] ) {
 				if ( preg_match( '#^</\s*([a-zA-Z0-9]+)#', $part, $m ) ) {
 					$tag = strtolower( $m[1] );
-					if ( isset( $known[ $tag ] ) ) {
+					if ( 'span' === $tag ) {
+						// Le dernier « span » ouvert, petites capitales ou non.
+						for ( $k = count( $stack ) - 1; $k >= 0; $k-- ) {
+							if ( 'pc' === $stack[ $k ] || 'span' === $stack[ $k ] ) {
+								array_splice( $stack, $k, 1 );
+								break;
+							}
+						}
+					} elseif ( isset( $known[ $tag ] ) ) {
 						$idx = array_search( $known[ $tag ], $stack, true );
 						if ( false !== $idx ) {
 							array_splice( $stack, $idx, 1 );
@@ -775,7 +807,11 @@ class Notice_Archeomed_DOCX {
 					}
 				} elseif ( preg_match( '#^<\s*([a-zA-Z0-9]+)#', $part, $m ) ) {
 					$tag = strtolower( $m[1] );
-					if ( isset( $known[ $tag ] ) && ! preg_match( '#/\s*>$#', $part ) ) {
+					if ( 'span' === $tag && ! preg_match( '#/\s*>$#', $part ) ) {
+						// Les petites capitales que l'auteur a posées avec le
+						// bouton de l'éditeur ; un autre « span » ne fait rien.
+						$stack[] = preg_match( '#\bclass\s*=\s*["\'][^"\']*\bna-pc\b#i', $part ) ? 'pc' : 'span';
+					} elseif ( isset( $known[ $tag ] ) && ! preg_match( '#/\s*>$#', $part ) ) {
 						$stack[] = $known[ $tag ];
 					}
 				}

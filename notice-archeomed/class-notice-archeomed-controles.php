@@ -68,7 +68,38 @@ class Notice_Archeomed_Controles {
 			}
 		}
 		$avis = array_merge( $avis, self::figures( $figures ) );
+		$avis = array_merge( $avis, self::appels_de_note( isset( $d['texte_notice'] ) ? $d['texte_notice'] : '' ) );
 		return array_values( array_unique( $avis ) );
+	}
+
+	/**
+	 * Des appels de note sans leur note.
+	 *
+	 * Le formulaire ne reçoit pas de notes de bas de page : collée depuis
+	 * Word, une note laisse son appel — en exposant, ou « [1] » — et son
+	 * texte se perd, ou passe dans le corps. Rien ne le disait. Un exposant
+	 * qui suit « m » est une unité (m², cm³) et non un appel.
+	 */
+	public static function appels_de_note( $html ) {
+		$html   = (string) $html;
+		$appels = array();
+		if ( preg_match_all( '#(?<![mM])<sup>\s*(\d{1,3})\s*</sup>#u', $html, $m ) ) {
+			$appels = array_merge( $appels, $m[1] );
+		}
+		$texte = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		if ( preg_match_all( '#\[(\d{1,3})\]#u', $texte, $m ) ) {
+			$appels = array_merge( $appels, $m[1] );
+		}
+		$appels = array_values( array_unique( $appels ) );
+		if ( empty( $appels ) ) {
+			return array();
+		}
+		return array( sprintf( 'Le texte porte %1$s (%2$s) sans le texte des notes, que le formulaire ne reçoit pas'
+			. "\u{00A0}: voir avec l’auteur s’il faut les reprendre.",
+			count( $appels ) > 1 ? 'des appels de note' : 'un appel de note',
+			implode( ', ', array_map( function ( $n ) {
+				return "«\u{00A0}" . $n . "\u{00A0}»";
+			}, $appels ) ) ) );
 	}
 
 	/**

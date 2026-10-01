@@ -647,6 +647,370 @@ na_verifier( is_string( $bandeaux ), 'les bandeaux de l\'administration s\'affic
 na_verifier( false === Notice_Archeomed_Pactols::protection_suspendue() || 'production' !== wp_get_environment_type(),
 	'la vérification anti-robot ne se suspend jamais sur un site de production' );
 
+WP_CLI::log( 'Les réglages enregistrés sur une option vide' );
+// WordPress repasse la valeur par add_option tant que l'option vaut son
+// défaut : le second nettoyage, sans les témoins d'onglet, perdait tout.
+$reglages_avant = get_option( Notice_Archeomed_Settings::OPTION_NAME, null );
+$pages_reglages = new Notice_Archeomed_Settings();
+$pages_reglages->register_settings();
+delete_option( Notice_Archeomed_Settings::OPTION_NAME );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array( 'styles_presents' => 1,
+	'styles' => array( 'responsabilites' => 'TEI_archeoCHR_authority' ) ) );
+wp_cache_delete( 'alloptions', 'options' );
+$enregistres = get_option( Notice_Archeomed_Settings::OPTION_NAME );
+unregister_setting( Notice_Archeomed_Settings::OPTION_GROUP, Notice_Archeomed_Settings::OPTION_NAME );
+if ( null === $reglages_avant ) {
+	delete_option( Notice_Archeomed_Settings::OPTION_NAME );
+} else {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
+}
+Notice_Archeomed_Styles::oublier();
+na_verifier( isset( $enregistres['styles']['responsabilites'] ) && 'TEI_archeoCHR_authority' === $enregistres['styles']['responsabilites'],
+	'le premier réglage des styles se garde, même sur une option absente', $enregistres );
+
+WP_CLI::log( 'Les petites capitales de l\'auteur' );
+$pc_propre = na_appel( $plugin, 'clean_richtext', array(
+	'<p><span style="color:red">Le <span class="autre na-pc" onclick="x">Moyen Âge</span></span> et <span class="autre">ici</span>.</p>' ) );
+na_verifier( '<p>Le <span class="na-pc">Moyen Âge</span> et ici.</p>' === $pc_propre,
+	'seules les petites capitales de l\'éditeur gardent leur « span », sans autre attribut', $pc_propre );
+$pc_docx = implode( '', ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->html_to_paragraphs( $pc_propre ) );
+na_verifier( false !== strpos( $pc_docx, '<w:smallCaps/></w:rPr><w:t xml:space="preserve">Moyen Âge</w:t>' )
+	&& 1 === substr_count( $pc_docx, '<w:smallCaps/>' ),
+	'le Word les rend en petites capitales, et rien d\'autre', $pc_docx );
+$pc_rtf = implode( '', ( new Notice_Archeomed_RTF( Notice_Archeomed_Pactols::feuille_de_style( 'rtf' ) ) )->html_to_paragraphs( $pc_propre ) );
+na_verifier( false !== strpos( $pc_rtf, '{\\scaps ' ) && substr_count( $pc_rtf, '{' ) === substr_count( $pc_rtf, '}' ),
+	'le RTF de repli aussi, ses groupes équilibrés', $pc_rtf );
+na_verifier( '<p>Sans balise.</p>' === na_appel( $plugin, 'clean_richtext', array( '<p>Sans balise.</p>' ) ),
+	'un texte déjà enregistré passe tel quel' );
+
+WP_CLI::log( 'Les siècles au Word, au courriel et à la fiche' );
+$doc_xii = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$sans_balises = function ( $xml ) {
+	// « [xii] » pour les petites capitales, « ^e » pour l'exposant.
+	preg_match_all( '#<w:r>(?:<w:rPr>(.*?)</w:rPr>)?(.*?)</w:r>#s', $xml, $m, PREG_SET_ORDER );
+	$o = '';
+	foreach ( $m as $r ) {
+		$t = html_entity_decode( preg_replace( '#<[^>]+>#', '', $r[2] ), ENT_QUOTES | ENT_XML1, 'UTF-8' );
+		$o .= false !== strpos( $r[1], 'smallCaps' ) ? '[' . $t . ']' : ( false !== strpos( $r[1], 'superscript' ) ? '^' . $t : $t );
+	}
+	return str_replace( "\u{00A0}", '_', $o );
+};
+$siecles_vus = array();
+foreach ( array(
+	'XIIe siècle'                       => '[xii]^e_s.',
+	'XII<sup>e</sup> siècle'            => '[xii]^e_s.',
+	'XIIe s.'                           => '[xii]^e_s.',
+	'xiie s.'                           => '[xii]^e_s.',
+	'du Xe au XIIe siècle'              => 'du [x]^e au [xii]^e_s.',
+	'fin du XIIe-début du XIIIe siècle' => 'fin du [xii]^e-début du [xiii]^e_s.',
+	'Louis XIV et le XVe siècle'        => 'Louis XIV et le [xv]^e_s.',
+) as $saisi => $attendu ) {
+	$obtenu = $sans_balises( implode( '', $doc_xii->html_to_paragraphs( '<p>' . $saisi . '</p>' ) ) );
+	if ( $obtenu !== $attendu ) {
+		$siecles_vus[ $saisi ] = $obtenu;
+	}
+}
+na_verifier( empty( $siecles_vus ), 'le Word compose chaque forme de siècle saisie, liaisons comprises', $siecles_vus );
+$relu_xii = na_appel( $plugin, 'siecles_du_html', array( '<p>fin du XIIe-début du XIIIe siècle, xiie s.</p>' ) );
+na_verifier( 3 === substr_count( $relu_xii, 'small-caps' ) && false !== strpos( $relu_xii, "<sup>e</sup>\u{00A0}s.</p>" ),
+	'la page de relecture aussi, et « s. » prend son insécable', $relu_xii );
+$courriel_xii = na_appel( $plugin, 'build_notice', array( array_merge( $saisie_styles, array(
+	'texte_notice' => '<p>Le mur du XIIe siècle et le <span class="na-pc">Moyen Âge</span> : fin.</p>', 'reference' => 'REFXII' ) ) ) );
+na_verifier( false !== strpos( $courriel_xii, '<span style="font-variant:small-caps">xii</span><sup>e</sup>' )
+	&& false !== strpos( $courriel_xii, '<span class="na-pc" style="font-variant:small-caps">Moyen Âge</span>' )
+	&& false !== strpos( $courriel_xii, "Âge</span>\u{00A0}: fin" ) && false !== strpos( $courriel_xii, 'REFXII' ),
+	'le courriel et la fiche montrent le texte aux normes, petites capitales et référence comprises', $courriel_xii );
+
+WP_CLI::log( 'Le titre et les figures sous les normes' );
+$doc_titre = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$lieu_dit_xml = na_appel( $plugin, 'run_xml', array( $doc_titre, array( 'text' => "l'enceinte du XIIe siècle", 'i' => true ) ) );
+na_verifier( false !== strpos( $lieu_dit_xml, "l\u{2019}enceinte" ) && false !== strpos( $lieu_dit_xml, '<w:smallCaps/>' )
+	&& 0 === substr_count( $lieu_dit_xml, '<w:r><w:t' ) && false !== strpos( $lieu_dit_xml, '<w:i/>' ),
+	'le lieu-dit du titre prend apostrophe et siècles, en gardant son italique', $lieu_dit_xml );
+na_verifier( array( 'Falaise', 'Coulonces (Vire Normandie)' ) === array_column( na_appel( $plugin, 'lieux_de', array( array(
+	'departement' => '(Calvados)', 'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ),
+		array( 'nom' => 'Coulonces (Vire Normandie)', 'ark' => 'javascript:alert(1)' ) ) ) ) ), 'nom' ),
+	'la précision d\'un homonyme s\'ôte quand elle redit la parenthèse, et seulement alors' );
+na_verifier( array( '', '' ) === array_column( na_appel( $plugin, 'lieux_de', array( array( 'departement' => 'Calvados',
+	'lieux' => array( array( 'nom' => 'A', 'ark' => 'javascript:alert(1)' ), array( 'nom' => 'B', 'ark' => 'https://exemple.org/ark:/26678/pcrtX' ) ) ) ) ), 'ark' ),
+	'un lieu ne garde pas en lien un ARK qui n\'est pas de Frantiq' );
+na_verifier( 'https://ark.frantiq.fr/ark:/26678/pcrtA1' === Notice_Archeomed_Thesaurus::ark_propre( ' http://ark.frantiq.fr/ark:/26678/pcrtA1 ' )
+	&& '' === Notice_Archeomed_Thesaurus::ark_propre( 'https://ark.frantiq.fr/ark:/26678/../../x' ),
+	'un ARK en http est ramené à https ; un chemin forgé est refusé' );
+
+WP_CLI::log( 'Les sorties qui se recalculent' );
+$N::oublier();
+$sortie = na_notice( array_merge( $saisie_styles, array( 'annee' => '2004/2005',
+	'pactols_subjects_items' => array( array( 'label' => 'Saint-Étienne', 'ark' => '' ) ),
+	'nature_items' => array( array( 'label' => 'Fouille préventive', 'ark' => '' ) ),
+	'texte_notice' => '<p>Le mur<sup>1</sup> de 12 m<sup>2</sup> [3].</p>' ) ) );
+update_post_meta( $sortie, '_na_reference', 'REFOUT' );
+$saisie_sortie = na_appel( $plugin, 'saisie_de', array( $sortie, false ) );
+na_appel( $plugin, 'sortir_de_l_attente', array( $sortie ) );
+na_verifier( '2004-2005' === $saisie_sortie['annee'] && 'REFOUT' === $saisie_sortie['reference'],
+	'l\'année suit le trait réglé à la sortie, et la référence d\'une notice ancienne la rejoint', $saisie_sortie['annee'] );
+na_verifier( 'Saint-Étienne' === na_appel( $plugin, 'graphie_imprimee', array( $saisie_sortie['pactols_subjects_items'][0] ) )
+	&& 'fouille préventive' === na_appel( $plugin, 'graphie_imprimee', array( $saisie_sortie['nature_items'][0] ) ),
+	'un mot-clé libre garde sa capitale ; une nature prend le bas de casse' );
+$doc_sortie = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_sortie, $saisie_sortie ) );
+$xml_sortie = implode( '', $corps->getValue( $doc_sortie ) );
+na_verifier( false !== strpos( $xml_sortie, 'Référence du dépôt' ) && false !== strpos( $xml_sortie, 'REFOUT' )
+	&& false !== strpos( $xml_sortie, 'appels de note' ) && false !== strpos( $xml_sortie, '«' . $nb . '1' . $nb . '»' )
+	&& false !== strpos( $xml_sortie, '«' . $nb . '3' . $nb . '»' ) && false === strpos( $xml_sortie, '«' . $nb . '2' . $nb . '»' ),
+	'le Word donne la référence et les appels de note, sans prendre « m² » pour un appel', $xml_sortie );
+wp_delete_post( $sortie, true );
+$coupe = na_appel( $plugin, 'limit_string', array( str_repeat( 'a', 12 ), 10, 'le lieu-dit' ) );
+$coupes = na_appel( $plugin, 'avis_des_coupes' );
+na_verifier( 10 === strlen( $coupe ) && 1 === count( $coupes ) && false !== strpos( $coupes[0], 'le lieu-dit' ),
+	'une coupe se nomme dans les avis', $coupes );
+na_verifier( 'Falaise (Calvados). Château — 2025' === $plugin->titre_de_liste( array( 'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ) ),
+	'departement' => 'Calvados', 'lieu_dit' => 'Château', 'annee' => '2025' ) ),
+	'le titre de la liste porte le lieu-dit, sans redire la parenthèse', $plugin->titre_de_liste( array( 'commune' => 'Falaise (Calvados)', 'departement' => 'Calvados', 'lieu_dit' => 'Château', 'annee' => '2025' ) ) );
+$homonymes = na_appel( $plugin, 'contacts_list', array( array_merge( $saisie_styles, array( 'resp_prenom' => 'Jean', 'resp_nom' => 'Martin',
+	'resp_email' => 'jean1@example.org', 'coauteur_prenom' => 'Jean', 'coauteur_nom' => 'Martin', 'coauteur_email' => 'jean2@example.org' ) ) ) );
+na_verifier( 2 === count( $homonymes ), 'deux personnes homonymes gardent chacune leur adresse', $homonymes );
+$doc_mort = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_mort, array_merge( $saisie_styles, array( 'pactols_subjects_items' => array(
+	array( 'label' => 'rapport final', 'ark' => $a, 'deprecie' => true, 'remplacant' => 'https://ark.frantiq.fr/ark:/26678/pcrtVLJq3mXSe8' ) ) ) ) ) );
+na_verifier( false !== strpos( implode( '', $corps->getValue( $doc_mort ) ), 'remplacé par 26678/pcrtVLJq3mXSe8' ),
+	'un terme retiré nomme son remplaçant' );
+
+WP_CLI::log( 'Le fascicule et ses renvois' );
+$fasc_d = function ( $commune, $rubrique, $renvoi = '' ) use ( $saisie_styles ) {
+	return array_merge( $saisie_styles, array( 'commune' => $commune, 'lieux' => array( array( 'nom' => $commune, 'ark' => '' ) ),
+		'rubrique_principale' => $rubrique, 'renvoi_1' => $renvoi, 'nature' => 'Fouille préventive' ) );
+};
+$renvoyee = na_notice( $fasc_d( 'Caen', 'I. Constructions et habitats civils', 'II. Constructions et habitats ecclésiastiques' ) );
+$GLOBALS['notice_archeomed_file']->poser_le_classement( $renvoyee, $fasc_d( 'Caen', 'I. Constructions et habitats civils' ) );
+$erreur_fasc = '';
+$fascicule   = na_appel( $plugin, 'fabriquer_le_fascicule', array( 'II. Constructions et habitats ecclésiastiques', array(
+	$fasc_d( 'Bayeux', 'II. Constructions et habitats ecclésiastiques' ), $fasc_d( 'Falaise', 'II. Constructions et habitats ecclésiastiques' ) ), &$erreur_fasc ) );
+$xml_fasc = '';
+if ( '' !== $fascicule && class_exists( 'ZipArchive' ) ) {
+	$zip_fasc = new ZipArchive();
+	if ( true === $zip_fasc->open( $fascicule ) ) {
+		$xml_fasc = (string) $zip_fasc->getFromName( 'word/document.xml' );
+		$zip_fasc->close();
+	}
+	@unlink( $fascicule );
+}
+$xml_fasc = str_replace( "\u{00A0}", ' ', $xml_fasc );
+wp_delete_post( $renvoyee, true );
+na_verifier( 1 === substr_count( $xml_fasc, 'II. 1. – Opérations de terrain' ) && false === strpos( $xml_fasc, '>I. 1. –' )
+	&& false !== strpos( $xml_fasc, 'Voir dans la rubrique' ),
+	'un renvoi se range sous la sous-rubrique du fascicule, sans en ouvrir une fausse', '' !== $erreur_fasc ? $erreur_fasc : substr_count( $xml_fasc, '1. –' ) );
+
+WP_CLI::log( 'Une expansion tombée n\'est pas un terme lu' );
+$ark_tombe = 'https://ark.frantiq.fr/ark:/26678/pcrtTombe';
+$noeud_tombe = array( $ark_tombe => array(
+	Notice_Archeomed_Thesaurus::DCT . 'identifier' => array( array( 'value' => '4242' ) ),
+	Notice_Archeomed_Thesaurus::SKOS . 'prefLabel' => array( array( 'value' => 'terme', 'lang' => 'fr' ) ),
+) );
+$simuler = function ( $pre, $args, $url ) use ( $noeud_tombe ) {
+	if ( false !== strpos( $url, 'pactols.frantiq.fr' ) ) {
+		if ( false !== strpos( $url, '/expansion' ) ) {
+			return new WP_Error( 'http_request_failed', 'cURL error 28' );
+		}
+		return array( 'headers' => array(), 'body' => wp_json_encode( $noeud_tombe ), 'cookies' => array(), 'filename' => null,
+			'response' => array( 'code' => 200, 'message' => 'OK' ) );
+	}
+	return $pre;
+};
+add_filter( 'pre_http_request', $simuler, 10, 3 );
+$tombe = Notice_Archeomed_Thesaurus::resoudre( $ark_tombe, '', 'TH_1' );
+remove_filter( 'pre_http_request', $simuler, 10 );
+na_verifier( null === $tombe && Notice_Archeomed_Thesaurus::echec_jusqua( $ark_tombe, '', 'TH_1' ) > time(),
+	'un concept sans chaîne n\'est pas résolu : il compte pour un échec d\'une heure', $tombe );
+delete_transient( na_appel( 'Notice_Archeomed_Thesaurus', 'clef', array( $ark_tombe, '', 'TH_1' ) ) );
+$sans_chaine = $concept( $a, '2026-10-01' );
+$sans_chaine['chemin'] = array();
+na_verifier( array( $a ) === na_appel( $plugin, 'termes_manquants', array( $saisie, array( $a => $sans_chaine, $b => $concept( $b, '2026-10-01' ) ) ) ),
+	'un terme gardé sans chaîne par une version d\'avant se compte comme non lu, et se relira' );
+
+WP_CLI::log( 'Le lien de correction' );
+$_POST['reprise_jeton'] = 'jetondessai1';
+set_transient( 'na_reprise_jetondessai1', array( 'remplace' => 'ANCIEN' ), 60 );
+na_appel( $plugin, 'oublier_le_jeton_repris', array( 'NOUVEL' ) );
+$avis_double = na_appel( $plugin, 'avis_du_lien_repris' );
+$_GET['notice_reprise'] = 'jetondessai1';
+$etat_lien = na_appel( $plugin, 'etat_du_lien_de_reprise' );
+$_GET['notice_reprise'] = 'jetoninconnu';
+$reprise_prop = new ReflectionProperty( $plugin, 'reprise' );
+$reprise_prop->setAccessible( true );
+$reprise_prop->setValue( $plugin, null );
+$etat_inconnu = na_appel( $plugin, 'etat_du_lien_de_reprise' );
+$reprise_prop->setValue( $plugin, null );
+unset( $_POST['reprise_jeton'], $_GET['notice_reprise'] );
+delete_transient( 'na_reprise_faite_jetondessai1' );
+na_verifier( array( 'etat' => 'utilise', 'reference' => 'NOUVEL' ) === $etat_lien && 'expire' === $etat_inconnu['etat']
+	&& 1 === count( $avis_double ) && false !== strpos( $avis_double[0], 'NOUVEL' ),
+	'un lien qui a servi dit pour quel dépôt ; un lien inconnu se dit expiré ; le renvoi se signale en doublon', array( $etat_lien, $etat_inconnu, $avis_double ) );
+$_SERVER['HTTP_REFERER'] = 'https://phishing.example/depot/';
+$formulaire = na_appel( $plugin, 'url_du_formulaire' );
+unset( $_SERVER['HTTP_REFERER'] );
+na_verifier( false === strpos( $formulaire, 'phishing.example' ), 'un référent d\'un autre site ne donne pas l\'adresse du formulaire', $formulaire );
+
+WP_CLI::log( 'Une correction qui ne reprend pas les figures' );
+$corrigee = na_notice( $saisie );
+update_post_meta( $corrigee, '_na_reference', 'AVANT1' );
+update_post_meta( $corrigee, '_na_illustrations', array( '/tmp/a.jpg', '/tmp/b.tif' ) );
+$phrase = na_appel( $plugin, 'figures_de_la_remplacee', array( array( 'remplace' => 'AVANT1', 'illustrations' => array( array( 'rang' => 1 ) ) ) ) );
+wp_delete_post( $corrigee, true );
+na_verifier( false !== strpos( $phrase, 'AVANT1' ) && false !== strpos( $phrase, '2 figures' ) && false !== strpos( $phrase, 'restent sur le site' ),
+	'la rédaction lit que les figures de la notice remplacée sont encore sur le site', $phrase );
+
+WP_CLI::log( 'Le Word disparu avant l\'envoi' );
+$reglages_avant = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_avant, array(
+	'destinataires' => array( array( 'email' => 'redaction@example.org', 'notices' => 1, 'recap' => 0 ) ) ) ) );
+$partis = array();
+$capter = function ( $rendu, $atts ) use ( &$partis ) {
+	$pieces = array();
+	foreach ( (array) $atts['attachments'] as $piece ) {
+		$pieces[] = array( basename( $piece ), file_exists( $piece ) );
+	}
+	$partis[] = array( 'a' => $atts['to'], 'pieces' => $pieces, 'corps' => $atts['message'], 'objet' => $atts['subject'] );
+	return true;
+};
+add_filter( 'pre_wp_mail', $capter, 10, 2 );
+$perdue = na_notice( array_merge( $saisie_styles, array( 'resp_email' => '' ) ) );
+foreach ( array( '_na_etat' => 'en_attente', '_na_notice' => '<p>La notice.</p>', '_na_reference' => 'PERDU1',
+	'_na_document' => '/tmp/na-essai-word-disparu.docx', '_na_fichiers' => array( '/tmp/na-essai-word-disparu.docx' ) ) as $cle => $valeur ) {
+	update_post_meta( $perdue, $cle, $valeur );
+}
+$issue_perdue = $plugin->expedier_de_la_file( $perdue );
+$etat_perdue  = get_post_meta( $perdue, '_na_etat', true );
+$illisible = na_notice( array_merge( $saisie_styles, array( 'resp_email' => '', 'illustrations' => 'un ancien champ libre' ) ) );
+foreach ( array( '_na_etat' => 'en_attente', '_na_notice' => '<p>La notice.</p>', '_na_document' => '' ) as $cle => $valeur ) {
+	update_post_meta( $illisible, $cle, $valeur );
+}
+$issue_illisible = $plugin->expedier_de_la_file( $illisible );
+$note_illisible  = get_post_meta( $illisible, '_na_note', true );
+$preparee = na_notice( $saisie_styles );
+update_post_meta( $preparee, '_na_etat', 'en_attente' );
+update_post_meta( $preparee, '_na_preparation', time() );
+$issue_preparee = $plugin->expedier_de_la_file( $preparee );
+remove_filter( 'pre_wp_mail', $capter, 10 );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
+foreach ( array( $perdue, $illisible, $preparee ) as $id ) {
+	wp_delete_post( $id, true );
+}
+na_verifier( 'partie' === $issue_perdue && 'envoyee' === $etat_perdue && isset( $partis[0]['pieces'][0] )
+	&& '.docx' === substr( $partis[0]['pieces'][0][0], -5 ) && $partis[0]['pieces'][0][1]
+	&& false !== strpos( $partis[0]['objet'], 'réf. PERDU1' ),
+	'le Word disparu se refait à partir de la saisie et part avec le courriel', $partis );
+na_verifier( 'partie' === $issue_illisible && isset( $partis[1] ) && empty( $partis[1]['pieces'] )
+	&& false !== strpos( $partis[1]['corps'], 'Le document Word n’est pas joint' ) && false !== strpos( $note_illisible, 'document Word' ),
+	'un Word qui ne se refait pas se dit dans le courriel et dans la liste', array( $issue_illisible, $note_illisible ) );
+na_verifier( 'en_preparation' === $issue_preparee && 2 === count( $partis ),
+	'une notice que la requête de l\'auteur prépare encore ne part pas', $issue_preparee );
+
+WP_CLI::log( 'Les ateliers abandonnés' );
+$atelier_mort = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/atelier-essaimort';
+wp_mkdir_p( $atelier_mort . '/icono/hr' );
+file_put_contents( $atelier_mort . '/icono/hr/f.jpg', 'x' );
+touch( $atelier_mort, time() - 2 * DAY_IN_SECONDS );
+Notice_Archeomed_Paquet::purger_les_ateliers( DAY_IN_SECONDS );
+na_verifier( ! is_dir( $atelier_mort ), 'l\'atelier d\'un assemblage mort s\'efface' );
+
+WP_CLI::log( 'La sortie vers Pactols' );
+$refuse_proxy = function ( $pre, $args, $url ) {
+	return false !== strpos( $url, 'pactols.frantiq.fr' ) ? new WP_Error( 'http_request_failed', 'cURL error 56: Received HTTP code 403 from proxy after CONNECT' ) : $pre;
+};
+add_filter( 'pre_http_request', $refuse_proxy, 10, 3 );
+$essai_pactols = na_appel( $pages_reglages, 'test_pactols' );
+remove_filter( 'pre_http_request', $refuse_proxy, 10 );
+na_verifier( false === $essai_pactols['ok'] && false !== strpos( $essai_pactols['message'], 'proxy' ),
+	'l\'essai dit que le proxy refuse Pactols', $essai_pactols );
+
+WP_CLI::log( 'Le dépôt, en envoi différé puis immédiat' );
+// La requête de l'auteur se joue entière : la redirection finale, qui
+// sortirait du script, est interceptée et rendue.
+$reglages_avant = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$sortir = function ( $vers ) {
+	throw new RuntimeException( (string) $vers );
+};
+$deposes = array();
+$capter_depot = function ( $rendu, $atts ) use ( &$deposes ) {
+	$pieces = array();
+	foreach ( (array) $atts['attachments'] as $piece ) {
+		$pieces[] = basename( $piece );
+	}
+	$deposes[] = array( 'objet' => $atts['subject'], 'pieces' => $pieces, 'corps' => $atts['message'] );
+	return true;
+};
+add_filter( 'wp_redirect', $sortir );
+add_filter( 'pre_wp_mail', $capter_depot, 10, 2 );
+$jouer_un_depot = function ( $mode ) use ( $plugin, $reglages_avant ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_avant, array(
+		'mode_envoi'    => $mode,
+		'destinataires' => array( array( 'email' => 'redaction@example.org', 'notices' => 1, 'recap' => 0 ) ) ) ) );
+	$defi = na_appel( $plugin, 'defi_du_puzzle' );
+	$_SERVER['REQUEST_METHOD'] = 'POST';
+	$_SERVER['HTTP_REFERER']   = 'https://phishing.example/depot/';
+	$_POST = array(
+		'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
+		'na_ts' => (string) ( time() - 30 ), 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
+		'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Caen' ), 'commune_ark' => array( '' ),
+		'departement' => 'Calvados', 'lieu_dit' => 'Château ' . $mode, 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
+		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.' . $mode . '@example.org',
+		'resp_inst' => 'Inrap', 'texte_notice' => '<p>Le mur du XIIe siècle.</p>',
+	);
+	$vers = '';
+	try {
+		$plugin->handle_submission();
+	} catch ( RuntimeException $e ) {
+		$vers = $e->getMessage();
+	}
+	$_POST = array();
+	unset( $_SERVER['HTTP_REFERER'] );
+	parse_str( (string) wp_parse_url( $vers, PHP_URL_QUERY ), $retour );
+	$ref = isset( $retour['notice_ref'] ) ? $retour['notice_ref'] : '';
+	$ids = '' === $ref ? array() : get_posts( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private',
+		'fields' => 'ids', 'meta_query' => array( array( 'key' => '_na_reference', 'value' => $ref ) ) ) );
+	return array( 'vers' => $vers, 'ref' => $ref, 'id' => empty( $ids ) ? 0 : (int) $ids[0] );
+};
+$differe = $jouer_un_depot( 'differe' );
+$differe_etat = array(
+	'etat'        => get_post_meta( $differe['id'], '_na_etat', true ),
+	'document'    => (string) get_post_meta( $differe['id'], '_na_document', true ),
+	'preparation' => get_post_meta( $differe['id'], '_na_preparation', true ),
+	'word_fait'   => file_exists( (string) get_post_meta( $differe['id'], '_na_document', true ) ),
+	'prevue'      => (bool) wp_next_scheduled( Notice_Archeomed_File::HOOK_UNE, array( $differe['id'] ) ),
+	'courriels'   => count( $deposes ),
+);
+$immediat = $jouer_un_depot( 'immediat' );
+$donnees_immediat = get_post_meta( $immediat['id'], '_na_donnees', true );
+$immediat_etat = array(
+	'etat'       => get_post_meta( $immediat['id'], '_na_etat', true ),
+	'correction' => isset( $donnees_immediat['correction_url'] ) ? $donnees_immediat['correction_url'] : '',
+);
+remove_filter( 'wp_redirect', $sortir );
+remove_filter( 'pre_wp_mail', $capter_depot, 10 );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
+foreach ( array( $differe, $immediat ) as $depot ) {
+	if ( $depot['id'] ) {
+		$doc_depot = (string) get_post_meta( $depot['id'], '_na_document', true );
+		if ( '' !== $doc_depot ) {
+			@unlink( $doc_depot );
+		}
+		wp_unschedule_hook( Notice_Archeomed_File::HOOK_UNE );
+		wp_delete_post( $depot['id'], true );
+	}
+}
+na_verifier( $differe['id'] > 0 && 'en_attente' === $differe_etat['etat'] && '' !== $differe_etat['document']
+	&& $differe_etat['word_fait'] && '' === $differe_etat['preparation'] && $differe_etat['prevue']
+	&& 0 === $differe_etat['courriels'] && false !== strpos( $differe['vers'], 'notice_envoyee=1' ),
+	'en différé : la notice est inscrite, son Word fait, la préparation levée, l\'envoi programmé, rien d\'expédié', array( $differe, $differe_etat ) );
+na_verifier( $immediat['id'] > 0 && 'envoyee' === $immediat_etat['etat'] && 2 === count( $deposes )
+	&& isset( $deposes[0] ) && false !== strpos( $deposes[0]['objet'], 'réf. ' . $immediat['ref'] )
+	&& 1 === count( $deposes[0]['pieces'] ) && '.docx' === substr( $deposes[0]['pieces'][0], -5 ),
+	'en immédiat : la notice est inscrite comme en différé, et part par la file, Word joint', array( $immediat, $immediat_etat, $deposes ) );
+na_verifier( false === strpos( $differe['vers'] . $immediat['vers'] . $immediat_etat['correction'], 'phishing' )
+	&& '' !== $immediat_etat['correction'],
+	'ni le retour ni le lien de correction ne suivent un référent étranger', array( $differe['vers'], $immediat_etat['correction'] ) );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),
