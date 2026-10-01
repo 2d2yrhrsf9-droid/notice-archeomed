@@ -1993,6 +1993,43 @@ na_verifier( isset( Notice_Archeomed_Settings::onglets()['accessibilite'] ) && f
 	&& false !== strpos( $rendu_a11y, 'déclaration' ),
 	'l\'onglet dit que le score n\'est pas le taux RGAA, renvoie à Ara, rappelle la déclaration, et montre le dernier contrôle' );
 
+WP_CLI::log( 'Les candidats à Pactols' );
+$cand_a = na_notice( array( 'commune' => 'Caen', 'pactols_subjects_items' => array(
+	array( 'label' => 'Chemin creux', 'ark' => '', 'libre' => true ),
+	array( 'label' => 'motte castrale', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrtY' ),
+	array( 'label' => 'ancien terme', 'ark' => '' ) ) ) );
+$cand_b = na_notice( array( 'commune' => 'Vire', 'pactols_subjects_items' => array( array( 'label' => 'chemin  creux', 'ark' => '', 'libre' => true ) ),
+	'pactols_places_items' => array( array( 'label' => '=Bocage', 'ark' => '', 'libre' => true ) ) ) );
+$cand_remplacee = na_notice( array( 'commune' => 'Bayeux', 'pactols_subjects_items' => array( array( 'label' => 'fossé bordier', 'ark' => '', 'libre' => true ) ) ) );
+update_post_meta( $cand_remplacee, '_na_reference', 'CANDREF' );
+$cand_correction = na_notice( array( 'commune' => 'Bayeux' ) );
+update_post_meta( $cand_correction, '_na_remplace', 'CANDREF' );
+update_option( Notice_Archeomed_Candidats::OPTION, array(
+	Notice_Archeomed_Candidats::cle( 'pactols_places_items', '=bocage' ) => array( 'statut' => 'ecarte', 'note' => 'trop vague', 'terme' => '=Bocage' ) ) );
+$candidats = Notice_Archeomed_Candidats::recenser();
+$par_terme = array_column( $candidats, null, 'terme' );
+na_verifier( 2 === count( $candidats ) && isset( $par_terme['Chemin creux'], $par_terme['=Bocage'] )
+	&& 2 === count( $par_terme['Chemin creux']['notices'] ) && array( 'Chemin creux', 'chemin  creux' ) === array_keys( $par_terme['Chemin creux']['formes'] )
+	&& 'Mots-clés' === $par_terme['Chemin creux']['categorie'] && 'a_proposer' === $par_terme['Chemin creux']['statut']
+	&& 'ecarte' === $par_terme['=Bocage']['statut'] && 'trop vague' === $par_terme['=Bocage']['note'] && 'Chemin creux' === $candidats[0]['terme'],
+	'les termes hors Pactols se relèvent, regroupés malgré la casse et les blancs ; ni terme d\'ARK, ni terme ancien, ni notice remplacée ; le statut gardé se relit',
+	$candidats );
+$tableur = Notice_Archeomed_Candidats::lignes_du_tableur( $candidats );
+na_verifier( 3 === count( $tableur ) && 'Terme' === $tableur[0][0] && "'=Bocage" === $tableur[2][0] && 'Écarté' === $tableur[2][7]
+	&& 'chemin  creux' === $tableur[1][1] && '2' === $tableur[1][3],
+	'le tableur porte une ligne par terme, et un terme qui commence par « = » ne devient pas une formule', $tableur );
+ob_start();
+Notice_Archeomed_Candidats::onglet();
+$rendu_candidats = ob_get_clean();
+na_verifier( isset( Notice_Archeomed_Settings::onglets()['candidats'] ) && false !== strpos( $rendu_candidats, '2' . "\u{00A0}" . 'termes' )
+	&& false !== strpos( $rendu_candidats, '<label class="screen-reader-text" for="na-statut-' ) && false !== strpos( $rendu_candidats, 'action=na_candidats_tableur' )
+	&& false !== strpos( $rendu_candidats, 'value="trop vague"' ),
+	'l\'onglet montre les candidats, leur statut à choisir, leur note, et le lien du tableur', $rendu_candidats );
+delete_option( Notice_Archeomed_Candidats::OPTION );
+foreach ( array( $cand_a, $cand_b, $cand_remplacee, $cand_correction ) as $cand_id ) {
+	wp_delete_post( $cand_id, true );
+}
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

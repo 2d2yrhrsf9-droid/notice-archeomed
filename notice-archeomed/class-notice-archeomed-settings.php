@@ -291,6 +291,7 @@ class Notice_Archeomed_Settings {
 			'styles'        => __( 'Styles Métopes', 'notice-archeomed' ),
 			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
 			'accessibilite' => __( 'Accessibilité', 'notice-archeomed' ),
+			'candidats'     => __( 'Candidats à Pactols', 'notice-archeomed' ),
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
 			'maj'           => __( 'Mises à jour', 'notice-archeomed' ),
@@ -1340,6 +1341,12 @@ class Notice_Archeomed_Settings {
 	private function onglet_accessibilite( $essai ) {
 		unset( $essai );
 		Notice_Archeomed_Accessibilite::onglet();
+	}
+
+	/** Les termes gardés hors de Pactols, à proposer à Frantiq. */
+	private function onglet_candidats( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Candidats::onglet();
 	}
 
 	/** Le numéro en préparation et ce qu'on fait des illustrations. */

@@ -1091,6 +1091,17 @@ que la rédaction puisse en choisir l'équivalent. Le courriel le dit aussi. Les
 termes sans identifiant d'une notice antérieure à cette marque restent tels
 qu'ils étaient.
 
+**Les candidats à Pactols** (Réglages ▸ Candidats à Pactols) réunissent ces
+termes, relevés dans toutes les notices reçues à chaque ouverture de
+l'onglet : regroupés par catégorie malgré la casse, les accents et les blancs,
+avec leurs autres graphies, le nombre de notices et un lien vers chacune, et
+la date du dernier dépôt. Les notices remplacées par une correction ne
+comptent pas. La rédaction donne à chacun un statut — à proposer, proposé à
+Frantiq, écarté — et une note (un équivalent, une date d'envoi) ; seuls ces
+choix sont gardés (option `notice_archeomed_candidats`), la liste se refait
+d'elle-même. Elle se télécharge en tableur (CSV, point-virgule, UTF-8), un
+terme qui commencerait par « = » ne devenant pas une formule.
+
 **La lecture des termes par le serveur** (Réglages ▸ Hébergement, sous
 l'essai « Tester l'accès à Pactols ») se coupe quand le proxy de l'hébergement
 refuse la sortie vers `pactols.frantiq.fr`. Les ARK restent sur les termes du
