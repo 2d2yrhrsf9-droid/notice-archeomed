@@ -1196,7 +1196,7 @@ class Notice_Archeomed_Settings {
 				$valeur = Notice_Archeomed_Normes::valeur( $cle );
 				$id     = 'na_norme_' . $cle;
 				echo '<tr><th scope="row">';
-				if ( isset( $norme['min'] ) ) {
+				if ( isset( $norme['min'] ) || isset( $norme['lignes'] ) ) {
 					echo '<label for="' . esc_attr( $id ) . '">' . esc_html( $norme['libelle'] ) . '</label>';
 				} else {
 					echo esc_html( $norme['libelle'] );
@@ -1224,15 +1224,20 @@ class Notice_Archeomed_Settings {
 							. esc_html( $texte ) . '</label>';
 					}
 					echo '</fieldset>';
+				} elseif ( isset( $norme['lignes'] ) ) {
+					echo '<textarea id="' . esc_attr( $id ) . '" class="large-text code" rows="' . (int) $norme['lignes'] . '" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '"'
+						. ( ! empty( $norme['aide'] ) ? ' aria-describedby="' . esc_attr( $id . '-aide' ) . '"' : '' ) . '>'
+						. esc_textarea( (string) $valeur ) . '</textarea>';
 				} else {
 					echo '<input type="number" id="' . esc_attr( $id ) . '" class="small-text" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '"'
-						. ' min="' . (int) $norme['min'] . '" max="' . (int) $norme['max'] . '" value="' . esc_attr( $valeur ) . '"> '
+						. ' min="' . (int) $norme['min'] . '" max="' . (int) $norme['max'] . '" value="' . esc_attr( $valeur ) . '"'
+						. ( ! empty( $norme['aide'] ) ? ' aria-describedby="' . esc_attr( $id . '-aide' ) . '"' : '' ) . '> '
 						. esc_html( $norme['unite'] )
 						. ( (int) $norme['defaut'] !== (int) $valeur
 							? ' <span class="description">— la revue : ' . esc_html( $norme['defaut'] . ' ' . $norme['unite'] ) . '</span>' : '' );
 				}
 				if ( ! empty( $norme['aide'] ) ) {
-					echo '<p class="description">' . esc_html( $norme['aide'] ) . '</p>';
+					echo '<p class="description" id="' . esc_attr( $id . '-aide' ) . '">' . esc_html( $norme['aide'] ) . '</p>';
 				}
 				echo '</td></tr>';
 			}

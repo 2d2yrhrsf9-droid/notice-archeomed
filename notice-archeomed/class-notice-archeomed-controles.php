@@ -28,20 +28,53 @@ class Notice_Archeomed_Controles {
 	const FERMANTS = "»\"'’”)] \u{00A0}\u{202F}\u{2009}\u{2007}\u{2008}\u{200A}\u{2002}\u{2003}\u{2005}";
 
 	/**
-	 * La longueur au-delà de laquelle un texte alternatif reçoit un avis :
-	 * cent cinquante caractères, règle de la rédaction. Le RGAA 4.1, plus
-	 * strict, « recommande fortement » quatre-vingts caractères au glossaire
-	 * (« Alternative courte et concise », test 1.3.9) : une plage braille ou
-	 * une loupe se manipulent à chaque ligne de trop.
-	 */
-	const ALT_CONSEILLE = 150;
-
-	/**
-	 * La longueur au-delà de laquelle il se coupe — trois cents caractères,
-	 * règle de la rédaction —, la coupe se nommant dans les avis comme pour
-	 * les autres champs. Le formulaire ne laisse pas taper au-delà.
+	 * La longueur au-delà de laquelle un texte alternatif se coupe — trois
+	 * cents caractères, règle de la rédaction —, la coupe se nommant dans les
+	 * avis comme pour les autres champs. Le formulaire ne laisse pas taper
+	 * au-delà. Le seuil de l'avis, lui, se règle dans les normes
+	 * (« alt_conseille », cent cinquante par défaut) : voir alt_conseille().
 	 */
 	const ALT_MAX = 300;
+
+	/**
+	 * Ce qui ne dit rien de l'image, seul ou suivi d'un numéro : « Image »,
+	 * « Photo 3 », « Fig. 2 ». Le lecteur d'écran annonce déjà une image.
+	 * Liste de la rédaction.
+	 */
+	const MOTS_SANS_CONTENU = array( 'image', 'figure', 'fig', 'photo', 'photographie', 'illustration', 'dessin', 'plan' );
+
+	/**
+	 * Les figures qui se comprennent mal sans les voir, et pour lesquelles la
+	 * description détaillée est recommandée. [HYPOTHÈSE] Liste de départ de
+	 * la rédaction, à ajuster : « coupe » est aussi un vase, « relevé » un
+	 * adjectif, « plan » un « premier plan » de photographie.
+	 */
+	const FIGURES_COMPLEXES = array( 'plan', 'carte', 'coupe', 'stratigraphie', 'profil', 'relevé', 'graphique', 'diagramme',
+		'histogramme', 'courbe', 'tableau', 'schéma', 'restitution', 'élévation' );
+
+	/** Les extensions d'un nom de fichier d'image, celles du dépôt comprises. */
+	const EXTENSIONS_D_IMAGE = array( 'jpg', 'jpeg', 'jpe', 'png', 'tif', 'tiff', 'gif', 'bmp', 'webp', 'heic', 'heif', 'svg', 'pdf', 'psd', 'jp2', 'dng', 'cr2', 'nef', 'raw' );
+
+	/**
+	 * « Presque identique » : le texte le plus court en contient au moins
+	 * tant de mots pour que « l'un contient l'autre » compte, et deux textes
+	 * partagent au moins cette part de leurs mots (coefficient de Dice sur
+	 * les mots distincts). [HYPOTHÈSE] Seuils choisis pour qu'un texte
+	 * alternatif de deux mots pris dans une longue légende — « fossé » — ne
+	 * déclenche rien, et qu'une légende reprise à un mot près le fasse.
+	 */
+	const REPRISE_MOTS_MIN = 3;
+	const REPRISE_DICE     = 0.8;
+
+	/**
+	 * Les lettres d'un mot, pour PHP comme pour le navigateur — qui ne lit
+	 * pas toujours « \p{L} » : un sigle ne se reconnaît pas au milieu d'un
+	 * mot.
+	 */
+	const LETTRES = 'A-Za-z0-9À-ÖØ-öø-ÿŒœ';
+
+	/** Les mots que la comparaison du développement d'un sigle ignore : les articles. */
+	const MOTS_VIDES_DES_SIGLES = array( 'le', 'la', 'les', 'l', 'un', 'une', 'des', 'du', 'de', 'd' );
 
 	/**
 	 * La longueur au-delà de laquelle la description détaillée d'une figure
@@ -95,6 +128,9 @@ class Notice_Archeomed_Controles {
 			},
 			'personnes'        => function () use ( $d ) {
 				return self::personnes( $d );
+			},
+			'sigles'           => function () use ( $paragraphes ) {
+				return self::sigles_non_developpes( $paragraphes, self::sigles_de_la_norme() );
 			},
 		);
 		foreach ( $familles as $famille => $calcul ) {
@@ -290,29 +326,337 @@ class Notice_Archeomed_Controles {
 			if ( '' === $credits && '' !== $titre . $legende && Notice_Archeomed_Normes::avis_actif( 'credits' ) ) {
 				$avis[] = sprintf( '%s : pas de crédits (auteur, détenteur des droits).', Notice_Archeomed_Normes::numero_de_figure( $rang ) );
 			}
-			// Un texte alternatif trop long se lit mal à la plage braille : on
-			// le dit, sans rien refuser. Sans réglage : c'est une exigence
-			// d'accessibilité de la revue, non une préférence de style.
-			$alt = isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '';
-			$fig = Notice_Archeomed_Normes::numero_de_figure( $rang );
-			$longueur = function_exists( 'mb_strlen' ) ? mb_strlen( $alt, 'UTF-8' ) : strlen( $alt );
-			if ( $longueur > self::ALT_CONSEILLE ) {
-				$avis[] = sprintf( "%1\$s\u{00A0}: le texte alternatif fait %2\$d caractères, pour %3\$d au plus conseillés\u{00A0}; le détail a sa place dans la légende.",
-					$fig, $longueur, self::ALT_CONSEILLE );
-			}
-			if ( '' !== $alt && '' !== $titre && self::plier( $alt ) === self::plier( self::titre_sans_numero( $titre, $rang ) ) ) {
-				$avis[] = sprintf( "%s\u{00A0}: le texte alternatif recopie le titre, au lieu de dire ce que montre l’image.", $fig );
-			}
-			if ( '' !== $alt && preg_match( self::ALT_DEBUTS, $alt ) ) {
-				$avis[] = sprintf( "%1\$s\u{00A0}: le texte alternatif commence par «\u{00A0}%2\$s\u{00A0}», que le lecteur d’écran annonce déjà.",
-					$fig, implode( ' ', array_slice( preg_split( '/\s+/u', $alt ), 0, 2 ) ) );
-			}
-			if ( preg_match( self::COULEUR_SEULE, $alt . "\n" . $legende, $couleur ) ) {
-				$avis[] = sprintf( "%1\$s\u{00A0}: «\u{00A0}%2\$s\u{00A0}» — l’information ne doit pas reposer sur la seule couleur.",
-					$fig, $couleur[0] );
+			// L'accessibilité de la figure : des avis, que la case « accessibilité
+			// des figures » des normes permet de taire.
+			if ( Notice_Archeomed_Normes::avis_actif( 'accessibilite' ) ) {
+				foreach ( self::accessibilite_de_la_figure( $item ) as $phrase ) {
+					$avis[] = Notice_Archeomed_Normes::numero_de_figure( $rang ) . "\u{00A0}: " . $phrase;
+				}
 			}
 		}
 		return $avis;
+	}
+
+	/** Le seuil de l'avis de longueur du texte alternatif, selon les normes. */
+	public static function alt_conseille() {
+		return max( 1, min( self::ALT_MAX, (int) Notice_Archeomed_Normes::valeur( 'alt_conseille' ) ) );
+	}
+
+	/**
+	 * Les phrases des avis d'accessibilité, à compléter : le formulaire les
+	 * reçoit telles quelles, pour dire au navigateur exactement ce que le
+	 * serveur dira à la rédaction. Chacune suit « Fig. N : ».
+	 */
+	public static function phrases_d_accessibilite() {
+		return array(
+			'longueur'    => "le texte alternatif fait {n}\u{00A0}caractères, pour {max} au plus conseillés\u{00A0}; le détail a sa place dans la légende ou la description détaillée.",
+			'fichier'     => "le texte alternatif «\u{00A0}{texte}\u{00A0}» est un nom de fichier\u{00A0}; décrivez plutôt ce que montre l’image.",
+			'sans_contenu' => "le texte alternatif «\u{00A0}{texte}\u{00A0}» ne dit pas ce que montre l’image\u{00A0}; décrivez-la en quelques mots.",
+			'titre'       => 'le texte alternatif reprend le titre, au lieu de dire ce que montre l’image.',
+			'legende'     => "le texte alternatif reprend la légende\u{00A0}; il ne la répète pas, il restitue l’information visuelle utile.",
+			'debut'       => "le texte alternatif commence par «\u{00A0}{debut}\u{00A0}», que le lecteur d’écran annonce déjà.",
+			'couleur'     => "«\u{00A0}{couleur}\u{00A0}» — l’information ne doit pas reposer sur la seule couleur\u{00A0}; nommez aussi ce qu’elle désigne.",
+			'description' => "description détaillée recommandée («\u{00A0}{mot}\u{00A0}»)\u{00A0}; dites-y ce qu’un lecteur qui ne voit pas la figure doit en savoir — organisation, repères, données.",
+			// Celle-ci ne suit pas « Fig. N : » : elle porte sur le texte.
+			'sigle'       => "Le sigle «\u{00A0}{sigle}\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}{developpement} ({sigle})\u{00A0}».",
+		);
+	}
+
+	/** Une phrase d'avis, ses blancs remplis. */
+	public static function phrase( $cle, $valeurs = array() ) {
+		$phrases = self::phrases_d_accessibilite();
+		$remplir = array();
+		foreach ( (array) $valeurs as $nom => $valeur ) {
+			$remplir[ '{' . $nom . '}' ] = (string) $valeur;
+		}
+		return isset( $phrases[ $cle ] ) ? strtr( $phrases[ $cle ], $remplir ) : '';
+	}
+
+	/**
+	 * Les motifs des avis d'accessibilité, écrits pour PHP comme pour le
+	 * navigateur : ni assertion arrière, ni propriété Unicode. Tous, sauf
+	 * l'extension, se jouent sur le texte plié (voir plier_pour_comparer()),
+	 * qui n'a plus que des lettres sans accent, des chiffres et des espaces.
+	 */
+	public static function motifs_d_accessibilite() {
+		$complexes = array_map( array( __CLASS__, 'plier_pour_comparer' ), self::FIGURES_COMPLEXES );
+		return array(
+			'sansContenu' => '^(?:' . implode( '|', self::MOTS_SANS_CONTENU ) . ')s?(?: no?)?(?: ?[0-9]+[a-z]?)?$',
+			// Les noms que donnent les appareils et les scanners : DSC_0042,
+			// IMG_20240512_101010, P1030456.
+			'appareil'    => '^(?:dsc|dscn|dscf|img|pict|pxl|scan|p) ?[0-9]{3,}(?: [0-9a-z]+)*$',
+			'extension'   => '\.(?:' . implode( '|', self::EXTENSIONS_D_IMAGE ) . ')\s*$',
+			'numero'      => '\b(?:figures?|figs?|ills?|illustrations?) ?[0-9]+[a-z]?\b',
+			'complexe'    => '\b(' . implode( '|', $complexes ) . ')(?:s|x)?\b',
+		);
+	}
+
+	/**
+	 * Ce que le formulaire doit savoir pour donner les avis d'accessibilité
+	 * comme le serveur : les phrases, les motifs, les listes, les seuils.
+	 */
+	public static function regles_d_accessibilite() {
+		return array(
+			'actif'      => Notice_Archeomed_Normes::avis_actif( 'accessibilite' ),
+			'conseille'  => self::alt_conseille(),
+			'max'        => self::ALT_MAX,
+			'phrases'    => self::phrases_d_accessibilite(),
+			'motifs'     => self::motifs_d_accessibilite(),
+			'complexes'  => self::FIGURES_COMPLEXES,
+			'repriseMin' => self::REPRISE_MOTS_MIN,
+			'repriseDice' => self::REPRISE_DICE,
+			'sigles'     => Notice_Archeomed_Normes::avis_actif( 'sigles' ) ? self::sigles_de_la_norme() : array(),
+			'motsVides'  => self::MOTS_VIDES_DES_SIGLES,
+			'lettres'    => self::LETTRES,
+		);
+	}
+
+	/**
+	 * Les sigles de la norme, lus ligne à ligne : « SIGLE = développement ».
+	 * Une ligne vide, une note (« # … ») ou une ligne mal formée sont
+	 * ignorées. Un développement qui finit par une parenthèse — « détection
+	 * et télémétrie par la lumière (light detection and ranging) » — vaut
+	 * sous ses deux formes ; l'avis propose la première.
+	 */
+	public static function sigles_de_la_norme( $texte = null ) {
+		$texte  = null === $texte ? (string) Notice_Archeomed_Normes::valeur( 'sigles' ) : (string) $texte;
+		$sigles = array();
+		foreach ( preg_split( '/\R/u', $texte ) as $ligne ) {
+			$ligne = trim( $ligne );
+			if ( '' === $ligne || '#' === $ligne[0]
+				|| ! preg_match( '/^([' . self::LETTRES . '][' . self::LETTRES . '&\-]{1,14})\s*=\s*(.+)$/u', $ligne, $m ) ) {
+				continue;
+			}
+			$developpement = trim( (string) preg_replace( '/\s+#.*$/u', '', $m[2] ) );
+			$principal     = trim( (string) preg_replace( '/\s*\([^()]*\)$/u', '', $developpement ) );
+			if ( '' === $principal || isset( $sigles[ $m[1] ] ) ) {
+				continue;
+			}
+			$formes = array( $principal );
+			if ( preg_match( '/\(([^()]+)\)$/u', $developpement, $p ) ) {
+				$formes[] = trim( $p[1] );
+			}
+			$sigles[ $m[1] ] = array( 'sigle' => $m[1], 'developpement' => $principal, 'formes' => $formes );
+		}
+		return array_values( $sigles );
+	}
+
+	/**
+	 * Les sigles que le texte emploie sans les développer à leur première
+	 * mention. Est développé un sigle dont la phrase de la première mention
+	 * porte aussi son développement — à la casse, aux accents et aux
+	 * articles près —, ou qui s'y trouve entre parenthèses : « service
+	 * régional de l'archéologie de Normandie (SRA) ». Les mentions suivantes
+	 * ne comptent pas.
+	 *
+	 * [HYPOTHÈSE] Un sigle de moins de quatre lettres se reconnaît à sa casse
+	 * exacte : « us » ou « sig » ne sont pas « US » et « SIG ». Les autres —
+	 * « Inrap », « INRAP », « lidar » — en toute casse.
+	 */
+	public static function sigles_non_developpes( $paragraphes, $sigles ) {
+		$texte = implode( "\n", (array) $paragraphes );
+		$avis  = array();
+		foreach ( (array) $sigles as $s ) {
+			$sensible = ( function_exists( 'mb_strlen' ) ? mb_strlen( $s['sigle'], 'UTF-8' ) : strlen( $s['sigle'] ) ) < 4;
+			if ( ! preg_match( '/(^|[^' . self::LETTRES . '])(' . preg_quote( $s['sigle'], '/' ) . ')(?=$|[^' . self::LETTRES . '])/u' . ( $sensible ? '' : 'i' ),
+				$texte, $m, PREG_OFFSET_CAPTURE ) ) {
+				continue;
+			}
+			$avant = substr( $texte, 0, $m[2][1] );
+			$apres = substr( $texte, $m[2][1] + strlen( $m[2][0] ) );
+			$debut = preg_split( '/[.!?…]\s+|\n/u', $avant );
+			$debut = (string) end( $debut );
+			$fin   = preg_split( '/[.!?…](?:\s|$)|\n/u', $apres, 2 );
+			$fin   = (string) $fin[0];
+			// Entre parenthèses : la phrase l'a développé à sa façon.
+			if ( false !== strrpos( $debut, '(' ) && ( false === strrpos( $debut, ')' ) || strrpos( $debut, '(' ) > strrpos( $debut, ')' ) ) ) {
+				continue;
+			}
+			$phrase = ' ' . self::plier_sans_articles( $debut . ' ' . $fin ) . ' ';
+			$trouve = false;
+			foreach ( $s['formes'] as $forme ) {
+				$forme = self::plier_sans_articles( $forme );
+				$trouve = $trouve || ( '' !== $forme && false !== strpos( $phrase, ' ' . $forme . ' ' ) );
+			}
+			if ( ! $trouve ) {
+				$avis[] = self::phrase( 'sigle', array( 'sigle' => $s['sigle'], 'developpement' => $s['developpement'] ) );
+			}
+		}
+		return $avis;
+	}
+
+	/** Un texte plié, sans les articles que le développement d'un sigle peut prendre ou perdre. */
+	private static function plier_sans_articles( $texte ) {
+		$mots = array_diff( explode( ' ', self::plier( $texte ) ), self::MOTS_VIDES_DES_SIGLES, array( '' ) );
+		return implode( ' ', $mots );
+	}
+
+	/**
+	 * Les avis d'accessibilité d'une figure, en phrases sans le numéro :
+	 * longueur, nom de fichier, texte qui ne dit rien, reprise du titre ou de
+	 * la légende, « Image de… », couleur seule, description recommandée.
+	 *
+	 * Le texte alternatif réduit à un nom de fichier ou à « Photo » ne reçoit
+	 * que cet avis-là : lui dire aussi qu'il reprend le titre « Photo »
+	 * n'apprendrait rien de plus.
+	 */
+	public static function accessibilite_de_la_figure( $item ) {
+		if ( ! is_array( $item ) ) {
+			return array();
+		}
+		$texte = function ( $cle ) use ( $item ) {
+			return isset( $item[ $cle ] ) && is_scalar( $item[ $cle ] ) ? self::une_ligne( $item[ $cle ] ) : '';
+		};
+		$rang        = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+		$alt         = $texte( 'alt' );
+		$titre       = $texte( 'titre' );
+		$legende     = $texte( 'legende' );
+		$description = $texte( 'description' );
+		$motifs      = self::motifs_d_accessibilite();
+		$avis        = array();
+		$longueur    = function_exists( 'mb_strlen' ) ? mb_strlen( $alt, 'UTF-8' ) : strlen( $alt );
+		if ( $longueur > self::alt_conseille() ) {
+			$avis[] = self::phrase( 'longueur', array( 'n' => $longueur, 'max' => self::alt_conseille() ) );
+		}
+		if ( '' !== $alt ) {
+			$plie = self::plier_pour_comparer( $alt );
+			if ( self::nom_de_fichier( $alt, $texte( 'fichier_depose' ) ) ) {
+				$avis[] = self::phrase( 'fichier', array( 'texte' => $alt ) );
+			} elseif ( preg_match( '/' . $motifs['sansContenu'] . '/', $plie ) ) {
+				$avis[] = self::phrase( 'sans_contenu', array( 'texte' => $alt ) );
+			} else {
+				if ( '' !== $titre && self::reprend( $alt, self::titre_sans_numero( $titre, $rang ) ) ) {
+					$avis[] = self::phrase( 'titre' );
+				}
+				if ( '' !== $legende && self::reprend( $alt, $legende ) ) {
+					$avis[] = self::phrase( 'legende' );
+				}
+				if ( preg_match( self::ALT_DEBUTS, $alt ) ) {
+					$avis[] = self::phrase( 'debut', array( 'debut' => implode( ' ', array_slice( preg_split( '/\s+/u', $alt ), 0, 2 ) ) ) );
+				}
+			}
+		}
+		if ( preg_match( self::COULEUR_SEULE, $alt . "\n" . $legende, $couleur ) ) {
+			$avis[] = self::phrase( 'couleur', array( 'couleur' => $couleur[0] ) );
+		}
+		if ( '' === $description && preg_match( '/' . $motifs['complexe'] . '/',
+			self::plier_pour_comparer( $titre . ' ' . $legende . ' ' . $alt ), $mot ) ) {
+			$avis[] = self::phrase( 'description', array( 'mot' => self::mot_complexe( $mot[1] ) ) );
+		}
+		return $avis;
+	}
+
+	/**
+	 * L'état d'une figure pour la rédaction : « ok », « a_verifier » (avec
+	 * les raisons, celles des avis) ou « a_completer » — pas de texte
+	 * alternatif, cas des notices d'avant le champ.
+	 *
+	 * Il se calcule que les avis du dépôt soient donnés ou non : les taire
+	 * aux auteurs ne doit pas cacher à la rédaction ce qui reste à revoir.
+	 */
+	public static function etat_d_accessibilite( $item ) {
+		$alt = is_array( $item ) && isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '';
+		if ( '' === $alt ) {
+			return array( 'etat' => 'a_completer', 'raisons' => array( 'Pas de texte alternatif.' ) );
+		}
+		$raisons = array_map( function ( $phrase ) {
+			return function_exists( 'mb_strtoupper' )
+				? mb_strtoupper( mb_substr( $phrase, 0, 1, 'UTF-8' ), 'UTF-8' ) . mb_substr( $phrase, 1, null, 'UTF-8' )
+				: ucfirst( $phrase );
+		}, self::accessibilite_de_la_figure( $item ) );
+		return array( 'etat' => empty( $raisons ) ? 'ok' : 'a_verifier', 'raisons' => $raisons );
+	}
+
+	/**
+	 * Le texte alternatif tel que le dépôt le garde : une ligne, sans
+	 * balise, le chevron devant un chiffre préservé. Non coupé : la coupe se
+	 * nomme ailleurs.
+	 */
+	public static function texte_alternatif_propre( $brut ) {
+		return self::une_ligne( sanitize_text_field( (string) preg_replace( '/<(?=[\d=])/', '&lt;', (string) $brut ) ) );
+	}
+
+	/**
+	 * La description détaillée telle que le dépôt la garde : des paragraphes
+	 * simples, un par ligne, sans balise. Non coupée.
+	 */
+	public static function description_propre( $brut ) {
+		$propre = sanitize_textarea_field( (string) preg_replace( '/<(?=[\d=])/', '&lt;', (string) $brut ) );
+		$lignes = array();
+		foreach ( preg_split( '/\R+/u', $propre ) as $ligne ) {
+			$ligne = self::une_ligne( $ligne );
+			if ( '' !== $ligne ) {
+				$lignes[] = $ligne;
+			}
+		}
+		return implode( "\n", $lignes );
+	}
+
+	/**
+	 * Un texte plié pour être comparé : sans accent, sans casse, sans
+	 * ponctuation, les blancs ramenés à une espace.
+	 */
+	public static function plier_pour_comparer( $texte ) {
+		return self::plier( $texte );
+	}
+
+	/**
+	 * Le texte alternatif reprend-il cet autre texte, à la casse, à la
+	 * ponctuation, aux espaces et au « Fig. N » près ? Identique, l'un
+	 * contenant l'autre, ou presque tous leurs mots en commun : voir
+	 * REPRISE_MOTS_MIN et REPRISE_DICE.
+	 */
+	public static function reprend( $alt, $autre ) {
+		$numero = '/' . self::motifs_d_accessibilite()['numero'] . '/';
+		$a = trim( (string) preg_replace( '/ +/', ' ', (string) preg_replace( $numero, ' ', self::plier( $alt ) ) ) );
+		$b = trim( (string) preg_replace( '/ +/', ' ', (string) preg_replace( $numero, ' ', self::plier( $autre ) ) ) );
+		if ( '' === $a || '' === $b ) {
+			return false;
+		}
+		if ( $a === $b ) {
+			return true;
+		}
+		$mots_a = explode( ' ', $a );
+		$mots_b = explode( ' ', $b );
+		if ( min( count( $mots_a ), count( $mots_b ) ) < self::REPRISE_MOTS_MIN ) {
+			return false;
+		}
+		if ( false !== strpos( ' ' . $b . ' ', ' ' . $a . ' ' ) || false !== strpos( ' ' . $a . ' ', ' ' . $b . ' ' ) ) {
+			return true;
+		}
+		$uniques_a = array_unique( $mots_a );
+		$uniques_b = array_unique( $mots_b );
+		$communs   = count( array_intersect( $uniques_a, $uniques_b ) );
+		return 2 * $communs / ( count( $uniques_a ) + count( $uniques_b ) ) >= self::REPRISE_DICE;
+	}
+
+	/**
+	 * Le texte alternatif n'est-il qu'un nom de fichier : une extension
+	 * d'image au bout, le nom que donne un appareil, ou celui du fichier
+	 * déposé, avec ou sans son extension ?
+	 */
+	public static function nom_de_fichier( $alt, $fichier = '' ) {
+		$motifs = self::motifs_d_accessibilite();
+		$plie   = self::plier( $alt );
+		if ( preg_match( '/' . $motifs['extension'] . '/i', (string) $alt ) || preg_match( '/' . $motifs['appareil'] . '/', $plie ) ) {
+			return true;
+		}
+		$fichier = trim( (string) $fichier );
+		if ( '' === $fichier || '' === $plie ) {
+			return false;
+		}
+		return $plie === self::plier( $fichier )
+			|| $plie === self::plier( (string) preg_replace( '/\.[A-Za-z0-9]{1,5}$/', '', $fichier ) );
+	}
+
+	/** Le mot de la liste des figures complexes dont ce mot plié vient. */
+	private static function mot_complexe( $plie ) {
+		foreach ( self::FIGURES_COMPLEXES as $mot ) {
+			if ( self::plier( $mot ) === $plie ) {
+				return $mot;
+			}
+		}
+		return $plie;
 	}
 
 	/**

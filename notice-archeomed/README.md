@@ -586,23 +586,69 @@ image.
 
 Il est **obligatoire** pour toute figure déposée : quelques mots qui disent ce
 que montre l'image, pour les personnes malvoyantes ou non voyantes, dans la
-démarche d'accessibilité de la revue. L'aide demande ce que montre l'image,
-non le titre recopié, et sans « Image de », que le lecteur d'écran annonce
-déjà ; elle donne un exemple. Un oubli se signale comme pour les autres champs
+démarche d'accessibilité de la revue. L'aide le dit en une ligne : il ne
+répète pas la légende, il restitue l'information visuelle utile, sans
+« Image de », que le lecteur d'écran annonce déjà. Deux exemples de la
+rédaction se déplient sous l'aide (« Exemples ») :
+
+| Légende | Texte alternatif |
+|---|---|
+| Fig. 12. Plan général des vestiges de la phase 2. | Deux bâtiments occupent l'ouest de l'enclos fossoyé, entourés de fosses et de silos. |
+| Fig. 8. Vue du foyer du bâtiment 1. | Foyer quadrangulaire installé contre la paroi nord du bâtiment. |
+
+L'aide du **titre** demande une ligne informative, qui nomme ce que montre la
+figure et son objet ; celle de la **légende**, d'y reprendre ce qu'un lecteur
+qui ne voit pas l'image doit savoir — la clé d'un plan ou d'une carte, les
+inscriptions, les étiquettes, l'échelle, l'orientation. L'aide des
+illustrations rappelle d'appeler chaque figure dans le texte, « (fig. 1) ».
+
+Un oubli se signale comme pour les autres champs
 obligatoires : sous le champ, et dans le récapitulatif, qui nomme la figure et
 son fichier. Le serveur refuse de même un envoi sans le script, garde la
 saisie et dit quelle figure décrire.
 
-- **Longueur.** Un compteur sous le champ. Au-delà de 150 caractères, un
-  avis, sans refus ; le formulaire n'en laisse pas taper plus de 300, et le
-  serveur coupe au-delà en le nommant dans les avis — règles de la rédaction.
-  Le RGAA 4.1, plus strict, « recommande fortement » 80 caractères (glossaire,
-  « Alternative courte et concise », test 1.3.9).
-- **Avis.** Le texte recopie le titre ; il commence par « Image de »,
-  « Photo de », « Photographie de » ou « Illustration de » ; lui ou la légende
-  renvoie à une couleur seule (« en rouge », « zones vertes ») — l'information ne
-  doit pas reposer sur la seule couleur. La liste des couleurs est une
-  heuristique [HYPOTHÈSE]. Aucun de ces avis ne refuse le dépôt.
+- **Longueur.** Un compteur sous le champ. Au-delà d'un seuil, un avis, sans
+  refus : 150 caractères par défaut, réglable dans **Normes éditoriales ▸
+  L'accessibilité** (de 20 à 300) ; le formulaire, le compteur et le serveur
+  lisent ce même réglage. Le formulaire n'en laisse pas taper plus de 300, et
+  le serveur coupe au-delà en le nommant dans les avis — limite dure de la
+  rédaction, non réglable. Le RGAA 4.1, plus strict, « recommande fortement »
+  80 caractères (glossaire, « Alternative courte et concise », test 1.3.9).
+- **Avis.** Aucun ne refuse le dépôt. Le navigateur les donne à la sortie du
+  champ, le serveur les range sous « À vérifier », **dans la même phrase** :
+  le formulaire reçoit du serveur les phrases, les motifs, les listes et les
+  seuils (`Notice_Archeomed_Controles::regles_d_accessibilite()`). Chaque
+  avis suit « Fig. N : ».
+  - le texte est trop long (voir plus haut) ;
+  - il **reprend le titre ou la légende** : identique, ou presque, une fois
+    ôtés la casse, les accents, la ponctuation, les blancs et « Fig. N ».
+    « Presque » : l'un contient l'autre, le plus court ayant au moins trois
+    mots, ou les deux partagent au moins 80 % de leurs mots distincts
+    (coefficient de Dice). Seuils [HYPOTHÈSE], choisis pour qu'un texte de
+    deux mots pris dans une longue légende — « Le fossé » — ne déclenche
+    rien ;
+  - il **ne dit rien de l'image** : « image », « figure », « fig. », « photo »,
+    « photographie », « illustration », « dessin » ou « plan », seul ou suivi
+    d'un numéro (« Photo 3 », « Fig. 2 ») ;
+  - il **n'est qu'un nom de fichier** : il finit par une extension d'image
+    (`image1.jpg`, `DSC_0042.JPG`), prend le nom que donne un appareil
+    (`IMG_20240512_101010`, `P1030456`), ou reprend le nom du fichier déposé,
+    avec ou sans extension. Ces deux avis-là sont seuls : dire en plus qu'un
+    « Photo » reprend le titre « Photo » n'apprendrait rien ;
+  - il commence par « Image de », « Photo de », « Photographie de » ou
+    « Illustration de » ;
+  - lui ou la légende renvoie à une couleur seule (« en rouge », « zones
+    vertes ») — liste des couleurs [HYPOTHÈSE] ;
+  - **description détaillée recommandée** : le titre, la légende ou le texte
+    alternatif parle de plan, carte, coupe, stratigraphie, profil, relevé,
+    graphique, diagramme, histogramme, courbe, tableau, schéma, restitution
+    ou élévation, et la description détaillée est vide. Liste [HYPOTHÈSE] à
+    ajuster : « coupe » est aussi un vase, « relevé » un adjectif.
+
+  La case « l'accessibilité des figures » des avis du dépôt (Normes
+  éditoriales) les tait tous. Un site dont les avis étaient déjà enregistrés
+  la trouve cochée : une case ajoutée après coup n'est jamais tenue pour
+  décochée.
 - **Texte simple.** Une seule ligne (retours et blancs multiples ramenés à une
   espace), en romain : ni siècles en petites capitales ni exposant, ni italique
   ni gras, au Word comme dans `descr` ; les insécables seules s'appliquent.
@@ -614,6 +660,43 @@ saisie et dit quelle figure décrire.
   rajout, reprise après un refus, lien de correction, brouillon de l'appareil.
 - **Notices d'avant ce champ.** Elles restent valides : leur image garde son
   titre en texte de remplacement, et la page de relecture le donne en `alt`.
+  La fiche les dit « À compléter ».
+- **Pas de proposition automatique** par un service extérieur : c'est écarté.
+
+### L'accessibilité des illustrations, sur la fiche
+
+La fiche d'une notice porte l'encart **Accessibilité des illustrations** : un
+tableau Figure | Légende | Crédits | Texte alternatif | Description
+détaillée | État. L'appel de la figure suit les normes (« Fig. 1 »).
+L'état vaut :
+
+- **OK** ;
+- **À vérifier**, avec les raisons, qui sont les avis ci-dessus. L'état se
+  calcule même quand la case des avis est décochée : taire les avis aux
+  auteurs ne doit pas cacher à la rédaction ce qui reste à revoir ;
+- **À compléter** : pas de texte alternatif, cas des notices d'avant le champ
+  — le Word porte alors le titre à sa place.
+
+La rédaction y **corrige le texte alternatif et la description détaillée**
+de chaque figure. L'enregistrement passe par `admin-post.php`, avec un jeton
+et le droit `manage_options`, et applique les nettoyages et les limites du
+dépôt (300 et 2 000 caractères ; un texte plus long est coupé et le message
+le dit). Il ne touche dans la saisie (`_na_donnees`) qu'à ces deux textes.
+Chaque valeur remplacée reste dans la métadonnée `_na_historique_figures`,
+une ligne par correction : date, utilisateur, figure, champ, valeur d'avant
+et d'après. L'historique s'écrit avant la saisie : aucune valeur ne
+disparaît. Il se lit sous le tableau.
+
+Un Word retéléchargé, un fascicule ou un dossier Métopes produits ensuite
+portent la valeur corrigée, dans `descr` et partout ailleurs. Le courriel déjà
+parti, l'encart « La notice » et les avis gardés au dépôt restent ce qu'ils
+étaient.
+
+L'encart vit dans le formulaire de la fiche, que WordPress ouvre autour de
+tous les encarts. Ses champs se rattachent donc, par l'attribut `form`, à un
+formulaire posé en pied de page : un formulaire ne s'imbrique pas dans un
+autre.
+
 
 ### La description détaillée
 
@@ -893,6 +976,8 @@ formulaire à ses propres usages sans toucher au code :
 | Entre le numéro et le titre d'une figure | une espace | un deux-points ; un point |
 | Norme des photographies, des dessins au trait | 10 × 15 cm à 300 ppp ; 1 200 ppp | chiffres libres |
 | Longueur recommandée du texte | 300 à 700 mots | chiffres libres |
+| Texte alternatif : avis au-delà de | 150 caractères | de 20 à 300 |
+| Sigles à développer à leur première mention | une liste de sigles courants | une ligne par sigle, « SIGLE = développement » |
 | Les avis donnés au dépôt | tous | chacun se coche ou se décoche |
 
 Les documents produits après un changement suivent les nouvelles normes —
@@ -930,6 +1015,15 @@ chiffre romain sans siècle derrière (« la tour XII ») ne bouge pas, ni « ce
 siècle ». Les termes Pactols de période et la page de relecture suivent la
 même règle.
 
+**Dans le HTML** — courriel à la rédaction, copie de l'auteur, fiche
+d'administration, page de relecture —, le chiffre s'écrit en capitales
+(« XII ») et c'est le style qui le réduit
+(`font-variant: small-caps; font-variant-caps: all-small-caps`) : l'œil voit
+des petites capitales, et un lecteur d'écran lit « XII », non le mot « xii »
+(« vie » pour VI). Un client de courriel qui ignore ce style montre des
+capitales. Le Word ne change pas : bas de casse sous `w:smallCaps`, comme
+Métopes le veut.
+
 Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 
 ## Les contrôles du dépôt
@@ -940,8 +1034,25 @@ paragraphe coupé en deux, une figure appelée dans le texte qui n'est pas
 jointe ou une figure jamais appelée, une photographie sous la norme annoncée
 (10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
 fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée
-« 1 250 », un nom en capitales, deux personnes
-dans un même champ, une adresse dans le champ de l'institution.
+« 1 250 », un nom en capitales, deux personnes
+dans un même champ, une adresse dans le champ de l'institution, l'accessibilité
+des figures (voir « Le texte alternatif »), un sigle non développé à sa
+première mention.
+
+**Les sigles.** La liste se règle dans **Normes éditoriales ▸
+L'accessibilité** : une ligne par sigle, « SRA = service régional de
+l'archéologie ». Une ligne qui commence par « # » est une note ; une ligne
+mal formée est ignorée. La liste livrée porte les sigles courants de
+l'archéologie française ; ceux qui suivent la note [HYPOTHÈSE] sont à
+confirmer. Un sigle est **développé** quand la phrase de sa première mention
+porte aussi son développement — avant ou après lui, à la casse, aux accents
+et aux articles près —, ou qu'il y est entre parenthèses (« service
+archéologique de Normandie (SRA) »). Sinon : « Le sigle « SRA » n'est pas
+développé à sa première mention : écrivez par exemple « service régional de
+l'archéologie (SRA) ». » Les mentions suivantes ne comptent pas. Un sigle de
+moins de quatre lettres se reconnaît à sa casse exacte (« US », non « us ») ;
+les autres en toute casse (« INRAP », « lidar ») — [HYPOTHÈSE]. L'aide du texte
+de la notice invite à développer chaque sigle à sa première mention.
 
 Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ, et
 partent sous « À vérifier » dans le courriel, dans le document (style « à
@@ -961,7 +1072,13 @@ ne serve pas à marteler frantiq.fr.
 
 ## L'onglet Accessibilité
 
-**Réglages ▸ Accessibilité.** Le bouton « Contrôler l'accessibilité du
+**Réglages ▸ Accessibilité.** En tête, **les illustrations des notices
+reçues** : combien de figures sont à compléter (sans texte alternatif), à
+vérifier ou en ordre, et la liste des notices concernées, chacune avec un
+lien vers sa fiche. Les notices remplacées par une correction ne sont pas
+comptées ; la saisie se lit par paquets de deux cents.
+
+Plus bas, le bouton « Contrôler l'accessibilité du
 formulaire » charge la page publiée du formulaire dans un cadre et la fait
 passer, dans le navigateur de l'administrateur, au moteur libre axe-core
 (4.10.2, règles `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`). Il affiche un

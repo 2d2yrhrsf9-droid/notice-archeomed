@@ -934,7 +934,7 @@ class Notice_Archeomed_File {
 		// L'encart de publication part aussi : il offrait « Enregistrer » et
 		// un statut à changer sur une notice qu'on ne modifie pas, et un
 		// passage en brouillon la sortait de la file sans rien dire.
-		$gardes = array( 'na_fiche', 'na_suivi', 'na_depannage' );
+		$gardes = array( 'na_fiche', 'na_accessibilite', 'na_suivi', 'na_depannage' );
 		foreach ( $wp_meta_boxes[ $type ] as $contexte => $priorites ) {
 			foreach ( $priorites as $priorite => $boites ) {
 				foreach ( array_keys( (array) $boites ) as $identifiant ) {
@@ -2341,7 +2341,7 @@ class Notice_Archeomed_File {
 	 */
 	public function arguments_a_effacer( $arguments ) {
 		return array_merge( (array) $arguments,
-			array( 'na_relancee', 'na_diagnostic', 'na_parties', 'na_restent', 'na_refus', 'na_essai' ) );
+			array( 'na_relancee', 'na_diagnostic', 'na_parties', 'na_restent', 'na_refus', 'na_essai', 'na_figures', 'na_figures_coupe' ) );
 	}
 
 	/**

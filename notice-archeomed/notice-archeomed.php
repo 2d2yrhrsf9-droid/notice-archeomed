@@ -2372,6 +2372,9 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-illus-champs label { margin: 0; font-size: var(--na-t-s); }
 			.na-form#na-form .na-illus-champs .na-help { margin: 0 0 var(--na-e1); }
 			.na-form#na-form .na-illus-champs .na-compteur { margin: var(--na-e1) 0 0; }
+			.na-form#na-form .na-exemples { max-width: var(--na-mesure); margin: 0 0 var(--na-e1); font-size: var(--na-t-s); line-height: 1.5; color: var(--na-sourd); }
+			.na-form#na-form .na-exemples summary { cursor: pointer; font-weight: 600; color: var(--na-encre); }
+			.na-form#na-form .na-exemples p { margin: var(--na-e1) 0 0; }
 			.na-form#na-form .na-illus-total { font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
 			.na-form#na-form .na-illus-vignette { display: block; max-width: 8rem; max-height: 6rem; width: auto; height: auto;
 				margin: 0 0 var(--na-e3); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r1); }
@@ -2754,7 +2757,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice</p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; titres et listes deviennent des paragraphes. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes.</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; titres et listes deviennent des paragraphes. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -2821,7 +2824,7 @@ class Notice_Archeomed_Pactols {
 
 			<section class="na-section" aria-labelledby="na-s5">
 				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
-				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?></p>
+				<p class="na-help" id="na-illus-aide">Trois fichiers au plus, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?> Appelez chaque figure dans le texte, à l’endroit qui en parle&nbsp;: (fig.&nbsp;1).</p>
 				<div class="na-illus-attente" id="na-illus-attente" hidden></div>
 				<label class="na-sr" for="na-illustrations">Choisir des fichiers</label>
 				<div class="na-depot-fichiers" id="na-depot-zone">
@@ -2897,10 +2900,14 @@ class Notice_Archeomed_Pactols {
 
 			var CHAMPS = <?php echo wp_json_encode( $this->champs_du_formulaire() ); ?>;
 			var MAX_FILES = <?php echo (int) self::MAX_FILES; ?>;
-			// Le texte alternatif d'une figure : conseillé jusqu'à 150 caractères,
-			// coupé au-delà de 300 (règles de la rédaction).
-			var ALT_CONSEILLE = <?php echo (int) Notice_Archeomed_Controles::ALT_CONSEILLE; ?>;
-			var ALT_MAX = <?php echo (int) Notice_Archeomed_Controles::ALT_MAX; ?>;
+			// Le texte alternatif d'une figure : un avis au-delà du seuil des
+			// normes (150 caractères par défaut), coupé au-delà de 300. Les
+			// avis d'accessibilité viennent du serveur — phrases, motifs,
+			// listes —, pour que le navigateur dise mot pour mot ce que la
+			// rédaction lira.
+			var A11Y = <?php echo wp_json_encode( Notice_Archeomed_Controles::regles_d_accessibilite() ); ?>;
+			var ALT_CONSEILLE = A11Y.conseille;
+			var ALT_MAX = A11Y.max;
 			var DESCRIPTION_MAX = <?php echo (int) Notice_Archeomed_Controles::DESCRIPTION_MAX; ?>;
 			// Les mots d'une couleur qui porte seule l'information, comme au
 			// serveur (Notice_Archeomed_Controles::COULEUR_SEULE).
@@ -4222,15 +4229,41 @@ class Notice_Archeomed_Pactols {
 				return e;
 			}
 			var AIDES_ILLUS = {
-				titre: 'Ce que montre la figure, en quelques mots' + NBSP + ': Plan général des vestiges.',
-				alt: 'Pour qui ne voit pas l’image' + NBSP + ': dites en quelques mots ce qu’elle apporte à la notice. '
-					+ 'Ne recopiez ni le titre ni la légende, ne commencez pas par «' + NBSP + 'Image de' + NBSP + '» ou «' + NBSP + 'Photo de' + NBSP + '», '
-					+ 'et citez un texte important visible dans l’image. Par exemple' + NBSP
-					+ ': Fossé taillé dans le calcaire, vu du nord, deux trous de poteau à sa base.',
+				titre: 'Une ligne informative, qui nomme ce que montre la figure et son objet' + NBSP + ': Plan des vestiges de la chapelle et du cimetière.',
+				alt: 'Pour qui ne voit pas l’image' + NBSP + ': en quelques mots, l’information visuelle utile. Il ne répète pas la légende. '
+					+ 'Ne commencez pas par «' + NBSP + 'Image de' + NBSP + '» ou «' + NBSP + 'Photo de' + NBSP + '», '
+					+ 'et citez un texte important visible dans l’image.',
 				description: 'Pour une figure complexe' + NBSP + ': ce qu’un lecteur qui ne la voit pas doit en savoir — organisation, repères, données.',
-				legende: 'Le texte qui accompagne la figure' + NBSP + ': ce qu’on y voit, l’échelle, l’orientation.',
+				legende: 'Le texte qui accompagne la figure. Reprenez-y ce qu’un lecteur qui ne voit pas l’image doit savoir' + NBSP
+					+ ': la clé d’un plan ou d’une carte, les inscriptions, les étiquettes, l’échelle, l’orientation.',
 				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
 			};
+			// Deux exemples de la rédaction, repliés sous l'aide du texte
+			// alternatif : on les ouvre quand on hésite, ils ne s'imposent pas
+			// à chaque figure.
+			var EXEMPLES_ALT = [
+				['Fig. 12. Plan général des vestiges de la phase 2.', 'Deux bâtiments occupent l’ouest de l’enclos fossoyé, entourés de fosses et de silos.'],
+				['Fig. 8. Vue du foyer du bâtiment 1.', 'Foyer quadrangulaire installé contre la paroi nord du bâtiment.']
+			];
+			function exemplesDuTexteAlternatif() {
+				var d = document.createElement('details');
+				d.className = 'na-exemples';
+				var s = document.createElement('summary');
+				s.textContent = 'Exemples';
+				d.appendChild(s);
+				EXEMPLES_ALT.forEach(function (x) {
+					var p = document.createElement('p');
+					p.appendChild(document.createTextNode('Légende' + NBSP + ': ' + guillemetsA11y(x[0])));
+					p.appendChild(document.createElement('br'));
+					p.appendChild(document.createTextNode('Texte alternatif' + NBSP + ': ' + guillemetsA11y(x[1])));
+					d.appendChild(p);
+				});
+				var rappel = document.createElement('p');
+				rappel.textContent = 'Le texte alternatif ne répète pas la légende' + NBSP + ': il restitue l’information visuelle utile.';
+				d.appendChild(rappel);
+				return d;
+			}
+			function guillemetsA11y(t) { return '«' + NBSP + t + NBSP + '»'; }
 			// Les trois champs sont facultatifs, et l'introduction dit que ce qui
 			// l'est porte la mention : ils ne la portaient pas. Le texte
 			// alternatif, lui, est obligatoire : sans lui, la figure n'existe
@@ -4279,6 +4312,7 @@ class Notice_Archeomed_Pactols {
 				});
 				bloc.appendChild(etiquette);
 				bloc.appendChild(aide);
+				if (clef === 'alt') { bloc.appendChild(exemplesDuTexteAlternatif()); }
 				bloc.appendChild(champ);
 				if (compteur) { bloc.appendChild(compteur); compter(); }
 				return { bloc: bloc, champ: champ };
@@ -4557,6 +4591,78 @@ class Notice_Archeomed_Pactols {
 					}
 				}] : [], [fileInput]);
 			}
+			// Les avis d'accessibilité d'une figure, comme au serveur
+			// (Notice_Archeomed_Controles::accessibilite_de_la_figure) : mêmes
+			// phrases, mêmes motifs, mêmes seuils. « vus » dit quels champs
+			// l'auteur a déjà quittés : un avis ne paraît qu'après l'un de ceux
+			// qu'il regarde.
+			var MOTIFS_A11Y = {};
+			Object.keys(A11Y.motifs).forEach(function (k) {
+				MOTIFS_A11Y[k] = new RegExp(A11Y.motifs[k], k === 'extension' ? 'i' : (k === 'numero' ? 'g' : ''));
+			});
+			function plierA11y(t) {
+				t = String(t || '').replace(/œ/g, 'oe').replace(/Œ/g, 'OE').replace(/æ/g, 'ae').replace(/Æ/g, 'AE').replace(/ß/g, 'ss');
+				if (t.normalize) { t = t.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+				return t.replace(/[^a-zA-Z0-9]+/g, ' ').toLowerCase().trim();
+			}
+			function phraseA11y(cle, valeurs) {
+				return String(A11Y.phrases[cle] || '').replace(/\{(\w+)\}/g, function (tout, nom) {
+					return valeurs && valeurs[nom] !== undefined ? String(valeurs[nom]) : tout;
+				});
+			}
+			function reprendA11y(alt, autre) {
+				var sans = function (t) { return plierA11y(t).replace(MOTIFS_A11Y.numero, ' ').replace(/ +/g, ' ').trim(); };
+				var a = sans(alt), b = sans(autre);
+				if (!a || !b) { return false; }
+				if (a === b) { return true; }
+				var ma = a.split(' '), mb = b.split(' ');
+				if (Math.min(ma.length, mb.length) < A11Y.repriseMin) { return false; }
+				if ((' ' + b + ' ').indexOf(' ' + a + ' ') !== -1 || (' ' + a + ' ').indexOf(' ' + b + ' ') !== -1) { return true; }
+				var uniques = function (l) { return l.filter(function (w, i) { return l.indexOf(w) === i; }); };
+				var ua = uniques(ma), ub = uniques(mb), communs = 0;
+				ua.forEach(function (w) { if (ub.indexOf(w) !== -1) { communs++; } });
+				return 2 * communs / (ua.length + ub.length) >= A11Y.repriseDice;
+			}
+			function nomDeFichierA11y(alt, fichier) {
+				var plie = plierA11y(alt);
+				if (MOTIFS_A11Y.extension.test(alt) || MOTIFS_A11Y.appareil.test(plie)) { return true; }
+				fichier = net(fichier);
+				if (!fichier || !plie) { return false; }
+				return plie === plierA11y(fichier) || plie === plierA11y(fichier.replace(/\.[A-Za-z0-9]{1,5}$/, ''));
+			}
+			function avisDAccessibilite(m, rang, vus, fichier) {
+				if (!A11Y.actif) { return []; }
+				var alt = net(m.alt), titre = net(m.titre), legende = net(m.legende), phrases = [], trouve;
+				var longueur = points(alt).length;
+				if (vus.alt && longueur > A11Y.conseille) {
+					phrases.push(phraseA11y('longueur', { n: longueur, max: A11Y.conseille }));
+				}
+				if (alt) {
+					if (nomDeFichierA11y(alt, fichier)) {
+						if (vus.alt) { phrases.push(phraseA11y('fichier', { texte: alt })); }
+					} else if (MOTIFS_A11Y.sansContenu.test(plierA11y(alt))) {
+						if (vus.alt) { phrases.push(phraseA11y('sans_contenu', { texte: alt })); }
+					} else {
+						if ((vus.alt || vus.titre) && titre && reprendA11y(alt, titre)) { phrases.push(phraseA11y('titre')); }
+						if ((vus.alt || vus.legende) && legende && reprendA11y(alt, legende)) { phrases.push(phraseA11y('legende')); }
+						if (vus.alt && /^(image|photo|photographie|illustration)\s+(de|du|des|d’|d')/i.test(alt)) {
+							phrases.push(phraseA11y('debut', { debut: alt.split(/\s+/).slice(0, 2).join(' ') }));
+						}
+					}
+				}
+				// Une information portée par la seule couleur ne passe ni à qui
+				// ne voit pas l'image, ni à qui ne distingue pas les couleurs.
+				if ((vus.alt || vus.legende) && (trouve = COULEUR_SEULE.exec(alt + ' | ' + legende))) {
+					phrases.push(phraseA11y('couleur', { couleur: trouve[0] }));
+				}
+				if ((vus.alt || vus.titre || vus.legende || vus.description) && vide(m.description)
+					&& (trouve = MOTIFS_A11Y.complexe.exec(plierA11y(titre + ' ' + legende + ' ' + alt)))) {
+					var mot = trouve[1];
+					A11Y.complexes.forEach(function (c) { if (plierA11y(c) === trouve[1]) { mot = c; } });
+					phrases.push(phraseA11y('description', { mot: mot }));
+				}
+				return phrases.map(function (p) { return NORMES.figure + ' ' + rang + NBSP + ': ' + p; });
+			}
 			// Les avis d'une figure : sa définition, le numéro retapé, le crédit
 			// resté dans la légende, les crédits qui manquent.
 			function majFigure(idx) {
@@ -4595,27 +4701,9 @@ class Notice_Archeomed_Pactols {
 					};
 				});
 				if (deplacer) { liste.push(deplacer); }
-				// Le texte alternatif : court, autre que le titre, sans
-				// « Image de », que le lecteur d'écran dit déjà.
-				if (e.vus.alt && !vide(m.alt)) {
-					var longueur = points(net(m.alt)).length;
-					if (longueur > ALT_CONSEILLE) {
-						liste.push('Le texte alternatif fait ' + entier(longueur) + NBSP + 'caractères' + NBSP + ': ' + ALT_CONSEILLE + ' au plus se lisent bien '
-							+ 'à la synthèse vocale ou en braille. Le détail a sa place dans la légende.');
-					}
-					if (plier(net(m.alt)) === plier(net(m.titre))) {
-						liste.push('Le texte alternatif recopie le titre' + NBSP + ': dites plutôt ce que l’on voit sur l’image.');
-					} else if (/^(image|photo|photographie|illustration)\s+(de|du|des|d’|d')/i.test(net(m.alt))) {
-						liste.push('Inutile de commencer par ' + guillemets(net(m.alt).split(/\s+/).slice(0, 2).join(' ')) + NBSP
-							+ ': le lecteur d’écran annonce déjà une image. Dites ce qu’elle montre.');
-					}
-				}
-				// Une information portée par la seule couleur ne passe ni à qui
-				// ne voit pas l'image, ni à qui ne distingue pas les couleurs.
-				var couleur = null;
-				if ((e.vus.alt || e.vus.legende) && (couleur = COULEUR_SEULE.exec(net(m.alt) + ' | ' + net(m.legende)))) {
-					liste.push(guillemets(couleur[0]) + NBSP + ': l’information ne doit pas reposer sur la seule couleur. Nommez aussi ce que la couleur désigne.');
-				}
+				// L'accessibilité de la figure : les avis du serveur, mot pour
+				// mot, chacun paru une fois quitté l'un des champs qu'il regarde.
+				avisDAccessibilite(m, rang, e.vus, f.name).forEach(function (phrase) { liste.push(phrase); });
 				if (e.quittee && !deplacer) {
 					if (!aDuTexte(m)) {
 						liste.push('Rien n’est encore dit de cette figure' + NBSP + ': elle partira quand même, mais sans titre ni légende.');
@@ -4934,8 +5022,34 @@ class Notice_Archeomed_Pactols {
 					avisActif('ponctuation') ? ponctuationFinale(paras) : [],
 					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), selected.length) : [],
 					avisActif('ordinaux') ? ordinauxFautifs(paras) : [],
-					avisActif('annees_espacees') ? datesEspacees(paras) : []
+					avisActif('annees_espacees') ? datesEspacees(paras) : [],
+					avisActif('sigles') ? siglesNonDeveloppes(paras) : []
 				), [quill.root]);
+			}
+			// Les sigles de la liste des normes employés sans être développés à
+			// leur première mention, comme au serveur
+			// (Notice_Archeomed_Controles::sigles_non_developpes) : même liste,
+			// même phrase, mêmes règles.
+			function siglesNonDeveloppes(paras) {
+				var texte = paras.join('\n'), avis = [], L = A11Y.lettres;
+				var sansArticles = function (t) {
+					return plierA11y(t).split(' ').filter(function (w) { return w && A11Y.motsVides.indexOf(w) === -1; }).join(' ');
+				};
+				A11Y.sigles.forEach(function (s) {
+					var sensible = points(s.sigle).length < 4;
+					var echappe = s.sigle.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
+					var m = new RegExp('(^|[^' + L + '])(' + echappe + ')(?=$|[^' + L + '])', sensible ? '' : 'i').exec(texte);
+					if (!m) { return; }
+					var position = m.index + m[1].length;
+					var debut = texte.slice(0, position).split(/[.!?…]\s+|\n/).pop();
+					var fin = texte.slice(position + m[2].length).split(/[.!?…](?:\s|$)|\n/)[0];
+					// Entre parenthèses : la phrase l'a développé à sa façon.
+					if (debut.lastIndexOf('(') !== -1 && debut.lastIndexOf('(') > debut.lastIndexOf(')')) { return; }
+					var phrase = ' ' + sansArticles(debut + ' ' + fin) + ' ';
+					var trouve = s.formes.some(function (f) { f = sansArticles(f); return f !== '' && phrase.indexOf(' ' + f + ' ') !== -1; });
+					if (!trouve) { avis.push(phraseA11y('sigle', { sigle: s.sigle, developpement: s.developpement })); }
+				});
+				return avis;
 			}
 			// Ce que le dernier collage a ôté, et ce qu'un collage laisse
 			// d'ordinaire derrière lui : un appel de note dont la note n'existe
@@ -6456,29 +6570,36 @@ class Notice_Archeomed_Pactols {
 		for ( $i = 0; $i < $combien; $i++ ) {
 			$item = array( 'rang' => $i + 1 );
 			foreach ( $parts as $clef => $liste ) {
-				$valeur = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? self::chevrons_a_garder( $liste[ $i ] ) : '';
+				$brut = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? $liste[ $i ] : '';
 				if ( 'alt' === $clef ) {
 					// Le texte alternatif, que liront les personnes malvoyantes
-					// ou non voyantes : une ligne, sans balise.
-					$item['alt'] = $this->limit_string( Notice_Archeomed_Controles::une_ligne( sanitize_text_field( $valeur ) ),
+					// ou non voyantes : une ligne, sans balise. Le même
+					// nettoyage sert à la rédaction qui le corrige sur la fiche.
+					$item['alt'] = $this->limit_string( Notice_Archeomed_Controles::texte_alternatif_propre( $brut ),
 						Notice_Archeomed_Controles::ALT_MAX, 'le texte alternatif de la fig. ' . ( $i + 1 ) );
 					continue;
 				}
 				if ( 'description' === $clef ) {
 					// La description détaillée d'une figure complexe : plusieurs
 					// paragraphes permis, sans balise, chaque ligne nettoyée.
-					$item['description'] = $this->limit_string(
-						implode( "\n", self::paragraphes_simples( sanitize_textarea_field( $valeur ) ) ),
+					$item['description'] = $this->limit_string( Notice_Archeomed_Controles::description_propre( $brut ),
 						Notice_Archeomed_Controles::DESCRIPTION_MAX, 'la description détaillée de la fig. ' . ( $i + 1 ) );
 					continue;
 				}
-				$valeur = sanitize_textarea_field( $valeur );
+				$valeur = sanitize_textarea_field( self::chevrons_a_garder( $brut ) );
 				$item[ $clef ] = $this->limit_string( $valeur, 'legende' === $clef ? 1500 : 400,
 					( 'legende' === $clef ? 'la légende' : ( 'titre' === $clef ? 'le titre' : 'les crédits' ) ) . ' de la fig. ' . ( $i + 1 ) );
 			}
 			// « Fig. 1 : Plan » retapé dans le titre donnait « Fig. 1 Fig. 1 :
 			// Plan » : le numéro, c'est le plugin qui le pose.
 			$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $item['rang'] );
+			// Le nom du fichier déposé pour cette figure : un texte alternatif
+			// qui ne fait que le reprendre (« DSC_0042 ») reçoit un avis, au
+			// dépôt comme sur la fiche.
+			if ( isset( $_FILES['illustrations']['name'][ $i ], $_FILES['illustrations']['error'][ $i ] )
+				&& is_string( $_FILES['illustrations']['name'][ $i ] ) && UPLOAD_ERR_NO_FILE !== (int) $_FILES['illustrations']['error'][ $i ] ) {
+				$item['fichier_depose'] = sanitize_text_field( $_FILES['illustrations']['name'][ $i ] );
+			}
 			// L'autorisation de reproduction jointe à cette figure, s'il y en a
 			// une : le document le signale à la rédaction.
 			$item['autorisation'] = isset( $_FILES['illus_autorisation']['error'][ $i ] )
@@ -6551,8 +6672,23 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Le chiffre romain d'un siècle en petites capitales, pour le HTML.
+	 *
+	 * Le Word compose « xii » en bas de casse sous w:smallCaps, comme
+	 * Métopes le veut. Dans le HTML, ce bas de casse était lu tel quel : un
+	 * lecteur d'écran disait le mot « vie » pour VI, « mi » pour MI. Le
+	 * chiffre s'écrit donc en capitales, et c'est le style qui le réduit
+	 * (« all-small-caps » réduit aussi les capitales) : l'œil voit des
+	 * petites capitales, la synthèse lit un nombre. Un client de courriel
+	 * qui ignore ce style montre des capitales, la forme juste d'un siècle.
+	 */
+	private static function chiffre_en_petites_capitales( $chiffre ) {
+		return '<span style="font-variant: small-caps; font-variant-caps: all-small-caps">' . strtoupper( (string) $chiffre ) . '</span>';
+	}
+
+	/**
 	 * Les siècles en petites capitales dans la page de relecture, comme le
-	 * document les compose : « xii » en petites capitales, « e » en exposant.
+	 * document les compose : « XII » en petites capitales, « e » en exposant.
 	 * Ne sert que sur le texte de la notice, qui n'a pas d'attributs où un
 	 * siècle pourrait se trouver.
 	 */
@@ -6606,7 +6742,7 @@ class Notice_Archeomed_Pactols {
 					return $m[0];
 				}
 				if ( 'petites_capitales' === $chiffres ) {
-					$chiffre = '<span style="font-variant:small-caps">' . strtolower( $m[1] ) . '</span>';
+					$chiffre = self::chiffre_en_petites_capitales( $m[1] );
 				} elseif ( 'capitales' === $chiffres ) {
 					$chiffre = strtoupper( $m[1] );
 				} else {
@@ -6624,7 +6760,7 @@ class Notice_Archeomed_Pactols {
 				}
 				$suffixe = '' !== $m[2] ? $m[2] : $m[3];
 				if ( 'petites_capitales' === $chiffres ) {
-					$chiffre = '<span style="font-variant:small-caps">' . strtolower( $m[1] ) . '</span>';
+					$chiffre = self::chiffre_en_petites_capitales( $m[1] );
 				} else {
 					$chiffre = 'capitales' === $chiffres ? strtoupper( $m[1] ) : $m[1];
 				}

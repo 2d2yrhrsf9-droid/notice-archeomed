@@ -511,8 +511,8 @@ na_verifier( false !== strpos( $siecles_xml, $pc( 'xii' ) ) && false !== strpos(
 	&& false !== strpos( $siecles_xml, 'tour XII.' ),
 	'les siècles en petites capitales, l\'ordinal en exposant, et rien d\'autre', $siecles_xml );
 $avis_images = $C::figures( array(
-	array( 'rang' => 1, 'pixels' => array( 1000, 800 ), 'titre' => 'Plan', 'legende' => '', 'credits' => 'X' ),
-	array( 'rang' => 2, 'pixels' => array( 1800, 1200 ), 'titre' => 'Vue', 'legende' => '', 'credits' => '' ),
+	array( 'rang' => 1, 'pixels' => array( 1000, 800 ), 'titre' => 'Plan', 'legende' => '', 'credits' => 'X', 'alt' => 'Murs du château', 'description' => 'Deux murs.' ),
+	array( 'rang' => 2, 'pixels' => array( 1800, 1200 ), 'titre' => 'Vue', 'legende' => '', 'credits' => '', 'alt' => 'Fossé vu du nord' ),
 ) );
 na_verifier( 2 === count( $avis_images ) && false !== strpos( $avis_images[0], 'Fig. 1' ) && false !== strpos( $avis_images[1], 'pas de crédits' ),
 	'une figure trop petite pour la norme, une autre sans crédits', $avis_images );
@@ -528,7 +528,7 @@ $nom_doc = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_sty
 na_verifier( false !== strpos( $nom_doc, 'J.-M. Poisson' ), 'un nom d\'autorité garde son espace ordinaire, que la chaîne coupe', $nom_doc );
 
 $relu = na_appel( $plugin, 'siecles_du_html', array( '<p>Au XII<sup>e</sup>&nbsp;siècle et au xiiie s., en ce siècle.</p>' ) );
-na_verifier( 2 === substr_count( $relu, 'small-caps' ) && false !== strpos( $relu, '>xii</span><sup>e</sup>' )
+na_verifier( 2 === substr_count( $relu, 'all-small-caps' ) && false !== strpos( $relu, '>XII</span><sup>e</sup>' ) && false === strpos( $relu, '>xii<' )
 	&& false !== strpos( $relu, "<sup>e</sup>\u{00A0}s. et" ) && false !== strpos( $relu, 'ce siècle' ),
 	'la page de relecture montre aussi les siècles en petites capitales', $relu );
 
@@ -712,11 +712,11 @@ foreach ( array(
 }
 na_verifier( empty( $siecles_vus ), 'le Word compose chaque forme de siècle saisie, liaisons comprises', $siecles_vus );
 $relu_xii = na_appel( $plugin, 'siecles_du_html', array( '<p>fin du XIIe-début du XIIIe siècle, xiie s.</p>' ) );
-na_verifier( 3 === substr_count( $relu_xii, 'small-caps' ) && false !== strpos( $relu_xii, "<sup>e</sup>\u{00A0}s.</p>" ),
+na_verifier( 3 === substr_count( $relu_xii, 'all-small-caps' ) && false !== strpos( $relu_xii, "<sup>e</sup>\u{00A0}s.</p>" ),
 	'la page de relecture aussi, et « s. » prend son insécable', $relu_xii );
 $courriel_xii = na_appel( $plugin, 'build_notice', array( array_merge( $saisie_styles, array(
 	'texte_notice' => '<p>Le mur du XIIe siècle et le <span class="na-pc">Moyen Âge</span> : fin.</p>', 'reference' => 'REFXII' ) ) ) );
-na_verifier( false !== strpos( $courriel_xii, '<span style="font-variant:small-caps">xii</span><sup>e</sup>' )
+na_verifier( false !== strpos( $courriel_xii, '<span style="font-variant: small-caps; font-variant-caps: all-small-caps">XII</span><sup>e</sup>' )
 	&& false !== strpos( $courriel_xii, '<span class="na-pc" style="font-variant:small-caps">Moyen Âge</span>' )
 	&& false !== strpos( $courriel_xii, "Âge</span>\u{00A0}: fin" ) && false !== strpos( $courriel_xii, 'REFXII' ),
 	'le courriel et la fiche montrent le texte aux normes, petites capitales et référence comprises', $courriel_xii );
@@ -1269,8 +1269,12 @@ foreach ( array(
 }
 na_verifier( empty( $pc_vus ), 'au Word, l\'ordinal tapé après « Pc » passe en exposant, jamais en petites capitales', $pc_vus );
 $relu_pc = na_appel( $plugin, 'siecles_du_html', array( '<p>Au <span class="na-pc">xv</span>e siècle, au <span class="na-pc">XIIe</span> s.</p>' ) );
-na_verifier( "<p>Au <span style=\"font-variant:small-caps\">xv</span><sup>e</sup>\u{00A0}s., au <span style=\"font-variant:small-caps\">xii</span><sup>e</sup>\u{00A0}s.</p>" === $relu_pc,
+na_verifier( "<p>Au <span style=\"font-variant: small-caps; font-variant-caps: all-small-caps\">XV</span><sup>e</sup>\u{00A0}s., au <span style=\"font-variant: small-caps; font-variant-caps: all-small-caps\">XII</span><sup>e</sup>\u{00A0}s.</p>" === $relu_pc,
 	'au courriel et à la relecture aussi', $relu_pc );
+$relu_vi = na_appel( $plugin, 'siecles_du_html', array( '<p>Au vie s. et au XIe siècle.</p>' ) );
+na_verifier( false !== strpos( $relu_vi, 'all-small-caps">VI</span><sup>e</sup>' ) && false !== strpos( $relu_vi, 'all-small-caps">XI</span><sup>e</sup>' )
+	&& false === strpos( $relu_vi, '>vi<' ) && false === strpos( $relu_vi, '>xi<' ),
+	'dans le HTML, le chiffre du siècle s\'écrit en capitales que le style réduit : un lecteur d\'écran lit « VI », non le mot « vie »', $relu_vi );
 
 WP_CLI::log( 'Les entrées forgées et les caractères de contrôle' );
 $_POST = array( 'resp_email' => array( 'a@example.org' ), 'lieu_dit' => "Le\x0Bchâteau\x01 neuf", 'commentaires' => "Ligne 1\x0BLigne 2\x02",
@@ -1376,13 +1380,13 @@ $avis_alt = Notice_Archeomed_Controles::figures( array(
 	array( 'rang' => 2, 'titre' => 'Fig. 2 : Vue du fossé', 'legende' => '', 'credits' => 'A', 'alt' => 'Vue du fossé' ),
 	array( 'rang' => 3, 'titre' => 'Coupe', 'legende' => 'Les couches en rouge.', 'credits' => 'A', 'alt' => 'Photo de la coupe' ),
 	array( 'rang' => 4, 'titre' => 'Mur', 'legende' => '', 'credits' => 'A', 'alt' => str_repeat( 'mur ', 30 ) ) ) );
-na_verifier( 1 === count( preg_grep( '/Fig\. 1\x{00A0}: le texte alternatif fait 159 caractères, pour 150/u', $avis_alt ) )
+na_verifier( 1 === count( preg_grep( '/Fig\. 1\x{00A0}: le texte alternatif fait 159\x{00A0}caractères, pour 150/u', $avis_alt ) )
 	&& 0 === count( preg_grep( '/Fig\. 4.*fait/u', $avis_alt ) ),
 	'au-delà de 150 caractères, un avis, sans refus ; en deçà, rien', $avis_alt );
-na_verifier( 1 === count( preg_grep( '/Fig\. 2.*recopie le titre/u', $avis_alt ) )
+na_verifier( 1 === count( preg_grep( '/Fig\. 2.*reprend le titre/u', $avis_alt ) )
 	&& 1 === count( preg_grep( '/Fig\. 3.*commence par «\x{00A0}Photo de/u', $avis_alt ) )
 	&& 1 === count( preg_grep( '/Fig\. 3.*«\x{00A0}en rouge\x{00A0}».*seule couleur/u', $avis_alt ) ),
-	'un avis quand le texte alternatif recopie le titre, commence par « Photo de », ou que la couleur porte seule l\'information', $avis_alt );
+	'un avis quand le texte alternatif reprend le titre, commence par « Photo de », ou que la couleur porte seule l\'information', $avis_alt );
 $_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "Plan\n des   murs\t" . str_repeat( 'x', 400 ) ) );
 $_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
 $coupee = na_appel( $plugin, 'collect_illustrations' );
@@ -1467,6 +1471,257 @@ $_POST = array();
 $_FILES = array();
 na_verifier( 0 === strpos( $decrite[0]['description'], "Premier paragraphe,\nsecond gras.\nyyy" ) && 2000 === mb_strlen( $decrite[0]['description'], 'UTF-8' ),
 	'la description détaillée se collecte en paragraphes simples, sans balise, coupée à 2 000 caractères', mb_substr( $decrite[0]['description'], 0, 60 ) );
+
+WP_CLI::log( 'Les avis d\'accessibilité des figures' );
+$C = 'Notice_Archeomed_Controles';
+$avis_de = function ( $item ) use ( $C ) {
+	return $C::accessibilite_de_la_figure( array_merge( array( 'rang' => 1, 'titre' => '', 'legende' => '', 'credits' => 'A', 'description' => 'Décrite.' ), $item ) );
+};
+$a_la_legende = function ( $alt, $legende ) use ( $avis_de ) {
+	return 1 === count( preg_grep( '/reprend la légende/u', $avis_de( array( 'alt' => $alt, 'legende' => $legende ) ) ) );
+};
+na_verifier( $a_la_legende( 'Plan général des vestiges de la phase 2', 'Fig. 12. Plan général des vestiges de la phase 2.' )
+	&& $a_la_legende( 'PLAN GÉNÉRAL des vestiges de la phase 2 !', 'Plan general des vestiges de la phase 2' )
+	&& $a_la_legende( 'Vue du foyer du bâtiment 1, côté nord', 'Fig. 8. Vue du foyer du bâtiment 1.' )
+	&& $a_la_legende( 'Plan général des vestiges, phase 2', 'Plan général des vestiges de la phase 2' )
+	&& ! $a_la_legende( 'Deux bâtiments occupent l’ouest de l’enclos fossoyé, entourés de fosses et de silos.', 'Fig. 12. Plan général des vestiges de la phase 2.' )
+	&& ! $a_la_legende( 'Foyer quadrangulaire installé contre la paroi nord du bâtiment.', 'Fig. 8. Vue du foyer du bâtiment 1.' )
+	&& ! $a_la_legende( 'Le fossé', 'Le fossé nord et la palissade.' ),
+	'un texte alternatif qui reprend la légende — identique à la casse, à la ponctuation et au « Fig. N » près, contenu, ou presque tous ses mots — reçoit un avis ; les exemples de la rédaction, non' );
+$sans_contenu = array();
+foreach ( array( 'Image', 'photo 3', 'Fig. 2', 'Plan', 'Illustration n° 2', 'Figure 2a', 'dessin.' ) as $vide_de_sens ) {
+	$sans_contenu[ $vide_de_sens ] = count( preg_grep( '/ne dit pas ce que montre l’image/u', $avis_de( array( 'alt' => $vide_de_sens ) ) ) );
+}
+na_verifier( array( 1 ) === array_values( array_unique( $sans_contenu ) )
+	&& array() === preg_grep( '/ne dit pas/u', $avis_de( array( 'alt' => 'Plan du château et de ses fossés' ) ) ),
+	'« Image », « Photo 3 », « Fig. 2 », « Plan »… ne disent rien de l\'image ; « Plan du château et de ses fossés », si', $sans_contenu );
+$fichiers = array();
+foreach ( array( 'image1.jpg' => '', 'DSC_0042.JPG' => '', 'IMG_20240512_101010' => '', 'P1030456' => '', 'scan 0012.tif' => '',
+	'coupe-sud' => 'coupe-sud.tif', 'Coupe sud.TIF' => 'autre.jpg' ) as $alt_fichier => $depose ) {
+	$fichiers[ $alt_fichier ] = count( preg_grep( '/est un nom de fichier/u', $avis_de( array( 'alt' => $alt_fichier, 'fichier_depose' => $depose ) ) ) );
+}
+na_verifier( array( 1 ) === array_values( array_unique( $fichiers ) )
+	&& array() === $avis_de( array( 'alt' => 'Vue aérienne du site, depuis le sud', 'fichier_depose' => 'vue.jpg' ) )
+	&& 1 === count( $avis_de( array( 'alt' => 'image1.jpg', 'titre' => 'image1.jpg' ) ) ),
+	'un nom de fichier — extension d\'image, nom d\'appareil, nom du fichier déposé — reçoit un avis, et lui seul', $fichiers );
+$recommandee = function ( $item ) use ( $avis_de ) {
+	$avis = preg_grep( '/description détaillée recommandée/u', $avis_de( array_merge( array( 'description' => '' ), $item ) ) );
+	return empty( $avis ) ? '' : (string) reset( $avis );
+};
+na_verifier( false !== strpos( $recommandee( array( 'titre' => 'Coupe stratigraphique du fossé', 'alt' => 'Couches de remblai sur le fond du fossé' ) ), "«\u{00A0}coupe\u{00A0}»" )
+	&& false !== strpos( $recommandee( array( 'legende' => 'Relevé de l’élévation nord.', 'alt' => 'Mur à trois assises' ) ), "«\u{00A0}relevé\u{00A0}»" )
+	&& false !== strpos( $recommandee( array( 'alt' => 'Histogrammes des datations' ) ), "«\u{00A0}histogramme\u{00A0}»" )
+	&& '' === $recommandee( array( 'titre' => 'Vue du foyer', 'alt' => 'Foyer contre la paroi nord' ) )
+	&& '' === $recommandee( array( 'titre' => 'Coupe stratigraphique', 'alt' => 'Couches', 'description' => 'Trois couches.' ) ),
+	'un plan, une coupe, un relevé, un graphique sans description détaillée : elle est recommandée ; décrite, rien' );
+$figures_a11y = array(
+	array( 'rang' => 1, 'titre' => 'Coupe du fossé', 'legende' => 'Fig. 1. Coupe du fossé nord.', 'credits' => 'A', 'alt' => 'Coupe du fossé nord' ),
+	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => 'A', 'alt' => 'DSC_0042.JPG', 'description' => 'x' ) );
+$avis_tous = $C::figures( $figures_a11y );
+na_verifier( 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: le texte alternatif reprend la légende\x{00A0}; il ne la répète pas, il restitue l’information visuelle utile\\.$/u", $avis_tous ) )
+	&& 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: description détaillée recommandée \\(«\x{00A0}coupe\x{00A0}»\\)/u", $avis_tous ) )
+	&& 1 === count( preg_grep( "/^Fig\\. 2\x{00A0}: le texte alternatif «\x{00A0}DSC_0042\\.JPG\x{00A0}» est un nom de fichier/u", $avis_tous ) ),
+	'au serveur, chaque avis suit « Fig. N : », dans la phrase même que reçoit le navigateur', $avis_tous );
+$regles = $C::regles_d_accessibilite();
+$motifs_js_sans_ucp = true;
+foreach ( $regles['motifs'] as $motif ) {
+	$motifs_js_sans_ucp = $motifs_js_sans_ucp && false === strpos( $motif, '(*' ) && false === strpos( $motif, '(?<' ) && false === strpos( $motif, '\\p' );
+}
+na_verifier( $regles['phrases'] === $C::phrases_d_accessibilite() && true === $regles['actif'] && 150 === $regles['conseille'] && 300 === $regles['max']
+	&& $motifs_js_sans_ucp && in_array( 'élévation', $regles['complexes'], true ),
+	'le formulaire reçoit du serveur les phrases, les motifs (lisibles par le navigateur) et les seuils', array_keys( $regles ) );
+$reglages_a11y = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$poser_les_normes_a11y = function ( $normes ) use ( $reglages_a11y ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_a11y, array( Notice_Archeomed_Normes::CLE => $normes ) ) );
+	Notice_Archeomed_Normes::oublier();
+};
+$sans_case = Notice_Archeomed_Normes::nettoyer( array( 'avis' => array( 'credits' ) ) );
+$poser_les_normes_a11y( $sans_case );
+$avis_eteints = $C::figures( $figures_a11y );
+$actif_eteint = $C::regles_d_accessibilite()['actif'];
+$poser_les_normes_a11y( array( 'avis' => array( 'credits', 'ordinaux' ) ) );
+$avis_d_avant = $C::figures( $figures_a11y );
+$poser_les_normes_a11y( array( 'alt_conseille' => 100 ) );
+$long_100 = $C::accessibilite_de_la_figure( array( 'rang' => 1, 'alt' => str_repeat( 'mur ', 30 ), 'description' => 'x' ) );
+$conseille_100 = $C::regles_d_accessibilite()['conseille'];
+$propres_a11y = Notice_Archeomed_Normes::nettoyer( array( 'alt_conseille' => '999' ) );
+$poser_les_normes_a11y( array() );
+$long_150 = $C::accessibilite_de_la_figure( array( 'rang' => 1, 'alt' => str_repeat( 'mur ', 30 ), 'description' => 'x' ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_a11y );
+Notice_Archeomed_Normes::oublier();
+na_verifier( array() === $avis_eteints && false === $actif_eteint && isset( $sans_case[ Notice_Archeomed_Normes::CASES_VUES ]['avis'] )
+	&& 4 === count( $avis_d_avant ),
+	'la case « accessibilité des figures » tait ces avis ; des avis enregistrés avant elle ne l\'éteignent pas', array( $avis_eteints, $avis_d_avant ) );
+na_verifier( 100 === $conseille_100 && 1 === count( preg_grep( '/fait 119\x{00A0}caractères, pour 100 au plus/u', $long_100 ) )
+	&& array() === $long_150 && 300 === $propres_a11y['alt_conseille'],
+	'le seuil de longueur se règle dans les normes (150 par défaut), borné par la limite dure de 300', array( $long_100, $propres_a11y ) );
+$reprise_prop->setValue( $plugin, null );
+unset( $_GET['notice_reprise'] );
+$rendu_a11y_form = (string) $plugin->render_form();
+na_verifier( false !== strpos( $rendu_a11y_form, 'var A11Y = {' ) && false !== strpos( $rendu_a11y_form, wp_json_encode( $C::phrase( 'legende' ) ) )
+	&& false !== strpos( $rendu_a11y_form, 'Deux bâtiments occupent l’ouest de l’enclos fossoyé' ) && false !== strpos( $rendu_a11y_form, 'Développez chaque sigle à sa première mention' )
+	&& false !== strpos( $rendu_a11y_form, 'Appelez chaque figure dans le texte' ) && false === strpos( $rendu_a11y_form, '?.' ),
+	'le formulaire porte les règles du serveur, les exemples du texte alternatif et les aides des sigles et des appels de figure' );
+
+WP_CLI::log( 'Les sigles à développer' );
+$liste_sigles = $C::sigles_de_la_norme( "SRA = service régional de l’archéologie\n  \n# une note = ignorée\nsans signe égal\nX = un seul caractère\nPCR =\n"
+	. "Lidar = détection et télémétrie par la lumière (light detection and ranging)\nUS = unité stratigraphique   # la plus courante\nSRA = doublon\nInrap = Institut national de recherches archéologiques préventives" );
+na_verifier( array( 'SRA', 'Lidar', 'US', 'Inrap' ) === array_column( $liste_sigles, 'sigle' )
+	&& array( 'détection et télémétrie par la lumière', 'light detection and ranging' ) === $liste_sigles[1]['formes']
+	&& 'unité stratigraphique' === $liste_sigles[2]['developpement'] && 'service régional de l’archéologie' === $liste_sigles[0]['developpement'],
+	'la liste des sigles se lit ligne à ligne ; une ligne vide, une note ou une ligne mal formée sont ignorées, un doublon aussi', $liste_sigles );
+$sigles_de = function ( $texte ) use ( $C, $liste_sigles ) {
+	return $C::sigles_non_developpes( $C::paragraphes( $texte ), $liste_sigles );
+};
+na_verifier( array( "Le sigle «\u{00A0}SRA\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}service régional de l’archéologie (SRA)\u{00A0}»." )
+		=== $sigles_de( '<p>Le SRA a prescrit la fouille.</p><p>Le service régional de l’archéologie (SRA) l’a suivie.</p>' ),
+	'un sigle non développé à sa première mention reçoit l\'avis, dans la phrase dite ; la mention suivante, développée, n\'y change rien' );
+na_verifier( array() === $sigles_de( '<p>Le service régional de l’archéologie (SRA) a prescrit la fouille. Le SRA l’a suivie.</p>' )
+	&& array() === $sigles_de( '<p>Le SRA (Service Régional de l\'Archeologie) a prescrit.</p>' )
+	&& array() === $sigles_de( '<p>Prescrite par le service archéologique de Normandie (SRA), la fouille a duré un mois.</p>' )
+	&& array() === $sigles_de( '<p>Un relevé lidar (light detection and ranging) couvre le site.</p>' )
+	&& array() === $sigles_de( '<p>Les fouilleurs ont bien travaillé : us et coutumes du chantier.</p>' ),
+	'développé avant ou après dans la même phrase — casse, accents, articles comptés pour rien —, ou entre parenthèses : pas d\'avis ; « us » n\'est pas « US »' );
+$avis_sigles = $sigles_de( '<p>L’INRAP a fouillé l’US 1023. Unité stratigraphique est un terme du métier.</p>' );
+na_verifier( 2 === count( $avis_sigles ) && false !== strpos( $avis_sigles[0], "«\u{00A0}US\u{00A0}»" ) && false !== strpos( $avis_sigles[1], "«\u{00A0}Inrap\u{00A0}»" ),
+	'« INRAP » est reconnu en toute casse ; le développement d\'une autre phrase ne compte pas', $avis_sigles );
+$reglages_sigles = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$texte_sigles = array( 'texte_notice' => '<p>Le SRA a prescrit la fouille.</p>', 'illustrations' => array() );
+$avec_sigles = preg_grep( '/Le sigle/u', $C::avis( $texte_sigles ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_sigles, array( Notice_Archeomed_Normes::CLE => Notice_Archeomed_Normes::nettoyer( array(
+	'avis' => array( 'credits' ), 'sigles' => "<b>CAG</b> = Carte archéologique de la Gaule\nSRA = service régional de l’archéologie" ) ) ) ) );
+Notice_Archeomed_Normes::oublier();
+$sans_sigles = preg_grep( '/Le sigle/u', $C::avis( $texte_sigles ) );
+$sigles_reglees = Notice_Archeomed_Normes::valeur( 'sigles' );
+$regles_sans_sigles = $C::regles_d_accessibilite();
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_sigles );
+Notice_Archeomed_Normes::oublier();
+na_verifier( 1 === count( $avec_sigles ) && array() === $sans_sigles && array() === $regles_sans_sigles['sigles']
+	&& "CAG = Carte archéologique de la Gaule\nSRA = service régional de l’archéologie" === $sigles_reglees
+	&& false !== strpos( Notice_Archeomed_Normes::valeur( 'sigles' ), 'Inrap = Institut national de recherches archéologiques préventives' ),
+	'l\'avis des sigles se donne par défaut, se tait par sa case ; la liste se règle dans les normes, sans balise', array( $avec_sigles, $sigles_reglees ) );
+$regles_sigles = $C::regles_d_accessibilite();
+na_verifier( count( $regles_sigles['sigles'] ) >= 20 && isset( $regles_sigles['phrases']['sigle'] ) && $C::LETTRES === $regles_sigles['lettres'],
+	'le formulaire reçoit la liste des sigles et la phrase de l\'avis', count( $regles_sigles['sigles'] ) );
+
+WP_CLI::log( 'L\'accessibilité des illustrations sur la fiche' );
+$A = 'Notice_Archeomed_Accessibilite';
+$saisie_fiche = array_merge( $saisie_styles, array( 'reference' => 'ACCES1', 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => 'Plan des vestiges.', 'credits' => 'DAO A.', 'alt' => 'Plan des murs',
+		'figure' => array( 'fichier' => 'icono/br/plan.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 ) ),
+	array( 'rang' => 2, 'titre' => 'Vue du fossé', 'legende' => '', 'credits' => '',
+		'figure' => array( 'fichier' => 'icono/br/vue.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 ) ) ) ) );
+$fiche_a11y = na_notice( $saisie_fiche );
+na_verifier( 'a_completer' === $C::etat_d_accessibilite( $saisie_fiche['illustrations'][1] )['etat']
+	&& 'a_verifier' === $C::etat_d_accessibilite( $saisie_fiche['illustrations'][0] )['etat']
+	&& 'ok' === $C::etat_d_accessibilite( array( 'rang' => 1, 'titre' => 'Vue', 'alt' => 'Foyer contre la paroi nord', 'description' => '' ) )['etat'],
+	'une figure sans texte alternatif — une notice ancienne — est « à compléter » ; un avis la met « à vérifier » ; sinon « OK »' );
+$utilisateur_avant = get_current_user_id();
+$admins = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ids' ) );
+$admin_a11y = empty( $admins ) ? 1 : (int) $admins[0];
+wp_set_current_user( $admin_a11y );
+$encart = new Notice_Archeomed_Accessibilite();
+ob_start();
+$encart->afficher_l_encart( get_post( $fiche_a11y ) );
+$encart->poser_le_formulaire_des_figures();
+$rendu_encart = (string) ob_get_clean();
+na_verifier( false !== strpos( $rendu_encart, '<th scope="col">Figure</th><th scope="col">Légende</th><th scope="col">Crédits</th><th scope="col">Texte alternatif</th><th scope="col">Description détaillée</th><th scope="col">État</th>' )
+	&& false !== strpos( $rendu_encart, 'À compléter' ) && false !== strpos( $rendu_encart, 'Le Word porte le titre à sa place' )
+	&& false !== strpos( $rendu_encart, 'À vérifier' ) && false !== strpos( $rendu_encart, 'Description détaillée recommandée' )
+	&& 2 === substr_count( $rendu_encart, 'name="na_alt[' ) && 5 === substr_count( $rendu_encart, 'form="na-a11y-figures"' )
+	&& false !== strpos( $rendu_encart, '<form id="na-a11y-figures"' ) && false !== strpos( $rendu_encart, 'value="' . $A::ACTION_FIGURES . '"' )
+	&& false !== strpos( $rendu_encart, '>Fig. 2<' ),
+	'la fiche montre le tableau Figure | Légende | Crédits | Texte alternatif | Description détaillée | État, ses champs rattachés à un formulaire hors de celui de la fiche',
+	substr( wp_strip_all_tags( $rendu_encart ), 0, 400 ) );
+$vers_fiche = '';
+$sortie_fiche = function ( $vers ) {
+	throw new RuntimeException( (string) $vers );
+};
+$mourir_fiche = function () {
+	return function ( $message ) {
+		throw new RuntimeException( 'wp_die' );
+	};
+};
+add_filter( 'wp_redirect', $sortie_fiche );
+add_filter( 'wp_die_handler', $mourir_fiche );
+$jouer_la_fiche = function ( $post ) use ( $encart ) {
+	$_POST = $_REQUEST = $post;
+	try {
+		$encart->enregistrer_les_figures();
+	} catch ( RuntimeException $e ) {
+		return $e->getMessage();
+	}
+	return '';
+};
+$nonce_fiche = wp_create_nonce( $A::ACTION_FIGURES . '_' . $fiche_a11y );
+$sans_jeton = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => 'faux', 'na_alt' => array( 1 => 'Pirate' ) ) );
+$abonne = wp_insert_user( array( 'user_login' => 'abonne_a11y_' . wp_generate_password( 6, false ), 'user_pass' => wp_generate_password(), 'role' => 'subscriber' ) );
+wp_set_current_user( (int) $abonne );
+$sans_droit = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => wp_create_nonce( $A::ACTION_FIGURES . '_' . $fiche_a11y ), 'na_alt' => array( 1 => 'Pirate' ) ) );
+wp_set_current_user( $admin_a11y );
+$intacte = get_post_meta( $fiche_a11y, '_na_donnees', true );
+$vers_fiche = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche,
+	'na_alt' => wp_slash( array( 1 => " Deux murs parallèles, <b>orientés</b>\n nord-sud ", 2 => 'L. <5 m ; fossé en V' . str_repeat( ' x', 200 ), 9 => 'Figure absente' ) ),
+	'na_description' => wp_slash( array( 1 => "Le mur ouest.\n\n\nLe mur est.", 2 => '' ) ) ) );
+$corrigee = get_post_meta( $fiche_a11y, '_na_donnees', true );
+$historique = get_post_meta( $fiche_a11y, $A::HISTORIQUE, false );
+$vers_rien = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche, 'na_alt' => array( 1 => 'Deux murs parallèles, orientés nord-sud' ) ) );
+$_POST = $_REQUEST = array();
+remove_filter( 'wp_redirect', $sortie_fiche );
+remove_filter( 'wp_die_handler', $mourir_fiche );
+$sans_les_figures = function ( $d ) {
+	unset( $d['illustrations'] );
+	return $d;
+};
+na_verifier( 'wp_die' === $sans_jeton && 'wp_die' === $sans_droit && $saisie_fiche === $intacte,
+	'sans jeton valable, ou sans le droit de régler l\'extension, rien n\'est enregistré' );
+na_verifier( 'Deux murs parallèles, orientés nord-sud' === $corrigee['illustrations'][0]['alt']
+	&& 300 === mb_strlen( $corrigee['illustrations'][1]['alt'], 'UTF-8' ) && 0 === strpos( $corrigee['illustrations'][1]['alt'], 'L. &lt;5 m ; fossé en V x' )
+	&& "Le mur ouest.\nLe mur est." === $corrigee['illustrations'][0]['description'] && ! isset( $corrigee['illustrations'][1]['description'] )
+	&& 2 === count( $corrigee['illustrations'] ) && $sans_les_figures( $saisie_fiche ) === $sans_les_figures( $corrigee )
+	&& $saisie_fiche['illustrations'][0]['figure'] === $corrigee['illustrations'][0]['figure'] && 'Plan des vestiges.' === $corrigee['illustrations'][0]['legende'],
+	'la fiche enregistre le texte alternatif et la description avec les nettoyages et les limites du dépôt, sans rien toucher d\'autre de la saisie',
+	$corrigee['illustrations'] );
+na_verifier( 3 === count( $historique ) && 'Plan des murs' === $historique[0]['avant'] && 'alt' === $historique[0]['champ'] && 1 === $historique[0]['figure']
+	&& $admin_a11y === $historique[0]['utilisateur'] && '' !== $historique[0]['date'] && 'description' === $historique[1]['champ']
+	&& '' === $historique[2]['avant'] && 2 === $historique[2]['figure'] && false !== strpos( $vers_fiche, 'na_figures=3' ) && false !== strpos( $vers_fiche, 'na_figures_coupe=1' )
+	&& false !== strpos( $vers_fiche, '#na_accessibilite' ) && false !== strpos( $vers_rien, 'na_figures=0' ),
+	'chaque valeur remplacée reste dans l\'historique (date, utilisateur, figure, champ, avant, après) ; un texte inchangé n\'y entre pas', array( $historique, $vers_fiche ) );
+$doc_fiche = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+// La saisie telle que le Word la reçoit ; l'image, que le site d'essai n'a
+// pas, est posée comme le dossier la poserait.
+$saisie_refaite = na_appel( $plugin, 'saisie_de', array( $fiche_a11y, false ) );
+foreach ( array_keys( $saisie_refaite['illustrations'] ) as $i_fiche ) {
+	$saisie_refaite['illustrations'][ $i_fiche ]['figure'] = $saisie_fiche['illustrations'][ $i_fiche ]['figure'];
+}
+na_appel( $plugin, 'remplir_le_document', array( $doc_fiche, $saisie_refaite ) );
+$xml_fiche = implode( '', $corps->getValue( $doc_fiche ) );
+na_verifier( false !== strpos( $xml_fiche, 'descr="Deux murs parallèles, orientés nord-sud"' ) && false === strpos( $xml_fiche, 'descr="Plan des murs"' )
+	&& false !== strpos( $xml_fiche, 'descr="L. &lt;5 m ; fossé en V x' ),
+	'le Word refait après la correction porte la valeur corrigée dans « descr »', preg_match_all( '#descr="[^"]{0,60}#u', $xml_fiche, $m_fiche ) ? $m_fiche[0] : array() );
+$_GET['na_figures'] = '3';
+ob_start();
+$encart->afficher_l_encart( get_post( $fiche_a11y ) );
+$rendu_encart2 = (string) ob_get_clean();
+unset( $_GET['na_figures'] );
+na_verifier( false !== strpos( $rendu_encart2, "3\u{00A0}textes enregistrés" ) && false !== strpos( $rendu_encart2, 'Historique des corrections (3)' )
+	&& false !== strpos( $rendu_encart2, "était «\u{00A0}Plan des murs\u{00A0}», devient «\u{00A0}Deux murs parallèles" ) && false !== strpos( $rendu_encart2, 'L. &lt;5 m' ),
+	'la fiche dit ce qui a été enregistré et montre l\'historique' );
+$ancienne_a11y = na_notice( array_merge( $saisie_styles, array( 'illustrations' => array( array( 'rang' => 1, 'titre' => 'Plan', 'legende' => '', 'credits' => '' ) ) ) ) );
+$recap_a11y = $A::recapitulatif_des_figures();
+$ligne_ancienne = array_values( array_filter( $recap_a11y['liste'], function ( $l ) use ( $ancienne_a11y ) {
+	return $l['id'] === $ancienne_a11y;
+} ) );
+ob_start();
+$A::onglet();
+$onglet_a11y = (string) ob_get_clean();
+wp_set_current_user( $utilisateur_avant );
+na_verifier( 1 === count( $ligne_ancienne ) && 1 === $ligne_ancienne[0]['a_completer'] && $recap_a11y['a_completer'] >= 1
+	&& false !== strpos( $onglet_a11y, 'Les illustrations des notices reçues' ) && preg_match( '#post=' . $ancienne_a11y . '&(?:amp;|\#038;)action=edit\#na_accessibilite#', $onglet_a11y ),
+	'l\'onglet Accessibilité compte les figures à compléter et à vérifier, avec un lien vers chaque fiche — une notice ancienne y est « à compléter »', $ligne_ancienne );
+wp_delete_post( $fiche_a11y, true );
+wp_delete_post( $ancienne_a11y, true );
+wp_delete_user( (int) $abonne );
 
 WP_CLI::log( 'Le texte alternatif, texte simple' );
 $saisie_simple = array_merge( $saisie_styles, array( 'illustrations' => array(

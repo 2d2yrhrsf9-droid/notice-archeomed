@@ -25,6 +25,41 @@ class Notice_Archeomed_Normes {
 	/** La clé, dans l'option du plugin, qui porte les choix enregistrés. */
 	const CLE = 'normes';
 
+	/** La clé, parmi les choix enregistrés, des cases que la page montrait. */
+	const CASES_VUES = '_cases_vues';
+
+	/**
+	 * Les sigles courants de l'archéologie française, à la forme juste, que
+	 * la rédaction complète ou corrige dans les normes. Ceux qui suivent la
+	 * note [HYPOTHÈSE] sont à confirmer.
+	 */
+	const SIGLES = "SRA = service régional de l’archéologie\n"
+		. "DRAC = direction régionale des affaires culturelles\n"
+		. "Inrap = Institut national de recherches archéologiques préventives\n"
+		. "PCR = projet collectif de recherche\n"
+		. "CNRS = Centre national de la recherche scientifique\n"
+		. "UMR = unité mixte de recherche\n"
+		. "SIG = système d’information géographique\n"
+		. "DAO = dessin assisté par ordinateur\n"
+		. "MNT = modèle numérique de terrain\n"
+		. "Lidar = détection et télémétrie par la lumière (light detection and ranging)\n"
+		. "US = unité stratigraphique\n"
+		. "SDA = sous-direction de l’archéologie\n"
+		. "CTRA = commission territoriale de la recherche archéologique\n"
+		. "DRASSM = département des recherches archéologiques subaquatiques et sous-marines\n"
+		. "RFO = rapport final d’opération\n"
+		. "DFS = document final de synthèse\n"
+		. "CAG = Carte archéologique de la Gaule\n"
+		. "BRGM = Bureau de recherches géologiques et minières\n"
+		. "NMI = nombre minimum d’individus\n"
+		. "TCA = terre cuite architecturale\n"
+		. "ZPPA = zone de présomption de prescription archéologique\n"
+		. "# [HYPOTHÈSE] À confirmer par la rédaction :\n"
+		. "SAD = service archéologique départemental\n"
+		. "NR = nombre de restes\n"
+		. "AMS = spectrométrie de masse par accélérateur\n"
+		. "OSL = luminescence stimulée optiquement\n";
+
 	/** Les choix lus une fois par requête. */
 	private static $enregistrees = null;
 
@@ -51,7 +86,7 @@ class Notice_Archeomed_Normes {
 						'libelle' => 'Les chiffres romains du siècle',
 						'defaut'  => 'petites_capitales',
 						'choix'   => array(
-							'petites_capitales' => array( 'En petites capitales', '<span style="font-variant:small-caps">xii</span><sup>e</sup> s.' ),
+							'petites_capitales' => array( 'En petites capitales', '<span style="font-variant: small-caps; font-variant-caps: all-small-caps">XII</span><sup>e</sup> s.' ),
 							'capitales'         => array( 'En capitales', 'XII<sup>e</sup> s.' ),
 							'tel'               => array( 'Tels que l’auteur les a écrits', '' ),
 						),
@@ -148,14 +183,33 @@ class Notice_Archeomed_Normes {
 					'mots_max'         => array( 'libelle' => 'Texte : longueur recommandée, au plus', 'unite' => 'mots', 'defaut' => 700, 'min' => 1, 'max' => 20000 ),
 				),
 			),
+			'accessibilite' => array(
+				'titre'  => 'L’accessibilité',
+				'normes' => array(
+					'alt_conseille' => array(
+						'libelle' => 'Texte alternatif : avis au-delà de',
+						'unite'   => 'caractères',
+						'aide'    => 'Le formulaire, le compteur sous le champ et les avis du dépôt lisent ce seuil. Le texte alternatif se coupe toujours à 300 caractères. Le RGAA 4.1 recommande 80 caractères au plus.',
+						'defaut'  => 150,
+						'min'     => 20,
+						'max'     => 300,
+					),
+					'sigles' => array(
+						'libelle' => 'Sigles à développer à leur première mention',
+						'aide'    => 'Un sigle par ligne : SIGLE = développement. Une ligne qui commence par # est une note ; une ligne mal formée est ignorée. Un sigle de moins de quatre lettres se reconnaît à sa casse exacte (« US », non « us ») ; les autres, quelle que soit la casse. Le développement se compare sans casse, sans accents ni articles.',
+						'lignes'  => 16,
+						'defaut'  => self::SIGLES,
+					),
+				),
+			),
 			'controles' => array(
 				'titre'  => 'Les avis donnés au dépôt',
 				'aide'   => 'Ce sont des avis, jamais des refus : l’auteur les lit en remplissant le formulaire, la rédaction les retrouve sous « À vérifier ».',
 				'normes' => array(
 					'avis' => array(
-						'libelle' => 'Signaler',
-						'defaut'  => array( 'ponctuation', 'figures_appelees', 'definition', 'credits', 'ordinaux', 'annees_espacees', 'personnes' ),
-						'cases'   => array(
+						'libelle'   => 'Signaler',
+						'defaut'    => array( 'ponctuation', 'figures_appelees', 'definition', 'credits', 'ordinaux', 'annees_espacees', 'personnes', 'accessibilite', 'sigles' ),
+						'cases'     => array(
 							'ponctuation'      => 'un texte qui s’arrête sans ponctuation, ou un paragraphe coupé en deux',
 							'figures_appelees' => 'une figure appelée dans le texte et non jointe, ou jointe et jamais appelée',
 							'definition'       => 'une photographie sous la norme demandée',
@@ -163,7 +217,13 @@ class Notice_Archeomed_Normes {
 							'ordinaux'         => '« XIIème » pour « XIIe », « 1ère » pour « 1re »',
 							'annees_espacees'  => 'une année tapée avec une espace, « 1 250 »',
 							'personnes'        => 'un nom en capitales, deux personnes dans un champ, une adresse dans l’institution',
+							'accessibilite'    => 'l’accessibilité des figures : un texte alternatif trop long, qui reprend le titre ou la légende, qui n’est qu’un nom de fichier ou « Photo », une couleur qui porte seule l’information, une description détaillée recommandée',
+							'sigles'           => 'un sigle de la liste ci-dessus qui n’est pas développé à sa première mention',
 						),
+						// Les cases venues après la première version : une
+						// rédaction qui avait enregistré ses avis avant elles ne
+						// les a jamais vues, et ne les a donc pas décochées.
+						'nouvelles' => array( 'accessibilite', 'sigles' ),
 					),
 				),
 			),
@@ -200,7 +260,21 @@ class Notice_Archeomed_Normes {
 		if ( ! array_key_exists( $cle, self::$enregistrees ) ) {
 			return $norme['defaut'];
 		}
-		return self::valider( $norme, self::$enregistrees[ $cle ], $norme['defaut'] );
+		$valeur = self::valider( $norme, self::$enregistrees[ $cle ], $norme['defaut'] );
+		// Une case ajoutée depuis l'enregistrement est cochée si la revue la
+		// coche : sans quoi la liste gardée, qui ne la nomme pas, l'éteignait
+		// sur tous les sites déjà réglés.
+		if ( isset( $norme['cases'] ) ) {
+			$vues = isset( self::$enregistrees[ self::CASES_VUES ][ $cle ] ) && is_array( self::$enregistrees[ self::CASES_VUES ][ $cle ] )
+				? self::$enregistrees[ self::CASES_VUES ][ $cle ]
+				: array_diff( array_keys( $norme['cases'] ), isset( $norme['nouvelles'] ) ? (array) $norme['nouvelles'] : array() );
+			foreach ( (array) $norme['defaut'] as $case ) {
+				if ( ! in_array( $case, $vues, true ) && ! in_array( $case, $valeur, true ) ) {
+					$valeur[] = $case;
+				}
+			}
+		}
+		return $valeur;
 	}
 
 	/** Un avis est-il à donner ? */
@@ -218,6 +292,14 @@ class Notice_Archeomed_Normes {
 		if ( isset( $norme['cases'] ) ) {
 			return array_values( array_intersect( array_keys( $norme['cases'] ), (array) $valeur ) );
 		}
+		if ( isset( $norme['lignes'] ) ) {
+			// Un texte de plusieurs lignes : sans balise, borné.
+			if ( ! is_string( $valeur ) ) {
+				return $repli;
+			}
+			$propre = str_replace( "\r\n", "\n", sanitize_textarea_field( $valeur ) );
+			return function_exists( 'mb_substr' ) ? mb_substr( $propre, 0, 8000, 'UTF-8' ) : substr( $propre, 0, 8000 );
+		}
 		if ( ! is_numeric( $valeur ) ) {
 			return $repli;
 		}
@@ -231,6 +313,9 @@ class Notice_Archeomed_Normes {
 			if ( isset( $norme['cases'] ) ) {
 				// Une case décochée n'arrive pas : l'absence vaut « aucune ».
 				$propres[ $cle ] = self::valider( $norme, isset( $soumis[ $cle ] ) ? $soumis[ $cle ] : array(), array() );
+				// Les cases que la page montrait : une case ajoutée plus tard
+				// ne sera pas tenue pour décochée.
+				$propres[ self::CASES_VUES ][ $cle ] = array_keys( $norme['cases'] );
 				continue;
 			}
 			if ( isset( $soumis[ $cle ] ) ) {
