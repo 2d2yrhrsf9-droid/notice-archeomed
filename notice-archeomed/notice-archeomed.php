@@ -818,7 +818,8 @@ class Notice_Archeomed_Pactols {
 			$lier = function ( $items, $capitale = false ) {
 				$out = array();
 				foreach ( (array) $items as $item ) {
-					if ( '' === ( isset( $item['label'] ) ? trim( (string) $item['label'] ) : '' ) ) {
+					// Ni vide, ni gardé hors de Pactols : comme au document.
+					if ( '' === ( isset( $item['label'] ) ? trim( (string) $item['label'] ) : '' ) || self::hors_pactols( $item ) ) {
 						continue;
 					}
 					// La graphie du document, forme préférée comprise : la page
@@ -2801,7 +2802,7 @@ class Notice_Archeomed_Pactols {
 
 				<div class="na-sous-groupe" role="group" aria-labelledby="na-kw-titre" aria-describedby="na-kw-aide">
 					<h3 class="na-sous-titre" id="na-kw-titre">Mots-clés Pactols <span class="na-facultatif">(facultatif)</span></h3>
-					<p class="na-help" id="na-kw-aide">Tapez trois lettres au moins, puis choisissez les termes dans la liste que propose le thésaurus Pactols&nbsp;: la notice sera indexée avec eux. Si le terme n’est pas dans la liste, appuyez deux fois sur Entrée pour le garder tel quel&nbsp;: il partira sans identifiant Pactols. Dix au plus par catégorie.</p>
+					<p class="na-help" id="na-kw-aide">Tapez trois lettres au moins, puis choisissez les termes dans la liste que propose le thésaurus Pactols&nbsp;: la notice sera indexée avec eux. Si le terme n’est pas dans la liste, vous pouvez appuyer deux fois sur Entrée pour le proposer tel quel&nbsp;; mais un terme absent de Pactols ne sera pas utilisé dans la notice. Dix au plus par catégorie.</p>
 					<div class="na-pactols-grid">
 						<?php
 						echo $this->pactols_categorie_html( 'period', 'Périodes',
@@ -3929,7 +3930,7 @@ class Notice_Archeomed_Pactols {
 					dessiner();
 					champ.value = '';
 					effacerLErreurDe(champ);
-					dire(guillemets(item.label) + (item.ark ? ' ajouté.' : ' ajouté, sans identifiant Pactols.')
+					dire(guillemets(item.label) + (item.ark ? ' ajouté.' : ' gardé, mais absent de Pactols' + NBSP + ': il ne sera pas utilisé dans la notice.')
 						+ (cat.type === 'place' && estUnLieuDuTitre(item) ? ' C’est déjà un lieu de l’opération, dans le titre' + NBSP + ': il y paraîtra deux fois.' : ''));
 					marquerModifie();
 					verifierLeConcept(cat, item);
@@ -4011,7 +4012,7 @@ class Notice_Archeomed_Pactols {
 				function avertirAvantDeGarder(q) {
 					confirmer = q;
 					dire('Aucune proposition n’est exactement ' + guillemets(q) + NBSP + ': choisissez-en une avec les flèches, '
-						+ 'ou appuyez de nouveau sur Entrée pour garder ' + guillemets(q) + ' tel quel, sans identifiant Pactols.');
+						+ 'ou appuyez de nouveau sur Entrée pour garder ' + guillemets(q) + ' tel quel' + NBSP + '; absent de Pactols, il ne sera pas utilisé dans la notice.');
 				}
 				champ.addEventListener('keydown', function (e) {
 					if (e.key !== 'Enter' || e.defaultPrevented) { return; }
@@ -4062,7 +4063,7 @@ class Notice_Archeomed_Pactols {
 						dire(exactDans(derniers, t)
 							? guillemets(t) + ' n’est pas encore retenu' + NBSP + ': il le sera à l’envoi, avec son identifiant Pactols.'
 							: guillemets(t) + ' n’est pas retenu' + NBSP + ': choisissez un terme dans la liste, ou appuyez deux fois sur Entrée '
-								+ 'pour le garder tel quel. Laissé ainsi, il partira à l’envoi sans identifiant Pactols.');
+								+ 'pour le garder tel quel. Absent de Pactols, il ne sera pas utilisé dans la notice.');
 					}, 200);
 				});
 				cat.relire();
@@ -6116,12 +6117,20 @@ class Notice_Archeomed_Pactols {
 			if ( '' === $label ) {
 				continue;
 			}
-			$out[] = array(
+			$terme = array(
 				'label' => $this->limit_string( $label, 250 ),
 				'ark' => $this->limit_string( $ark, 500 ),
 				'idConcept' => $this->limit_string( $id_concept, 120 ),
 				'fullpath' => $this->limit_string( $fullpath, 800 ),
 			);
+			// Un terme gardé hors de la liste de Pactols : l'auteur a été
+			// prévenu qu'il ne serait pas utilisé. Il se garde, marqué, pour
+			// que la rédaction le lise ; une notice d'avant cette marque garde
+			// ses termes sans identifiant tels qu'ils étaient.
+			if ( '' === $ark ) {
+				$terme['libre'] = true;
+			}
+			$out[] = $terme;
 		}
 		return array_slice( $out, 0, self::PACTOLS_FIELD_COUNT );
 	}
@@ -6444,7 +6453,8 @@ class Notice_Archeomed_Pactols {
 		// s'en charge — relancé à neuf, puisqu'une personne vient de le
 		// demander et que ses essais d'hier ne disent rien de Pactols
 		// aujourd'hui.
-		$manquants = count( $this->termes_manquants( $d, $termes ) );
+		// Lecture coupée : rien ne manque qu'on attende, et rien ne se dit.
+		$manquants = self::lit_pactols() ? count( $this->termes_manquants( $d, $termes ) ) : 0;
 		$prochaine = ( $manquants > 0 ) ? $this->relancer_la_resolution( $id, $d ) : 0;
 		if ( empty( $termes ) ) {
 			return '';
@@ -6528,15 +6538,43 @@ class Notice_Archeomed_Pactols {
 			if ( '' === $label ) {
 				continue;
 			}
+			if ( self::hors_pactols( $item ) ) {
+				continue;
+			}
 			$label = $this->graphie_imprimee( $item, $capitale );
-			// Sans ARK — une notice d'avant les identifiants, ou un terme
-			// saisi sans sélection — le mot reste du texte ordinaire.
+			// Sans ARK — une notice d'avant les identifiants — le mot reste
+			// du texte ordinaire.
 			$ark        = Notice_Archeomed_Thesaurus::ark_propre( isset( $item['ark'] ) ? $item['ark'] : '' );
 			$morceaux[] = '' !== $ark
 				? $doc->hyperlink( $ark, $label )
 				: $doc->plain( $label );
 		}
 		return $morceaux;
+	}
+
+	/** Un terme que l'auteur a gardé hors de la liste de Pactols. */
+	private static function hors_pactols( $item ) {
+		return is_array( $item ) && ! empty( $item['libre'] );
+	}
+
+	/**
+	 * Les termes gardés hors de Pactols, sous la ligne de leur catégorie, en
+	 * « à supprimer » : ils ne sont pas retenus, comme l'auteur en a été
+	 * prévenu, mais la rédaction les lit et peut en choisir l'équivalent.
+	 */
+	private function poser_les_termes_hors_pactols( $doc, $categorie, $items, $capitale = false ) {
+		$libres = array();
+		foreach ( (array) $items as $item ) {
+			if ( self::hors_pactols( $item ) && '' !== trim( (string) $item['label'] ) ) {
+				$libres[] = $capitale ? $this->capitale_initiale( $item['label'] ) : $item['label'];
+			}
+		}
+		if ( ! empty( $libres ) ) {
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
+				array( 'text' => ( 1 === count( $libres ) ? 'Terme absent de Pactols, non retenu' : 'Termes absents de Pactols, non retenus' )
+					. ' (' . $categorie . ') : ' . implode( ', ', $libres ) . '.' ),
+			) );
+		}
 	}
 
 	/** Les libellés d'une liste d'items Pactols, dans la casse voulue. */
@@ -6912,6 +6950,8 @@ class Notice_Archeomed_Pactols {
 			$line = esc_html( $item['label'] );
 			if ( ! empty( $item['ark'] ) ) {
 				$line .= ' ' . $this->ark_link( $item['ark'] );
+			} elseif ( self::hors_pactols( $item ) ) {
+				$line .= esc_html( " — absent de Pactols, non retenu" );
 			} elseif ( ! empty( $item['idConcept'] ) ) {
 				$line .= ' [ID concept : ' . esc_html( $item['idConcept'] ) . ']';
 			}
@@ -7673,6 +7713,8 @@ class Notice_Archeomed_Pactols {
 				$doc->plain( 1 === count( $autres_lieux ) ? 'Autre lieu : ' : 'Autres lieux : ' )
 					. implode( $doc->plain( ', ' ), $autres_lieux ) );
 		}
+		$this->poser_les_termes_hors_pactols( $doc, 'autres lieux',
+			isset( $d['pactols_places_items'] ) ? $d['pactols_places_items'] : array(), true );
 
 		$periodes = $this->termes_pactols_lies( $doc,
 			isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(),
@@ -7682,6 +7724,8 @@ class Notice_Archeomed_Pactols {
 				$doc->plain( 'Période historique : ' )
 					. implode( $doc->plain( ', ' ), $periodes ) );
 		}
+		$this->poser_les_termes_hors_pactols( $doc, 'période historique',
+			isset( $d['pactols_periods_items'] ) ? $d['pactols_periods_items'] : array(), true );
 
 		$doc->add_paragraph(
 			Notice_Archeomed_Styles::de( 'annee' ),
@@ -7729,6 +7773,8 @@ class Notice_Archeomed_Pactols {
 				$doc->plain( 'Mots-clés : ' )
 					. implode( $doc->plain( ', ' ), $sujets ) );
 		}
+		$this->poser_les_termes_hors_pactols( $doc, 'mots-clés',
+			isset( $d['pactols_subjects_items'] ) ? $d['pactols_subjects_items'] : array() );
 
 		// 6. Texte de la notice, un paragraphe par <p>, avec le bloc responsable
 		// collé au point final du dernier paragraphe.
@@ -9794,7 +9840,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function mettre_en_attente( $id, $d = null ) {
 		$id = (int) $id;
-		if ( ! $id ) {
+		if ( ! $id || ! self::lit_pactols() ) {
 			return;
 		}
 		if ( null === $d ) {
@@ -9881,6 +9927,9 @@ class Notice_Archeomed_Pactols {
 	 * réserve et gâcherait un essai.
 	 */
 	private function relancer_la_resolution( $id, $d ) {
+		if ( ! self::lit_pactols() ) {
+			return 0;
+		}
 		$id    = (int) $id;
 		$fixee = (int) get_post_meta( $id, '_na_pactols_apres', true );
 		$apres = max( $fixee, $this->premier_examen_utile( $d, $this->termes_connus( $id ) ) );
@@ -9890,6 +9939,17 @@ class Notice_Archeomed_Pactols {
 		// les notices d'un dossier : la réserver ici réécrivait la liste des
 		// tâches de WordPress à chaque notice.
 		return $apres;
+	}
+
+	/**
+	 * Le serveur lit-il les termes dans Pactols ? Un réglage le coupe, quand
+	 * l'hébergement refuse la sortie : les ARK restent sur les termes du
+	 * Word, et la chaîne de transformation peut s'en servir ; seuls la
+	 * forme préférée et les blocs d'index calculés ici manquent, sans que
+	 * chaque Word le répète ni que la tâche réessaie pour rien.
+	 */
+	public static function lit_pactols() {
+		return 'non' !== Notice_Archeomed_Settings::get( 'pactols_serveur' );
 	}
 
 	/** Une notice sort de l'attente : résolue, ou sans saisie à résoudre. */
@@ -9926,7 +9986,7 @@ class Notice_Archeomed_Pactols {
 	 * recherche des notices n'a lieu que si la tâche manque.
 	 */
 	public function reveiller_la_file() {
-		if ( wp_next_scheduled( self::HOOK_TERMES ) ) {
+		if ( ! self::lit_pactols() || wp_next_scheduled( self::HOOK_TERMES ) ) {
 			return;
 		}
 		$premiere = $this->notices_en_attente( 0, 1 );
@@ -9976,6 +10036,12 @@ class Notice_Archeomed_Pactols {
 	 * par la 3.36 : on la verse dans l'attente commune, et l'on continue.
 	 */
 	public function resoudre_en_tache( $ancien = 0 ) {
+		// La lecture coupée dans les réglages : la tâche s'efface, et rien ne
+		// la réserve plus tant qu'on ne la rouvre pas.
+		if ( ! self::lit_pactols() ) {
+			wp_clear_scheduled_hook( self::HOOK_TERMES );
+			return;
+		}
 		// Une tâche d'une seule notice, laissée par la 3.36 : la notice rejoint
 		// l'attente, et c'est tout. Quarante de ces tâches dues ensemble
 		// lançaient sinon quarante passages de dix secondes dans la même
@@ -10122,7 +10188,7 @@ class Notice_Archeomed_Pactols {
 		// fonction sert des pages qu'une personne attend. Les notices d'avant
 		// la résolution des termes se rattrapent ainsi à leur premier
 		// passage dans un fascicule, sans rien coûter à celui qui le demande.
-		$manquants = count( $this->termes_manquants( $d, $termes ) );
+		$manquants = self::lit_pactols() ? count( $this->termes_manquants( $d, $termes ) ) : 0;
 		if ( $manquants > 0 ) {
 			$this->mettre_en_attente( $id, $d );
 			$d['pactols_manquants'] = $manquants;

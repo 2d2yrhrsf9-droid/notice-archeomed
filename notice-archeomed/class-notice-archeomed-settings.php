@@ -47,6 +47,10 @@ class Notice_Archeomed_Settings {
 		// joindre Cloudflare — hébergement institutionnel derrière un proxy
 		// filtrant — n'a alors rien à régler pour que le formulaire protège.
 		'protection'         => 'locale',
+		// « oui » ou « non » : le serveur lit-il les termes dans Pactols
+		// (forme préférée, chaîne, blocs d'index) ? À couper quand le proxy
+		// de l'hébergement refuse la sortie.
+		'pactols_serveur'    => 'oui',
 
 		// — L'iconographie d'un numéro —
 		// Le numéro en préparation ouvre le nom de chaque illustration, comme
@@ -465,6 +469,13 @@ class Notice_Archeomed_Settings {
 
 		if ( isset( $input['mode_envoi'] ) ) {
 			$out['mode_envoi'] = 'immediat' === $input['mode_envoi'] ? 'immediat' : 'differe';
+		}
+
+		if ( isset( $input['pactols_serveur'] ) ) {
+			$out['pactols_serveur'] = 'non' === $input['pactols_serveur'] ? 'non' : 'oui';
+			if ( 'non' === $out['pactols_serveur'] ) {
+				wp_clear_scheduled_hook( Notice_Archeomed_Pactols::HOOK_TERMES );
+			}
 		}
 
 		if ( isset( $input['protection'] ) ) {
@@ -2201,6 +2212,39 @@ class Notice_Archeomed_Settings {
 		if ( 'pactols' === $essai['quoi'] ) {
 			self::resultat( $essai['resultat'] );
 		}
+		$lit = 'non' !== self::get( 'pactols_serveur' );
+		self::ouvrir_les_reglages();
+		?>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">Lecture des termes par le serveur</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Lecture des termes par le serveur</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[pactols_serveur]"
+								value="oui" <?php checked( $lit ); ?>>
+							Oui — le serveur lit la forme préférée et la chaîne de chaque terme
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[pactols_serveur]"
+								value="non" <?php checked( ! $lit ); ?>>
+							Non — à choisir si l’essai ci-dessus échoue
+						</label>
+					</fieldset>
+					<p class="description" style="max-width:46em">
+						Dans les deux cas, l’auteur choisit ses termes dans Pactols et chacun
+						garde son identifiant ARK, porté en lien par le mot dans le Word&nbsp;:
+						la transformation en XML peut en tirer l’entrée d’index. Sans lecture,
+						il manque seulement la forme préférée et le fichier des blocs d’index
+						du dossier&nbsp;; le Word ne signale plus de terme «&nbsp;non lu&nbsp;», et le
+						serveur cesse de réessayer.
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php
+		self::fermer_les_reglages();
 	}
 
 	/**
@@ -2224,7 +2268,7 @@ class Notice_Archeomed_Settings {
 				'ok'      => false,
 				'message' => 'Pactols n’est pas joignable depuis ce serveur — ' . $message . '.'
 					. ( $proxy ? ' C’est le proxy de l’hébergement qui refuse la sortie, comme pour Cloudflare : il faut demander l’ouverture de pactols.frantiq.fr.' : '' )
-					. ' Les termes resteront « non lus » : ni forme préférée, ni bloc d’index.',
+					. ' Les termes resteront « non lus » : ni forme préférée, ni bloc d’index. Les ARK restent sur les termes du Word ; en attendant l’ouverture, réglez ci-dessous « Lecture des termes par le serveur » sur Non.',
 			);
 		}
 		$code = (int) wp_remote_retrieve_response_code( $reponse );

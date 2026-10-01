@@ -1102,6 +1102,47 @@ na_verifier( array( '', 'https://ark.frantiq.fr/ark:/26678/pcrtY', 'https://ark.
 	&& array( '', 'https://ark.frantiq.fr/ark:/26678/pcrtkeqj9I3nbw' ) === array_column( $recus_lieux, 'ark' ),
 	'un ARK étranger ou forgé ne se garde pas, un ARK en http passe en https, un identifiant non numérique tombe', array( $recus_termes, $recus_lieux ) );
 
+WP_CLI::log( 'Les termes gardés hors de Pactols' );
+$_POST['pactols_subjects'] = wp_slash( wp_json_encode( array(
+	array( 'label' => 'motte castrale', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrtY', 'idConcept' => '77' ),
+	array( 'label' => 'chemin creux', 'ark' => '', 'idConcept' => '' ),
+) ) );
+$recus_libres = na_appel( $plugin, 'collect_pactols_keywords', array( 'pactols_subjects' ) );
+unset( $_POST['pactols_subjects'] );
+na_verifier( empty( $recus_libres[0]['libre'] ) && true === $recus_libres[1]['libre'],
+	'un terme gardé hors de la liste de Pactols est marqué à la réception', $recus_libres );
+$doc_libres = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_libres, array_merge( $saisie_styles, array(
+	'pactols_subjects_items' => array_merge( $recus_libres, array( array( 'label' => 'ancien terme', 'ark' => '' ) ) ) ) ) ) );
+$xml_libres = str_replace( "\u{00A0}", ' ', html_entity_decode( strip_tags( str_replace( '</w:p>', "\n", implode( '', $corps->getValue( $doc_libres ) ) ) ), ENT_QUOTES | ENT_XML1, 'UTF-8' ) );
+$ligne_mots = preg_grep( '/^Mots-clés/u', explode( "\n", $xml_libres ) );
+na_verifier( 1 === count( $ligne_mots ) && false !== strpos( implode( '', $ligne_mots ), 'motte castrale' )
+	&& false !== strpos( implode( '', $ligne_mots ), 'ancien terme' ) && false === strpos( implode( '', $ligne_mots ), 'chemin creux' )
+	&& false !== strpos( $xml_libres, 'Terme absent de Pactols, non retenu (mots-clés) : chemin creux.' ),
+	'le terme hors Pactols sort de la ligne des mots-clés et se lit « à supprimer » ; un terme sans ARK d\'une notice ancienne reste', $ligne_mots );
+$courriel_libres = na_appel( $plugin, 'pactols_keywords_block', array( 'Mots-clés', $recus_libres ) );
+na_verifier( false !== strpos( $courriel_libres, 'chemin creux — absent de Pactols, non retenu' ),
+	'le courriel dit le terme hors Pactols non retenu', $courriel_libres );
+
+WP_CLI::log( 'La lecture des termes par le serveur, coupée' );
+$non_lue = na_notice( array( 'commune' => 'Caen', 'lieu_dit' => 'Lecture', 'pactols_subjects_items' => array(
+	array( 'label' => 'église', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrtNONLU', 'idConcept' => '' ) ) ) );
+$reglages_lecture = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$saisie_lue = na_appel( $plugin, 'saisie_de', array( $non_lue, false ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_lecture, array( 'pactols_serveur' => 'non' ) ) );
+delete_post_meta( $non_lue, '_na_pactols_apres' );
+$saisie_coupee  = na_appel( $plugin, 'saisie_de', array( $non_lue, false ) );
+$manquants_coupe = 9;
+na_appel( $plugin, 'indexation_de', array( $non_lue, $saisie_coupee, &$manquants_coupe ) );
+$plugin->resoudre_en_tache();
+$attente_coupee = get_post_meta( $non_lue, '_na_pactols_apres', true );
+$tache_coupee   = wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_lecture );
+na_verifier( ! empty( $saisie_lue['pactols_manquants'] ) && empty( $saisie_coupee['pactols_manquants'] ) && 0 === $manquants_coupe
+	&& '' === $attente_coupee && false === $tache_coupee && Notice_Archeomed_Pactols::lit_pactols(),
+	'lecture coupée : ni terme « non lu » dans le Word, ni attente, ni tâche ; rétablie, elle reprend', array( $saisie_coupee, $attente_coupee, $tache_coupee ) );
+wp_delete_post( $non_lue, true );
+
 WP_CLI::log( 'Le bloc d\'index d\'une commune homonyme' );
 $homonyme = na_notice( array_merge( $saisie_styles, array( 'lieu_dit' => 'Château', 'departement' => 'Calvados',
 	'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ) ), 'commune' => 'Falaise (Calvados)' ) ),

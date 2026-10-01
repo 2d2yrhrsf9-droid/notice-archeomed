@@ -1082,6 +1082,24 @@ heure et par connexion, le relais cesse de répondre — assez large pour qu'on
 ne le voie jamais en remplissant un formulaire, assez étroit pour que le site
 ne serve pas à marteler frantiq.fr.
 
+**Un terme absent de Pactols n'est pas utilisé.** L'auteur peut garder un
+terme tapé hors de la liste (deux fois Entrée), mais le formulaire le prévient
+qu'il ne servira pas. Le terme est marqué à la réception ; il sort de la ligne
+de sa catégorie dans le Word et la page de relecture, et se lit en dessous,
+« à supprimer » (« Terme absent de Pactols, non retenu (mots-clés) : … »), pour
+que la rédaction puisse en choisir l'équivalent. Le courriel le dit aussi. Les
+termes sans identifiant d'une notice antérieure à cette marque restent tels
+qu'ils étaient.
+
+**La lecture des termes par le serveur** (Réglages ▸ Hébergement, sous
+l'essai « Tester l'accès à Pactols ») se coupe quand le proxy de l'hébergement
+refuse la sortie vers `pactols.frantiq.fr`. Les ARK restent sur les termes du
+Word, en liens, et la transformation en XML peut en tirer les entrées d'index ;
+seuls manquent la forme préférée et le fichier des blocs d'index du dossier.
+Coupée, elle ne laisse plus de terme « non lu » dans le Word, et la tâche de
+lecture cesse de réessayer. Rétablie, les notices se relisent à leur prochain
+passage dans un fascicule ou un dossier.
+
 ## L'onglet Accessibilité
 
 **Réglages ▸ Accessibilité.** En tête, **les illustrations des notices
