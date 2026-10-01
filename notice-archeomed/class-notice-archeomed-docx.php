@@ -275,7 +275,12 @@ class Notice_Archeomed_DOCX {
 			if ( 'petites_capitales' === $chiffres ) {
 				return array( 'typo' => strtolower( $chiffre ), 'pc' => true );
 			}
-			return array( 'typo' => 'capitales' === $chiffres ? strtoupper( $chiffre ) : $chiffre, 'pc' => false );
+			// « Tel quel » garde aussi les petites capitales que l'auteur a
+			// posées de lui-même : elles s'ôtaient avec la règle.
+			if ( 'capitales' !== $chiffres ) {
+				return array( 'typo' => $chiffre );
+			}
+			return array( 'typo' => strtoupper( $chiffre ), 'pc' => false );
 		};
 		$suite = function ( $depuis, $texte_apres ) use ( &$runs ) {
 			$reste = $texte_apres;
@@ -292,9 +297,12 @@ class Notice_Archeomed_DOCX {
 		// qui les suivent. Sans eux, seul le dernier siècle passait en petites
 		// capitales, et le premier restait en capitales.
 		$annonce = '/(*UCP)^(?:[\s\x{A0}]*(?:-|–|—|et|à|au|aux|ou)(?:[\s\x{A0}]*(?:début|milieu|fin))?(?:[\s\x{A0}]+(?:le|la|les|du|des))?[\s\x{A0}]*(?:[IVXLC]+|[ivxlc]+)(?:er|re|e))*[\s\x{A0}]+(?:s\.|siècles?\b|millénaires?\b)/u';
+		// « sans_siecles » : un texte qui ne prend aucun enrichissement — le
+		// texte alternatif d'une figure, qu'un lecteur d'écran lit tel quel.
 		$touchable = function ( $run ) {
 			return is_array( $run ) && empty( $run['raw'] ) && isset( $run['typo'] )
-				&& empty( $run['nom'] ) && empty( $run['brut'] ) && ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
+				&& empty( $run['nom'] ) && empty( $run['brut'] ) && empty( $run['sans_siecles'] )
+				&& ! ( ! empty( $run['cs'] ) && 0 === strpos( (string) $run['cs'], 'TEI_archeoCHR_name' ) );
 		};
 
 		// « siècle » s'abrège toujours « s. » après un siècle en chiffres :
@@ -378,6 +386,37 @@ class Notice_Archeomed_DOCX {
 			$i += count( $remplace ) - 1;
 		}
 
+		// Le chiffre à la fin d'un fragment, l'ordinal en tête du suivant,
+		// sans exposant : c'est ce que donne le bouton « Pc » posé sur « xv »
+		// avant de taper « e siècle ». L'ordinal restait sur la ligne, et
+		// seul le siècle tapé d'un trait sortait comme la revue le compose.
+		for ( $i = 0; $i + 1 < count( $runs ); $i++ ) {
+			$chiffre = $runs[ $i ];
+			$suivant = $runs[ $i + 1 ];
+			if ( ! $touchable( $chiffre ) || ! empty( $chiffre['sup'] )
+				|| ! $touchable( $suivant ) || ! empty( $suivant['sup'] )
+				|| ! preg_match( '/(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)$/u', $chiffre['typo'], $m )
+				|| preg_match( '/^[lcLC]+$/u', $m[1] )
+				|| ! preg_match( '/(*UCP)^(er|re|e)(?![\pL\d])/u', $suivant['typo'], $o )
+				|| ! preg_match( $annonce, $suite( $i + 2, substr( $suivant['typo'], strlen( $o[1] ) ) ) ) ) {
+				continue;
+			}
+			$tete     = substr( $chiffre['typo'], 0, -strlen( $m[1] ) );
+			$reste    = substr( $suivant['typo'], strlen( $o[1] ) );
+			$remplace = array();
+			if ( '' !== $tete ) {
+				$remplace[] = array_merge( $chiffre, array( 'typo' => $tete ) );
+			}
+			$remplace[] = array_merge( $chiffre, $ecrire( $m[1] ) );
+			// L'ordinal ne prend jamais les petites capitales du chiffre.
+			$remplace[] = array_merge( $suivant, array( 'typo' => $o[1], 'sup' => 'exposant' === $ordinal, 'pc' => false ) );
+			if ( '' !== $reste ) {
+				$remplace[] = array_merge( $suivant, array( 'typo' => $reste ) );
+			}
+			array_splice( $runs, $i, 2, $remplace );
+			$i += count( $remplace ) - 1;
+		}
+
 		// Le chiffre et son ordinal dans le même fragment.
 		$motif = '/(*UCP)(?<![\pL\d])([IVXLC]+|[ivxlc]+)(er|re|e)(?![\pL\d])/u';
 		$rendus = array();
@@ -400,7 +439,9 @@ class Notice_Archeomed_DOCX {
 					$rendus[] = array_merge( $run, array( 'typo' => substr( $texte, $depuis, $t[0][1] - $depuis ) ) );
 				}
 				$rendus[] = array_merge( $run, $ecrire( $chiffre ) );
-				$rendus[] = array_merge( $run, array( 'typo' => $t[2][0], 'sup' => 'exposant' === $ordinal ) );
+				// « Pc » posé sur « XIIe » entier mettait aussi l'exposant en
+				// petites capitales.
+				$rendus[] = array_merge( $run, array( 'typo' => $t[2][0], 'sup' => 'exposant' === $ordinal, 'pc' => false ) );
 				$depuis   = $fin;
 			}
 			if ( $depuis < strlen( $texte ) ) {
@@ -604,11 +645,11 @@ class Notice_Archeomed_DOCX {
 	 *
 	 * Rend le XML d'un run, à passer à « add_raw_paragraph ».
 	 */
-	public function image_liee( $cible, $largeur_px, $hauteur_px, $dpi = 96, $titre = '' ) {
+	public function image_liee( $cible, $largeur_px, $hauteur_px, $dpi = 96, $titre = '', $descr = '' ) {
 		$rid                  = $this->prochain_rid();
 		$this->images[ $rid ] = $cible;
 		return $this->dessin( $rid, $largeur_px, $hauteur_px, $dpi,
-			'' !== $titre ? $titre : basename( $cible ), true );
+			'' !== $titre ? $titre : basename( $cible ), true, $descr );
 	}
 
 	/**
@@ -624,7 +665,7 @@ class Notice_Archeomed_DOCX {
 	 * Rend une chaîne vide si le fichier est illisible : une figure manquante
 	 * vaut mieux qu'un document que Word refuse d'ouvrir.
 	 */
-	public function image_incluse( $chemin, $largeur_px, $hauteur_px, $dpi = 96, $titre = '' ) {
+	public function image_incluse( $chemin, $largeur_px, $hauteur_px, $dpi = 96, $titre = '', $descr = '' ) {
 		$chemin = (string) $chemin;
 		$ext    = strtolower( pathinfo( $chemin, PATHINFO_EXTENSION ) );
 		if ( '' === self::type_image( $ext ) || ! is_readable( $chemin ) ) {
@@ -643,7 +684,49 @@ class Notice_Archeomed_DOCX {
 			'octets' => $octets,
 		);
 		return $this->dessin( $rid, $largeur_px, $hauteur_px, $dpi,
-			'' !== $titre ? $titre : basename( $chemin ), false );
+			'' !== $titre ? $titre : basename( $chemin ), false, $descr );
+	}
+
+	/**
+	 * Un texte sur une seule ligne : retours et blancs multiples ramenés à
+	 * une espace. Le texte de remplacement d'une image ne porte qu'un
+	 * paragraphe.
+	 */
+	public static function une_ligne( $texte ) {
+		$propre = preg_replace( '/[\s\x{00A0}]+/u', ' ', (string) $texte );
+		return trim( null === $propre ? (string) $texte : $propre );
+	}
+
+	/**
+	 * La feuille de styles, sa langue par défaut déclarée en français.
+	 *
+	 * Un lecteur d'écran choisit sa voix d'après la langue du document : une
+	 * feuille sans langue déclarée faisait lire la notice et ses textes
+	 * alternatifs avec la prononciation de la machine. Le gabarit livré la
+	 * déclare déjà ; une feuille déposée qui l'omettrait la reçoit ici, et
+	 * celle qui en déclare une autre la garde.
+	 */
+	private static function langue_francaise( $xml ) {
+		if ( preg_match( '#<w:rPrDefault>\s*<w:rPr>(.*?)</w:rPr>#s', $xml, $m ) ) {
+			if ( preg_match( '#<w:lang\b[^>]*\bw:val="#', $m[1] ) ) {
+				return $xml;
+			}
+			$rpr = preg_match( '#<w:lang\b#', $m[1] )
+				? preg_replace( '#<w:lang\b#', '<w:lang w:val="fr-FR"', $m[1], 1 )
+				: $m[1] . '<w:lang w:val="fr-FR"/>';
+			return str_replace( '<w:rPr>' . $m[1] . '</w:rPr>', '<w:rPr>' . $rpr . '</w:rPr>', $xml );
+		}
+		$defaut = '<w:rPrDefault><w:rPr><w:lang w:val="fr-FR"/></w:rPr></w:rPrDefault>';
+		if ( preg_match( '#<w:rPrDefault\s*/>#', $xml ) ) {
+			$propre = preg_replace( '#<w:rPrDefault\s*/>#', $defaut, $xml, 1 );
+		} elseif ( preg_match( '#<w:docDefaults\s*>#', $xml ) && false === strpos( $xml, '<w:rPrDefault' ) ) {
+			$propre = preg_replace( '#<w:docDefaults\s*>#', '<w:docDefaults>' . $defaut, $xml, 1 );
+		} elseif ( false === strpos( $xml, '<w:docDefaults' ) ) {
+			$propre = preg_replace( '#(<w:styles\b[^>]*>)#', '$1<w:docDefaults>' . $defaut . '</w:docDefaults>', $xml, 1 );
+		} else {
+			return $xml;
+		}
+		return null === $propre ? $xml : $propre;
 	}
 
 	/**
@@ -677,7 +760,7 @@ class Notice_Archeomed_DOCX {
 	 * Seul l'attribut du « blip » les sépare : « r:link » désigne un fichier
 	 * voisin, « r:embed » un fichier que le document porte.
 	 */
-	private function dessin( $rid, $largeur_px, $hauteur_px, $dpi, $nom, $lie ) {
+	private function dessin( $rid, $largeur_px, $hauteur_px, $dpi, $nom, $lie, $descr = '' ) {
 		$largeur_px = max( 1, (int) $largeur_px );
 		$hauteur_px = max( 1, (int) $hauteur_px );
 		$dpi        = $dpi > 0 ? (int) $dpi : 96;
@@ -697,9 +780,13 @@ class Notice_Archeomed_DOCX {
 			. '<wp:inline distT="0" distB="0" distL="0" distR="0">'
 			. '<wp:extent cx="' . $cx . '" cy="' . $cy . '"/>'
 			. '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
-			// « descr » est le texte de remplacement de l'image : le titre de
-			// la figure, que la documentation Métopes demande.
-			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '" descr="' . self::esc( $nom ) . '"/>'
+			// « descr » est le texte de remplacement de l'image — « Afficher
+			// le texte de remplacement » dans Word, où la documentation
+			// Métopes (« Styler les figures ») dit de décrire le visuel. C'est
+			// le texte alternatif que l'auteur a écrit ; à défaut, pour une
+			// notice d'avant ce champ, le titre de la figure, comme avant.
+			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '" descr="'
+			. self::esc( self::une_ligne( '' !== trim( (string) $descr ) ? $descr : $nom ) ) . '"/>'
 			. '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
 			. '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
 			. '<pic:pic>'
@@ -909,6 +996,7 @@ class Notice_Archeomed_DOCX {
 				$contenu = $this->types_de_contenu( $contenu );
 			}
 			if ( 'word/styles.xml' === $name && is_string( $contenu ) ) {
+				$contenu = self::langue_francaise( $contenu );
 				// Le style d'effacement entre ici, juste avant la fermeture.
 				// Si la balise manquait, on laisse la feuille telle quelle
 				// plutôt que d'écrire un XML bancal.

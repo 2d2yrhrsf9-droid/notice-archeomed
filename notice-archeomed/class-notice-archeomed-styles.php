@@ -29,6 +29,12 @@ class Notice_Archeomed_Styles {
 	 */
 	const COLLE_AU_TEXTE = '';
 
+	/**
+	 * Le choix « aucun paragraphe » d'un bloc facultatif : le texte
+	 * alternatif d'une figure reste alors dans l'image seule.
+	 */
+	const AUCUN = '';
+
 	/** Les choix lus une fois par requête. */
 	private static $enregistres = null;
 
@@ -80,6 +86,10 @@ class Notice_Archeomed_Styles {
 				'blocs'  => array(
 					'figure_debut'   => array( 'libelle' => 'Ouverture du bloc de figure', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_start' ),
 					'figure_image'   => array( 'libelle' => 'Image', 'type' => 'paragraphe', 'defaut' => 'Normal' ),
+					// Le texte alternatif est toujours dans l'image (texte de
+					// remplacement de Word) ; ce paragraphe, sous elle, ne
+					// paraît que si la rédaction lui choisit un style.
+					'figure_alttext' => array( 'libelle' => 'Texte alternatif de l’image, en paragraphe sous elle', 'type' => 'paragraphe', 'defaut' => self::AUCUN, 'aucun' => true ),
 					'figure_titre'   => array( 'libelle' => 'Titre de la figure', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_title' ),
 					'figure_numero'  => array( 'libelle' => 'Numéro « Fig. 1 » dans le titre', 'type' => 'caractere', 'defaut' => 'TEI_figure_num_inline' ),
 					'figure_legende' => array( 'libelle' => 'Légende', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_caption' ),
@@ -123,6 +133,20 @@ class Notice_Archeomed_Styles {
 		}
 		return array_key_exists( $cle, self::$enregistres )
 			? (string) self::$enregistres[ $cle ] : $definitions[ $cle ]['defaut'];
+	}
+
+	/**
+	 * Ce que dit le choix vide d'un bloc, ou une chaîne vide s'il n'en a
+	 * pas : collé au texte, ou sans paragraphe.
+	 */
+	public static function libelle_du_vide( $bloc ) {
+		if ( ! empty( $bloc['colle'] ) ) {
+			return 'collé à la fin du texte, entre parenthèses';
+		}
+		if ( ! empty( $bloc['aucun'] ) ) {
+			return 'aucun paragraphe : dans l’image seulement';
+		}
+		return '';
 	}
 
 	/** Le bloc de responsabilité a-t-il son propre paragraphe ? */
@@ -174,7 +198,8 @@ class Notice_Archeomed_Styles {
 			}
 			$style = (string) $soumis[ $cle ];
 			$admis = in_array( $style, $feuille[ $bloc['type'] ], true )
-				|| ( ! empty( $bloc['colle'] ) && self::COLLE_AU_TEXTE === $style );
+				|| ( ! empty( $bloc['colle'] ) && self::COLLE_AU_TEXTE === $style )
+				|| ( ! empty( $bloc['aucun'] ) && self::AUCUN === $style );
 			if ( ! $admis && ! empty( $feuille[ $bloc['type'] ] ) ) {
 				$refuses[] = $bloc['libelle'];
 				continue;

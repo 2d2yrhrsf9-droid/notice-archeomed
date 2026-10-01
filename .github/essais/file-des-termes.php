@@ -881,11 +881,29 @@ foreach ( array( '_na_etat' => 'en_attente', '_na_notice' => '<p>La notice.</p>'
 }
 $issue_perdue = $plugin->expedier_de_la_file( $perdue );
 $etat_perdue  = get_post_meta( $perdue, '_na_etat', true );
-$illisible = na_notice( array_merge( $saisie_styles, array( 'resp_email' => '', 'illustrations' => 'un ancien champ libre' ) ) );
+// Un Word qui ne peut pas se refaire : les deux feuilles de style, DOCX et
+// RTF, sont illisibles. (Les illustrations en chaîne, qui servaient ici,
+// se lisent désormais.)
+$illisible = na_notice( array_merge( $saisie_styles, array( 'resp_email' => '' ) ) );
 foreach ( array( '_na_etat' => 'en_attente', '_na_notice' => '<p>La notice.</p>', '_na_document' => '' ) as $cle => $valeur ) {
 	update_post_meta( $illisible, $cle, $valeur );
 }
+$depot_feuilles = wp_upload_dir();
+$dossier_feuilles = trailingslashit( $depot_feuilles['basedir'] ) . 'notice-archeomed/';
+wp_mkdir_p( $dossier_feuilles );
+$feuilles_avant = array();
+foreach ( array( Notice_Archeomed_Pactols::DOCX_TEMPLATE, Notice_Archeomed_Pactols::RTF_TEMPLATE ) as $nom_feuille ) {
+	$feuilles_avant[ $nom_feuille ] = file_exists( $dossier_feuilles . $nom_feuille ) ? file_get_contents( $dossier_feuilles . $nom_feuille ) : null;
+	file_put_contents( $dossier_feuilles . $nom_feuille, 'feuille illisible' );
+}
 $issue_illisible = $plugin->expedier_de_la_file( $illisible );
+foreach ( $feuilles_avant as $nom_feuille => $contenu_feuille ) {
+	if ( null === $contenu_feuille ) {
+		@unlink( $dossier_feuilles . $nom_feuille );
+	} else {
+		file_put_contents( $dossier_feuilles . $nom_feuille, $contenu_feuille );
+	}
+}
 $note_illisible  = get_post_meta( $illisible, '_na_note', true );
 $preparee = na_notice( $saisie_styles );
 update_post_meta( $preparee, '_na_etat', 'en_attente' );
@@ -1127,6 +1145,531 @@ remove_filter( 'upload_size_limit', $deux_mo, 99 );
 na_verifier( false !== strpos( $rendu_limite, '6&nbsp;Mo en tout, 2&nbsp;Mo par fichier' ) && false === strpos( $rendu_limite, '20&nbsp;Mo en tout' ),
 	'trois fichiers de 2 Mo s\'annoncent « 6 Mo en tout, 2 Mo par fichier »',
 	preg_match( '#[\d,]+&nbsp;Mo en tout[^<)]*#', $rendu_limite, $m_limite ) ? $m_limite[0] : '' );
+
+WP_CLI::log( 'Une réponse Pactols de forme inattendue' );
+// Une valeur nue au lieu d'une liste d'objets « value » faisait lever
+// « reset() » en PHP 8 : l'erreur sortait de la tâche, et la file se
+// bloquait sur ce terme.
+$premiere = function ( $noeud, $propriete ) {
+	$r = new ReflectionMethod( 'Notice_Archeomed_Thesaurus', 'premiere' );
+	$r->setAccessible( true );
+	return $r->invoke( null, $noeud, $propriete );
+};
+$prop_id = Notice_Archeomed_Thesaurus::DCT . 'identifier';
+na_verifier( '12' === $premiere( array( $prop_id => '12' ), $prop_id )
+	&& '12' === $premiere( array( $prop_id => array( array( 'value' => '12' ) ) ), $prop_id )
+	&& '12' === $premiere( array( $prop_id => array( 'value' => '12' ) ), $prop_id )
+	&& '' === $premiere( 'pas un noeud', $prop_id ) && '' === $premiere( array( $prop_id => array( array( 'value' => array( 1 ) ) ) ), $prop_id ),
+	'la première valeur se lit en liste, en objet seul ou nue ; le reste ne vaut rien, sans erreur' );
+$ark_mal = 'https://ark.frantiq.fr/ark:/26678/pcrtMalforme';
+$ark_autre = 'https://ark.frantiq.fr/ark:/26678/pcrtAutreMal';
+$malforme = function ( $pre, $args, $url ) use ( $ark_mal ) {
+	if ( false === strpos( $url, 'pactols.frantiq.fr' ) ) {
+		return $pre;
+	}
+	return array( 'headers' => array(), 'cookies' => array(), 'filename' => null,
+		'response' => array( 'code' => 200, 'message' => 'OK' ),
+		'body' => wp_json_encode( array( $ark_mal => array( 'http://purl.org/dc/terms/identifier' => '12',
+			'http://www.w3.org/2004/02/skos/core#prefLabel' => array( 'value' => 'malformé', 'lang' => 'fr' ) ) ) ) );
+};
+add_filter( 'pre_http_request', $malforme, 10, 3 );
+$mal_ids = array();
+foreach ( array( $ark_mal, $ark_autre ) as $ark_essai ) {
+	delete_transient( 'na_pactols_c_' . md5( $ark_essai . '||TH_1' ) );
+	delete_transient( 'na_pactols_id_' . md5( $ark_essai ) );
+	$mal = na_notice( array( 'commune' => 'Caen', 'lieu_dit' => 'Essai', 'pactols_subjects_items' => array(
+		array( 'label' => 'x', 'ark' => $ark_essai, 'idConcept' => '' ) ) ) );
+	update_post_meta( $mal, '_na_pactols_apres', time() - 10 );
+	$mal_ids[] = $mal;
+}
+$sortie_mal = '';
+try {
+	$plugin->resoudre_en_tache();
+} catch ( Throwable $e ) {
+	$sortie_mal = get_class( $e ) . ' : ' . $e->getMessage();
+}
+remove_filter( 'pre_http_request', $malforme, 10 );
+$essais_mal = array();
+foreach ( $mal_ids as $mal ) {
+	$lus_mal      = get_post_meta( $mal, '_na_pactols', true );
+	$essais_mal[] = array( (int) get_post_meta( $mal, '_na_pactols_essais', true ), is_array( $lus_mal ) ? count( $lus_mal ) : 0 );
+	wp_delete_post( $mal, true );
+}
+foreach ( array( $ark_mal, $ark_autre ) as $ark_essai ) {
+	delete_transient( 'na_pactols_c_' . md5( $ark_essai . '||TH_1' ) );
+	delete_transient( 'na_pactols_id_' . md5( $ark_essai ) );
+}
+wp_clear_scheduled_hook( Notice_Archeomed_Pactols::HOOK_TERMES );
+na_verifier( '' === $sortie_mal && array( array( 0, 1 ), array( 1, 0 ) ) === $essais_mal,
+	'la réponse atypique se lit sans erreur ; la notice suivante est examinée, son échec compté', array( $sortie_mal, $essais_mal ) );
+
+WP_CLI::log( 'Une correction qui perd une autorisation de reproduction' );
+$autorisee = na_notice( array_merge( $saisie, array( 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => '', 'credits' => '' ),
+	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => '', 'autorisation' => true ) ) ) ) );
+update_post_meta( $autorisee, '_na_reference', 'AUTOR1' );
+update_post_meta( $autorisee, '_na_illustrations', array( '/tmp/a.jpg', '/tmp/b.jpg' ) );
+$sans_autorisation = na_appel( $plugin, 'figures_de_la_remplacee', array( array( 'remplace' => 'AUTOR1', 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan' ), array( 'rang' => 2, 'titre' => 'Vue', 'autorisation' => false ) ) ) ) );
+$avec_autorisation = na_appel( $plugin, 'figures_de_la_remplacee', array( array( 'remplace' => 'AUTOR1', 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan' ), array( 'rang' => 2, 'titre' => 'Vue', 'autorisation' => true ) ) ) ) );
+$sans_figure = na_appel( $plugin, 'figures_de_la_remplacee', array( array( 'remplace' => 'AUTOR1', 'illustrations' => array() ) ) );
+wp_delete_post( $autorisee, true );
+na_verifier( false !== strpos( $sans_autorisation, 'une autorisation de reproduction (Fig. 2)' )
+	&& false !== strpos( $sans_autorisation, 'n’en porte aucune' ) && false !== strpos( $sans_autorisation, 'restent sur le site' )
+	&& '' === $avec_autorisation,
+	'la rédaction lit qu\'une autorisation n\'a pas suivi la correction, et rien quand elle a suivi', array( $sans_autorisation, $avec_autorisation ) );
+na_verifier( false !== strpos( $sans_figure, 'cette correction n’en porte aucune' ) && false === strpos( $sans_figure, 'correction en porte aucune' )
+	&& false !== strpos( $sans_figure, 'Elle portait aussi une autorisation' ),
+	'« cette correction n’en porte aucune », avec sa négation', $sans_figure );
+
+WP_CLI::log( 'Les figures qui attendent, de correction en correction' );
+// Une correction faite sans redéposer les figures gardait une réserve sans
+// leurs textes : la correction suivante les avait perdus.
+$_POST = array( 'reprise_jeton' => 'jetonfigures1', 'lieu_dit' => 'Château' );
+$_FILES = array();
+set_transient( 'na_reprise_jetonfigures1', array( 'remplace' => 'PREMIE',
+	'illus_titre' => array( 'Plan', 'Vue' ), 'illus_legende' => array( 'Le plan', '' ), 'illus_credits' => array( '© A', '' ),
+	'illus_alt' => array( 'Plan des murs', 'Vue du fossé' ), 'illus_nom' => array( 'plan.jpg', 'vue.jpg' ),
+	'illus_autorisation' => array( '', '1' ) ), 60 );
+$jeton_suite = na_appel( $plugin, 'garder_la_saisie', array( 60, 'SECOND' ) );
+$reserve_suite = get_transient( 'na_reprise_' . $jeton_suite );
+// Redéposée, la vue reprend ses textes du formulaire ; le plan attend.
+$_POST = array( 'reprise_jeton' => 'jetonfigures1', 'illus_titre' => array( 'Vue revue' ), 'illus_legende' => array( '' ),
+	'illus_credits' => array( '' ), 'illus_alt' => array( 'Vue du fossé, au nord' ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'vue.jpg' ), 'error' => array( 0 ) ) );
+$jeton_partiel = na_appel( $plugin, 'garder_la_saisie', array( 60, 'TROIS' ) );
+$reserve_partielle = get_transient( 'na_reprise_' . $jeton_partiel );
+$_POST = array();
+$_FILES = array();
+foreach ( array( 'jetonfigures1', $jeton_suite, $jeton_partiel ) as $j ) {
+	delete_transient( 'na_reprise_' . $j );
+}
+na_verifier( is_array( $reserve_suite ) && array( 'Plan', 'Vue' ) === $reserve_suite['illus_titre']
+	&& array( 'Plan des murs', 'Vue du fossé' ) === $reserve_suite['illus_alt'] && array( '', '1' ) === $reserve_suite['illus_autorisation']
+	&& array( 'plan.jpg', 'vue.jpg' ) === $reserve_suite['illus_nom'] && 'SECOND' === $reserve_suite['remplace'],
+	'une correction sans figures garde titres, légendes, crédits, textes alternatifs et autorisations pour la suivante', $reserve_suite );
+na_verifier( is_array( $reserve_partielle ) && array( 'Vue revue', 'Plan' ) === $reserve_partielle['illus_titre']
+	&& array( 'vue.jpg', 'plan.jpg' ) === $reserve_partielle['illus_nom'] && array( 'Vue du fossé, au nord', 'Plan des murs' ) === $reserve_partielle['illus_alt'],
+	'une figure redéposée garde ce que dit le formulaire ; celle qui ne l\'est pas attend avec ses textes', $reserve_partielle );
+
+WP_CLI::log( 'Le siècle mis en petites capitales par le bouton' );
+$doc_pc = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+$pc_vus = array();
+foreach ( array(
+	'Au <span class="na-pc">xv</span>e siècle.'                                            => 'Au [xv]^e_s.',
+	'fin du <span class="na-pc">xii</span>e-début du <span class="na-pc">xiii</span>e siècle' => 'fin du [xii]^e-début du [xiii]^e_s.',
+	'<span class="na-pc">XIIe</span> siècle'                                                => '[xii]^e_s.',
+	'<span class="na-pc">Louis</span> et le roi'                                            => '[Louis] et le roi',
+) as $saisi => $attendu ) {
+	$obtenu = $sans_balises( implode( '', $doc_pc->html_to_paragraphs( '<p>' . $saisi . '</p>' ) ) );
+	if ( $obtenu !== $attendu ) {
+		$pc_vus[ $saisi ] = $obtenu;
+	}
+}
+na_verifier( empty( $pc_vus ), 'au Word, l\'ordinal tapé après « Pc » passe en exposant, jamais en petites capitales', $pc_vus );
+$relu_pc = na_appel( $plugin, 'siecles_du_html', array( '<p>Au <span class="na-pc">xv</span>e siècle, au <span class="na-pc">XIIe</span> s.</p>' ) );
+na_verifier( "<p>Au <span style=\"font-variant:small-caps\">xv</span><sup>e</sup>\u{00A0}s., au <span style=\"font-variant:small-caps\">xii</span><sup>e</sup>\u{00A0}s.</p>" === $relu_pc,
+	'au courriel et à la relecture aussi', $relu_pc );
+
+WP_CLI::log( 'Les entrées forgées et les caractères de contrôle' );
+$_POST = array( 'resp_email' => array( 'a@example.org' ), 'lieu_dit' => "Le\x0Bchâteau\x01 neuf", 'commentaires' => "Ligne 1\x0BLigne 2\x02",
+	'commune' => array( 'Caen', array( 'x' ) ), 'illus_titre' => array( array( 'x' ), 'Plan' ), 'texte_notice' => array( 'x' ),
+	'organisme' => "Inrap\x07" );
+na_appel( $plugin, 'entrees_attendues' );
+$entrees = $_POST;
+$_POST = array();
+na_verifier( ! isset( $entrees['resp_email'] ) && ! isset( $entrees['texte_notice'] ) && 'Le château neuf' === $entrees['lieu_dit']
+	&& "Ligne 1\nLigne 2" === $entrees['commentaires'] && array( 'Caen', '' ) === $entrees['commune']
+	&& array( '', 'Plan' ) === $entrees['illus_titre'] && 'Inrap' === $entrees['organisme'],
+	'un champ forgé en tableau est ignoré ; les contrôles s\'ôtent, le saut de ligne de Word devient une espace', $entrees );
+$forger = function ( $vers ) {
+	throw new RuntimeException( (string) $vers );
+};
+add_filter( 'wp_redirect', $forger );
+$defi_forge = na_appel( $plugin, 'defi_du_puzzle' );
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST = array(
+	'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
+	'na_ts' => (string) ( time() - 30 ), 'na_curseur' => (string) $defi_forge['cible'], 'na_preuve' => $defi_forge['preuve'],
+	'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Caen' ), 'departement' => 'Calvados',
+	'lieu_dit' => 'Essai forgé', 'annee' => '2025', 'nature' => array( 'Fouille préventive' ), 'organisme' => array( 'Inrap' ),
+	'resp_prenom' => 'Aude', 'resp_nom' => array( 'Ferrand' ), 'resp_email' => array( 'a@example.org' ), 'resp_inst' => 'Inrap',
+	'rapport_lien' => array( 'x' ), 'texte_notice' => '<p>Le mur.</p>',
+);
+$vers_forge = '';
+$erreur_forge = '';
+try {
+	$plugin->handle_submission();
+} catch ( RuntimeException $e ) {
+	$vers_forge = $e->getMessage();
+} catch ( Throwable $e ) {
+	$erreur_forge = get_class( $e ) . ' : ' . $e->getMessage();
+}
+$_POST = array(
+	'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
+	'na_ts' => array( '1' ),
+);
+$vers_ts = '';
+try {
+	$plugin->handle_submission();
+} catch ( RuntimeException $e ) {
+	$vers_ts = $e->getMessage();
+}
+$_POST = array();
+remove_filter( 'wp_redirect', $forger );
+parse_str( (string) wp_parse_url( $vers_forge, PHP_URL_QUERY ), $retour_forge );
+foreach ( array( 'na_reprise_' ) as $prefixe ) {
+	if ( preg_match( '/notice_reprise=([a-z0-9]+)/', $vers_forge, $j_forge ) ) {
+		delete_transient( $prefixe . $j_forge[1] );
+	}
+}
+na_verifier( '' === $erreur_forge && isset( $retour_forge['notice_envoyee'] ) && '0' === $retour_forge['notice_envoyee']
+	&& isset( $retour_forge['notice_champs'] ) && false !== strpos( $retour_forge['notice_champs'], 'resp_nom' )
+	&& false !== strpos( $retour_forge['notice_champs'], 'resp_email' ),
+	'un dépôt aux champs forgés en tableau est refusé proprement, les champs nommés, sans erreur', array( $erreur_forge, $retour_forge ) );
+na_verifier( false !== strpos( $vers_ts, 'notice_erreur=securite' ), 'un délai d\'envoi forgé en tableau est refusé', $vers_ts );
+
+WP_CLI::log( 'Les illustrations d\'une saisie ancienne, en texte libre' );
+$libre = na_notice( array_merge( $saisie_styles, array( 'illustrations' => 'Fig. 1 : plan ; fig. 2 : coupe' ) ) );
+$saisie_libre = null;
+$erreur_libre = '';
+try {
+	$saisie_libre = na_appel( $plugin, 'saisie_de', array( $libre, true ) );
+	$doc_libre = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+	na_appel( $plugin, 'remplir_le_document', array( $doc_libre, $saisie_libre ) );
+	$xml_libre = implode( '', $corps->getValue( $doc_libre ) );
+} catch ( Throwable $e ) {
+	$erreur_libre = $e->getMessage();
+	$xml_libre = '';
+}
+na_appel( $plugin, 'sortir_de_l_attente', array( $libre ) );
+wp_delete_post( $libre, true );
+na_verifier( '' === $erreur_libre && array() === $saisie_libre['illustrations']
+	&& false !== strpos( $xml_libre, 'texte libre' ) && false !== strpos( $xml_libre, 'coupe' ),
+	'le fascicule ne tombe plus : le texte libre passe à la rédaction, sans figure inventée',
+	array( $erreur_libre, $saisie_libre['illustrations'], preg_match( '#texte libre.{0,300}#u', $xml_libre, $m_libre ) ? $m_libre[0] : '' ) );
+
+WP_CLI::log( 'Le texte alternatif des figures' );
+$_POST = array( 'illus_titre' => array( 'Plan', 'Vue' ), 'illus_legende' => array( '', '' ), 'illus_credits' => array( '', '' ),
+	'illus_alt' => array( ' Plan des murs du château ', '' ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg', 'vue.jpg' ), 'error' => array( 0, 0 ) ) );
+$figures_alt = na_appel( $plugin, 'collect_illustrations' );
+$manquent_alt = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'illustrations' => $figures_alt ) ) ) );
+$_FILES = array();
+$manquent_sans_fichier = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'illustrations' => $figures_alt ) ) ) );
+$_POST = array();
+$table_alt = na_appel( $plugin, 'champs_du_formulaire' );
+na_verifier( 'Plan des murs du château' === $figures_alt[0]['alt'] && '' === $figures_alt[1]['alt'],
+	'le texte alternatif de chaque figure se collecte avec elle', $figures_alt );
+$manquent_alt          = array_values( preg_grep( '/^illus_alt_/', $manquent_alt ) );
+$manquent_sans_fichier = array_values( preg_grep( '/^illus_alt_/', $manquent_sans_fichier ) );
+na_verifier( array( 'illus_alt_2' ) === $manquent_alt && array() === $manquent_sans_fichier
+	&& isset( $table_alt['illus_alt_2'] ) && false !== strpos( $table_alt['illus_alt_2'][1], 'figure 2' )
+	&& 'na-illus-2-alt' === $table_alt['illus_alt_2'][0],
+	'il est obligatoire pour une figure déposée, et le message dit laquelle ; sans fichier, rien n\'est demandé', array( $manquent_alt, $manquent_sans_fichier ) );
+na_verifier( 'Plan des murs' === Notice_Archeomed_Controles::texte_alternatif( array( 'rang' => 1, 'titre' => 'Plan', 'alt' => 'Plan des murs' ) )
+	&& 'Plan général' === Notice_Archeomed_Controles::texte_alternatif( array( 'rang' => 1, 'titre' => 'Fig. 1 : Plan général' ) ),
+	'une notice d\'avant le champ retombe sur le titre de la figure' );
+$avis_alt = Notice_Archeomed_Controles::figures( array(
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => '', 'credits' => 'A', 'alt' => str_repeat( 'mur ', 40 ) ),
+	array( 'rang' => 2, 'titre' => 'Fig. 2 : Vue du fossé', 'legende' => '', 'credits' => 'A', 'alt' => 'Vue du fossé' ),
+	array( 'rang' => 3, 'titre' => 'Coupe', 'legende' => 'Les couches en rouge.', 'credits' => 'A', 'alt' => 'Photo de la coupe' ),
+	array( 'rang' => 4, 'titre' => 'Mur', 'legende' => '', 'credits' => 'A', 'alt' => str_repeat( 'mur ', 30 ) ) ) );
+na_verifier( 1 === count( preg_grep( '/Fig\. 1\x{00A0}: le texte alternatif fait 159 caractères, pour 150/u', $avis_alt ) )
+	&& 0 === count( preg_grep( '/Fig\. 4.*fait/u', $avis_alt ) ),
+	'au-delà de 150 caractères, un avis, sans refus ; en deçà, rien', $avis_alt );
+na_verifier( 1 === count( preg_grep( '/Fig\. 2.*recopie le titre/u', $avis_alt ) )
+	&& 1 === count( preg_grep( '/Fig\. 3.*commence par «\x{00A0}Photo de/u', $avis_alt ) )
+	&& 1 === count( preg_grep( '/Fig\. 3.*«\x{00A0}en rouge\x{00A0}».*seule couleur/u', $avis_alt ) ),
+	'un avis quand le texte alternatif recopie le titre, commence par « Photo de », ou que la couleur porte seule l\'information', $avis_alt );
+$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "Plan\n des   murs\t" . str_repeat( 'x', 400 ) ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
+$coupee = na_appel( $plugin, 'collect_illustrations' );
+$_POST = array();
+$_FILES = array();
+na_verifier( 300 === mb_strlen( $coupee[0]['alt'], 'UTF-8' ) && 0 === strpos( $coupee[0]['alt'], 'Plan des murs x' ),
+	'le texte alternatif tient sur une ligne et se coupe à 300 caractères', $coupee[0]['alt'] );
+$ST::oublier();
+$figure_du_dossier = array( 'fichier' => 'icono/br/plan.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 );
+$saisie_alt = array_merge( $saisie_styles, array( 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => 'Le plan.', 'credits' => 'DAO A.', 'alt' => 'Plan des murs & du fossé', 'figure' => $figure_du_dossier,
+		'description' => "Deux murs parallèles, orientés nord-sud.\n\nLe fossé longe le mur ouest." ),
+	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => '', 'figure' => $figure_du_dossier ) ) ) );
+// Le premier bloc de figure, et l'ordre de ses paragraphes.
+$bloc_de_figure = function ( $xml ) {
+	$debut = strpos( $xml, 'TEIfigurestart' );
+	$fin   = strpos( $xml, 'TEIfigureend', $debut );
+	preg_match_all( '#<w:pStyle w:val="([^"]+)"/></w:pPr>(.*?)</w:p>#', substr( $xml, $debut - 30, $fin - $debut + 800 ), $m, PREG_SET_ORDER );
+	$suite = array();
+	foreach ( $m as $p ) {
+		if ( ! empty( $suite ) && 0 === strpos( (string) end( $suite ), 'TEIfigureend' ) ) {
+			break;
+		}
+		$suite[] = $p[1] . ' ' . str_replace( "\u{00A0}", ' ', mb_substr( html_entity_decode( preg_replace( '#<w:drawing>.*?</w:drawing>#s', '[image]', preg_replace( '#<(?!w:drawing|/w:drawing)[^>]+>#', '', $p[2] ) ), ENT_QUOTES | ENT_XML1, 'UTF-8' ), 0, 40 ) );
+	}
+	return $suite;
+};
+$doc_alt = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_alt, $saisie_alt ) );
+$xml_alt = implode( '', $corps->getValue( $doc_alt ) );
+$suite_alt = $bloc_de_figure( $xml_alt );
+na_verifier( false !== strpos( $xml_alt, 'descr="Plan des murs &amp; du fossé"' ) && false !== strpos( $xml_alt, 'descr="Fig. 2 Vue"' )
+	&& false === strpos( $xml_alt, 'TEIfigurealttext' ),
+	'au Word, « descr » porte le texte alternatif, ou le titre d\'une figure ancienne ; pas de paragraphe par défaut', $suite_alt );
+na_verifier( 2 === count( preg_grep( '/^naasupprimer (Description détaillée|Le fossé longe)/u', $suite_alt ) )
+	&& 0 === strpos( (string) end( $suite_alt ), 'TEIfigureend' ) && 0 === strpos( $suite_alt[ count( $suite_alt ) - 3 ], 'naasupprimer Description détaillée' )
+	&& 0 === strpos( $suite_alt[ count( $suite_alt ) - 4 ], 'TEIfigurecredits' ),
+	'sans style réglé, la description détaillée part « à supprimer », à la fin du bloc de figure', $suite_alt );
+list( $alt_choisi, $alt_refuse ) = $ST::nettoyer( array( 'figure_alttext' => 'TEI_figure_alttext' ) );
+list( $alt_aucun ) = $ST::nettoyer( array( 'figure_alttext' => '' ), $alt_choisi );
+na_verifier( array( 'figure_alttext' => 'TEI_figure_alttext' ) === $alt_choisi && empty( $alt_refuse ) && array() === $alt_aucun
+	&& '' === $ST::libelle_du_vide( array( 'type' => 'paragraphe' ) ),
+	'le paragraphe du texte alternatif se règle : un style de la feuille, ou aucun paragraphe', array( $alt_choisi, $alt_aucun ) );
+$reglages_alt = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_alt, array( $ST::CLE => $alt_choisi ) ) );
+$ST::oublier();
+$doc_alt2 = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_alt2, $saisie_alt ) );
+$xml_alt2 = implode( '', $corps->getValue( $doc_alt2 ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_alt );
+$ST::oublier();
+$suite_alt2 = $bloc_de_figure( $xml_alt2 );
+na_verifier( 1 === substr_count( $xml_alt2, '<w:pStyle w:val="TEIfigurealttext"/></w:pPr><w:r><w:t xml:space="preserve">Plan des murs' )
+	&& array( 'TEIfigurecaption Le plan.', 'TEIfigurecredits DAO A.', 'TEIfigurealttext Plan des murs & du fossé',
+		'TEIfigurealttext Deux murs parallèles, orientés nord-sud.', 'TEIfigurealttext Le fossé longe le mur ouest.' )
+		=== array_slice( $suite_alt2, -6, 5 )
+	&& 0 === strpos( (string) end( $suite_alt2 ), 'TEIfigureend' ) && 3 === substr_count( $xml_alt2, 'TEIfigurealttext' ),
+	'réglé, le texte alternatif puis la description ont leur paragraphe stylé à la fin du bloc, juste avant sa fermeture ; une figure ancienne n\'en a pas',
+	$suite_alt2 );
+$relu_alt = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_alt ) ) );
+$courriel_alt = na_appel( $plugin, 'illustrations_block', array( $saisie_alt ) );
+na_verifier( false !== strpos( $relu_alt, 'alt="Plan des murs &amp; du fossé" aria-describedby="description-1"' ) && false !== strpos( $relu_alt, 'alt="Vue">' )
+	&& false !== strpos( $relu_alt, '<div class="description" id="description-1">' ) && false !== strpos( $relu_alt, '<p>Le fossé longe le mur ouest.</p>' )
+	&& false !== strpos( $courriel_alt, "Texte alternatif\u{00A0}: Plan des murs &amp; du fossé" )
+	&& false !== strpos( $courriel_alt, "Description détaillée\u{00A0}: Deux murs parallèles, orientés nord-sud.<br>Le fossé longe" ),
+	'la relecture donne le texte alternatif à l\'image (le titre à défaut) et la relie à sa description ; le courriel montre l\'un et l\'autre', array( $courriel_alt ) );
+$_POST = array( 'reprise_jeton' => '', 'illus_titre' => array( 'Plan' ), 'illus_legende' => array( '' ), 'illus_credits' => array( '' ),
+	'illus_alt' => array( 'Plan des murs' ), 'illus_description' => array( "Deux murs.\nUn fossé." ), 'lieu_dit' => 'Château' );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
+$jeton_alt = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
+$reserve_alt = get_transient( 'na_reprise_' . $jeton_alt );
+delete_transient( 'na_reprise_' . $jeton_alt );
+$_POST = array();
+$_FILES = array();
+na_verifier( is_array( $reserve_alt ) && array( 'Plan des murs' ) === $reserve_alt['illus_alt'] && array( "Deux murs.\nUn fossé." ) === $reserve_alt['illus_description'],
+	'la saisie gardée, au refus comme au lien de correction, garde le texte alternatif et la description', $reserve_alt );
+$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( 'Plan' ),
+	'illus_description' => array( "Premier  paragraphe,\n\n\n second <b>gras</b>.\n" . str_repeat( 'y', 2100 ) ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
+$decrite = na_appel( $plugin, 'collect_illustrations' );
+$_POST = array();
+$_FILES = array();
+na_verifier( 0 === strpos( $decrite[0]['description'], "Premier paragraphe,\nsecond gras.\nyyy" ) && 2000 === mb_strlen( $decrite[0]['description'], 'UTF-8' ),
+	'la description détaillée se collecte en paragraphes simples, sans balise, coupée à 2 000 caractères', mb_substr( $decrite[0]['description'], 0, 60 ) );
+
+WP_CLI::log( 'Le texte alternatif, texte simple' );
+$saisie_simple = array_merge( $saisie_styles, array( 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Mur', 'legende' => '', 'credits' => '', 'alt' => "Mur du XIIe siècle,\n vu   du sud",
+		'figure' => array( 'fichier' => 'icono/br/mur.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 ) ) ) ) );
+$reglages_simple = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_simple, array( $ST::CLE => array( 'figure_alttext' => 'TEI_figure_alttext' ) ) ) );
+$ST::oublier();
+$doc_simple = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_simple, $saisie_simple ) );
+$xml_simple = implode( '', $corps->getValue( $doc_simple ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_simple );
+$ST::oublier();
+$para_simple = preg_match( '#<w:p><w:pPr><w:pStyle w:val="TEIfigurealttext"/></w:pPr>(.*?)</w:p>#', $xml_simple, $m_simple ) ? $m_simple[1] : '';
+na_verifier( false !== strpos( $xml_simple, 'descr="Mur du XIIe siècle, vu du sud"' )
+	&& false !== strpos( $para_simple, 'XIIe' ) && false === strpos( $para_simple, 'smallCaps' ) && false === strpos( $para_simple, 'vertAlign' )
+	&& false === strpos( $para_simple, '<w:i/>' ) && false === strpos( $para_simple, '<w:b/>' ) && 1 === substr_count( $para_simple, '<w:r>' ),
+	'texte simple, sur une ligne, sans siècles en petites capitales ni exposant, ni italique ni gras', $para_simple );
+$langue_de = function ( $xml ) {
+	$r = new ReflectionMethod( 'Notice_Archeomed_DOCX', 'langue_francaise' );
+	$r->setAccessible( true );
+	return $r->invoke( null, $xml );
+};
+$sans_langue = $langue_de( '<w:styles xmlns:w="x"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>' );
+$sans_defaut = $langue_de( '<w:styles xmlns:w="x"><w:style/></w:styles>' );
+$autre_langue = $langue_de( '<w:styles><w:docDefaults><w:rPrDefault><w:rPr><w:lang w:val="en-GB"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>' );
+$feuille_livree = $langue_de( (string) file_get_contents( 'zip://' . Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) . '#word/styles.xml' ) );
+na_verifier( false !== strpos( $sans_langue, '<w:sz w:val="24"/><w:lang w:val="fr-FR"/></w:rPr>' )
+	&& false !== strpos( $sans_defaut, '<w:docDefaults><w:rPrDefault><w:rPr><w:lang w:val="fr-FR"/>' )
+	&& false !== strpos( $autre_langue, 'en-GB' ) && false === strpos( $autre_langue, 'fr-FR' )
+	&& 1 === preg_match( '#<w:rPrDefault><w:rPr>.*?<w:lang w:val="fr-FR"#s', $feuille_livree ),
+	'le Word déclare le français par défaut ; une feuille sans langue le reçoit, une autre langue se garde', array( $sans_langue, $sans_defaut ) );
+
+WP_CLI::log( 'La rubrique I renommée' );
+$ancienne_i = 'I. Constructions et habitats civils';
+$nouvelle_i = 'I. Constructions et habitats civils – Environnement rural et urbain';
+$_POST = array( 'rubrique_principale' => $ancienne_i );
+$collectee_i = na_appel( $plugin, 'collect_select', array( 'rubrique_principale', array( $nouvelle_i ), true ) );
+$_POST = array();
+$notice_i = na_notice( array_merge( $saisie_styles, array( 'rubrique_principale' => $ancienne_i ) ) );
+update_post_meta( $notice_i, '_na_rubrique', $ancienne_i );
+update_post_meta( $notice_i, '_na_classement', '01|1|caen' );
+$trouvees_i = na_appel( $plugin, 'file' )->notices_de_la_rubrique( $nouvelle_i );
+$saisie_i = na_appel( $plugin, 'saisie_de', array( $notice_i, false ) );
+na_appel( $plugin, 'sortir_de_l_attente', array( $notice_i ) );
+wp_delete_post( $notice_i, true );
+na_verifier( $nouvelle_i === Notice_Archeomed_Pactols::rubrique_actuelle( $ancienne_i )
+	&& in_array( $ancienne_i, Notice_Archeomed_Pactols::libelles_de_la_rubrique( $nouvelle_i ), true )
+	&& $nouvelle_i === $collectee_i && in_array( $notice_i, $trouvees_i, true ) && $nouvelle_i === $saisie_i['rubrique_principale']
+	&& 'I. – Constructions et habitats civils – Environnement rural et urbain' === $plugin->titre_de_rubrique( $ancienne_i ),
+	'l\'ancien libellé de la rubrique I vaut le nouveau : reprise, fascicule, sortie imprimée', array( $collectee_i, $trouvees_i ) );
+
+WP_CLI::log( 'La rubrique V par matière' );
+$rub_v = Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT;
+$notice_v = function ( $commune, $nature, $matiere ) use ( $saisie_styles, $rub_v ) {
+	return array_merge( $saisie_styles, array( 'rubrique_principale' => $rub_v, 'commune' => $commune,
+		'lieux' => array( array( 'nom' => $commune, 'ark' => '' ) ), 'nature' => $nature, 'rubrique_matiere' => $matiere ) );
+};
+$titres_v = array();
+foreach ( array( array( 'A', 'Fouille préventive' ), array( 'A', 'Prospection pédestre' ), array( 'A', 'Projet collectif de recherche' ),
+	array( 'B', 'Fouille préventive' ), array( 'B', 'Prospection pédestre' ), array( 'B', 'Projet collectif de recherche' ),
+	array( 'C', 'Fouille préventive' ), array( 'C', 'Prospection pédestre' ), array( 'C', 'Projet collectif de recherche' ) ) as $cas_v ) {
+	$titres_v[] = $plugin->titre_de_famille( $notice_v( 'Caen', $cas_v[1], $cas_v[0] ) );
+}
+na_verifier( array(
+	"V. A1. – Céramique, terres cuites architecturales, verrerie\u{00A0}: opération de terrain",
+	"V. A2. – Céramique, terres cuites architecturales, verrerie\u{00A0}: prospections",
+	"V. A3. – Céramique, terres cuites architecturales, verrerie\u{00A0}: projets collectifs de recherche",
+	"V. B1. – Carrières, mines et métallurgie\u{00A0}: opération de terrain",
+	"V. B2. – Carrières, mines et métallurgie\u{00A0}: prospections",
+	"V. B3. – Carrières, mines et métallurgie\u{00A0}: projets collectifs de recherche",
+	"V. C1. – Autres installations artisanales\u{00A0}: opération de terrain",
+	"V. C2. – Autres installations artisanales\u{00A0}: prospections",
+	"V. C3. – Autres installations artisanales\u{00A0}: projets collectifs de recherche",
+) === $titres_v, 'les sous-rubriques V. A1 à C3 s\'écrivent comme la rédaction les écrit', $titres_v );
+$v_ordre = array( $notice_v( 'Dives', 'Fouille préventive', 'C' ), $notice_v( 'Bayeux', 'Prospection pédestre', 'A' ),
+	$notice_v( 'Lisieux', 'Fouille préventive', 'A' ), $notice_v( 'Alençon', 'Fouille préventive', '' ),
+	$notice_v( 'Argentan', 'Fouille préventive', 'A' ) );
+$erreur_v = '';
+$chemin_v = na_appel( $plugin, 'fabriquer_le_fascicule', array( $rub_v, $v_ordre, &$erreur_v ) );
+$xml_v = '' !== $chemin_v ? (string) file_get_contents( 'zip://' . $chemin_v . '#word/document.xml' ) : '';
+if ( '' !== $chemin_v ) {
+	@unlink( $chemin_v );
+}
+preg_match_all( '#<w:pStyle w:val="(TEITitre1rubrique|TEITitre2notice)"/></w:pPr>(.*?)</w:p>#', $xml_v, $m_v, PREG_SET_ORDER );
+$suite_v = array();
+foreach ( $m_v as $p_v ) {
+	$texte_v = html_entity_decode( preg_replace( '#<[^>]+>#', '', $p_v[2] ), ENT_QUOTES | ENT_XML1, 'UTF-8' );
+	$suite_v[] = 'TEITitre1rubrique' === $p_v[1]
+		? ( preg_match( '/^V\.\s*([A-C]?\d)\./u', $texte_v, $mm_v ) ? '# V. ' . $mm_v[1] . '.' : $texte_v ) : strtok( $texte_v, ' ' );
+}
+na_verifier( array( '# V. 1.', 'Alençon', '# V. A1.', 'Argentan', 'Lisieux', '# V. A2.', 'Bayeux', '# V. C1.', 'Dives' ) === $suite_v
+	&& false !== strpos( $xml_v, 'Matière à choisir (A, B ou C)' ),
+	'le fascicule V se range par matière, puis par famille, puis par commune ; une notice sans matière reste sans lettre, et le dit', $suite_v );
+na_verifier( 0 === substr_count( $xml_v, 'Matière à choisir' ) - 1, 'la ligne « matière à choisir » ne vaut que pour la notice sans matière' );
+$manque_v = na_appel( $plugin, 'champs_manquants', array( $notice_v( 'Caen', 'Fouille préventive', '' ) ) );
+$manque_i = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'rubrique_principale' => $nouvelle_i, 'rubrique_matiere' => '' ) ) ) );
+na_verifier( in_array( 'rubrique_matiere', $manque_v, true ) && ! in_array( 'rubrique_matiere', $manque_i, true )
+	&& ! in_array( 'rubrique_matiere', na_appel( $plugin, 'champs_manquants', array( $notice_v( 'Caen', 'Fouille préventive', 'B' ) ) ), true ),
+	'la matière est obligatoire pour la rubrique V, et pour elle seule', array( $manque_v, $manque_i ) );
+$courriel_v = na_appel( $plugin, 'build_notice', array( array_merge( $notice_v( 'Caen', 'Fouille préventive', 'B' ), array( 'reference' => 'REFV01' ) ) ) );
+na_verifier( false !== strpos( $courriel_v, 'Matière' ) && false !== strpos( $courriel_v, 'B – Carrières, mines et métallurgie' ),
+	'le courriel et la fiche disent la matière' );
+$_POST = array( 'rubrique_principale' => $rub_v, 'rubrique_matiere' => 'b', 'lieu_dit' => 'Château' );
+$jeton_v = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
+$reserve_v = get_transient( 'na_reprise_' . $jeton_v );
+delete_transient( 'na_reprise_' . $jeton_v );
+$_POST = array();
+na_verifier( is_array( $reserve_v ) && 'b' === $reserve_v['rubrique_matiere'], 'la matière se garde à la reprise et à la correction', $reserve_v );
+
+WP_CLI::log( 'L\'onglet Accessibilité' );
+$A = 'Notice_Archeomed_Accessibilite';
+$controle_brut = array(
+	'page'       => 'http://127.0.0.1/depot/',
+	'moteur'     => '4.10.2',
+	'score'      => 100,
+	'conformes'  => array( array( 'id' => 'image-alt', 'explication' => 'Image sans texte alternatif.' ), array( 'id' => 'label' ), array( 'pas' => 'de id' ) ),
+	'echecs'     => array( array( 'id' => 'color-contrast', 'gravite' => 'grave', 'n' => '11', 'explication' => '<b>Contraste</b>', 'origine' => 'thème' ),
+		array( 'id' => 'link-name', 'gravite' => 'pirate', 'n' => -4, 'origine' => 'ailleurs' ) ),
+	'a_verifier' => array_fill( 0, 200, array( 'id' => 'color-contrast', 'n' => 1 ) ),
+);
+$controle_propre = $A::nettoyer_le_controle( $controle_brut );
+na_verifier( 50 === $controle_propre['score'] && 2 === count( $controle_propre['conformes'] ) && 2 === count( $controle_propre['echecs'] )
+	&& 'Contraste' === $controle_propre['echecs'][0]['explication'] && 11 === $controle_propre['echecs'][0]['n']
+	&& '' === $controle_propre['echecs'][1]['gravite'] && '' === $controle_propre['echecs'][1]['origine'] && 0 === $controle_propre['echecs'][1]['n']
+	&& $A::PLAFOND === count( $controle_propre['a_verifier'] ) && '4.10.2' === $controle_propre['moteur'],
+	'un contrôle reçu se nettoie : score recalculé (conformes / conformes + échecs), textes tamisés, listes plafonnées', $controle_propre );
+list( $audit_propre, $audit_refuses ) = $A::nettoyer_l_audit( array( 'taux' => '87,5 %', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x' ) );
+list( $audit_faux, $refuses_faux ) = $A::nettoyer_l_audit( array( 'taux' => '120', 'date' => '2026-02-30', 'lien' => 'javascript:alert(1)' ) );
+na_verifier( array( 'taux' => '87.5', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x' ) === $audit_propre && array() === $audit_refuses
+	&& array( 'taux', 'date', 'lien' ) === $refuses_faux && array( 'taux' => '', 'date' => '', 'lien' => '' ) === $audit_faux,
+	'l\'audit Ara se garde : taux à virgule, date du calendrier, lien http(s) ; le reste est écarté', array( $audit_propre, $refuses_faux ) );
+$option_avant = get_option( $A::OPTION, null );
+$utilisateur_avant = get_current_user_id();
+$admins = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ids' ) );
+wp_set_current_user( empty( $admins ) ? 1 : (int) $admins[0] );
+$sortie_a11y = function ( $vers ) {
+	throw new RuntimeException( (string) $vers );
+};
+$mourir_a11y = function () {
+	return function ( $message ) {
+		throw new RuntimeException( 'wp_die' );
+	};
+};
+add_filter( 'wp_redirect', $sortie_a11y );
+add_filter( 'wp_doing_ajax', '__return_true' );
+add_filter( 'wp_die_ajax_handler', $mourir_a11y );
+$_POST = $_REQUEST = array( '_ajax_nonce' => wp_create_nonce( $A::ACTION ), 'resultat' => wp_slash( wp_json_encode( $controle_brut ) ) );
+ob_start();
+try {
+	( new Notice_Archeomed_Accessibilite() )->enregistrer_le_controle();
+} catch ( RuntimeException $e ) {
+	unset( $e );
+}
+$reponse_a11y = json_decode( (string) ob_get_clean(), true );
+$garde_a11y = $A::lire();
+$_POST = $_REQUEST = array( '_ajax_nonce' => 'faux', 'resultat' => '{}' );
+ob_start();
+$refus_a11y = '';
+try {
+	( new Notice_Archeomed_Accessibilite() )->enregistrer_le_controle();
+} catch ( RuntimeException $e ) {
+	$refus_a11y = $e->getMessage();
+}
+ob_end_clean();
+$_POST = $_REQUEST = array( '_wpnonce' => wp_create_nonce( $A::ACTION_ARA ), 'na_ara_taux' => '92', 'na_ara_date' => '2026-09-30', 'na_ara_lien' => 'https://ara.numerique.gouv.fr/r/1' );
+$vers_ara = '';
+try {
+	( new Notice_Archeomed_Accessibilite() )->enregistrer_l_audit();
+} catch ( RuntimeException $e ) {
+	$vers_ara = $e->getMessage();
+}
+$_POST = $_REQUEST = array( '_wpnonce' => wp_create_nonce( $A::ACTION_ARA ), 'na_ara_taux' => 'beaucoup', 'na_ara_date' => '', 'na_ara_lien' => 'https://ara.numerique.gouv.fr/r/1' );
+$vers_ara2 = '';
+try {
+	( new Notice_Archeomed_Accessibilite() )->enregistrer_l_audit();
+} catch ( RuntimeException $e ) {
+	$vers_ara2 = $e->getMessage();
+}
+$garde_ara = $A::lire();
+$_POST = $_REQUEST = array();
+remove_filter( 'wp_redirect', $sortie_a11y );
+remove_filter( 'wp_doing_ajax', '__return_true' );
+remove_filter( 'wp_die_ajax_handler', $mourir_a11y );
+ob_start();
+$A::onglet();
+$rendu_a11y = (string) ob_get_clean();
+wp_set_current_user( $utilisateur_avant );
+if ( null === $option_avant ) {
+	delete_option( $A::OPTION );
+} else {
+	update_option( $A::OPTION, $option_avant, false );
+}
+na_verifier( is_array( $reponse_a11y ) && ! empty( $reponse_a11y['success'] ) && 50 === $reponse_a11y['data']['score']
+	&& 50 === $garde_a11y['controle']['score'] && '' !== $garde_a11y['controle']['date'] && 'wp_die' === $refus_a11y,
+	'le contrôle s\'enregistre par une requête authentifiée, avec sa date ; sans jeton valable, il est refusé', array( $reponse_a11y, $refus_a11y ) );
+na_verifier( false !== strpos( $vers_ara, 'tab=accessibilite' ) && false !== strpos( $vers_ara, 'na_ara=ok' ) && false !== strpos( $vers_ara2, 'na_ara=taux' )
+	&& '92' === $garde_ara['ara']['taux'] && '' === $garde_ara['ara']['date'] && 'https://ara.numerique.gouv.fr/r/1' === $garde_ara['ara']['lien'],
+	'l\'audit Ara s\'enregistre ; un taux faux garde le précédent, un champ vidé s\'efface', array( $vers_ara, $vers_ara2, $garde_ara['ara'] ) );
+na_verifier( isset( Notice_Archeomed_Settings::onglets()['accessibilite'] ) && false !== strpos( $rendu_a11y, 'n’est pas le taux de conformité RGAA' )
+	&& false !== strpos( $rendu_a11y, 'https://ara.numerique.gouv.fr/' ) && false !== strpos( $rendu_a11y, 'Score indicatif' )
+	&& false !== strpos( $rendu_a11y, 'déclaration' ),
+	'l\'onglet dit que le score n\'est pas le taux RGAA, renvoie à Ara, rappelle la déclaration, et montre le dernier contrôle' );
 
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();

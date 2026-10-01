@@ -287,14 +287,19 @@ class Notice_Archeomed_Thesaurus {
 	/** Les formes préférées d'un concept, par langue. */
 	private static function etiquettes( $noeud ) {
 		$out = array();
-		if ( ! isset( $noeud[ self::SKOS . 'prefLabel' ] ) ) {
+		if ( ! is_array( $noeud ) || ! isset( $noeud[ self::SKOS . 'prefLabel' ] ) ) {
 			return $out;
 		}
-		foreach ( (array) $noeud[ self::SKOS . 'prefLabel' ] as $item ) {
-			if ( ! is_array( $item ) || empty( $item['value'] ) ) {
+		$items = $noeud[ self::SKOS . 'prefLabel' ];
+		// Un objet seul, au lieu d'une liste, se lit comme une liste d'un.
+		if ( is_array( $items ) && isset( $items['value'] ) ) {
+			$items = array( $items );
+		}
+		foreach ( (array) $items as $item ) {
+			if ( ! is_array( $item ) || empty( $item['value'] ) || ! is_scalar( $item['value'] ) ) {
 				continue;
 			}
-			$langue = isset( $item['lang'] ) ? (string) $item['lang'] : '';
+			$langue = ( isset( $item['lang'] ) && is_scalar( $item['lang'] ) ) ? (string) $item['lang'] : '';
 			if ( '' === $langue ) {
 				continue;
 			}
@@ -310,13 +315,32 @@ class Notice_Archeomed_Thesaurus {
 		return $out;
 	}
 
-	/** La première valeur d'une propriété, ou une chaîne vide. */
+	/**
+	 * La première valeur d'une propriété, ou une chaîne vide.
+	 *
+	 * L'API rend une liste d'objets « value » ; une réponse qui portait une
+	 * valeur nue — « "12" » au lieu de « [{"value":"12"}] » — faisait lever
+	 * « reset() » en PHP 8 : l'erreur sortait de la tâche, aucun essai ne se
+	 * comptait, et le même terme bloquait la file à chaque passage. Les deux
+	 * formes se lisent, et un objet seul aussi ; le reste vaut rien.
+	 */
 	private static function premiere( $noeud, $propriete ) {
-		if ( empty( $noeud[ $propriete ] ) ) {
+		if ( ! is_array( $noeud ) || empty( $noeud[ $propriete ] ) ) {
 			return '';
 		}
-		$item = reset( $noeud[ $propriete ] );
-		return ( is_array( $item ) && isset( $item['value'] ) ) ? (string) $item['value'] : '';
+		$valeurs = $noeud[ $propriete ];
+		if ( is_scalar( $valeurs ) ) {
+			return (string) $valeurs;
+		}
+		if ( ! is_array( $valeurs ) ) {
+			return '';
+		}
+		$item = isset( $valeurs['value'] ) ? $valeurs : reset( $valeurs );
+		if ( is_scalar( $item ) ) {
+			return (string) $item;
+		}
+		return ( is_array( $item ) && isset( $item['value'] ) && is_scalar( $item['value'] ) )
+			? (string) $item['value'] : '';
 	}
 
 	/** Une propriété d'un concept désigné par son ARK dans une réponse. */

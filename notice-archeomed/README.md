@@ -248,6 +248,7 @@ de réglages et laisser la constante indéfinie.
 | `class-notice-archeomed-settings.php` | Page de réglages (Réglages > Notice Archéomed) |
 | `class-notice-archeomed-file.php` | La file d'attente : inscription, expédition différée, reprises |
 | `class-notice-archeomed-rtf.php` | Générateur du RTF stylé — le repli |
+| `class-notice-archeomed-accessibilite.php` | L'onglet Accessibilité : contrôle axe-core du formulaire, trace de l'audit Ara |
 | `modele-metopes.docx` | **Feuille de styles Métopes de référence** |
 | `modele-metopes.rtf` | La même feuille dans l'autre format, pour le repli |
 | `.htaccess`, `index.php` | Empêchent le téléchargement direct et le listage du dossier |
@@ -422,6 +423,17 @@ style), un bloc de responsabilité dans son propre paragraphe
 blocs d'index Pactols nomment le style réglé dans leur `rend`.
 « Rétablir les correspondances d'origine » remet tout d'un geste.
 
+Le **texte alternatif** d'une figure part toujours dans le texte de
+remplacement de l'image (`descr` de `wp:docPr`), comme la documentation
+Métopes le prescrit (« Styler les figures »). Son paragraphe est facultatif et
+ne paraît pas d'origine (« — aucun paragraphe — ») : le gabarit porte
+`TEI_figure_alttext` et `TEI_figure-alttext`, que la table des styles ne
+documente pas, et ce que la conversion en fait n'est pas connu [HYPOTHÈSE].
+Si la rédaction lui choisit un style, il se pose **à la fin du bloc de
+figure**, après le titre, la légende et les crédits, juste avant
+`TEI_figure_end` ; la description détaillée le suit, dans le même style. Sans
+style réglé, la description part « à supprimer », pour que la rédaction la lise.
+
 | Bloc de la notice | Style Métopes |
 |---|---|
 | Avis de correction (dépôt corrigé) | à supprimer |
@@ -438,7 +450,10 @@ blocs d'index Pactols nomment le style réglé dans leur `rend`.
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
-| Image d'une illustration | Normal |
+| Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
+| Texte alternatif puis description détaillée, à la fin du bloc de figure | aucun paragraphe (réglable) ; la description « à supprimer » |
+| Sous-rubrique de la rubrique V : « V. A1. – Céramique, terres cuites architecturales, verrerie : opération de terrain » | `TEI_Titre 1+rubrique` |
+| Matière à choisir (notice V d'avant les matières) | à supprimer |
 | Titre d'une illustration, numéro en `TEI_figure_num_inline` | `TEI_figure_title` |
 | Légende d'une illustration | `TEI_figure_caption` |
 | Crédits d'une illustration | `TEI_figure_credits` |
@@ -563,12 +578,61 @@ alphabétique.
 ## Les illustrations
 
 Chaque fichier déposé reçoit sa propre ligne dans le formulaire : **titre**,
-**légende**, **crédits**. Un champ libre commun recevait tout auparavant, et
-la rédaction devait deviner quelle ligne allait avec quelle image.
+**texte alternatif**, **légende**, **crédits**. Un champ libre commun recevait
+tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
+image.
+
+### Le texte alternatif
+
+Il est **obligatoire** pour toute figure déposée : quelques mots qui disent ce
+que montre l'image, pour les personnes malvoyantes ou non voyantes, dans la
+démarche d'accessibilité de la revue. L'aide demande ce que montre l'image,
+non le titre recopié, et sans « Image de », que le lecteur d'écran annonce
+déjà ; elle donne un exemple. Un oubli se signale comme pour les autres champs
+obligatoires : sous le champ, et dans le récapitulatif, qui nomme la figure et
+son fichier. Le serveur refuse de même un envoi sans le script, garde la
+saisie et dit quelle figure décrire.
+
+- **Longueur.** Un compteur sous le champ. Au-delà de 150 caractères, un
+  avis, sans refus ; le formulaire n'en laisse pas taper plus de 300, et le
+  serveur coupe au-delà en le nommant dans les avis — règles de la rédaction.
+  Le RGAA 4.1, plus strict, « recommande fortement » 80 caractères (glossaire,
+  « Alternative courte et concise », test 1.3.9).
+- **Avis.** Le texte recopie le titre ; il commence par « Image de »,
+  « Photo de », « Photographie de » ou « Illustration de » ; lui ou la légende
+  renvoie à une couleur seule (« en rouge », « zones vertes ») — l'information ne
+  doit pas reposer sur la seule couleur. La liste des couleurs est une
+  heuristique [HYPOTHÈSE]. Aucun de ces avis ne refuse le dépôt.
+- **Texte simple.** Une seule ligne (retours et blancs multiples ramenés à une
+  espace), en romain : ni siècles en petites capitales ni exposant, ni italique
+  ni gras, au Word comme dans `descr` ; les insécables seules s'appliquent.
+- **Où il va.** Le texte de remplacement de l'image du Word (`descr`), le
+  courriel, la fiche d'administration, l'attribut `alt` de la page de
+  relecture du dossier Métopes ; en paragraphe stylé sous l'image si la
+  rédaction le règle (voir « Correspondance champ / style »).
+- **Il suit sa figure** : glisser-déposer, Monter et Descendre, retrait puis
+  rajout, reprise après un refus, lien de correction, brouillon de l'appareil.
+- **Notices d'avant ce champ.** Elles restent valides : leur image garde son
+  titre en texte de remplacement, et la page de relecture le donne en `alt`.
+
+### La description détaillée
+
+Facultative, pour les figures complexes — plans, coupes, cartes,
+graphiques : ce qu'un lecteur qui ne la voit pas doit en savoir
+(organisation, repères, données). Texte simple, plusieurs paragraphes permis,
+coupé au-delà de 2 000 caractères avec un avis. Elle suit sa figure comme le
+texte alternatif, paraît dans le courriel, la fiche et la page de relecture
+— sous la figure, l'image y renvoyant par `aria-describedby` —, et au Word à
+la fin du bloc de figure (voir « Correspondance champ / style »).
+
+Le Word déclare le français comme langue par défaut (`w:lang` `fr-FR`) : un
+lecteur d'écran lit alors la notice et ses textes alternatifs avec la bonne
+voix. Le gabarit livré le déclare déjà ; une feuille déposée qui l'omettrait
+le reçoit.
 
 Dans le document Word, chaque illustration donne un bloc de figure aux normes
 Métopes — trois styles distincts que la chaîne XML sait séparer, là où tout
-partait dans le seul titre de figure :
+partait dans le seul titre de figure :
 
 ```
 [TEI_figure_title]    Fig. 1 Vue générale du chantier
@@ -654,7 +718,9 @@ Pactols, texte de la notice.
 
 Les fichiers font exception : aucun navigateur ne permet de regarnir un champ
 de fichier, il faut les redéposer. Ce qu'on avait écrit à leur sujet — titre,
-légende, crédits — revient dès qu'ils sont rechoisis, dans le même ordre.
+texte alternatif, légende, crédits — revient dès qu'ils sont rechoisis, dans le
+même ordre. Une autorisation de reproduction ne revient pas plus qu'un
+fichier : la figure dit qu'elle est à joindre de nouveau.
 
 La reprise vit une heure après un refus.
 
@@ -663,6 +729,13 @@ La reprise vit une heure après un refus.
 C'est en recevant sa copie qu'on voit ce qu'on n'a pas vu en saisissant. La
 copie porte donc un lien qui rouvre le formulaire rempli de la même saisie ;
 il vit un mois. Les illustrations sont à redéposer — même raison qu'au-dessus.
+Leurs textes attendent leur fichier, et passent d'une correction à la
+suivante même quand l'une d'elles n'a redéposé aucune figure.
+
+Une correction qui porte moins de figures, ou moins d'autorisations de
+reproduction, que la notice qu'elle remplace le dit à la rédaction, dans le
+Word (« à supprimer ») et en tête du courriel : les fichiers restent dans la
+fiche de la notice remplacée, à ne pas supprimer avant de les avoir repris.
 
 Le dépôt corrigé est une notice neuve : rien ne la distinguerait de la
 première, et la rédaction garderait les deux. Trois marques l'en empêchent :
@@ -728,9 +801,29 @@ Le menu **Notices Archéomed** liste ce qui a été reçu et l'état de chacune 
 Les notices se rangent d'elles-mêmes comme la Chronique se monte :
 
 1. **rubrique principale** (I à VII),
-2. **famille d'opération** — opérations de terrain, prospections, projets
+2. dans la rubrique V seulement, **matière** : A – Céramique, terres cuites
+   architecturales, verrerie ; B – Carrières, mines et métallurgie ; C – Autres
+   installations artisanales,
+3. **famille d'opération** — opérations de terrain, prospections, projets
    collectifs de recherche,
-3. **commune**, par ordre alphabétique.
+4. **commune**, par ordre alphabétique.
+
+La rubrique I s'appelle désormais « I. Constructions et habitats civils –
+Environnement rural et urbain ». Une notice reçue sous l'ancien libellé reste
+dans la rubrique sans rien réécrire en base : une table d'équivalence le lit
+comme le nouveau partout où une rubrique se compare (fascicule, dossier,
+renvois, filtre et comptes de la liste, lien de correction), et le Word, le
+fascicule et le courriel impriment le nouveau.
+
+Dans la rubrique V, l'auteur choisit la **matière** (A, B ou C) : le champ
+paraît quand la rubrique V est choisie, et n'est obligatoire que pour elle. Les
+sous-rubriques s'écrivent « V. A1. – Céramique, terres cuites architecturales,
+verrerie : opération de terrain », « V. A2. – … : prospections », « V. A3. – … :
+projets collectifs de recherche », de même pour B et C. Une notice V d'avant les
+matières garde « V. 1. », se range en tête, et porte la ligne « à supprimer »
+« Matière à choisir (A, B ou C) ». Un renvoi vers la rubrique V se range selon la
+matière de sa notice — qui n'en a pas, venant d'une autre rubrique : il se
+range alors comme une notice sans matière.
 
 La famille ne se demande pas à l'auteur : elle se déduit de la nature qu'il a
 cochée. Une notice qui en coche plusieurs prend la première rencontrée dans
@@ -865,6 +958,26 @@ fois ne repart pas sur le réseau. Au-delà de deux cents interrogations par
 heure et par connexion, le relais cesse de répondre — assez large pour qu'on
 ne le voie jamais en remplissant un formulaire, assez étroit pour que le site
 ne serve pas à marteler frantiq.fr.
+
+## L'onglet Accessibilité
+
+**Réglages ▸ Accessibilité.** Le bouton « Contrôler l'accessibilité du
+formulaire » charge la page publiée du formulaire dans un cadre et la fait
+passer, dans le navigateur de l'administrateur, au moteur libre axe-core
+(4.10.2, règles `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`). Il affiche un
+**score indicatif** — règles conformes / (conformes + en échec) —, les règles
+en échec (gravité, nombre d'éléments, explication courte, et si l'élément vient
+de l'extension ou du thème), les conformes, et ce qui reste à vérifier à la
+main. Le dernier résultat se garde avec sa date (requête authentifiée, jeton,
+droit `manage_options`). **Ce score n'est pas le taux de conformité RGAA** :
+les tests automatiques ne couvrent qu'une partie des critères.
+
+L'audit officiel se fait avec **Ara** (DINUM, libre et gratuit, RGAA 4.1,
+<https://ara.numerique.gouv.fr/>), audit manuel dont le taux est celui qui
+compte ; l'onglet en garde le taux, la date et le lien du rapport, et rappelle
+qu'un organisme public publie une déclaration d'accessibilité. Le script et le
+style de l'onglet ne se chargent que sur lui, et le serveur n'appelle aucun
+service.
 
 ## Journalisation
 

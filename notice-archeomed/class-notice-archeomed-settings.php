@@ -286,6 +286,7 @@ class Notice_Archeomed_Settings {
 			'normes'        => __( 'Normes éditoriales', 'notice-archeomed' ),
 			'styles'        => __( 'Styles Métopes', 'notice-archeomed' ),
 			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
+			'accessibilite' => __( 'Accessibilité', 'notice-archeomed' ),
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
 			'maj'           => __( 'Mises à jour', 'notice-archeomed' ),
@@ -1284,9 +1285,10 @@ class Notice_Archeomed_Settings {
 				$liste  = $feuille[ $bloc['type'] ];
 				echo '<tr><th scope="row"><label for="' . esc_attr( $id ) . '">' . esc_html( $bloc['libelle'] ) . '</label></th><td>';
 				echo '<select id="' . esc_attr( $id ) . '" name="' . esc_attr( $nom . '[' . $cle . ']' ) . '" style="max-width:26em">';
-				if ( ! empty( $bloc['colle'] ) ) {
+				$vide = Notice_Archeomed_Styles::libelle_du_vide( $bloc );
+				if ( '' !== $vide ) {
 					echo '<option value=""' . selected( $actuel, '', false ) . '>'
-						. esc_html( '— collé à la fin du texte, entre parenthèses —' . ( '' === $bloc['defaut'] ? ' (d’origine)' : '' ) ) . '</option>';
+						. esc_html( '— ' . $vide . ' —' . ( '' === $bloc['defaut'] ? ' (d’origine)' : '' ) ) . '</option>';
 				}
 				if ( '' !== $actuel && ! in_array( $actuel, $liste, true ) ) {
 					echo '<option value="' . esc_attr( $actuel ) . '" selected>' . esc_html( $actuel . ' — absent de la feuille' ) . '</option>';
@@ -1301,7 +1303,7 @@ class Notice_Archeomed_Settings {
 					echo '<p class="description" style="color:#b32d2e">' . Notice_Archeomed_File::verdict( false ) . ' '
 						. esc_html__( 'Ce style n’est plus dans la feuille installée : le bloc sort en Normal. Choisissez-en un autre.', 'notice-archeomed' ) . '</p>';
 				} elseif ( $actuel !== $bloc['defaut'] ) {
-					echo '<p class="description">' . esc_html( 'D’origine : ' . ( '' === $bloc['defaut'] ? 'collé à la fin du texte' : $bloc['defaut'] ) ) . '</p>';
+					echo '<p class="description">' . esc_html( 'D’origine : ' . ( '' === $bloc['defaut'] ? $vide : $bloc['defaut'] ) ) . '</p>';
 				}
 				echo '</td></tr>';
 			}
@@ -1313,6 +1315,15 @@ class Notice_Archeomed_Settings {
 			. ' onclick="return confirm(\'Rétablir toutes les correspondances d’origine ? Les choix faits ici seront oubliés.\');">'
 			. esc_html__( 'Rétablir les correspondances d’origine', 'notice-archeomed' ) . '</button>';
 		echo '</form>';
+	}
+
+	/**
+	 * Le contrôle automatique de l'accessibilité du formulaire, et la trace
+	 * de l'audit RGAA : la classe qui les tient les affiche.
+	 */
+	private function onglet_accessibilite( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Accessibilite::onglet();
 	}
 
 	/** Le numéro en préparation et ce qu'on fait des illustrations. */

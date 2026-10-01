@@ -713,7 +713,7 @@ class Notice_Archeomed_File {
 		$lignes = array(
 			__( 'Envoi', 'notice-archeomed' )       => $this->libelle_de_l_etat( $id, false, true ),
 			__( 'Référence', 'notice-archeomed' )   => esc_html( (string) get_post_meta( $id, '_na_reference', true ) ),
-			__( 'Rubrique', 'notice-archeomed' )    => esc_html( (string) get_post_meta( $id, '_na_rubrique', true ) ),
+			__( 'Rubrique', 'notice-archeomed' )    => esc_html( Notice_Archeomed_Pactols::rubrique_actuelle( (string) get_post_meta( $id, '_na_rubrique', true ) ) ),
 			__( 'Responsable', 'notice-archeomed' ) => esc_html( (string) get_post_meta( $id, '_na_responsable', true ) ),
 			__( 'Courriel', 'notice-archeomed' )    => esc_html( (string) get_post_meta( $id, '_na_courriel', true ) ),
 			__( 'Reçue le', 'notice-archeomed' )    => esc_html( self::date_lisible( $post->post_date ) ),
@@ -869,12 +869,21 @@ class Notice_Archeomed_File {
 				'na_illustration_' . (int) $post->ID . '_' . (int) $rang
 			);
 			$titre = isset( $dites[ $rang ]['titre'] ) ? $dites[ $rang ]['titre'] : '';
+			$alt   = isset( $dites[ $rang ]['alt'] ) && is_scalar( $dites[ $rang ]['alt'] ) ? trim( (string) $dites[ $rang ]['alt'] ) : '';
+			$description = isset( $dites[ $rang ]['description'] ) && is_scalar( $dites[ $rang ]['description'] ) ? trim( (string) $dites[ $rang ]['description'] ) : '';
 			echo '<li><a href="' . esc_url( $url ) . '">'
 				. esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . '</a>'
 				. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
 				. ' <span class="description">('
 				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span>'
-				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids ) . '</li>';
+				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids )
+				// Le texte alternatif, que les notices d'avant ce champ n'ont
+				// pas : leur titre en tient lieu.
+				. '<br><span class="description">' . esc_html( '' !== $alt
+					? "Texte alternatif\u{00A0}: " . $alt
+					: "Pas de texte alternatif\u{00A0}: le titre en tient lieu." ) . '</span>'
+				. ( '' !== $description ? '<br><span class="description">' . esc_html( "Description détaillée\u{00A0}: " )
+					. nl2br( esc_html( $description ) ) . '</span>' : '' ) . '</li>';
 		}
 		echo '</ul>';
 		echo '<p class="description">' . esc_html( sprintf(
@@ -978,6 +987,8 @@ class Notice_Archeomed_File {
 	 * une action demandée à la main, qui en fait bien davantage par ailleurs.
 	 */
 	public function renvois_vers( $rubrique ) {
+		// Un ancien libellé de rubrique vaut le nouveau, des deux côtés.
+		$rubrique   = Notice_Archeomed_Pactols::rubrique_actuelle( $rubrique );
 		$remplacees = $this->references_remplacees();
 		$ids = get_posts(
 			array(
@@ -1001,11 +1012,11 @@ class Notice_Archeomed_File {
 			}
 			// Une notice ne se renvoie pas à elle-même : sa rubrique
 			// principale la porte déjà.
-			if ( isset( $d['rubrique_principale'] ) && $rubrique === $d['rubrique_principale'] ) {
+			if ( isset( $d['rubrique_principale'] ) && $rubrique === Notice_Archeomed_Pactols::rubrique_actuelle( $d['rubrique_principale'] ) ) {
 				continue;
 			}
 			foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
-				if ( isset( $d[ $champ ] ) && $rubrique === $d[ $champ ] ) {
+				if ( isset( $d[ $champ ] ) && $rubrique === Notice_Archeomed_Pactols::rubrique_actuelle( $d[ $champ ] ) ) {
 					$out[] = $d;
 					break;
 				}
@@ -1026,10 +1037,13 @@ class Notice_Archeomed_File {
 				'post_status'    => 'private',
 				'posts_per_page' => -1,
 				'fields'         => 'ids',
+				// Les notices reçues sous un ancien libellé de la rubrique en
+				// sont, sans que rien soit réécrit.
 				'meta_query'     => array(
 					array(
-						'key'   => '_na_rubrique',
-						'value' => $rubrique,
+						'key'     => '_na_rubrique',
+						'value'   => Notice_Archeomed_Pactols::libelles_de_la_rubrique( $rubrique ),
+						'compare' => 'IN',
 					),
 				),
 				'meta_key'       => '_na_classement',
@@ -1186,7 +1200,7 @@ class Notice_Archeomed_File {
 			if ( isset( $remplacees[ (string) $rang['reference'] ] ) ) {
 				continue;
 			}
-			$cle = (string) $rang['rubrique'];
+			$cle = Notice_Archeomed_Pactols::rubrique_actuelle( (string) $rang['rubrique'] );
 			$comptes[ $cle ] = isset( $comptes[ $cle ] ) ? $comptes[ $cle ] + 1 : 1;
 		}
 		return $comptes;
@@ -1253,7 +1267,7 @@ class Notice_Archeomed_File {
 
 		$par_rubrique = array();
 		foreach ( $ids as $id ) {
-			$rubrique = (string) get_post_meta( $id, '_na_rubrique', true );
+			$rubrique = Notice_Archeomed_Pactols::rubrique_actuelle( (string) get_post_meta( $id, '_na_rubrique', true ) );
 			$rubrique = '' !== $rubrique ? $rubrique : __( 'Sans rubrique', 'notice-archeomed' );
 			$par_rubrique[ $rubrique ][] = $id;
 		}
@@ -1460,7 +1474,11 @@ class Notice_Archeomed_File {
 				'private'
 			)
 		);
-		return is_array( $valeurs ) ? $valeurs : array();
+		// Un ancien libellé se range sous le nouveau : une seule ligne, un
+		// seul fascicule.
+		return is_array( $valeurs )
+			? array_values( array_unique( array_map( array( 'Notice_Archeomed_Pactols', 'rubrique_actuelle' ), $valeurs ) ) )
+			: array();
 	}
 
 	/** La vue par état demandée dans l'adresse, si elle est connue. */
@@ -1509,7 +1527,8 @@ class Notice_Archeomed_File {
 		$choisie = isset( $_GET['na_rubrique'] )
 			? sanitize_text_field( wp_unslash( $_GET['na_rubrique'] ) ) : '';
 		if ( '' !== $choisie ) {
-			$clauses[] = array( 'key' => '_na_rubrique', 'value' => $choisie );
+			$clauses[] = array( 'key' => '_na_rubrique', 'compare' => 'IN',
+				'value' => Notice_Archeomed_Pactols::libelles_de_la_rubrique( $choisie ) );
 		}
 		$vue = self::etat_demande();
 		if ( '' !== $vue ) {
@@ -1604,8 +1623,8 @@ class Notice_Archeomed_File {
 
 	public function colonne( $colonne, $id ) {
 		if ( 'na_rubrique' === $colonne ) {
-			echo esc_html( $this->rattraper( $id, '_na_rubrique',
-				array( 'rubrique_principale' ) ) );
+			echo esc_html( Notice_Archeomed_Pactols::rubrique_actuelle( $this->rattraper( $id, '_na_rubrique',
+				array( 'rubrique_principale' ) ) ) );
 			$famille = (string) get_post_meta( $id, '_na_famille', true );
 			if ( '' === $famille ) {
 				// Les notices déposées avant le classement se rattrapent ici.

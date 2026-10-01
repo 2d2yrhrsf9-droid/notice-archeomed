@@ -28,6 +28,41 @@ class Notice_Archeomed_Controles {
 	const FERMANTS = "»\"'’”)] \u{00A0}\u{202F}\u{2009}\u{2007}\u{2008}\u{200A}\u{2002}\u{2003}\u{2005}";
 
 	/**
+	 * La longueur au-delà de laquelle un texte alternatif reçoit un avis :
+	 * cent cinquante caractères, règle de la rédaction. Le RGAA 4.1, plus
+	 * strict, « recommande fortement » quatre-vingts caractères au glossaire
+	 * (« Alternative courte et concise », test 1.3.9) : une plage braille ou
+	 * une loupe se manipulent à chaque ligne de trop.
+	 */
+	const ALT_CONSEILLE = 150;
+
+	/**
+	 * La longueur au-delà de laquelle il se coupe — trois cents caractères,
+	 * règle de la rédaction —, la coupe se nommant dans les avis comme pour
+	 * les autres champs. Le formulaire ne laisse pas taper au-delà.
+	 */
+	const ALT_MAX = 300;
+
+	/**
+	 * La longueur au-delà de laquelle la description détaillée d'une figure
+	 * se coupe, la coupe se nommant dans les avis. Règle de la rédaction.
+	 */
+	const DESCRIPTION_MAX = 2000;
+
+	/**
+	 * Les débuts qu'un texte alternatif n'a pas à prendre : le lecteur
+	 * d'écran annonce déjà une image.
+	 */
+	const ALT_DEBUTS = '/(*UCP)^(?:image|photo|photographie|illustration)\s+(?:de|du|des|d[’\'])/iu';
+
+	/**
+	 * Une information portée par la seule couleur : « en rouge », « zones
+	 * vertes ». [HYPOTHÈSE] La liste des couleurs et des mots qu'elles
+	 * qualifient est une heuristique : elle avertit, elle ne refuse rien.
+	 */
+	const COULEUR_SEULE = '/(*UCP)\b(?:en\s+(?:rouge|bleu|vert|jaune|orange|violet|rose|gris|noir|blanc)\b|(?:zones?|traits?|points?|tracés?|surfaces?|aplats?|hachures?|parties?|cercles?|flèches?|lignes?|contours?|plages?|secteurs?)\s+(?:rouges?|bleue?s?|verte?s?|jaunes?|oranges?|violette?s?|roses?|grise?s?|noire?s?|blanche?s?)\b)/iu';
+
+	/**
 	 * Les pixels qu'il faut pour la norme des photographies, petit côté puis
 	 * grand côté. La norme se règle avec les autres, dans les normes
 	 * éditoriales : l'aide du formulaire et ce contrôle la lisent au même
@@ -255,6 +290,27 @@ class Notice_Archeomed_Controles {
 			if ( '' === $credits && '' !== $titre . $legende && Notice_Archeomed_Normes::avis_actif( 'credits' ) ) {
 				$avis[] = sprintf( '%s : pas de crédits (auteur, détenteur des droits).', Notice_Archeomed_Normes::numero_de_figure( $rang ) );
 			}
+			// Un texte alternatif trop long se lit mal à la plage braille : on
+			// le dit, sans rien refuser. Sans réglage : c'est une exigence
+			// d'accessibilité de la revue, non une préférence de style.
+			$alt = isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '';
+			$fig = Notice_Archeomed_Normes::numero_de_figure( $rang );
+			$longueur = function_exists( 'mb_strlen' ) ? mb_strlen( $alt, 'UTF-8' ) : strlen( $alt );
+			if ( $longueur > self::ALT_CONSEILLE ) {
+				$avis[] = sprintf( "%1\$s\u{00A0}: le texte alternatif fait %2\$d caractères, pour %3\$d au plus conseillés\u{00A0}; le détail a sa place dans la légende.",
+					$fig, $longueur, self::ALT_CONSEILLE );
+			}
+			if ( '' !== $alt && '' !== $titre && self::plier( $alt ) === self::plier( self::titre_sans_numero( $titre, $rang ) ) ) {
+				$avis[] = sprintf( "%s\u{00A0}: le texte alternatif recopie le titre, au lieu de dire ce que montre l’image.", $fig );
+			}
+			if ( '' !== $alt && preg_match( self::ALT_DEBUTS, $alt ) ) {
+				$avis[] = sprintf( "%1\$s\u{00A0}: le texte alternatif commence par «\u{00A0}%2\$s\u{00A0}», que le lecteur d’écran annonce déjà.",
+					$fig, implode( ' ', array_slice( preg_split( '/\s+/u', $alt ), 0, 2 ) ) );
+			}
+			if ( preg_match( self::COULEUR_SEULE, $alt . "\n" . $legende, $couleur ) ) {
+				$avis[] = sprintf( "%1\$s\u{00A0}: «\u{00A0}%2\$s\u{00A0}» — l’information ne doit pas reposer sur la seule couleur.",
+					$fig, $couleur[0] );
+			}
 		}
 		return $avis;
 	}
@@ -323,7 +379,36 @@ class Notice_Archeomed_Controles {
 		return $titre;
 	}
 
+	/**
+	 * Le texte alternatif d'une figure : celui que l'auteur a écrit, ou, pour
+	 * une notice d'avant le champ, son titre sans le numéro. Vide si la
+	 * figure n'a ni l'un ni l'autre.
+	 */
+	public static function texte_alternatif( $item ) {
+		if ( ! is_array( $item ) ) {
+			return '';
+		}
+		$alt = isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '';
+		if ( '' !== $alt ) {
+			return $alt;
+		}
+		$titre = isset( $item['titre'] ) && is_scalar( $item['titre'] ) ? (string) $item['titre'] : '';
+		return self::une_ligne( self::titre_sans_numero( $titre, isset( $item['rang'] ) ? (int) $item['rang'] : 0 ) );
+	}
+
+	/** Un texte sur une ligne : retours et blancs multiples ramenés à une espace. */
+	public static function une_ligne( $texte ) {
+		$propre = preg_replace( '/[\s\x{00A0}]+/u', ' ', (string) $texte );
+		return trim( null === $propre ? (string) $texte : $propre );
+	}
+
 	// ── Outils ───────────────────────────────────────────────────────────
+
+	/** Un texte comparé sans casse, accents ni ponctuation. */
+	private static function plier( $texte ) {
+		$texte = function_exists( 'remove_accents' ) ? remove_accents( (string) $texte ) : (string) $texte;
+		return trim( strtolower( (string) preg_replace( '/[^a-zA-Z0-9]+/', ' ', $texte ) ) );
+	}
 
 	private static function finit_bien( $texte ) {
 		$texte = preg_replace( '/[' . preg_quote( self::FERMANTS, '/' ) . ']+$/u', '', trim( $texte ) );
