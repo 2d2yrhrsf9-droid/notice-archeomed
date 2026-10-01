@@ -4645,7 +4645,7 @@ class Notice_Archeomed_Pactols {
 					} else {
 						if ((vus.alt || vus.titre) && titre && reprendA11y(alt, titre)) { phrases.push(phraseA11y('titre')); }
 						if ((vus.alt || vus.legende) && legende && reprendA11y(alt, legende)) { phrases.push(phraseA11y('legende')); }
-						if (vus.alt && /^(image|photo|photographie|illustration)\s+(de|du|des|d’|d')/i.test(alt)) {
+						if (vus.alt && /^(image|photo|photographie|illustration)\s+((de|du|des)(?=\s|$)|d’|d')/i.test(alt)) {
 							phrases.push(phraseA11y('debut', { debut: alt.split(/\s+/).slice(0, 2).join(' ') }));
 						}
 					}
@@ -5023,7 +5023,7 @@ class Notice_Archeomed_Pactols {
 					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), selected.length) : [],
 					avisActif('ordinaux') ? ordinauxFautifs(paras) : [],
 					avisActif('annees_espacees') ? datesEspacees(paras) : [],
-					avisActif('sigles') ? siglesNonDeveloppes(paras) : []
+					avisActif('sigles') ? siglesNonDeveloppes(paras).concat(siglesMalEcrits(paras)) : []
 				), [quill.root]);
 			}
 			// Les sigles de la liste des normes employés sans être développés à
@@ -5031,14 +5031,13 @@ class Notice_Archeomed_Pactols {
 			// (Notice_Archeomed_Controles::sigles_non_developpes) : même liste,
 			// même phrase, mêmes règles.
 			function siglesNonDeveloppes(paras) {
-				var texte = paras.join('\n'), avis = [], L = A11Y.lettres;
+				var texte = paras.join('\n').replace(/(?:https?:\/\/|www\.)\S+/gi, function (u) { return new Array(u.length + 1).join(' '); }),
+					avis = [], L = A11Y.lettres;
 				var sansArticles = function (t) {
 					return plierA11y(t).split(' ').filter(function (w) { return w && A11Y.motsVides.indexOf(w) === -1; }).join(' ');
 				};
 				A11Y.sigles.forEach(function (s) {
-					var sensible = points(s.sigle).length < 4;
-					var echappe = s.sigle.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
-					var m = new RegExp('(^|[^' + L + '])(' + echappe + ')(?=$|[^' + L + '])', sensible ? '' : 'i').exec(texte);
+					var m = new RegExp('(^|[^' + L + '])(' + formesDuSigle(s.sigle) + ')(?=$|[^' + L + '])').exec(texte);
 					if (!m) { return; }
 					var position = m.index + m[1].length;
 					var debut = texte.slice(0, position).split(/[.!?…]\s+|\n/).pop();
@@ -5048,6 +5047,28 @@ class Notice_Archeomed_Pactols {
 					var phrase = ' ' + sansArticles(debut + ' ' + fin) + ' ';
 					var trouve = s.formes.some(function (f) { f = sansArticles(f); return f !== '' && phrase.indexOf(' ' + f + ' ') !== -1; });
 					if (!trouve) { avis.push(phraseA11y('sigle', { sigle: s.sigle, developpement: s.developpement })); }
+				});
+				return avis;
+			}
+			// Comme au serveur (formes_du_sigle) : la forme de la liste, et ses
+			// capitales si le sigle se prononce.
+			function echappeSigle(t) { return t.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'); }
+			function formesDuSigle(sigle) {
+				var capitales = sigle.toUpperCase();
+				return capitales === sigle ? echappeSigle(sigle) : echappeSigle(sigle) + '|' + echappeSigle(capitales);
+			}
+			// Les sigles écrits dans une autre casse que celle de la liste,
+			// comme au serveur (Notice_Archeomed_Controles::sigles_mal_ecrits).
+			function siglesMalEcrits(paras) {
+				var texte = paras.join('\n').replace(/(?:https?:\/\/|www\.)\S+/gi, ' '), avis = [], L = A11Y.lettres;
+				A11Y.sigles.forEach(function (s) {
+					var sigle = s.sigle, capitales = sigle.toUpperCase(), fautif;
+					if (capitales !== sigle) { fautif = capitales; }
+					else if (points(sigle).length >= 4) { fautif = sigle.charAt(0) + sigle.slice(1).toLowerCase(); }
+					else { return; }
+					if (new RegExp('(^|[^' + L + '])' + echappeSigle(fautif) + '(?=$|[^' + L + '])').test(texte)) {
+						avis.push(phraseA11y('sigle_casse', { ecrit: fautif, sigle: sigle }));
+					}
 				});
 				return avis;
 			}
@@ -7467,18 +7488,18 @@ class Notice_Archeomed_Pactols {
 	 * de son bloc, juste avant le repère de fermeture.
 	 *
 	 * Le texte alternatif est toujours dans le texte de remplacement de
-	 * l'image : c'est là que la documentation Métopes (« Styler les
-	 * figures ») le place. Il n'a son paragraphe que si la rédaction donne un
-	 * style au bloc « figure_alttext » : le gabarit porte « TEI_figure_alttext »
-	 * et « TEI_figure-alttext », que la table des styles ne documente pas.
-	 * [HYPOTHÈSE] Ce que la conversion Métopes fait d'un tel paragraphe n'est
-	 * pas documenté.
+	 * l'image : c'est là que Métopes le lit et le convertit en « figDesc ».
+	 * Il n'a son paragraphe que si la rédaction donne un style au bloc
+	 * « figure_alttext » ; un document stylé pour Métopes perd à la
+	 * conversion le paragraphe « TEI_figure_alttext », et Métopes n'affiche
+	 * le sien, sous l'image, qu'à la relecture.
 	 *
-	 * La description détaillée prend le même style ; sans style réglé, elle
-	 * part « à supprimer » pour que la rédaction la lise quand même. L'un et
-	 * l'autre sont du texte simple, en romain : ni siècles en petites
-	 * capitales ni exposant, que le lecteur d'écran lirait de travers ; les
-	 * insécables seules s'appliquent.
+	 * La description détaillée part donc toujours « à supprimer », quel que
+	 * soit ce style : la rédaction la lit et décide de sa place (la légende),
+	 * plutôt que de la voir disparaître à la conversion. L'un et l'autre sont
+	 * du texte simple, en romain : ni siècles en petites capitales ni
+	 * exposant, que le lecteur d'écran lirait de travers ; les insécables
+	 * seules s'appliquent.
 	 */
 	private function poser_les_textes_d_accessibilite( $doc, $item, $alt ) {
 		$style = Notice_Archeomed_Styles::de( 'figure_alttext' );
@@ -7489,13 +7510,12 @@ class Notice_Archeomed_Pactols {
 		if ( '' === $description ) {
 			return;
 		}
-		$style_description = Notice_Archeomed_Styles::AUCUN !== $style ? $style : Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER;
 		foreach ( self::paragraphes_simples( $description ) as $i => $paragraphe ) {
 			$runs = array( array( 'text' => $paragraphe, 'sans_siecles' => true ) );
-			if ( 0 === $i && Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER === $style_description ) {
+			if ( 0 === $i ) {
 				array_unshift( $runs, array( 'text' => 'Description détaillée : ', 'b' => true ) );
 			}
-			$doc->add_paragraph( $style_description, $runs );
+			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $runs );
 		}
 	}
 
@@ -8444,11 +8464,10 @@ class Notice_Archeomed_Pactols {
 		$id = $this->file()->deposer( $d, $notice,
 			array_merge( $illustrations, array_values( $autorisations ) ), '', $reference );
 		if ( $id ) {
-			// Le temps de la préparation, la file laisse la notice : une
-			// relance qui la croiserait referait les versions allégées en
-			// même temps que cette requête. Si la requête meurt, la marque
-			// vieillit et la file reprend la notice d'elle-même.
-			update_post_meta( $id, '_na_preparation', time() );
+			// Le temps de la préparation, la file laisse la notice : la
+			// marque est posée par l'inscription même. Si la requête meurt,
+			// elle vieillit et la file reprend la notice d'elle-même.
+			//
 			// Les illustrations gagnent leur place définitive dès
 			// maintenant, et la file retient ces chemins-là : c'est eux
 			// que le courriel joindra, et eux que le dossier Métopes
@@ -8499,7 +8518,14 @@ class Notice_Archeomed_Pactols {
 			// où la relance la reprend : elle est reçue, et l'auteur n'a rien
 			// à refaire.
 			update_post_meta( $id, '_na_apercus_tente', time() );
-			$this->expedier_de_la_file( $id );
+			// Une erreur pendant l'expédition ne doit pas s'afficher à
+			// l'auteur, qui redéposerait une notice déjà reçue : elle est
+			// consignée, et la relance reprend la notice.
+			try {
+				$this->expedier_de_la_file( $id );
+			} catch ( Throwable $e ) {
+				error_log( 'Notice Archeomed: expédition immédiate interrompue (' . $e->getMessage() . '), la relance reprendra la notice ' . $id . '.' );
+			}
 			$this->redirect_result( true, '', '', $reference );
 		}
 		// L'inscription a échoué — base de données indisponible. Plutôt que

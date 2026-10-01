@@ -1387,6 +1387,9 @@ na_verifier( 1 === count( preg_grep( '/Fig\. 2.*reprend le titre/u', $avis_alt )
 	&& 1 === count( preg_grep( '/Fig\. 3.*commence par «\x{00A0}Photo de/u', $avis_alt ) )
 	&& 1 === count( preg_grep( '/Fig\. 3.*«\x{00A0}en rouge\x{00A0}».*seule couleur/u', $avis_alt ) ),
 	'un avis quand le texte alternatif reprend le titre, commence par « Photo de », ou que la couleur porte seule l\'information', $avis_alt );
+na_verifier( 0 === preg_match( $C::ALT_DEBUTS, 'Image depuis le nord du bâtiment 1' ) && 0 === preg_match( $C::ALT_DEBUTS, 'Photo désaturée du mur' )
+	&& 1 === preg_match( $C::ALT_DEBUTS, 'Image de la tour' ) && 1 === preg_match( $C::ALT_DEBUTS, 'Photo d’ensemble' ) && 1 === preg_match( $C::ALT_DEBUTS, 'Photo des fosses' ),
+	'« Image de » se reconnaît mot à mot : « Image depuis » n\'est pas visé' );
 $_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "Plan\n des   murs\t" . str_repeat( 'x', 400 ) ) );
 $_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
 $coupee = na_appel( $plugin, 'collect_illustrations' );
@@ -1441,10 +1444,10 @@ $ST::oublier();
 $suite_alt2 = $bloc_de_figure( $xml_alt2 );
 na_verifier( 1 === substr_count( $xml_alt2, '<w:pStyle w:val="TEIfigurealttext"/></w:pPr><w:r><w:t xml:space="preserve">Plan des murs' )
 	&& array( 'TEIfigurecaption Le plan.', 'TEIfigurecredits DAO A.', 'TEIfigurealttext Plan des murs & du fossé',
-		'TEIfigurealttext Deux murs parallèles, orientés nord-sud.', 'TEIfigurealttext Le fossé longe le mur ouest.' )
+		'naasupprimer Description détaillée : Deux murs parall', 'naasupprimer Le fossé longe le mur ouest.' )
 		=== array_slice( $suite_alt2, -6, 5 )
-	&& 0 === strpos( (string) end( $suite_alt2 ), 'TEIfigureend' ) && 3 === substr_count( $xml_alt2, 'TEIfigurealttext' ),
-	'réglé, le texte alternatif puis la description ont leur paragraphe stylé à la fin du bloc, juste avant sa fermeture ; une figure ancienne n\'en a pas',
+	&& 0 === strpos( (string) end( $suite_alt2 ), 'TEIfigureend' ) && 1 === substr_count( $xml_alt2, 'TEIfigurealttext' ),
+	'réglé, le texte alternatif a son paragraphe stylé à la fin du bloc ; la description reste « à supprimer », que la conversion ne perdrait pas ; une figure ancienne n\'en a pas',
 	$suite_alt2 );
 $relu_alt = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_alt ) ) );
 $courriel_alt = na_appel( $plugin, 'illustrations_block', array( $saisie_alt ) );
@@ -1563,6 +1566,17 @@ na_verifier( false !== strpos( $rendu_a11y_form, 'var A11Y = {' ) && false !== s
 	&& false !== strpos( $rendu_a11y_form, 'Appelez chaque figure dans le texte' ) && false === strpos( $rendu_a11y_form, '?.' ),
 	'le formulaire porte les règles du serveur, les exemples du texte alternatif et les aides des sigles et des appels de figure' );
 
+WP_CLI::log( 'Les siècles sur la fiche' );
+$fiche_siecle = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Siècles' ) );
+update_post_meta( $fiche_siecle, '_na_notice', '<p>Église du <span style="font-variant: small-caps; font-variant-caps: all-small-caps">XII</span><sup>e</sup>&nbsp;s.</p>' );
+ob_start();
+$GLOBALS['notice_archeomed_file']->afficher_la_notice( get_post( $fiche_siecle ) );
+$rendu_fiche_siecle = ob_get_clean();
+na_verifier( false !== strpos( $rendu_fiche_siecle, 'all-small-caps' ) && false !== strpos( $rendu_fiche_siecle, '>XII<' )
+	&& ! in_array( 'font-variant-caps', (array) apply_filters( 'safe_style_css', array() ), true ),
+	'la fiche garde la réduction des siècles écrits en capitales, sans ouvrir le filtre au-delà de cet affichage', $rendu_fiche_siecle );
+wp_delete_post( $fiche_siecle, true );
+
 WP_CLI::log( 'Les sigles à développer' );
 $liste_sigles = $C::sigles_de_la_norme( "SRA = service régional de l’archéologie\n  \n# une note = ignorée\nsans signe égal\nX = un seul caractère\nPCR =\n"
 	. "Lidar = détection et télémétrie par la lumière (light detection and ranging)\nUS = unité stratigraphique   # la plus courante\nSRA = doublon\nInrap = Institut national de recherches archéologiques préventives" );
@@ -1585,6 +1599,18 @@ na_verifier( array() === $sigles_de( '<p>Le service régional de l’archéologi
 $avis_sigles = $sigles_de( '<p>L’INRAP a fouillé l’US 1023. Unité stratigraphique est un terme du métier.</p>' );
 na_verifier( 2 === count( $avis_sigles ) && false !== strpos( $avis_sigles[0], "«\u{00A0}US\u{00A0}»" ) && false !== strpos( $avis_sigles[1], "«\u{00A0}Inrap\u{00A0}»" ),
 	'« INRAP » est reconnu en toute casse ; le développement d\'une autre phrase ne compte pas', $avis_sigles );
+$liste_casse = $C::sigles_de_la_norme( "CNRS = Centre national de la recherche scientifique\nInrap = Institut national de recherches archéologiques préventives\nUS = unité stratigraphique" );
+$avis_casse  = $C::sigles_non_developpes( $C::paragraphes( '<p>Le rapport est en ligne sur https://www.inrap.fr/falaise. Un relevé lidar couvre le site.</p>' ), $liste_casse );
+$avis_cnrs   = $C::sigles_non_developpes( $C::paragraphes( '<p>Le Cnrs a financé l’étude, le cnrs aussi.</p>' ), $liste_casse );
+na_verifier( array() === $avis_casse && array() === $avis_cnrs,
+	'un sigle épelé se reconnaît à sa seule casse ; un sigle dans une adresse web n\'est pas une mention', array( $avis_casse, $avis_cnrs ) );
+$mal_ecrits = $C::sigles_mal_ecrits( $C::paragraphes( '<p>L’INRAP et le Cnrs ont fouillé. Us et coutumes. Voir https://INRAP.fr.</p>' ), $liste_casse );
+$bien_ecrits = $C::sigles_mal_ecrits( $C::paragraphes( '<p>L’Inrap et le CNRS ont fouillé l’US 12.</p>' ), $liste_casse );
+na_verifier( array(
+		"«\u{00A0}Cnrs\u{00A0}» s’écrit «\u{00A0}CNRS\u{00A0}»\u{00A0}: un sigle qu’on épelle prend toutes ses capitales, un sigle qu’on prononce comme un mot n’en prend qu’une, à l’initiale.",
+		"«\u{00A0}INRAP\u{00A0}» s’écrit «\u{00A0}Inrap\u{00A0}»\u{00A0}: un sigle qu’on épelle prend toutes ses capitales, un sigle qu’on prononce comme un mot n’en prend qu’une, à l’initiale.",
+	) === $mal_ecrits && array() === $bien_ecrits,
+	'la règle de la revue : « CNRS » qu’on épelle, « Inrap » qu’on prononce ; « Us » en tête de phrase n’est pas visé', array( $mal_ecrits, $bien_ecrits ) );
 $reglages_sigles = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
 $texte_sigles = array( 'texte_notice' => '<p>Le SRA a prescrit la fouille.</p>', 'illustrations' => array() );
 $avec_sigles = preg_grep( '/Le sigle/u', $C::avis( $texte_sigles ) );

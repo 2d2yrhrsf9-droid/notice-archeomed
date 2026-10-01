@@ -30,14 +30,17 @@ class Notice_Archeomed_Normes {
 
 	/**
 	 * Les sigles courants de l'archéologie française, à la forme juste, que
-	 * la rédaction complète ou corrige dans les normes. Ceux qui suivent la
-	 * note [HYPOTHÈSE] sont à confirmer.
+	 * la rédaction complète ou corrige dans les normes. La règle de la
+	 * revue : en capitales le sigle qu'on épelle (« CNRS »), en bas de casse
+	 * avec une capitale initiale celui qu'on prononce (« Inrap »). Ceux qui
+	 * suivent la note sont à confirmer.
 	 */
 	const SIGLES = "SRA = service régional de l’archéologie\n"
-		. "DRAC = direction régionale des affaires culturelles\n"
+		. "Drac = direction régionale des affaires culturelles\n"
 		. "Inrap = Institut national de recherches archéologiques préventives\n"
 		. "PCR = projet collectif de recherche\n"
 		. "CNRS = Centre national de la recherche scientifique\n"
+		. "Craham = Centre de recherches archéologiques et historiques anciennes et médiévales\n"
 		. "UMR = unité mixte de recherche\n"
 		. "SIG = système d’information géographique\n"
 		. "DAO = dessin assisté par ordinateur\n"
@@ -46,7 +49,7 @@ class Notice_Archeomed_Normes {
 		. "US = unité stratigraphique\n"
 		. "SDA = sous-direction de l’archéologie\n"
 		. "CTRA = commission territoriale de la recherche archéologique\n"
-		. "DRASSM = département des recherches archéologiques subaquatiques et sous-marines\n"
+		. "Drassm = département des recherches archéologiques subaquatiques et sous-marines\n"
 		. "RFO = rapport final d’opération\n"
 		. "DFS = document final de synthèse\n"
 		. "CAG = Carte archéologique de la Gaule\n"
@@ -54,7 +57,7 @@ class Notice_Archeomed_Normes {
 		. "NMI = nombre minimum d’individus\n"
 		. "TCA = terre cuite architecturale\n"
 		. "ZPPA = zone de présomption de prescription archéologique\n"
-		. "# [HYPOTHÈSE] À confirmer par la rédaction :\n"
+		. "# À confirmer par la rédaction :\n"
 		. "SAD = service archéologique départemental\n"
 		. "NR = nombre de restes\n"
 		. "AMS = spectrométrie de masse par accélérateur\n"
@@ -196,7 +199,7 @@ class Notice_Archeomed_Normes {
 					),
 					'sigles' => array(
 						'libelle' => 'Sigles à développer à leur première mention',
-						'aide'    => 'Un sigle par ligne : SIGLE = développement. Une ligne qui commence par # est une note ; une ligne mal formée est ignorée. Un sigle de moins de quatre lettres se reconnaît à sa casse exacte (« US », non « us ») ; les autres, quelle que soit la casse. Le développement se compare sans casse, sans accents ni articles.',
+						'aide'    => 'Un sigle par ligne : SIGLE = développement. Une ligne qui commence par # est une note ; une ligne mal formée est ignorée. Écrivez chaque sigle à la forme de la revue : en capitales s’il s’épelle (CNRS), en bas de casse avec une capitale initiale s’il se prononce (Inrap). Un sigle en capitales se reconnaît à sa casse exacte (« US », non « us ») ; un sigle prononcé, sous sa forme ou en capitales (« Inrap », « INRAP »), et l’avis signale alors la casse fautive. Le développement se compare sans casse, sans accents ni articles.',
 						'lignes'  => 16,
 						'defaut'  => self::SIGLES,
 					),
@@ -218,7 +221,7 @@ class Notice_Archeomed_Normes {
 							'annees_espacees'  => 'une année tapée avec une espace, « 1 250 »',
 							'personnes'        => 'un nom en capitales, deux personnes dans un champ, une adresse dans l’institution',
 							'accessibilite'    => 'l’accessibilité des figures : un texte alternatif trop long, qui reprend le titre ou la légende, qui n’est qu’un nom de fichier ou « Photo », une couleur qui porte seule l’information, une description détaillée recommandée',
-							'sigles'           => 'un sigle de la liste ci-dessus qui n’est pas développé à sa première mention',
+							'sigles'           => 'un sigle de la liste ci-dessus qui n’est pas développé à sa première mention, ou qui n’est pas écrit à sa forme',
 						),
 						// Les cases venues après la première version : une
 						// rédaction qui avait enregistré ses avis avant elles ne

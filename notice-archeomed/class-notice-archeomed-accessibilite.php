@@ -39,6 +39,13 @@ class Notice_Archeomed_Accessibilite {
 	/** Le moteur, à une version fixée : le score ne bouge pas d'un jour à l'autre. */
 	const AXE = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js';
 
+	/**
+	 * L'empreinte du moteur : il s'exécute dans une page de même origine que
+	 * l'administration, chez un administrateur connecté ; un fichier altéré
+	 * sur le réseau de diffusion est refusé par le navigateur.
+	 */
+	const AXE_EMPREINTE = 'sha512-L2dmfC6LEkRQ7X+1d1KEBA3Qe/E8OvB4kSSr+luMNilFtuBsvglrQcdM9jd6uiFbeI+Pqax+M6s/vak/okidBw==';
+
 	/** Les règles jouées : WCAG 2.0 et 2.1, niveaux A et AA. */
 	const NORMES = array( 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' );
 
@@ -559,11 +566,12 @@ class Notice_Archeomed_Accessibilite {
 		wp_register_script( 'na-accessibilite', false, array(), '1', true );
 		wp_enqueue_script( 'na-accessibilite' );
 		wp_add_inline_script( 'na-accessibilite', 'window.naAccessibilite = ' . wp_json_encode( array(
-			'ajax'    => admin_url( 'admin-ajax.php' ),
-			'action'  => self::ACTION,
-			'nonce'   => wp_create_nonce( self::ACTION ),
-			'axe'     => self::AXE,
-			'normes'  => self::NORMES,
+			'ajax'      => admin_url( 'admin-ajax.php' ),
+			'action'    => self::ACTION,
+			'nonce'     => wp_create_nonce( self::ACTION ),
+			'axe'       => self::AXE,
+			'empreinte' => self::AXE_EMPREINTE,
+			'normes'    => self::NORMES,
 		) ) . ';' . self::script() );
 		wp_register_style( 'na-accessibilite', false, array(), '1' );
 		wp_enqueue_style( 'na-accessibilite' );
@@ -793,6 +801,8 @@ class Notice_Archeomed_Accessibilite {
 		return new Promise(function (ok, ko) {
 			if (page.contentWindow.axe) { ok(); return; }
 			var s = doc.createElement('script');
+			s.integrity = R.empreinte;
+			s.crossOrigin = 'anonymous';
 			s.src = R.axe;
 			s.onload = function () { ok(); };
 			s.onerror = function () { ko(new Error('Le moteur axe-core ne s’est pas chargé (réseau ?).')); };

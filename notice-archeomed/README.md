@@ -424,15 +424,16 @@ blocs d'index Pactols nomment le style réglé dans leur `rend`.
 « Rétablir les correspondances d'origine » remet tout d'un geste.
 
 Le **texte alternatif** d'une figure part toujours dans le texte de
-remplacement de l'image (`descr` de `wp:docPr`), comme la documentation
-Métopes le prescrit (« Styler les figures »). Son paragraphe est facultatif et
-ne paraît pas d'origine (« — aucun paragraphe — ») : le gabarit porte
-`TEI_figure_alttext` et `TEI_figure-alttext`, que la table des styles ne
-documente pas, et ce que la conversion en fait n'est pas connu [HYPOTHÈSE].
-Si la rédaction lui choisit un style, il se pose **à la fin du bloc de
+remplacement de l'image (`descr` de `wp:docPr`) : c'est là que Métopes le lit
+et le convertit en `figDesc`. Son paragraphe est facultatif et ne paraît pas
+d'origine (« — aucun paragraphe — »), et il vaut mieux l'y laisser : un
+document stylé pour Métopes perd à la conversion le paragraphe
+`TEI_figure_alttext`, et `TEI_figure-alttext` n'est pas reconnu. Si la
+rédaction lui choisit tout de même un style, il se pose **à la fin du bloc de
 figure**, après le titre, la légende et les crédits, juste avant
-`TEI_figure_end` ; la description détaillée le suit, dans le même style. Sans
-style réglé, la description part « à supprimer », pour que la rédaction la lise.
+`TEI_figure_end`. La description détaillée part toujours « à supprimer » :
+la rédaction la lit et décide de sa place, la légende étant la seule qui
+passe aujourd'hui à la publication.
 
 | Bloc de la notice | Style Métopes |
 |---|---|
@@ -947,7 +948,7 @@ l'on peut alors repasser en envoi immédiat depuis la page de réglages.
 
 ### Ce qui n'est plus compté par adresse IP
 
-Une adresse IP ne désigne pas une personne : l'Inrap, une DRAC, une
+Une adresse IP ne désigne pas une personne : l'Inrap, une Drac, une
 université sortent tous par la même. Compter serré revenait à bloquer un
 institut entier dès le sixième dépôt, un jour de campagne. La barrière contre
 les robots est Turnstile ; les compteurs ne sont qu'un garde-fou contre le
@@ -1043,16 +1044,23 @@ première mention.
 L'accessibilité** : une ligne par sigle, « SRA = service régional de
 l'archéologie ». Une ligne qui commence par « # » est une note ; une ligne
 mal formée est ignorée. La liste livrée porte les sigles courants de
-l'archéologie française ; ceux qui suivent la note [HYPOTHÈSE] sont à
+l'archéologie française, à la forme de la revue : en capitales le sigle
+qu'on épelle (« CNRS »), en bas de casse avec une capitale initiale celui
+qu'on prononce (« Inrap », « Craham »). Ceux qui suivent la note sont à
 confirmer. Un sigle est **développé** quand la phrase de sa première mention
 porte aussi son développement — avant ou après lui, à la casse, aux accents
 et aux articles près —, ou qu'il y est entre parenthèses (« service
 archéologique de Normandie (SRA) »). Sinon : « Le sigle « SRA » n'est pas
 développé à sa première mention : écrivez par exemple « service régional de
-l'archéologie (SRA) ». » Les mentions suivantes ne comptent pas. Un sigle de
-moins de quatre lettres se reconnaît à sa casse exacte (« US », non « us ») ;
-les autres en toute casse (« INRAP », « lidar ») — [HYPOTHÈSE]. L'aide du texte
-de la notice invite à développer chaque sigle à sa première mention.
+l'archéologie (SRA) ». » Les mentions suivantes ne comptent pas. Un sigle en
+capitales se reconnaît à sa casse exacte (« US », non « us ») ; un sigle
+prononcé, sous sa forme ou en capitales (« Inrap », « INRAP » ; non
+« lidar », devenu nom commun). Les adresses web ne comptent pas. Un second
+avis signale la casse fautive : « INRAP » pour « Inrap », « Cnrs » pour
+« CNRS » (à partir de quatre lettres : « Us » ouvre une phrase). La rivière
+« Drac » ne se distingue pas de la Drac : l'avis, qui ne bloque rien, peut
+s'y tromper. L'aide du texte de la notice invite à développer chaque sigle à
+sa première mention.
 
 Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ, et
 partent sous « À vérifier » dans le courriel, dans le document (style « à

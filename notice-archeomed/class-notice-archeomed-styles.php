@@ -88,8 +88,9 @@ class Notice_Archeomed_Styles {
 					'figure_image'   => array( 'libelle' => 'Image', 'type' => 'paragraphe', 'defaut' => 'Normal' ),
 					// Le texte alternatif est toujours dans l'image (texte de
 					// remplacement de Word) ; ce paragraphe, sous elle, ne
-					// paraît que si la rédaction lui choisit un style.
-					'figure_alttext' => array( 'libelle' => 'Texte alternatif de l’image, en paragraphe sous elle', 'type' => 'paragraphe', 'defaut' => self::AUCUN, 'aucun' => true ),
+					// paraît que si la rédaction lui choisit un style, et la
+					// conversion Métopes le perd.
+					'figure_alttext' => array( 'libelle' => 'Texte alternatif de l’image, en paragraphe sous elle (la conversion Métopes le perd : « aucun » conseillé)', 'type' => 'paragraphe', 'defaut' => self::AUCUN, 'aucun' => true ),
 					'figure_titre'   => array( 'libelle' => 'Titre de la figure', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_title' ),
 					'figure_numero'  => array( 'libelle' => 'Numéro « Fig. 1 » dans le titre', 'type' => 'caractere', 'defaut' => 'TEI_figure_num_inline' ),
 					'figure_legende' => array( 'libelle' => 'Légende', 'type' => 'paragraphe', 'defaut' => 'TEI_figure_caption' ),

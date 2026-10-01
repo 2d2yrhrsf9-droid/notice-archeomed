@@ -289,6 +289,11 @@ class Notice_Archeomed_File {
 		update_post_meta( $id, '_na_courriel',
 			isset( $donnees['resp_email'] ) ? $donnees['resp_email'] : '' );
 		$this->poser_le_classement( $id, $donnees );
+		// La requête qui dépose prépare encore la notice — fichiers rangés,
+		// versions allégées, Word — et ôtera cette marque. Posée avant
+		// l'état, elle ne laisse aucun instant où une relance verrait la
+		// notice en attente et la préparerait en même temps qu'elle.
+		update_post_meta( $id, '_na_preparation', time() );
 		update_post_meta( $id, '_na_etat', 'en_attente' );
 		update_post_meta( $id, '_na_essais', 0 );
 		return (int) $id;
@@ -570,9 +575,17 @@ class Notice_Archeomed_File {
 			return;
 		}
 		// Le même contenu que le courriel reçu par la rédaction : c'est ce
-		// qu'on veut relire, et il a déjà été échappé à la construction.
+		// qu'on veut relire, et il a déjà été échappé à la construction. Le
+		// filtre de WordPress ôterait « font-variant-caps », qui réduit les
+		// siècles écrits en capitales : il l'admet le temps de cet affichage.
+		$admettre = function ( $proprietes ) {
+			$proprietes[] = 'font-variant-caps';
+			return $proprietes;
+		};
+		add_filter( 'safe_style_css', $admettre );
 		echo '<div style="font-size:14px;line-height:1.6;max-width:52em">'
 			. wp_kses_post( $html ) . '</div>';
+		remove_filter( 'safe_style_css', $admettre );
 	}
 
 	/** L'adresse qui relance l'envoi d'une notice. */

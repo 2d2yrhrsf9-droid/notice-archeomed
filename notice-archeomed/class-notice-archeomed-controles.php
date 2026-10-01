@@ -84,9 +84,10 @@ class Notice_Archeomed_Controles {
 
 	/**
 	 * Les débuts qu'un texte alternatif n'a pas à prendre : le lecteur
-	 * d'écran annonce déjà une image.
+	 * d'écran annonce déjà une image. « de » est un mot entier : « Image
+	 * depuis le nord » n'est pas visé.
 	 */
-	const ALT_DEBUTS = '/(*UCP)^(?:image|photo|photographie|illustration)\s+(?:de|du|des|d[’\'])/iu';
+	const ALT_DEBUTS = '/(*UCP)^(?:image|photo|photographie|illustration)\s+(?:(?:de|du|des)(?=\s|$)|d[’\'])/iu';
 
 	/**
 	 * Une information portée par la seule couleur : « en rouge », « zones
@@ -130,7 +131,8 @@ class Notice_Archeomed_Controles {
 				return self::personnes( $d );
 			},
 			'sigles'           => function () use ( $paragraphes ) {
-				return self::sigles_non_developpes( $paragraphes, self::sigles_de_la_norme() );
+				$sigles = self::sigles_de_la_norme();
+				return array_merge( self::sigles_non_developpes( $paragraphes, $sigles ), self::sigles_mal_ecrits( $paragraphes, $sigles ) );
 			},
 		);
 		foreach ( $familles as $famille => $calcul ) {
@@ -359,6 +361,7 @@ class Notice_Archeomed_Controles {
 			'description' => "description détaillée recommandée («\u{00A0}{mot}\u{00A0}»)\u{00A0}; dites-y ce qu’un lecteur qui ne voit pas la figure doit en savoir — organisation, repères, données.",
 			// Celle-ci ne suit pas « Fig. N : » : elle porte sur le texte.
 			'sigle'       => "Le sigle «\u{00A0}{sigle}\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}{developpement} ({sigle})\u{00A0}».",
+			'sigle_casse' => "«\u{00A0}{ecrit}\u{00A0}» s’écrit «\u{00A0}{sigle}\u{00A0}»\u{00A0}: un sigle qu’on épelle prend toutes ses capitales, un sigle qu’on prononce comme un mot n’en prend qu’une, à l’initiale.",
 		);
 	}
 
@@ -449,16 +452,22 @@ class Notice_Archeomed_Controles {
 	 * régional de l'archéologie de Normandie (SRA) ». Les mentions suivantes
 	 * ne comptent pas.
 	 *
-	 * [HYPOTHÈSE] Un sigle de moins de quatre lettres se reconnaît à sa casse
-	 * exacte : « us » ou « sig » ne sont pas « US » et « SIG ». Les autres —
-	 * « Inrap », « INRAP », « lidar » — en toute casse.
+	 * La règle de la revue : un sigle qu'on épelle s'écrit en capitales
+	 * (« CNRS »), un sigle qu'on prononce comme un mot en bas de casse avec
+	 * une capitale initiale (« Inrap »). Le premier se reconnaît à sa casse
+	 * exacte — « us » n'est pas « US » ; le second sous sa forme ou tout en
+	 * capitales — « INRAP », non « lidar », devenu nom commun. Les adresses
+	 * web ne comptent pas : « inrap » dans un lien n'est pas une mention.
 	 */
 	public static function sigles_non_developpes( $paragraphes, $sigles ) {
-		$texte = implode( "\n", (array) $paragraphes );
+		// Les adresses sont masquées à longueur égale : les positions trouvées
+		// valent encore dans le texte.
+		$texte = (string) preg_replace_callback( '#(?:https?://|www\.)\S+#iu', function ( $m ) {
+			return str_repeat( ' ', strlen( $m[0] ) );
+		}, implode( "\n", (array) $paragraphes ) );
 		$avis  = array();
 		foreach ( (array) $sigles as $s ) {
-			$sensible = ( function_exists( 'mb_strlen' ) ? mb_strlen( $s['sigle'], 'UTF-8' ) : strlen( $s['sigle'] ) ) < 4;
-			if ( ! preg_match( '/(^|[^' . self::LETTRES . '])(' . preg_quote( $s['sigle'], '/' ) . ')(?=$|[^' . self::LETTRES . '])/u' . ( $sensible ? '' : 'i' ),
+			if ( ! preg_match( '/(^|[^' . self::LETTRES . '])(' . self::formes_du_sigle( $s['sigle'] ) . ')(?=$|[^' . self::LETTRES . '])/u',
 				$texte, $m, PREG_OFFSET_CAPTURE ) ) {
 				continue;
 			}
@@ -480,6 +489,41 @@ class Notice_Archeomed_Controles {
 			}
 			if ( ! $trouve ) {
 				$avis[] = self::phrase( 'sigle', array( 'sigle' => $s['sigle'], 'developpement' => $s['developpement'] ) );
+			}
+		}
+		return $avis;
+	}
+
+	/** Les formes sous lesquelles un sigle se reconnaît, en motif : la sienne, et ses capitales s'il se prononce. */
+	private static function formes_du_sigle( $sigle ) {
+		$capitales = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $sigle, 'UTF-8' ) : strtoupper( $sigle );
+		return $capitales === $sigle ? preg_quote( $sigle, '/' ) : preg_quote( $sigle, '/' ) . '|' . preg_quote( $capitales, '/' );
+	}
+
+	/**
+	 * Les sigles de la liste écrits dans une autre casse que la sienne, selon
+	 * la règle de la revue : « INRAP » pour « Inrap », qu'on prononce ;
+	 * « Cnrs » pour « CNRS », qu'on épelle. Ce second cas ne vaut qu'à
+	 * partir de quatre lettres : « Us » ouvre une phrase, « Sig » n'est pas
+	 * fautif à coup sûr. Un avis par sigle, à sa première forme fautive.
+	 */
+	public static function sigles_mal_ecrits( $paragraphes, $sigles ) {
+		$texte = (string) preg_replace( '#(?:https?://|www\.)\S+#iu', ' ', implode( "\n", (array) $paragraphes ) );
+		$avis  = array();
+		foreach ( (array) $sigles as $s ) {
+			$sigle     = $s['sigle'];
+			$capitales = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $sigle, 'UTF-8' ) : strtoupper( $sigle );
+			if ( $capitales !== $sigle ) {
+				$fautif = $capitales;
+			} elseif ( ( function_exists( 'mb_strlen' ) ? mb_strlen( $sigle, 'UTF-8' ) : strlen( $sigle ) ) >= 4 ) {
+				$fautif = function_exists( 'mb_substr' )
+					? mb_substr( $sigle, 0, 1, 'UTF-8' ) . mb_strtolower( mb_substr( $sigle, 1, null, 'UTF-8' ), 'UTF-8' )
+					: ucfirst( strtolower( $sigle ) );
+			} else {
+				continue;
+			}
+			if ( preg_match( '/(^|[^' . self::LETTRES . '])' . preg_quote( $fautif, '/' ) . '(?=$|[^' . self::LETTRES . '])/u', $texte ) ) {
+				$avis[] = self::phrase( 'sigle_casse', array( 'ecrit' => $fautif, 'sigle' => $sigle ) );
 			}
 		}
 		return $avis;
