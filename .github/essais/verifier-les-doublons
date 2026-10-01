@@ -39,5 +39,7 @@ essai passe  "$D/passe-garde-a.php" "$D/passe-garde-b.php"
 essai passe  "$D/passe-alternative-a.php" "$D/passe-alternative-b.php"
 essai passe  "$D/passe-anonyme-a.php" "$D/passe-anonyme-b.php"
 essai echoue "$D/echoue-vrai-a.php" "$D/echoue-vrai-b.php"
+essai passe  "$D/passe-casse-a.php" "$D/passe-casse-b.php"
+essai echoue "$D/echoue-membre-a.php" "$D/echoue-membre-b.php"
 
 [ "$FAUTES" -eq 0 ] || exit 1

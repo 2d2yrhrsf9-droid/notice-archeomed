@@ -837,8 +837,7 @@ class Notice_Archeomed_File {
 		// Chaque figure garde son rang, présente ou non : renuméroter après
 		// avoir écarté un fichier perdu faisait pointer « Fig. 1 » sur lui,
 		// puisque le téléchargement lit la liste telle qu'enregistrée.
-		$gardees = array_values( array_filter(
-			(array) get_post_meta( $post->ID, '_na_illustrations', true ), 'is_string' ) );
+		$gardees = Notice_Archeomed_Pactols::illustrations_rangees( $post->ID );
 		$donnees = get_post_meta( $post->ID, '_na_donnees', true );
 		// Les légendes par leur rang, et non par leur position : une figure
 		// sans légende n'en décale plus les suivantes.

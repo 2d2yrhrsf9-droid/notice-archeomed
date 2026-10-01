@@ -72,8 +72,13 @@ class Notice_Archeomed_Thesaurus {
 	 * a un, la chaîne ascendante du plus général au terme lui-même, et la date
 	 * à laquelle tout cela a été lu — sans quoi on ne saurait pas de quel
 	 * millésime du thésaurus vient un identifiant.
+	 *
+	 * « $interrompu » dit que le terme n'a pas échoué mais n'a pas eu le
+	 * temps : l'échéance est venue, ou un appel a été coupé. L'appelant le
+	 * reprend au passage suivant, sans le déduire de l'horloge.
 	 */
-	public static function resoudre( $ark, $id_concept = '', $theso = 'TH_1', $echeance = 0 ) {
+	public static function resoudre( $ark, $id_concept = '', $theso = 'TH_1', $echeance = 0, &$interrompu = false ) {
+		$interrompu = false;
 		$ark = trim( (string) $ark );
 		if ( '' === $ark && '' === $id_concept ) {
 			return null;
@@ -107,6 +112,7 @@ class Notice_Archeomed_Thesaurus {
 			// seconde route rend parfois 200 avec un corps vide, ce qui se
 			// lit comme un concept sans propriétés et n'en est pas un.
 			if ( self::reste( $echeance ) < 1 ) {
+				$interrompu = true;
 				return null;
 			}
 			$seul = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance, $coupe );
@@ -124,6 +130,7 @@ class Notice_Archeomed_Thesaurus {
 			// leurs étiquettes dans toutes les langues. C'est de quoi composer
 			// le bloc d'index entier sans autre appel.
 			if ( self::reste( $echeance ) < 1 ) {
+				$interrompu = true;
 				return null;
 			}
 			$graphe = self::appeler( 'concept/' . $theso . '/' . rawurlencode( $id ) . '/expansion?way=top', $echeance, $coupe );
@@ -133,8 +140,16 @@ class Notice_Archeomed_Thesaurus {
 				$noeud  = isset( $graphe[ $ark ] ) ? $graphe[ $ark ] : null;
 			}
 		}
+		// L'expansion coupée en route : le repli par le concept seul ne
+		// donnerait pas de chaîne, et coûterait un appel pour rien. Le terme
+		// se reprend au passage suivant.
+		if ( null === $noeud && $ecourte ) {
+			$interrompu = true;
+			return null;
+		}
 		if ( null === $noeud ) {
 			if ( self::reste( $echeance ) < 1 ) {
+				$interrompu = true;
 				return null;
 			}
 			$seul  = self::appeler( 'concept/ark:/' . self::partie_ark( $ark ), $echeance, $coupe );
@@ -169,6 +184,7 @@ class Notice_Archeomed_Thesaurus {
 			// ce terme pour toutes les notices, à cause d'une seconde qu'on ne
 			// lui avait pas laissée — et la reprise promise à la notice venue
 			// en fin de passage relisait cette fausse panne au lieu d'appeler.
+			$interrompu = true;
 			return null;
 		}
 		if ( null === $noeud ) {
@@ -445,7 +461,9 @@ class Notice_Archeomed_Thesaurus {
 				'headers' => array( 'Accept' => 'application/json' ),
 			)
 		);
-		$coupe = $delai < self::DELAI && microtime( true ) - $debut >= $delai - 0.5;
+		// Seul un échec de transport peut être une coupure : une réponse,
+		// même lente, même en erreur, est une réponse de Pactols.
+		$coupe = is_wp_error( $reponse ) && $delai < self::DELAI && microtime( true ) - $debut >= $delai - 0.5;
 		if ( is_wp_error( $reponse ) ) {
 			error_log( 'Notice Archeomed: Pactols ' . $chemin . ' : ' . $reponse->get_error_message() );
 			return null;

@@ -649,8 +649,7 @@ class Notice_Archeomed_Pactols {
 				'd'             => $d,
 				// Tels qu'enregistrés, sans écarter ceux qui manquent : c'est au
 				// paquet de dire qu'un fichier reçu n'est plus là.
-				'illustrations' => array_values( array_filter(
-					(array) get_post_meta( $id, '_na_illustrations', true ), 'is_string' ) ),
+				'illustrations' => self::illustrations_rangees( $id ),
 			);
 		}
 
@@ -7472,7 +7471,7 @@ class Notice_Archeomed_Pactols {
 		if ( empty( $ids ) ) {
 			return '';
 		}
-		$avant      = count( array_filter( (array) get_post_meta( (int) $ids[0], '_na_illustrations', true ), 'is_string' ) );
+		$avant      = count( self::illustrations_rangees( (int) $ids[0] ) );
 		$maintenant = isset( $d['illustrations'] ) ? count( (array) $d['illustrations'] ) : 0;
 		$phrases    = array();
 		if ( $avant > $maintenant ) {
@@ -8645,7 +8644,9 @@ class Notice_Archeomed_Pactols {
 			array( $this, 'resoudre_en_tache' ), 10, 1 );
 		add_action( self::HOOK_APERCUS,
 			array( $this, 'fabriquer_les_apercus_en_tache' ), 10, 1 );
-		add_action( 'admin_init', array( $this, 'reveiller_la_file' ) );
+		// La tâche des termes se remet en route au passage de la relance, toutes
+		// les cinq minutes, et non à chaque page d'administration.
+		add_action( Notice_Archeomed_File::HOOK_RELANCE, array( $this, 'reveiller_la_file' ), 20, 0 );
 	}
 
 	/**
@@ -8668,7 +8669,7 @@ class Notice_Archeomed_Pactols {
 	 * agrément.
 	 */
 	public function expedier( $d, $notice, $produits, $document = '', &$pourquoi = '', $id = 0,
-		&$restees = array(), $avertissement = '' ) {
+		&$restees = array(), $avertissement = '', &$legeres = array() ) {
 		$pourquoi = '';
 		$restees  = array();
 		$wrap_open  = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">';
@@ -8725,10 +8726,9 @@ class Notice_Archeomed_Pactols {
 		// d'en perdre une figure.
 		$joindre = $existants;
 		$legeres = array();
-		$copies  = array();
 		if ( $id ) {
 			$joindre = $this->pieces_du_courriel( $id, $d, $existants, $document,
-				strlen( $notice ), $restees, $legeres, $copies );
+				strlen( $notice ), $restees, $legeres );
 		}
 		$corps = $notice;
 		if ( ! empty( $legeres ) || ! empty( $restees ) ) {
@@ -8750,10 +8750,6 @@ class Notice_Archeomed_Pactols {
 		// payer la liste au poids.
 		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
 			$headers, $joindre );
-		// Les copies nommées des versions allégées n'ont servi qu'à ce
-		// courriel : elles partent, qu'il soit parti ou non. Si la requête
-		// meurt avant, la purge des fichiers temporaires les rattrape.
-		$this->effacer_les_copies( $copies );
 		if ( ! $sent ) {
 			// « wp_mail » rend faux sans dire pourquoi. Le crochet
 			// « wp_mail_failed » porte l'erreur de PHPMailer — la vraie
@@ -8783,8 +8779,10 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $pour_les_auteurs ) ) {
 			$pj_note = '<p><strong>Pièce jointe :</strong> le fichier Word de votre notice, mis aux normes de la revue. Il est identique à celui reçu par la rédaction.</p>';
 		}
+		// Reçues, et non « envoyées » : une figure trop lourde pour le
+		// courriel reste sur le site, où la rédaction la télécharge.
 		if ( count( $existants ) > count( $pour_les_auteurs ) ) {
-			$pj_note .= '<p>Les illustrations transmises avec le formulaire ont bien été envoyées à la rédaction.</p>';
+			$pj_note .= '<p>Les illustrations transmises avec le formulaire ont bien été reçues par la rédaction.</p>';
 		}
 		// Le lien qui rouvre le formulaire rempli. C'est en lisant sa notice
 		// qu'on voit ce qu'on n'a pas vu en la saisissant : sans ce lien, il
@@ -8921,6 +8919,16 @@ class Notice_Archeomed_Pactols {
 		}
 		$mo      = in_array( (int) $mo, self::TAILLES_ESSAI, true ) ? (int) $mo : self::TAILLES_ESSAI[0];
 		$octets  = $mo * 1000 * 1000;
+		// L'encodeur du courriel tient la pièce en mémoire, encodée, et plus
+		// d'une fois : à vingt méga-octets, une limite de PHP trop basse
+		// arrêtait la page sur une erreur fatale, sans résultat. On le dit
+		// avant d'essayer.
+		$limite = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
+		if ( $limite > 0 && memory_get_usage() + 4 * $octets > $limite ) {
+			return array( 'ok' => false, 'mo' => $mo, 'quand' => current_time( 'mysql' ),
+				'message' => 'Essai non lancé : la mémoire de PHP (' . size_format( $limite ) . ') ne suffit pas à encoder '
+					. $mo . ' Mo de pièce jointe. Un courriel aussi lourd ferait tomber l’envoi de la même façon.' );
+		}
 		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
 		wp_mkdir_p( $dossier );
 		$fichier = $dossier . '/notice-archeomed-essai-de-poids-' . $mo . '-Mo.txt';
@@ -8933,7 +8941,13 @@ class Notice_Archeomed_Pactols {
 		$ecrit = 0;
 		while ( $ecrit < $octets ) {
 			$morceau = substr( $bloc, 0, min( strlen( $bloc ), $octets - $ecrit ) );
-			fwrite( $flux, $morceau );
+			// Un disque plein donnait un fichier tronqué, et l'essai mesurait
+			// un poids qu'il n'avait pas envoyé.
+			if ( strlen( $morceau ) !== (int) fwrite( $flux, $morceau ) ) {
+				fclose( $flux );
+				@unlink( $fichier );
+				return array( 'ok' => false, 'message' => 'Le fichier d’essai n’a pas pu être écrit en entier (disque plein ?).' );
+			}
 			$ecrit += strlen( $morceau );
 		}
 		fclose( $flux );
@@ -9057,10 +9071,9 @@ class Notice_Archeomed_Pactols {
 		// touche pas à la notice.
 		$restees  = array();
 		$legeres  = array();
-		$copies   = array();
 		$document = (string) get_post_meta( (int) $id, '_na_document', true );
 		$pieces   = $this->pieces_du_courriel( $id, $d, $produits, $document, strlen( $notice ),
-			$restees, $legeres, $copies );
+			$restees, $legeres );
 		$numero = 0;
 		foreach ( $pieces as $nom => $fichier ) {
 			++$numero;
@@ -9071,7 +9084,6 @@ class Notice_Archeomed_Pactols {
 				'' !== $reply ? array_merge( $base, array( $reply ) ) : $base,
 				array_slice( $pieces, 0, $numero, true ) );
 		}
-		$this->effacer_les_copies( $copies );
 		if ( empty( $pieces ) ) {
 			$out[] = array( 'ok' => true, 'etape' => 'pièces jointes',
 				'message' => 'aucune — rien à joindre pour cette notice' );
@@ -9146,6 +9158,17 @@ class Notice_Archeomed_Pactols {
 		}
 	}
 
+	/**
+	 * Les chemins des illustrations rangées d'une notice, dans l'ordre des
+	 * figures. Une métadonnée absente se lisait « array('') » : un rang 1
+	 * fantôme, et une pièce jointe en double.
+	 */
+	public static function illustrations_rangees( $id ) {
+		return array_values( array_filter( (array) get_post_meta( (int) $id, '_na_illustrations', true ), function ( $chemin ) {
+			return is_string( $chemin ) && '' !== $chemin;
+		} ) );
+	}
+
 	/** Le nom lisible d'une pièce jointe : « Caen_Chateau_Fig_2.tif ». */
 	private function nom_de_piece( $d, $rang, $fichier, $suffixe = '' ) {
 		return Notice_Archeomed_Nommage::assainir(
@@ -9173,18 +9196,20 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Chaque figure compte une fois, dans son ordre : sa version allégée si
 	 * elle en a une, l'original sinon. Si elle ne tient pas sous le poids
-	 * réglé, c'est l'original que « $restees » nomme — lui est sur le site,
-	 * non la copie faite pour le courriel. « $legeres » dit les versions
-	 * allégées effectivement jointes ; « $copies », toutes celles qu'on a
-	 * faites, pour les effacer après l'envoi.
+	 * réglé, c'est l'original que « $restees » nomme — lui est sur le site.
+	 * « $legeres » dit les versions allégées effectivement jointes.
+	 *
+	 * La version allégée part telle qu'elle est rangée, sous le nom de sa
+	 * figure, que la clé du tableau des pièces donne à « wp_mail » : on en
+	 * faisait une copie nommée, dans un dossier temporaire effacé après
+	 * l'envoi — qu'une extension d'envoi différé trouvait vide, et qu'une
+	 * requête coupée laissait derrière elle.
 	 */
 	private function pieces_du_courriel( $id, $d, $existants, $document, $poids_du_corps,
-		&$restees, &$legeres, &$copies ) {
+		&$restees, &$legeres ) {
 		$restees   = array();
 		$legeres   = array();
-		$copies    = array();
-		$originaux = array_values( array_filter(
-			(array) get_post_meta( (int) $id, '_na_illustrations', true ), 'is_string' ) );
+		$originaux = self::illustrations_rangees( (int) $id );
 		$apercus   = $this->apercus_de( $id, $d );
 		$budget    = $this->budget_du_courriel( $poids_du_corps );
 		$joindre   = array();
@@ -9195,24 +9220,13 @@ class Notice_Archeomed_Pactols {
 			$cumul    += $this->poids_encode( $document );
 		}
 
-		$dossier = '';
 		foreach ( $originaux as $i => $original ) {
 			$rang   = $i + 1;
 			$piece  = '';
 			$legere = false;
 			if ( ! empty( $apercus[ $rang ]['apercu'] ) && is_readable( $apercus[ $rang ]['apercu'] ) ) {
-				if ( '' === $dossier ) {
-					$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/courriel-'
-						. wp_generate_password( 8, false, false );
-					wp_mkdir_p( $dossier );
-				}
-				$copie = $dossier . '/' . Notice_Archeomed_Nommage::assainir(
-					$d['commune'] . '_' . $d['lieu_dit'] . '_Fig_' . $rang ) . '_apercu.jpg';
-				if ( @copy( $apercus[ $rang ]['apercu'], $copie ) ) {
-					$copies[] = $copie;
-					$piece    = $copie;
-					$legere   = true;
-				}
+				$piece  = $apercus[ $rang ]['apercu'];
+				$legere = true;
 			}
 			if ( '' === $piece && in_array( $original, $existants, true ) ) {
 				$piece = $original;
@@ -9222,14 +9236,12 @@ class Notice_Archeomed_Pactols {
 			}
 			$poids = $this->poids_encode( $piece );
 			if ( $cumul + $poids <= $budget ) {
-				// Un original part sous le nom de sa figure, comme la version
-				// allégée : son nom sur le serveur est tiré au sort, et ne
-				// disait ni de quelle image il s'agit ni où elle va.
+				// Chaque figure part sous son nom : celui du serveur est tiré
+				// au sort, et ne disait ni de quelle image il s'agit ni où
+				// elle va.
+				$joindre[ $this->nom_de_piece( $d, $rang, $piece, $legere ? '_apercu' : '' ) ] = $piece;
 				if ( $legere ) {
-					$joindre[] = $piece;
 					$legeres[] = $piece;
-				} else {
-					$joindre[ $this->nom_de_piece( $d, $rang, $piece ) ] = $piece;
 				}
 				$cumul += $poids;
 			} else {
@@ -9254,10 +9266,6 @@ class Notice_Archeomed_Pactols {
 			} else {
 				$restees[] = $fichier;
 			}
-		}
-		// Toutes les copies ont échoué : le dossier ne doit pas rester vide.
-		if ( '' !== $dossier && empty( $copies ) ) {
-			@rmdir( $dossier );
 		}
 		return $joindre;
 	}
@@ -9305,8 +9313,7 @@ class Notice_Archeomed_Pactols {
 			return false;
 		}
 		$apercus   = $this->apercus_de( $id, $d );
-		$originaux = array_values( array_filter(
-			(array) get_post_meta( (int) $id, '_na_illustrations', true ), 'is_string' ) );
+		$originaux = self::illustrations_rangees( (int) $id );
 		foreach ( (array) $d['illustrations'] as $item ) {
 			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
 			if ( $rang >= 1 && isset( $originaux[ $rang - 1 ] ) && file_exists( $originaux[ $rang - 1 ] )
@@ -9336,8 +9343,7 @@ class Notice_Archeomed_Pactols {
 		update_post_meta( $id, '_na_apercus_tente', time() );
 		$d = get_post_meta( $id, '_na_donnees', true );
 		if ( is_array( $d ) && ! empty( $d ) ) {
-			$originaux = array_values( array_filter(
-				(array) get_post_meta( $id, '_na_illustrations', true ), 'is_string' ) );
+			$originaux = self::illustrations_rangees( $id );
 			$apercus   = $this->apercus_de( $id, $d );
 			$a_faire   = array();
 			foreach ( $originaux as $i => $original ) {
@@ -9350,20 +9356,6 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		$this->file()->programmer( $id );
-	}
-
-	/** Efface les copies faites pour un courriel, et leur dossier. */
-	private function effacer_les_copies( $copies ) {
-		$dossiers = array();
-		foreach ( (array) $copies as $copie ) {
-			if ( is_string( $copie ) && false !== strpos( $copie, 'notice-archeomed-tmp/courriel-' ) ) {
-				@unlink( $copie );
-				$dossiers[ dirname( $copie ) ] = true;
-			}
-		}
-		foreach ( array_keys( $dossiers ) as $dossier ) {
-			@rmdir( $dossier );
-		}
 	}
 
 	/**
@@ -9397,8 +9389,7 @@ class Notice_Archeomed_Pactols {
 		// Chaque pièce se nomme par sa figure : le nom du fichier sur le
 		// serveur est une suite de caractères tirée au sort, qui ne dit à la
 		// rédaction ni de quelle image il s'agit ni où elle va.
-		$originaux = array_values( array_filter(
-			(array) get_post_meta( (int) $id, '_na_illustrations', true ), 'is_string' ) );
+		$originaux = self::illustrations_rangees( (int) $id );
 		$saisie    = get_post_meta( (int) $id, '_na_donnees', true );
 		$titres    = array();
 		if ( is_array( $saisie ) && ! empty( $saisie['illustrations'] ) ) {
@@ -9479,7 +9470,7 @@ class Notice_Archeomed_Pactols {
 		// de l'envoi : leurs illustrations attendent encore au répertoire
 		// temporaire, et rien ne les rangerait si le courriel ne partait
 		// jamais. On les range maintenant, une fois pour toutes.
-		$deja = (array) get_post_meta( $id, '_na_illustrations', true );
+		$deja = self::illustrations_rangees( $id );
 		if ( empty( $deja ) && ! empty( $produits ) ) {
 			$a_ranger = array();
 			foreach ( $produits as $fichier ) {
@@ -9537,13 +9528,20 @@ class Notice_Archeomed_Pactols {
 
 		$pourquoi = '';
 		$restees  = array();
-		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi, $id, $restees, $avertissement ) ) {
+		$legeres  = array();
+		if ( $this->expedier( $d, $notice, $produits, $document, $pourquoi, $id, $restees, $avertissement, $legeres ) ) {
 			// Partie, mais pas entière : la liste le dit, pour qu'on ne croie
 			// pas la rédaction en possession de toutes les figures.
 			$note = empty( $restees ) ? '' : sprintf(
 				_n( 'Partie sans %d illustration, trop lourde pour un courriel ; elle reste sur le site.',
 					'Partie sans %d illustrations, trop lourdes pour un courriel ; elles restent sur le site.',
 					count( $restees ), 'notice-archeomed' ), count( $restees ) );
+			// Et en quelle définition : un original n'est pas dans la boîte.
+			if ( ! empty( $legeres ) ) {
+				$note = trim( sprintf( _n( '%d illustration jointe en version allégée.',
+					'%d illustrations jointes en version allégée.', count( $legeres ), 'notice-archeomed' ),
+					count( $legeres ) ) . ' ' . $note );
+			}
 			if ( $sans_document ) {
 				$note = trim( 'Partie sans le document Word, qui n’a pas pu être refait. ' . $note );
 			}
@@ -9790,6 +9788,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function resoudre_les_termes( $id, $d, $echeance, &$interrompu = false ) {
 		$interrompu = false;
+		$arrete     = false;
 		$deja       = $this->termes_connus( $id );
 		$voulus     = $this->arks_de( $d );
 		$termes     = array_intersect_key( self::termes_lus( $deja ), $voulus );
@@ -9802,15 +9801,17 @@ class Notice_Archeomed_Pactols {
 			// cette dernière seconde passaient pour des échecs, et la notice
 			// attendait une heure au lieu d'une minute.
 			if ( microtime( true ) > $echeance - 1 ) {
+				$arrete = true;
 				break;
 			}
 			// Une erreur levée par la lecture d'un terme sortait de la tâche
 			// entière : aucun essai ne se comptait, la notice restait due, et
 			// le même terme arrêtait la file à chaque passage. Elle ne coûte
 			// plus que ce terme, compté comme manquant.
+			$coupe = false;
 			try {
 				$concept = Notice_Archeomed_Thesaurus::resoudre( $ark, $quoi['id'],
-					$quoi['theso'], $echeance );
+					$quoi['theso'], $echeance, $coupe );
 			} catch ( Throwable $e ) {
 				error_log( 'Notice Archeomed: Pactols ' . $ark . ' : ' . $e->getMessage() );
 				$concept = null;
@@ -9818,9 +9819,11 @@ class Notice_Archeomed_Pactols {
 			if ( is_array( $concept ) ) {
 				$termes[ $ark ] = $concept;
 			}
+			// Le thésaurus dit lui-même qu'il a été coupé : l'horloge ne le
+			// devinait qu'à la seconde près.
+			$interrompu = $interrompu || $coupe;
 		}
-		$interrompu = microtime( true ) > $echeance - 1
-			&& count( array_diff_key( $voulus, $termes ) ) > 0;
+		$interrompu = ( $interrompu || $arrete ) && count( array_diff_key( $voulus, $termes ) ) > 0;
 		if ( $termes != $deja ) {
 			if ( empty( $termes ) ) {
 				delete_post_meta( (int) $id, '_na_pactols' );
@@ -10404,6 +10407,11 @@ class Notice_Archeomed_Pactols {
 			$mesure = $paquet->apercu_du_document( $fichiers[ $rang - 1 ], $cible );
 			if ( is_array( $mesure ) ) {
 				$apercus[ $rang ] = $mesure;
+			} else {
+				// Sans version allégée, c'est l'original qui partira : que le
+				// journal dise pourquoi le courriel est lourd.
+				error_log( 'Notice Archeomed: version allégée de la figure ' . $rang . ' impossible ('
+					. basename( $fichiers[ $rang - 1 ] ) . ') ; l\'original la remplacera.' );
 			}
 		}
 		return $apercus;
@@ -10767,9 +10775,9 @@ class Notice_Archeomed_Pactols {
 				@unlink( $file );
 			}
 		}
-		// Les dossiers de copies faites pour un courriel. Ils s'effacent après
-		// l'envoi ; une requête coupée en route les laissait pour toujours,
-		// la purge ne regardant que les fichiers.
+		// Les dossiers de copies que les versions d'avant la 3.53 faisaient
+		// pour un courriel : une requête coupée en route les laissait pour
+		// toujours, la purge ne regardant que les fichiers.
 		$courriels = glob( trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/courriel-*', GLOB_ONLYDIR );
 		foreach ( (array) $courriels as $dossier ) {
 			if ( filemtime( $dossier ) >= time() - DAY_IN_SECONDS ) {

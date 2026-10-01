@@ -176,14 +176,21 @@ def analyser_et_masquer(source):
     return sorted(fautes), ''.join(code)
 
 
+# Les mots-clés de PHP s'écrivent en toute casse : « CLASS », « EndIf » valent
+# « class » et « endif ». Une variable ou une méthode du même nom — « $endif »,
+# « ->if( », « ::for( » — n'est pas un mot-clé. Après « class », « extends » et
+# « implements » ne sont pas des noms : « new class extends Base » est une
+# classe anonyme.
+HORS_MEMBRE = r'(?<![$\w])(?<!->)(?<!::)'
 DECLARATION = re.compile(
-    r'\b(?:final\s+|abstract\s+)*(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)'
+    HORS_MEMBRE + r'\b(?:final\s+|abstract\s+)*(?:class|interface|trait)\s+'
+    r'(?!(?:extends|implements)\b)([A-Za-z_][A-Za-z0-9_]*)',
+    re.I,
 )
 
 
-OUVRE_BLOC_ALTERNATIF = re.compile(r'\b(if|while|for|foreach|switch|declare)\s*\(')
-FERME_BLOC_ALTERNATIF = re.compile(r'\b(endif|endwhile|endfor|endforeach|endswitch|enddeclare)\b')
-MOTS_RESERVES = {'extends', 'implements'}
+OUVRE_BLOC_ALTERNATIF = re.compile(HORS_MEMBRE + r'\b(if|while|for|foreach|switch|declare)\s*\(', re.I)
+FERME_BLOC_ALTERNATIF = re.compile(HORS_MEMBRE + r'\b(endif|endwhile|endfor|endforeach|endswitch|enddeclare)\b', re.I)
 
 
 def profondeurs(code):
@@ -244,8 +251,6 @@ def declarations(code):
         if profondeur[m.start()] != 0:
             continue
         if re.search(r'\bnew\s*$', code[:m.start()]):
-            continue
-        if m.group(1).lower() in MOTS_RESERVES:
             continue
         out.append((m.group(1), code.count('\n', 0, m.start()) + 1))
     return out

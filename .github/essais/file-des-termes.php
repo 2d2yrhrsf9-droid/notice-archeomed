@@ -293,17 +293,15 @@ $composer  = function ( $apercus ) use ( $plugin, $avec_figures, $saisie_fig, $e
 	}
 	$restees = array();
 	$legeres = array();
-	$copies  = array();
 	$joindre = na_appel( $plugin, 'pieces_du_courriel', array( $avec_figures, $saisie_fig,
-		$existants, $doc_essai, 4000, &$restees, &$legeres, &$copies ) );
-	$noms    = array_values( array_map( 'basename', $joindre ) );
-	$reste   = array_map( 'basename', $restees );
-	$copies_existaient = ! empty( $copies ) && file_exists( $copies[0] );
-	na_appel( $plugin, 'effacer_les_copies', array( $copies ) );
-	return array( 'noms' => $noms, 'restees' => $reste, 'legeres' => count( $legeres ),
-		'cles' => array_values( array_filter( array_keys( $joindre ), 'is_string' ) ),
-		'copies_existaient' => $copies_existaient,
-		'copies_effacees' => empty( $copies ) || ! file_exists( $copies[0] ) );
+		$existants, $doc_essai, 4000, &$restees, &$legeres ) );
+	// Le nom sous lequel chaque pièce voyage : la clé, ou le nom du fichier.
+	$noms = array();
+	foreach ( $joindre as $cle => $fichier ) {
+		$noms[] = is_string( $cle ) ? $cle : basename( $fichier );
+	}
+	return array( 'noms' => $noms, 'restees' => array_map( 'basename', $restees ), 'legeres' => count( $legeres ),
+		'joindre' => $joindre );
 };
 $apercu = function ( $fichier ) {
 	return array( 'apercu' => $fichier, 'largeur' => 1000, 'hauteur' => 750, 'dpi' => 96 );
@@ -341,20 +339,22 @@ foreach ( array( $doc_essai, $orig1, $orig2, $leger1, $leger2, $lourd1 ) as $f )
 }
 @rmdir( $dossier_essai );
 
-na_verifier( array( 'notice.docx', 'orig1.jpg' ) === $sans['noms'] && array( 'orig2.jpg' ) === $sans['restees'],
-	'sans version allégée : le document, puis ce qui tient ; le second original reste sur le site', $sans );
-na_verifier( array( 'Pledehel_Le_Bourg_Fig_2.jpg' ) === $une['cles'],
-	'un original joint part sous le nom de sa figure, non sous son nom tiré au sort', $une );
-na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1_apercu.jpg', 'orig2.jpg' ) === $une['noms']
+na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1.jpg' ) === $sans['noms'] && array( 'orig2.jpg' ) === $sans['restees'],
+	'sans version allégée : le document, puis ce qui tient, sous le nom de sa figure ; le second original reste sur le site', $sans );
+na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1_apercu.jpg', 'Pledehel_Le_Bourg_Fig_2.jpg' ) === $une['noms']
 	&& array() === $une['restees'] && 1 === $une['legeres'],
 	'la figure 1 en version allégée sous un nom lisible, la 2 en original faute d\'aperçu', $une );
-na_verifier( array( 'notice.docx', 'orig1.jpg', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $ordre['noms'],
+na_verifier( $leger1 === $une['joindre']['Pledehel_Le_Bourg_Fig_1_apercu.jpg'],
+	'la version allégée part telle qu\'elle est rangée, sans copie dans un dossier temporaire', $une );
+na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_1.jpg', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $ordre['noms'],
 	'les figures gardent leur ordre, qu\'elles soient allégées ou non', $ordre );
 na_verifier( array( 'notice.docx', 'Pledehel_Le_Bourg_Fig_2_apercu.jpg' ) === $serre['noms']
 	&& array( 'orig1.jpg' ) === $serre['restees'] && 1 === $serre['legeres'],
-	'une version allégée qui ne tient pas : l\'original est nommé, non la copie, et le compte est juste', $serre );
-na_verifier( $une['copies_existaient'] && $une['copies_effacees'],
-	'la copie faite pour le courriel existe pendant l\'envoi et s\'efface après' );
+	'une version allégée qui ne tient pas : l\'original est nommé, et le compte est juste', $serre );
+$sans_meta = na_notice( $saisie_fig );
+na_verifier( array() === Notice_Archeomed_Pactols::illustrations_rangees( $sans_meta ),
+	'une notice sans illustrations rangées n\'a pas de figure 1 fantôme' );
+wp_delete_post( $sans_meta, true );
 na_verifier( false !== strpos( $avis_restees, 'Fig. 2' ) && false === strpos( $avis_restees, 'orig2.jpg' )
 	&& false !== strpos( $avis_restees, 'post=' . $avec_figures ),
 	'le courriel nomme la figure restée par son numéro, non par le nom du fichier, et donne le lien de la notice', $avis_restees );
@@ -363,6 +363,26 @@ na_verifier( false !== strpos( $avis_legeres, '2 illustrations sont jointes en v
 	'le courriel dit combien de figures sont allégées, et à quelle largeur', $avis_legeres );
 na_verifier( $diagnostic_neutre, 'le diagnostic ne fabrique rien et ne touche pas à la notice' );
 na_verifier( false === $deja_tente, 'une notice déjà tentée ne relance pas la fabrication à chaque envoi' );
+
+WP_CLI::log( 'La version allégée d\'une vraie image' );
+if ( class_exists( 'Imagick' ) && function_exists( 'imagecreatetruecolor' ) ) {
+	$vraie = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-vraie.jpg';
+	$gd    = imagecreatetruecolor( 1600, 1200 );
+	imagefilledrectangle( $gd, 0, 0, 1599, 1199, imagecolorallocate( $gd, 120, 90, 60 ) );
+	imagejpeg( $gd, $vraie, 90 );
+	imagedestroy( $gd );
+	$faites = na_appel( $plugin, 'fabriquer_les_apercus', array( array( $vraie ), array( 'illustrations' => array( array( 'rang' => 1 ) ) ) ) );
+	$faite  = isset( $faites[1]['apercu'] ) ? $faites[1]['apercu'] : '';
+	$taille = ( '' !== $faite && file_exists( $faite ) ) ? getimagesize( $faite ) : false;
+	@unlink( $vraie );
+	if ( '' !== $faite ) {
+		@unlink( $faite );
+	}
+	na_verifier( is_array( $taille ) && Notice_Archeomed_Paquet::LARGEUR_APERCU === (int) $taille[0],
+		'une vraie image donne sa version allégée, à la largeur dite', $faites );
+} else {
+	WP_CLI::log( '  — Imagick absent : la fabrication n\'est pas éprouvée ici.' );
+}
 
 WP_CLI::log( 'La note d\'un envoi partiel' );
 $partie = na_notice( $saisie );

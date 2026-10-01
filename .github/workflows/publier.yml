@@ -170,7 +170,9 @@ jobs:
           # se lisent sans être connecté.
           if ! wp eval-file "$GITHUB_WORKSPACE/.github/essais/file-des-termes.php" > /tmp/essais.log 2>&1; then
             cat /tmp/essais.log
-            tail -n 15 /tmp/essais.log | cut -c1-400 | sed 's/^/::error::/'
+            # En caractères, non en octets : « cut -c » de GNU coupe en
+            # octets, au milieu d'une lettre accentuée.
+            tail -n 15 /tmp/essais.log | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:400]) for l in sys.stdin]'
             exit 1
           fi
           cat /tmp/essais.log
@@ -188,7 +190,7 @@ jobs:
           grep -n "notice-archeomed" "$JOURNAL" | head -50 || true
           if grep -qE "PHP (Fatal|Parse) error" "$JOURNAL"; then
             echo "::error::Erreur fatale au journal de WordPress."
-            grep -E "PHP (Fatal|Parse) error" "$JOURNAL" | cut -c1-500 | sed 's/^/::error::/'
+            grep -E "PHP (Fatal|Parse) error" "$JOURNAL" | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:500]) for l in sys.stdin]'
             exit 1
           fi
 
