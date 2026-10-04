@@ -2050,6 +2050,37 @@ foreach ( array( $cand_a, $cand_b, $cand_remplacee, $cand_correction ) as $cand_
 	wp_delete_post( $cand_id, true );
 }
 
+WP_CLI::log( 'La documentation' );
+$D = 'Notice_Archeomed_Documentation';
+$rendu_md = $D::rendre( "# Titre\n\nUn **gras**, un *italique*, du `<code>` et un [lien](https://exemple.org) ; [piège](javascript:alert(1)).\n\n- un\n  - sous-élément\n- deux\n  suite de deux\n\n1. premier\n2. second\n\n| Clé | Sens |\n|---|---|\n| `a` | b |\n\n```\n<script>x</script>\n```\n\n> cité\n\n<script>alert(1)</script>" );
+na_verifier( false !== strpos( $rendu_md, '<h2 id="titre">Titre</h2>' ) && false !== strpos( $rendu_md, '<strong>gras</strong>' ) && false !== strpos( $rendu_md, '<em>italique</em>' )
+	&& false !== strpos( $rendu_md, '<code>&lt;code&gt;</code>' ) && false !== strpos( $rendu_md, '<a href="https://exemple.org">lien</a>' )
+	&& false === strpos( $rendu_md, 'javascript:' ) && false !== strpos( $rendu_md, '<li>un<ul><li>sous-élément</li></ul></li><li>deux suite de deux</li>' )
+	&& false !== strpos( $rendu_md, '<ol><li>premier</li><li>second</li></ol>' ) && false !== strpos( $rendu_md, '<th scope="col">Clé</th>' )
+	&& false !== strpos( $rendu_md, '<pre><code>&lt;script&gt;x&lt;/script&gt;</code></pre>' ) && false !== strpos( $rendu_md, '<blockquote><p>cité</p></blockquote>' )
+	&& false === strpos( $rendu_md, '<script>' ),
+	'le Markdown se rend : titres, gras, italique, code, liens sûrs, listes imbriquées, tableaux, citations ; rien n\'y devient du HTML actif', $rendu_md );
+$docs_ok = true;
+$docs_vus = array();
+foreach ( array_keys( $D::DOCUMENTS ) as $cle_doc ) {
+	$source_doc = (string) file_get_contents( $D::chemin( $cle_doc ) );
+	$rendu_doc  = $D::rendre( $source_doc );
+	$texte_doc  = wp_strip_all_tags( $rendu_doc );
+	$docs_vus[ $cle_doc ] = strlen( $source_doc );
+	// Ni marque de Markdown restée en clair, ni rien qui rattache le texte
+	// à une personne ou à un laboratoire.
+	if ( '' === $source_doc || preg_match( '/\*\*|^\s*\|?-{3,}\|/m', $texte_doc )
+		|| preg_match( '/[\w.+-]+@[\w-]+\.[\w.]+|cnrs|craham|umr\s*\d|unicaen|archeomed\.cnrs/i', $source_doc ) ) {
+		$docs_ok = false;
+	}
+}
+ob_start();
+$D::onglet();
+$rendu_onglet_doc = ob_get_clean();
+na_verifier( $docs_ok && isset( Notice_Archeomed_Settings::onglets()['documentation'] )
+	&& false !== strpos( $rendu_onglet_doc, 'aria-current="page">Présentation' ) && false !== strpos( $rendu_onglet_doc, '<div class="na-doc"><h2' ),
+	'les deux documents se rendent sans marque restée en clair, sans adresse ni rattachement, et l\'onglet les propose', $docs_vus );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

@@ -300,6 +300,7 @@ class Notice_Archeomed_Settings {
 			// reste que le constat de l'hébergement. La clé ne change pas : les
 			// liens déjà donnés mènent toujours au même endroit.
 			'diagnostic'    => __( 'Hébergement', 'notice-archeomed' ),
+			'documentation' => __( 'Documentation', 'notice-archeomed' ),
 		);
 	}
 
@@ -1341,6 +1342,12 @@ class Notice_Archeomed_Settings {
 	private function onglet_accessibilite( $essai ) {
 		unset( $essai );
 		Notice_Archeomed_Accessibilite::onglet();
+	}
+
+	/** La présentation de l'extension et sa notice technique. */
+	private function onglet_documentation( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Documentation::onglet();
 	}
 
 	/** Les termes gardés hors de Pactols, à proposer à Frantiq. */

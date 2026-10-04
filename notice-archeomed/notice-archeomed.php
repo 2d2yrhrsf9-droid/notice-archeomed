@@ -29,10 +29,12 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-accessibilite.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-candidats.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-documentation.php';
 
 new Notice_Archeomed_Settings();
 new Notice_Archeomed_Accessibilite();
 new Notice_Archeomed_Candidats();
+new Notice_Archeomed_Documentation();
 
 // La file d'attente vit indépendamment du formulaire : elle doit tourner sur
 // les requêtes d'administration et les passages du planificateur, où aucun
