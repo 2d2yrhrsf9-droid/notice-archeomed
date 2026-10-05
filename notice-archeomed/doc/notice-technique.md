@@ -9,7 +9,7 @@ Le code est commenté en français, en phrases : chaque fonction dit ce qu'elle 
 | | |
 |---|---|
 | Nature | Extension WordPress, sans dépendance installée par Composer ni par npm |
-| PHP | 7.2 au moins (essayé en 7.2, 7.4, 8.1 et 8.3) |
+| PHP | 7.2 au moins (essayé en 7.2, 7.4, 8.1, 8.3 et 8.4) |
 | WordPress | 5.6 au moins (essayé en 6.9 et en dernière version) |
 | Extensions PHP | `zip` (DOCX et dossiers ; sans elle, repli en RTF), `imagick` (versions allégées et conversions ; sans elle, les originaux voyagent), `mbstring` conseillée |
 | Bibliothèques chargées par le navigateur | Quill 2.0.3 (éditeur du texte, jsDelivr, avec empreinte SRI), Turnstile de Cloudflare (selon la protection choisie), axe-core 4.10.2 (onglet Accessibilité seulement, cdnjs, avec empreinte SRI) |
@@ -290,7 +290,7 @@ Pour l'exécuter hors de l'intégration continue : un WordPress avec WP-CLI, l'e
 
 ### Intégration continue (`.github/workflows/publier.yml`)
 
-À chaque poussée : `analyser` (analyseur PHP 7.2 et 8.3, doublons, commentaires) puis `essayer` (matrice PHP 7.2 / WordPress 6.9, PHP 8.1 et 8.3 / dernière version : installation, activation, affichage du formulaire, essais, désactivation, journal sans erreur fatale). Sur une étiquette `vX.Y` : `publier` vérifie que l'étiquette égale la version de l'en-tête, fabrique l'archive et publie la release avec `notice-archeomed.zip`.
+À chaque poussée : `analyser` (analyseur PHP 7.2 et 8.4, doublons, commentaires) puis `essayer` (matrice PHP 7.2 / WordPress 6.9, PHP 8.1, 8.3 et 8.4 / dernière version : installation, activation, affichage du formulaire, essais, désactivation, journal sans erreur fatale). Sur une étiquette `vX.Y` : `publier` vérifie que l'étiquette égale la version de l'en-tête, fabrique l'archive et publie la release avec `notice-archeomed.zip`.
 
 ### Publier une version
 
