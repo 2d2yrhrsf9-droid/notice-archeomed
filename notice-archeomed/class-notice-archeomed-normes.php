@@ -213,7 +213,7 @@ class Notice_Archeomed_Normes {
 						'libelle'   => 'Signaler',
 						'defaut'    => array( 'ponctuation', 'figures_appelees', 'definition', 'credits', 'ordinaux', 'annees_espacees', 'personnes', 'accessibilite', 'sigles' ),
 						'cases'     => array(
-							'ponctuation'      => 'un texte qui s’arrête sans ponctuation, ou un paragraphe coupé en deux',
+							'ponctuation'      => 'un texte qui s’arrête sans ponctuation, un paragraphe coupé en deux, ou un intertitre qui finit par un point',
 							'figures_appelees' => 'une figure appelée dans le texte et non jointe, ou jointe et jamais appelée',
 							'definition'       => 'une photographie sous la norme demandée',
 							'credits'          => 'une figure sans crédits',

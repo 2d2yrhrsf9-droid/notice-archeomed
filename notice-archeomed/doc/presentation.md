@@ -26,11 +26,13 @@ Le formulaire ne refuse que l'indispensable — un champ obligatoire vide, un fi
 
 - une image dont la définition est insuffisante pour la taille d'impression prévue ;
 - une figure appelée dans le texte (« fig. 3 ») qui n'est pas jointe, ou une figure jointe que le texte n'appelle pas ;
-- un paragraphe sans ponctuation finale, signe fréquent d'un texte coupé au copier-coller ;
+- un paragraphe sans ponctuation finale, signe fréquent d'un texte coupé au copier-coller, ou au contraire un intertitre qui finit par un point ;
 - un ordinal fautif (« XIIème » pour « XIIe »), une année tapée avec une espace (« 1 250 ») ;
 - un sigle qui n'est pas développé à sa première mention, ou qui n'est pas écrit à la forme de la revue (en capitales s'il s'épelle, avec une seule capitale s'il se prononce) ;
 - un texte alternatif qui recopie la légende, qui se réduit à un nom de fichier, ou qui commence par « Image de » ;
 - un texte trop court ou trop long au regard de la norme.
+
+Les avis sur le texte suivent la frappe : ils se mettent à jour une seconde après la dernière touche, sans attendre qu'on quitte l'éditeur. Le paragraphe en cours d'écriture n'est pas jugé sur sa ponctuation tant qu'on y écrit.
 
 Un brouillon est gardé dans le navigateur : une page fermée par erreur ne fait pas tout perdre. Si le dépôt est refusé, le formulaire se rouvre rempli, et seuls les fichiers sont à redonner.
 

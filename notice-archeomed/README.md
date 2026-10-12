@@ -513,7 +513,8 @@ niveau 3 et 4, que le document pose sous les styles des blocs « Intertitre du
 texte » de l'onglet Styles Métopes — « heading 3 » et « heading 4 » (Titre 3
 et Titre 4 de Word) par défaut. Un titre collé d'un autre niveau rejoint le
 plus proche (1 à 3 le premier, 4 à 6 le second) ; un intertitre ne reçoit pas
-l'avis de ponctuation finale, et le bloc de responsabilité ne s'y colle pas.
+l'avis de ponctuation finale — il en reçoit un, au contraire, s'il finit par
+« . », « , », « ; » ou « : » (« ? », « ! » et « … » restent permis) —, et le bloc de responsabilité ne s'y colle pas.
 Une liste ou une citation collées depuis Word deviennent chacune un paragraphe,
 au lieu de se souder au suivant. Les entités HTML sont
 résolues. Les caractères accentués et typographiques (œ, €, guillemets,
@@ -1060,7 +1061,7 @@ Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 
 Au dépôt, la notice est relue par des règles qui **avertissent sans jamais
 refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), un
-paragraphe coupé en deux, une figure appelée dans le texte qui n'est pas
+paragraphe coupé en deux, un intertitre qui finit par un point, une figure appelée dans le texte qui n'est pas
 jointe ou une figure jamais appelée, une photographie sous la norme annoncée
 (10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
 fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée

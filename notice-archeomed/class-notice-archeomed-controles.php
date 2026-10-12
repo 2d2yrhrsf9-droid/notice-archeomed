@@ -115,10 +115,14 @@ class Notice_Archeomed_Controles {
 		$figures     = isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array();
 		// Chaque famille d'avis se donne ou non, selon les normes de la revue.
 		$familles = array(
-			// Un intertitre ne prend pas de point final : il n'est pas lu.
+			// Un intertitre ne prend pas de point final : l'avis porte au
+			// contraire sur celui qui en a un.
 			'ponctuation'      => function () use ( $d ) {
-				return self::ponctuation_finale( self::paragraphes( preg_replace( '#<h([1-6])\b[^>]*>.*?</h\1\s*>#is', '',
-					isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '' ) ) );
+				$texte = isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '';
+				return array_merge(
+					self::ponctuation_finale( self::paragraphes( preg_replace( '#<h([1-6])\b[^>]*>.*?</h\1\s*>#is', '', $texte ) ) ),
+					self::intertitres_ponctues( $texte )
+				);
 			},
 			'figures_appelees' => function () use ( $paragraphes, $figures ) {
 				return self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) );
@@ -214,6 +218,30 @@ class Notice_Archeomed_Controles {
 			} else {
 				$avis[] = sprintf( 'Le paragraphe %1$d ne se termine par aucune ponctuation (« …%2$s ») : texte tronqué ?', $i + 1, $fin );
 			}
+		}
+		return $avis;
+	}
+
+	/**
+	 * Un intertitre qui finit par un point, une virgule, un point-virgule ou
+	 * un deux-points. Le point d'interrogation, d'exclamation et les points
+	 * de suspension restent permis : un titre peut poser une question.
+	 */
+	public static function intertitres_ponctues( $html ) {
+		$avis = array();
+		if ( ! preg_match_all( '#<h([1-6])\b[^>]*>(.*?)</h\1\s*>#is', (string) $html, $titres ) ) {
+			return $avis;
+		}
+		foreach ( $titres[2] as $titre ) {
+			$titre = trim( html_entity_decode( wp_strip_all_tags( $titre ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+			$nu    = preg_replace( '/[' . preg_quote( self::FERMANTS, '/' ) . ']+$/u', '', $titre );
+			$fin   = preg_match( '/.$/us', (string) $nu, $m ) ? $m[0] : '';
+			if ( '' === $fin || false === strpos( '.,;:', $fin ) || '..' === substr( $nu, -2 ) ) {
+				continue;
+			}
+			$long   = function_exists( 'mb_strlen' ) ? mb_strlen( $titre, 'UTF-8' ) : strlen( $titre );
+			$avis[] = sprintf( 'L’intertitre « %1$s » finit par « %2$s » : un intertitre ne prend pas de ponctuation finale.',
+				$long > 40 ? '…' . self::extrait( $titre, -40 ) : $titre, $fin );
 		}
 		return $avis;
 	}

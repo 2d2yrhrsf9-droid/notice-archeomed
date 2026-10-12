@@ -2108,6 +2108,12 @@ na_verifier( '' !== $styles_titres['heading 3'] && '' !== $styles_titres['headin
 na_verifier( array() === Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>' ) + array( 'illustrations' => array() ) )
 	|| ! preg_grep( '/La phase 1/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
 	'un intertitre sans point final ne reçoit pas l\'avis de ponctuation' );
+$avis_titres = Notice_Archeomed_Controles::intertitres_ponctues( '<h3>La phase 1.</h3><p>Un fossé.</p><h4>Le comblement&nbsp;:</h4><h3>Un enclos ?</h3><h4>Et ensuite...</h4><h3>Bilan</h3>' );
+na_verifier( 2 === count( $avis_titres )
+	&& false !== strpos( $avis_titres[0], '« La phase 1. » finit par « . »' )
+	&& false !== strpos( $avis_titres[1], 'finit par « : »' )
+	&& preg_grep( '/La phase 1\./u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1.</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
+	'un intertitre qui finit par un point ou un deux-points reçoit un avis ; « ? » et les points de suspension restent permis', $avis_titres );
 na_verifier( 'La Croix-Blanche' === na_appel( $plugin, 'capitale_initiale', array( 'la Croix-Blanche' ) )
 	&& 'Église Saint-Martin' === na_appel( $plugin, 'capitale_initiale', array( 'église Saint-Martin' ) ),
 	'le lieu-dit prend une capitale initiale, accents compris' );

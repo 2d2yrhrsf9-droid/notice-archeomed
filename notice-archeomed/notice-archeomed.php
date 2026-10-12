@@ -5047,10 +5047,11 @@ class Notice_Archeomed_Pactols {
 			// Un paragraphe qui ne finit par aucune ponctuation : presque toujours
 			// une phrase tronquée au collage. Et le paragraphe coupé en deux, dont
 			// la suite reprend en bas de casse — un retour de trop, venu d'un PDF.
-			function ponctuationFinale(paras) {
+			// Le paragraphe en cours de frappe (« sauf ») attend sa fin.
+			function ponctuationFinale(paras, sauf) {
 				var avis = [];
 				paras.forEach(function (p, i) {
-					if (finitBien(p)) { return; }
+					if (i === sauf || finitBien(p)) { return; }
 					if (i + 1 < paras.length && reprendEnBasDeCasse(paras[i + 1])) {
 						avis.push('Le paragraphe ' + (i + 1) + ' s’arrête au milieu d’une phrase que le suivant reprend ('
 							+ guillemets('…' + extrait(p, -30)) + ' puis ' + guillemets(extrait(paras[i + 1], 30) + '…')
@@ -5143,21 +5144,49 @@ class Notice_Archeomed_Pactols {
 			}
 			var texteVu = false;
 			var zoneTexte = zoneDeConseils('na-texte-conseils', wc);
+			function estIntertitre(l) { return !!(l.formats && l.formats().header); }
+			function texteDeLigne(l) { return quill.getText(quill.getIndex(l), l.length()).trim(); }
 			// Les paragraphes du texte sans ses intertitres, qui ne prennent pas
-			// de point final : comme au serveur.
-			function parasSansIntertitres() {
-				return quill.getLines().filter(function (l) { return !(l.formats && l.formats().header); })
-					.map(function (l) { return quill.getText(quill.getIndex(l), l.length()).trim(); }).filter(Boolean);
+			// de point final : comme au serveur. « courant » est le rang de
+			// celui où l'on écrit, quand on y écrit.
+			function parasSansIntertitres(enCours) {
+				var sel = enCours && quill.hasFocus() ? quill.getSelection() : null;
+				var ligne = sel ? quill.getLine(sel.index)[0] : null;
+				var textes = [], courant = -1;
+				quill.getLines().forEach(function (l) {
+					var t = estIntertitre(l) ? '' : texteDeLigne(l);
+					if (!t) { return; }
+					if (l === ligne) { courant = textes.length; }
+					textes.push(t);
+				});
+				return { textes: textes, courant: courant };
 			}
-			function majConseilsDuTexte() {
+			// Un intertitre qui finit par « . », « , », « ; » ou « : », comme
+			// au serveur (Notice_Archeomed_Controles::intertitres_ponctues).
+			function intertitresPonctues() {
+				var avis = [];
+				quill.getLines().filter(estIntertitre).forEach(function (l) {
+					var t = texteDeLigne(l), nu = t;
+					while (nu && FERMANTS.indexOf(nu.charAt(nu.length - 1)) !== -1) { nu = nu.slice(0, -1); }
+					var fin = nu.charAt(nu.length - 1);
+					if (!fin || '.,;:'.indexOf(fin) === -1 || nu.slice(-2) === '..') { return; }
+					avis.push('L’intertitre ' + guillemets(points(t).length > 40 ? '…' + extrait(t, -40) : t)
+						+ ' finit par ' + guillemets(fin) + NBSP + ': un intertitre ne prend pas de ponctuation finale.');
+				});
+				return avis;
+			}
+			// Les avis suivent la frappe : une seconde après la dernière touche,
+			// sans attendre qu'on quitte le texte.
+			function majConseilsDuTexte(enCours) {
 				if (!texteVu || !quill) { return; }
 				var paras = quill.getText().split('\n').map(function (p) { return p.trim(); }).filter(Boolean);
+				var sansTitres = parasSansIntertitres(enCours);
 				var longueur = quill.root.innerHTML.length;
 				montrerConseils(zoneTexte, [].concat(
 					longueur > 30000 ? ['Le texte dépasse 30' + NBSP + '000 caractères, mise en forme comprise (' + entier(longueur) + ')'
 						+ NBSP + ': le serveur en couperait la fin.'] : [],
 					avisDuCollage(paras),
-					avisActif('ponctuation') ? ponctuationFinale(parasSansIntertitres()) : [],
+					avisActif('ponctuation') ? ponctuationFinale(sansTitres.textes, sansTitres.courant).concat(intertitresPonctues()) : [],
 					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), selected.length) : [],
 					avisActif('ordinaux') ? ordinauxFautifs(paras) : [],
 					avisActif('annees_espacees') ? datesEspacees(paras) : [],
@@ -5247,7 +5276,17 @@ class Notice_Archeomed_Pactols {
 				return avis;
 			}
 			if (quill) {
-				quill.root.addEventListener('blur', function () { texteVu = true; majConseilsDuTexte(); });
+				var attenteDesConseils = null;
+				quill.root.addEventListener('blur', function () {
+					window.clearTimeout(attenteDesConseils);
+					texteVu = true;
+					majConseilsDuTexte(false);
+				});
+				quill.on('text-change', function (d, o, source) {
+					if (source === 'user') { texteVu = true; }
+					window.clearTimeout(attenteDesConseils);
+					attenteDesConseils = window.setTimeout(function () { majConseilsDuTexte(true); }, 1000);
+				});
 			}
 
 			// ── Les avis sur les personnes et le lieu-dit ──────────────────
