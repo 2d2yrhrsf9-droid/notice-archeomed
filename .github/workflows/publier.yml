@@ -127,6 +127,19 @@ jobs:
           tools: wp-cli
           coverage: none
 
+      # L'installation de WP-CLI par l'action de PHP a manqué une fois, et
+      # toute la publication est tombée sur « wp : commande introuvable »,
+      # sans rapport avec le plugin. Il se télécharge alors directement.
+      - name: WP-CLI présent
+        run: |
+          set -eu
+          if ! command -v wp >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            php /tmp/wp-cli.phar --info >/dev/null
+            sudo install -m 0755 /tmp/wp-cli.phar /usr/local/bin/wp
+          fi
+          wp --version
+
       - name: Monter un WordPress d'essai
         run: |
           set -Eeu
