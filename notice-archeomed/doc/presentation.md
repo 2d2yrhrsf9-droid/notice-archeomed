@@ -17,7 +17,8 @@ Le formulaire inverse la démarche : il guide l'auteur champ par champ, lui sign
 - **Les références administratives** : numéro d'autorisation, identifiant de l'opération dans la base nationale, lien vers le rapport final, organismes porteurs.
 - **Les personnes** : responsable, co-responsable, co-auteur, avec leur institution.
 - **Le texte**, dans un éditeur simple qui ne propose que ce que la revue imprime : italique, gras, exposant, petites capitales. Il n'y a pas de notes de bas de page, que la chronique n'admet pas.
-- **Les illustrations**, une à trois, avec pour chacune un titre, une légende, des crédits, un **texte alternatif** obligatoire (ce qu'une personne qui ne voit pas l'image doit en savoir) et, pour un plan ou une carte, une description détaillée facultative. Une autorisation de reproduction peut y être jointe. L'ordre des figures se change en les faisant glisser.
+- **Les illustrations**, une à trois. Chacune a sa carte : pour la publication, un titre et des crédits obligatoires, une légende et une autorisation de reproduction facultatives ; puis, encadré à part, un **texte pour un public empêché de voir** l'image, obligatoire — le texte alternatif, que les lecteurs d'écran lisent à la place de l'image. Pour un plan ou une carte, l'auteur peut y poursuivre à la ligne par une description détaillée, publiée sous la légende. L'ordre des figures se change en les faisant glisser.
+- **Un lien vers les originaux**, si les fichiers sont trop lourds pour le formulaire, avec la date à laquelle le service de transfert les effacera.
 
 ## Ce que le formulaire vérifie
 
@@ -37,7 +38,7 @@ Un brouillon est gardé dans le navigateur : une page fermée par erreur ne fait
 
 L'auteur reçoit aussitôt une **référence** de dépôt. Le formulaire rend la main en une fraction de seconde : la notice est enregistrée sur le site avant toute autre opération, puis expédiée en arrière-plan. Plusieurs centaines de personnes peuvent ainsi déposer le même jour sans que le site ralentisse, et deux dépôts simultanés ne se gênent jamais.
 
-- **La rédaction** reçoit un courriel avec la notice lisible, le document Word mis aux normes, et les illustrations en version allégée ; les originaux restent sur le site, téléchargeables depuis l'administration.
+- **La rédaction** reçoit un courriel avec la notice lisible, le document Word mis aux normes, et les illustrations en version allégée ; les originaux restent sur le site, téléchargeables depuis l'administration. Quand l'auteur a déposé ses originaux ailleurs, un second courriel l'avertit, avec le lien et le nombre de jours qui restent pour les télécharger.
 - **L'auteur et les personnes citées** reçoivent une copie avec le même document Word, et un lien qui rouvre le formulaire rempli pendant un mois : s'ils repèrent une erreur, ils la corrigent et redéposent, et la rédaction est avertie que ce nouveau dépôt remplace l'ancien.
 - Un courriel qui échoue n'efface rien : la notice reste en file, est représentée automatiquement, et l'administration signale ce qui n'est pas parti et pourquoi.
 

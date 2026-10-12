@@ -582,15 +582,21 @@ alphabétique.
 
 ## Les illustrations
 
-Chaque fichier déposé reçoit sa propre ligne dans le formulaire : **titre**,
-**texte alternatif**, **légende**, **crédits**. Un champ libre commun recevait
+Chaque fichier déposé reçoit sa propre carte dans le formulaire, nettement
+détachée de la page (« Figure 1 » en titre, fond teinté). Elle a deux parties.
+**Pour la publication** : le **titre** et les **crédits**, obligatoires, la
+**légende** et l'**autorisation de reproduction**, facultatives. Puis, en fin de
+carte, encadré et teinté parce que c'est un autre travail : **Pour un public
+empêché de voir**, le texte alternatif, obligatoire. Les champs obligatoires
+portent un astérisque, dans tout le formulaire. Un champ libre commun recevait
 tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
 image.
 
 ### Le texte alternatif
 
-Il est **obligatoire** pour toute figure déposée : quelques mots qui disent ce
-que montre l'image, pour les personnes malvoyantes ou non voyantes, dans la
+Il est **obligatoire** pour toute figure déposée, dans le champ « Pour un public
+empêché de voir » : quelques mots qui disent ce que montre l'image, pour les
+personnes malvoyantes ou non voyantes, dans la
 démarche d'accessibilité de la revue. L'aide le dit en une ligne : il ne
 répète pas la légende, il restitue l'information visuelle utile, sans
 « Image de », que le lecteur d'écran annonce déjà. Deux exemples de la
@@ -707,7 +713,13 @@ autre.
 
 Facultative, pour les figures complexes — plans, coupes, cartes,
 graphiques : ce qu'un lecteur qui ne la voit pas doit en savoir
-(organisation, repères, données). Texte simple, plusieurs paragraphes permis,
+(organisation, repères, données). Elle n'a plus de champ à elle : l'auteur ne
+comprenait pas pourquoi on lui en demandait deux. Elle s'écrit dans le même
+champ que le texte alternatif, **à la ligne** : le premier paragraphe est le
+texte alternatif, la suite la description détaillée
+(`Notice_Archeomed_Controles::separer_l_ecoute()`, et son pendant dans le
+navigateur). Un formulaire d'avant ce changement, qui l'envoie à part, est
+encore lu. Texte simple, plusieurs paragraphes permis,
 coupé au-delà de 2 000 caractères avec un avis. Elle suit sa figure comme le
 texte alternatif, paraît dans le courriel, la fiche et la page de relecture
 — sous la figure, l'image y renvoyant par `aria-describedby` —, et au Word à
@@ -744,8 +756,12 @@ PNG, 10 Mo au plus) : elle se garde avec la notice, se télécharge depuis la
 fiche sous sa figure, et part dans le courriel si elle tient dans le poids
 permis. Des originaux trop lourds pour le formulaire ? L'auteur en joint des
 versions allégées et donne un **lien de téléchargement** des originaux
-(FileSender de RENATER, espace de partage de son établissement), qui arrive
-dans le courriel et le document.
+(FileSender de RENATER, espace de partage de son établissement), avec la
+**date** à laquelle le service l'efface — obligatoire dès qu'un lien est donné.
+Le lien et sa date arrivent dans le courriel et le document, et la rédaction
+reçoit en plus un **courriel d'alerte** à part, dont l'objet ne peut pas
+passer inaperçu : « ATTENTION — LIEN À TÉLÉCHARGER DANS 12 JOURS, JUSQU’AU
+24 OCTOBRE 2026 — Caen (Calvados), Le Château — réf. … ».
 
 L'auteur reçoit **le fichier Word en pièce jointe** de son accusé de
 réception : c'est le même que celui de la rédaction. Il voit ce qui a été

@@ -1421,6 +1421,7 @@ $_POST = array( 'illus_titre' => array( 'Plan', 'Vue' ), 'illus_legende' => arra
 $_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg', 'vue.jpg' ), 'error' => array( 0, 0 ) ) );
 $figures_alt = na_appel( $plugin, 'collect_illustrations' );
 $manquent_alt = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'illustrations' => $figures_alt ) ) ) );
+$manquent_figures = array_values( preg_grep( '/^illus_/', $manquent_alt ) );
 $_FILES = array();
 $manquent_sans_fichier = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'illustrations' => $figures_alt ) ) ) );
 $_POST = array();
@@ -1433,6 +1434,30 @@ na_verifier( array( 'illus_alt_2' ) === $manquent_alt && array() === $manquent_s
 	&& isset( $table_alt['illus_alt_2'] ) && false !== strpos( $table_alt['illus_alt_2'][1], 'figure 2' )
 	&& 'na-illus-2-alt' === $table_alt['illus_alt_2'][0],
 	'il est obligatoire pour une figure déposée, et le message dit laquelle ; sans fichier, rien n\'est demandé', array( $manquent_alt, $manquent_sans_fichier ) );
+na_verifier( array( 'illus_credits_1', 'illus_credits_2', 'illus_alt_2' ) === $manquent_figures
+	&& isset( $table_alt['illus_titre_3'], $table_alt['illus_credits_3'] ) && 'na-illus-2-credits' === $table_alt['illus_credits_2'][0],
+	'le titre et les crédits d\'une figure déposée sont obligatoires, comme son texte alternatif, dans l\'ordre de la carte', $manquent_figures );
+$sans_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '' ) ) ) );
+$avec_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '2026-12-31' ) ) ) );
+$dates_lues = array( na_appel( $plugin, 'date_valide', array( '2026-02-30' ) ), na_appel( $plugin, 'date_valide', array( '2026-12-31' ) ), na_appel( $plugin, 'date_valide', array( '31/12/2026' ) ) );
+na_verifier( in_array( 'originaux_jusqua', $sans_date, true ) && ! in_array( 'originaux_jusqua', $avec_date, true ) && array( false, true, false ) === $dates_lues,
+	'un lien vers les originaux demande sa date d\'expiration, une date qui existe au calendrier', array( $sans_date, $dates_lues ) );
+$alertes = array();
+$capter_alerte = function ( $retour, $atts ) use ( &$alertes ) {
+	$alertes[] = $atts;
+	return true;
+};
+add_filter( 'pre_wp_mail', $capter_alerte, 10, 2 );
+$dans_douze = ( new DateTimeImmutable( 'today', wp_timezone() ) )->modify( '+12 days' )->format( 'Y-m-d' );
+na_appel( $plugin, 'alerter_pour_les_originaux', array( array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => $dans_douze, 'resp_email' => 'aude.ferrand@example.org' ),
+	array( 'redaction@example.org' ), array( 'Content-Type: text/html; charset=UTF-8' ), 'Caen (Calvados), Le Château', 'ABC123' ) );
+na_appel( $plugin, 'alerter_pour_les_originaux', array( array( 'originaux_lien' => '' ), array( 'redaction@example.org' ), array(), 'Rien', '' ) );
+remove_filter( 'pre_wp_mail', $capter_alerte, 10 );
+$mois_douze = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( wp_date( 'F', ( new DateTimeImmutable( $dans_douze . ' 12:00', wp_timezone() ) )->getTimestamp() ), 'UTF-8' ) : '';
+na_verifier( 1 === count( $alertes ) && 0 === strpos( $alertes[0]['subject'], 'ATTENTION — LIEN À TÉLÉCHARGER DANS 12 JOURS, JUSQU’AU ' )
+	&& false !== strpos( $alertes[0]['subject'], $mois_douze ) && false !== strpos( $alertes[0]['subject'], 'Caen (Calvados), Le Château — réf. ABC123' )
+	&& false !== strpos( $alertes[0]['message'], 'https://filesender.renater.fr/x' ) && array( 'redaction@example.org' ) === (array) $alertes[0]['to'],
+	'un lien vers les originaux vaut à la rédaction un courriel à part, dont l\'objet dit le délai et la date ; sans lien, rien', $alertes );
 na_verifier( 'Plan des murs' === Notice_Archeomed_Controles::texte_alternatif( array( 'rang' => 1, 'titre' => 'Plan', 'alt' => 'Plan des murs' ) )
 	&& 'Plan général' === Notice_Archeomed_Controles::texte_alternatif( array( 'rang' => 1, 'titre' => 'Fig. 1 : Plan général' ) ),
 	'une notice d\'avant le champ retombe sur le titre de la figure' );
@@ -1451,13 +1476,22 @@ na_verifier( 1 === count( preg_grep( '/Fig\. 2.*reprend le titre/u', $avis_alt )
 na_verifier( 0 === preg_match( $C::ALT_DEBUTS, 'Image depuis le nord du bâtiment 1' ) && 0 === preg_match( $C::ALT_DEBUTS, 'Photo désaturée du mur' )
 	&& 1 === preg_match( $C::ALT_DEBUTS, 'Image de la tour' ) && 1 === preg_match( $C::ALT_DEBUTS, 'Photo d’ensemble' ) && 1 === preg_match( $C::ALT_DEBUTS, 'Photo des fosses' ),
 	'« Image de » se reconnaît mot à mot : « Image depuis » n\'est pas visé' );
-$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "Plan\n des   murs\t" . str_repeat( 'x', 400 ) ) );
+$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "Plan des   murs\t" . str_repeat( 'x', 400 ) ) );
 $_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
 $coupee = na_appel( $plugin, 'collect_illustrations' );
+$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( "  Plan des deux bâtiments.\r\n\r\nLe fossé longe le mur ouest.\nLe puits est au centre.  " ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
+$ecoute = na_appel( $plugin, 'collect_illustrations' );
+$_POST = array( 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( 'Plan des deux bâtiments.' ), 'illus_description' => array( 'Envoyée à part.' ) );
+$ancienne = na_appel( $plugin, 'collect_illustrations' );
 $_POST = array();
 $_FILES = array();
 na_verifier( 300 === mb_strlen( $coupee[0]['alt'], 'UTF-8' ) && 0 === strpos( $coupee[0]['alt'], 'Plan des murs x' ),
 	'le texte alternatif tient sur une ligne et se coupe à 300 caractères', $coupee[0]['alt'] );
+na_verifier( 'Plan des deux bâtiments.' === $ecoute[0]['alt'] && "Le fossé longe le mur ouest.\nLe puits est au centre." === $ecoute[0]['description']
+	&& 'Plan des deux bâtiments.' === $ancienne[0]['alt'] && 'Envoyée à part.' === $ancienne[0]['description'],
+	'le champ « Pour un public empêché de voir » : le premier paragraphe est le texte alternatif, la suite la description ; un formulaire d\'avant, qui envoie la description à part, est encore lu',
+	array( $ecoute, $ancienne ) );
 $ST::oublier();
 $figure_du_dossier = array( 'fichier' => 'icono/br/plan.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 );
 $saisie_alt = array_merge( $saisie_styles, array( 'illustrations' => array(

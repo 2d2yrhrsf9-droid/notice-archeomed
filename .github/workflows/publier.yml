@@ -164,6 +164,12 @@ jobs:
             head -c 3000 /tmp/page.html
             exit 1
           fi
+          # Le script du formulaire, tel que le thème le sert : un thème à
+          # blocs changeait des « && » en « &#038;&#038; » dans le contenu,
+          # et le formulaire restait inerte sans qu'aucun essai ne le voie.
+          python3 -c 'import re,sys; t=open("/tmp/page.html",encoding="utf-8").read(); s=[m for m in re.findall(r"<script(?![^>]*src)[^>]*>(.*?)</script>",t,re.S) if "na-form" in m]; open("/tmp/formulaire.js","w",encoding="utf-8").write("\n;\n".join(s)); sys.exit(0 if s else 1)' \
+            || { echo "::error::Le script du formulaire manque à la page."; exit 1; }
+          node --check /tmp/formulaire.js || { echo "::error::Le script du formulaire, tel que la page le sert, n'est pas du JavaScript valide."; exit 1; }
 
       - name: La file des termes et le reste, éprouvés par PHP
         working-directory: /tmp/wp

@@ -275,8 +275,11 @@ class Notice_Archeomed_Pactols {
 		'Prospection thématique'        => 'https://ark.frantiq.fr/ark:/26678/crtcYIBmBlBPH',
 		'Surveillance de travaux'       => 'https://ark.frantiq.fr/ark:/26678/crtZ49Dtn1aMT',
 	);
+	/** Les scripts du formulaire, mis de côté pour le pied de page. */
+	private $scripts_du_pied = array();
+
 	public function __construct() {
-		add_shortcode( 'notice_archeomed_pactols', array( $this, 'render_form' ) );
+		add_shortcode( 'notice_archeomed_pactols', array( $this, 'afficher_le_formulaire' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'init', array( $this, 'handle_submission' ) );
 		// Après « init » : il faut savoir quelle page est demandée.
@@ -1219,7 +1222,7 @@ class Notice_Archeomed_Pactols {
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'annee',
-			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'commentaires',
+			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
 			'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 		);
 		foreach ( $simples as $champ ) {
@@ -1598,7 +1601,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function natures_html() {
 		$html  = '<fieldset class="na-sous-groupe na-champ" id="na-nature" aria-describedby="na-nature-aide">';
-		$html .= '<legend>Nature de l’opération</legend>';
+		$html .= '<legend>Nature de l’opération <span class="na-requis" aria-hidden="true">*</span></legend>';
 		$html .= '<p class="na-help" id="na-nature-aide">Cochez toutes celles qui s’appliquent.</p>';
 		$html .= '<div class="na-familles na-ancre">';
 		$n = 0;
@@ -1839,10 +1842,17 @@ class Notice_Archeomed_Pactols {
 			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
 			// Les champs d'une figure ne sont dans la page qu'une fois son
 			// fichier choisi : le lien y mène quand il existe.
-			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, dans son texte alternatif' ),
-			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, dans son texte alternatif' ),
-			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, dans son texte alternatif' ),
+			'illus_titre_1'       => array( 'na-illus-1-titre', 'Donnez un titre à la figure 1' ),
+			'illus_credits_1'     => array( 'na-illus-1-credits', 'Indiquez les crédits de la figure 1, son auteur et le détenteur des droits' ),
+			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, pour un public empêché de voir' ),
+			'illus_titre_2'       => array( 'na-illus-2-titre', 'Donnez un titre à la figure 2' ),
+			'illus_credits_2'     => array( 'na-illus-2-credits', 'Indiquez les crédits de la figure 2, son auteur et le détenteur des droits' ),
+			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, pour un public empêché de voir' ),
+			'illus_titre_3'       => array( 'na-illus-3-titre', 'Donnez un titre à la figure 3' ),
+			'illus_credits_3'     => array( 'na-illus-3-credits', 'Indiquez les crédits de la figure 3, son auteur et le détenteur des droits' ),
+			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, pour un public empêché de voir' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
+			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
 		);
 	}
@@ -2087,6 +2097,38 @@ class Notice_Archeomed_Pactols {
 	 * demande. Les noms des champs n'ont pas changé : le serveur reçoit
 	 * exactement ce qu'il recevait. Sans script, rien n'est replié.
 	 */
+	/**
+	 * Ce que le shortcode pose dans la page : le formulaire, ses scripts
+	 * renvoyés au pied de page.
+	 *
+	 * Le formulaire porte son script en ligne. Dans le contenu d'une page,
+	 * un thème à blocs le fait passer par des filtres qui changent une partie
+	 * des « && » en « &#038;&#038; » : le script entier tombait en erreur de
+	 * syntaxe, et le formulaire restait inerte — ni avis, ni figures, ni
+	 * vérification. Au pied de page, aucun filtre de contenu ne le touche ;
+	 * il s'exécute encore avant « DOMContentLoaded », qu'il attend.
+	 */
+	public function afficher_le_formulaire() {
+		$html = (string) $this->render_form();
+		if ( did_action( 'wp_footer' ) ) {
+			return $html;   // trop tard pour le pied de page : le script reste en place
+		}
+		$html = (string) preg_replace_callback( '#<script\b[^>]*>.*?</script>#is', function ( $m ) {
+			$this->scripts_du_pied[] = $m[0];
+			return '';
+		}, $html );
+		if ( ! empty( $this->scripts_du_pied ) && ! has_action( 'wp_footer', array( $this, 'poser_les_scripts_du_pied' ) ) ) {
+			add_action( 'wp_footer', array( $this, 'poser_les_scripts_du_pied' ), 25 );
+		}
+		return $html;
+	}
+
+	/** Les scripts du formulaire, au pied de la page, une seule fois. */
+	public function poser_les_scripts_du_pied() {
+		echo implode( "\n", $this->scripts_du_pied );   // écrits par render_form, déjà échappés
+		$this->scripts_du_pied = array();
+	}
+
 	public function render_form() {
 		// Le dépôt a abouti : on le dit, et l'on s'arrête là.
 		if ( isset( $_GET['notice_envoyee'] ) && '1' === $_GET['notice_envoyee'] ) {
@@ -2186,6 +2228,7 @@ class Notice_Archeomed_Pactols {
 				font-size: var(--na-t-m); font-weight: 600; line-height: 1.35; color: var(--na-encre);
 				text-transform: none; letter-spacing: normal; }
 			.na-form#na-form .na-facultatif { font-weight: 400; color: var(--na-sourd); }
+			.na-form#na-form .na-requis { font-weight: 700; color: var(--na-erreur); }
 			.na-form#na-form .na-help { max-width: var(--na-mesure); margin: 0 0 var(--na-e2);
 				font-size: var(--na-t-s); font-weight: 400; line-height: 1.5; color: var(--na-sourd); }
 			.na-form#na-form .na-help strong { font-weight: 600; color: var(--na-encre); }
@@ -2367,10 +2410,23 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-fichiers-refuses { margin-top: var(--na-e2); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
 				color: var(--na-erreur); background: var(--na-erreur-fond); border-left: 3px solid var(--na-erreur); }
 			.na-form#na-form .na-filelist { display: grid; gap: var(--na-e3); margin-top: var(--na-e3); }
-			.na-form#na-form .na-illus { position: relative; padding: var(--na-e4); background: var(--na-papier);
-				border: 1px solid var(--na-filet-doux); border-left: 3px solid var(--na-accent); border-radius: var(--na-r2); }
-			.na-form#na-form .na-illus legend { margin: 0 0 var(--na-e2); padding-right: 5.5rem; font-size: var(--na-t-m); font-weight: 600; line-height: 1.35; }
-			.na-form#na-form .na-illus-fichier { font-weight: 400; font-size: var(--na-t-s); color: var(--na-sourd); overflow-wrap: anywhere; }
+			/* Une carte par figure, qui se détache de la page : fond teinté,
+			   filet appuyé, titre en grand. Les champs restent sur fond blanc. */
+			.na-form#na-form .na-illus { position: relative; padding: var(--na-e5); background: var(--na-surface);
+				border: 1px solid var(--na-filet); border-left: 6px solid var(--na-accent); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus legend { float: left; width: 100%; margin: 0 0 var(--na-e4); padding: 0 5.5rem var(--na-e2) 0;
+				font-family: var(--na-serif); font-size: var(--na-t-xl); font-weight: 600; line-height: 1.25;
+				border-bottom: 1px solid var(--na-filet-doux); }
+			.na-form#na-form .na-illus-fichier { display: block; margin-top: var(--na-e1); font-family: inherit; font-weight: 400;
+				font-size: var(--na-t-s); color: var(--na-sourd); overflow-wrap: anywhere; }
+			.na-form#na-form .na-illus-partie { margin: 0; font-size: var(--na-t-s); font-weight: 700; letter-spacing: .06em;
+				text-transform: uppercase; color: var(--na-sourd); }
+			/* Le texte pour qui ne voit pas l'image : un autre travail, encadré
+			   et teinté, en fin de carte. */
+			.na-form#na-form .na-illus-ecoute { margin-top: var(--na-e3); padding: var(--na-e4); background: var(--na-accent-voile);
+				border: 2px solid var(--na-accent); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
+			.na-form#na-form .na-illus-terme { font-weight: 400; color: var(--na-sourd); }
 			.na-form#na-form .na-illus button.na-fileremove { position: absolute; top: var(--na-e3); right: var(--na-e3); margin: 0; }
 			.na-form#na-form .na-illus-champs { clear: both; display: grid; gap: var(--na-e3); }
 			.na-form#na-form .na-illus-champs label { margin: 0; font-size: var(--na-t-s); }
@@ -2553,7 +2609,7 @@ class Notice_Archeomed_Pactols {
 					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’autorisation et son identifiant Patriarche&nbsp;;</li>
 					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>), avec leurs légendes et crédits.</li>
 				</ul>
-				<p>Tous les champs sont obligatoires, sauf ceux marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, le responsable d’opération — et, s’il y a lieu, le co-responsable et le co-auteur — reçoit une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
+				<p>Les champs obligatoires portent un astérisque (<span class="na-requis">*</span>)&nbsp;; les autres sont marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, le responsable d’opération — et, s’il y a lieu, le co-responsable et le co-auteur — reçoit une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
 			</div>
 			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
 			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
@@ -2570,7 +2626,7 @@ class Notice_Archeomed_Pactols {
 				<fieldset class="na-sous-groupe" id="na-titre">
 					<legend>Le titre de la notice</legend>
 					<div class="na-champ">
-						<label for="na-lieu-1">Commune ou territoire de l’opération</label>
+						<label for="na-lieu-1">Commune ou territoire de l’opération <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-lieu-aide">Commencez à taper, puis choisissez dans la liste&nbsp;: le lieu reçoit ainsi son identifiant Pactols. S’il n’y figure pas, écrivez-le simplement.</p>
 						<?php
 						$lieux_repris = $this->repris_liste( 'commune' );
@@ -2600,15 +2656,15 @@ class Notice_Archeomed_Pactols {
 						<p class="na-help" id="na-lieu-plus-aide">Pour une opération sur plusieurs communes, dans l’ordre où elles doivent paraître (cinq au plus).</p>
 					</div>
 					<div class="na-champ">
-						<label for="na-departement">Département ou région</label>
-						<p class="na-help" id="na-departement-aide">Le plus souvent le département&nbsp;: Calvados. Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Rempli d’après la commune choisie&nbsp;; vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&nbsp;Autres lieux&nbsp;» (section&nbsp;4).</p>
+						<label for="na-departement">Département ou région <span class="na-requis" aria-hidden="true">*</span></label>
+						<p class="na-help" id="na-departement-aide">Le plus souvent le département, rempli automatiquement (ex.&nbsp;Calvados). Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&nbsp;Autres lieux&nbsp;» (section&nbsp;4).</p>
 						<input type="text" id="na-departement" name="departement" required
 							aria-describedby="na-departement-aide na-departement-auto"
 							value="<?php echo esc_attr( $this->repris( 'departement' ) ); ?>">
 						<p class="na-auto" id="na-departement-auto" aria-live="polite"></p>
 					</div>
 					<div class="na-champ">
-						<label for="na-lieu-dit">Lieu-dit, adresse ou nom du projet</label>
+						<label for="na-lieu-dit">Lieu-dit, adresse ou nom du projet <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&nbsp;; 12, rue des Carmes&nbsp;; ou le titre d’un projet collectif de recherche.</p>
 						<input type="text" id="na-lieu-dit" name="lieu_dit" required
 							aria-describedby="na-lieu-dit-aide na-apercu"
@@ -2623,14 +2679,14 @@ class Notice_Archeomed_Pactols {
 				<?php echo $this->natures_html(); ?>
 
 				<div class="na-champ na-court">
-					<label for="na-annee">Année de l’opération</label>
+					<label for="na-annee">Année de l’opération <span class="na-requis" aria-hidden="true">*</span></label>
 					<p class="na-help" id="na-annee-aide">Par exemple&nbsp;: 2024, ou 2004-2005 pour une opération sur plusieurs années.</p>
 					<input type="text" id="na-annee" name="annee" required aria-describedby="na-annee-aide"
 						value="<?php echo esc_attr( $this->repris( 'annee' ) ); ?>">
 				</div>
 
 				<div class="na-champ">
-					<label for="na-organisme-1">Organisme qui gère l’opération</label>
+					<label for="na-organisme-1">Organisme qui gère l’opération <span class="na-requis" aria-hidden="true">*</span></label>
 					<p class="na-help" id="na-organisme-aide">Par exemple&nbsp;: Inrap, service archéologique départemental, université, CNRS, opérateur privé. Les autres partenaires scientifiques se citent dans le texte.</p>
 					<?php
 					$organismes_repris = $this->repris_liste( 'organisme' );
@@ -2684,24 +2740,24 @@ class Notice_Archeomed_Pactols {
 					<legend>Responsable d’opération</legend>
 					<div class="na-half">
 						<div class="na-champ">
-							<label for="na-resp-prenom">Prénom</label>
+							<label for="na-resp-prenom">Prénom <span class="na-requis" aria-hidden="true">*</span></label>
 							<input type="text" id="na-resp-prenom" name="resp_prenom" required autocomplete="given-name"
 								value="<?php echo esc_attr( $this->repris( 'resp_prenom' ) ); ?>">
 						</div>
 						<div class="na-champ">
-							<label for="na-resp-nom">Nom</label>
+							<label for="na-resp-nom">Nom <span class="na-requis" aria-hidden="true">*</span></label>
 							<input type="text" id="na-resp-nom" name="resp_nom" required autocomplete="family-name"
 								value="<?php echo esc_attr( $this->repris( 'resp_nom' ) ); ?>">
 						</div>
 					</div>
 					<div class="na-champ">
-						<label for="na-resp-email">Adresse électronique</label>
+						<label for="na-resp-email">Adresse électronique <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-resp-email-aide">La copie de la notice et le lien pour la corriger partiront à cette adresse. Si vous déposez pour le responsable, c’est lui qui les recevra.</p>
 						<input type="email" id="na-resp-email" name="resp_email" required autocomplete="email" spellcheck="false"
 							aria-describedby="na-resp-email-aide" value="<?php echo esc_attr( $this->repris( 'resp_email' ) ); ?>">
 					</div>
 					<div class="na-champ">
-						<label for="na-resp-inst">Institution de rattachement</label>
+						<label for="na-resp-inst">Institution de rattachement <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-resp-inst-aide">Telle qu’elle doit paraître après son nom dans la notice&nbsp;: employeur, laboratoire.</p>
 						<input type="text" id="na-resp-inst" name="resp_inst" required autocomplete="organization"
 							aria-describedby="na-resp-inst-aide" value="<?php echo esc_attr( $this->repris( 'resp_inst' ) ); ?>">
@@ -2760,7 +2816,7 @@ class Notice_Archeomed_Pactols {
 			<section class="na-section" aria-labelledby="na-s3">
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
-					<p class="na-libelle" id="na-texte-libelle">Texte de la notice</p>
+					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
 					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; titres et listes deviennent des paragraphes. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
@@ -2771,13 +2827,13 @@ class Notice_Archeomed_Pactols {
 			<section class="na-section" aria-labelledby="na-s4">
 				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Classement et mots-clés</h2>
 				<div class="na-champ">
-					<label for="na-rubrique">Rubrique de la Chronique</label>
+					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
 					<p class="na-help" id="na-rubrique-aide">La rubrique où paraîtra la notice.</p>
 					<select id="na-rubrique" name="rubrique_principale" required aria-describedby="na-rubrique-aide"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
 				</div>
 				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
 				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
-					<label for="na-matiere">Matière</label>
+					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
 					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
 					<select id="na-matiere" name="rubrique_matiere" aria-describedby="na-matiere-aide">
 						<option value="">Choisir une matière…</option>
@@ -2846,6 +2902,13 @@ class Notice_Archeomed_Pactols {
 						spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
 						value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">
 				</div>
+				<div class="na-champ">
+					<label for="na-originaux-jusqua">Lien valable jusqu’au <span class="na-requis" aria-hidden="true">*</span> <span class="na-facultatif">si vous donnez un lien</span></label>
+					<p class="na-help" id="na-originaux-jusqua-aide">La date à laquelle le service de transfert effacera les fichiers&nbsp;: la rédaction est prévenue qu’elle doit les télécharger avant.</p>
+					<input type="date" id="na-originaux-jusqua" name="originaux_jusqua" aria-describedby="na-originaux-jusqua-aide"
+						min="<?php echo esc_attr( wp_date( 'Y-m-d' ) ); ?>"
+						value="<?php echo esc_attr( $this->repris( 'originaux_jusqua' ) ); ?>">
+				</div>
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s6">
@@ -2859,7 +2922,7 @@ class Notice_Archeomed_Pactols {
 					<div class="na-question na-champ" id="na-puzzle"
 						data-cible="<?php echo esc_attr( $defi['cible'] ); ?>"
 						data-tolerance="<?php echo esc_attr( self::PUZZLE_TOLERANCE ); ?>">
-						<p class="na-libelle" id="na-puzzle-libelle">Vérification&nbsp;: faites glisser la pièce jusqu’à son encoche</p>
+						<p class="na-libelle" id="na-puzzle-libelle">Vérification&nbsp;: faites glisser la pièce jusqu’à son encoche <span class="na-requis" aria-hidden="true">*</span></p>
 						<p class="na-help" id="na-puzzle-aide">Au clavier&nbsp;: flèches, puis Entrée.</p>
 						<div class="na-puzzle-scene na-ancre">
 							<canvas class="na-puzzle-fond" id="na-puzzle-fond" width="320" height="150"
@@ -4124,8 +4187,11 @@ class Notice_Archeomed_Pactols {
 						'titre'   => isset( $reprise['illus_titre'][ $i ] ) ? $reprise['illus_titre'][ $i ] : '',
 						'legende' => isset( $reprise['illus_legende'][ $i ] ) ? $reprise['illus_legende'][ $i ] : '',
 						'credits' => isset( $reprise['illus_credits'][ $i ] ) ? $reprise['illus_credits'][ $i ] : '',
-						'alt'     => isset( $reprise['illus_alt'][ $i ] ) ? $reprise['illus_alt'][ $i ] : '',
-						'description' => isset( $reprise['illus_description'][ $i ] ) ? $reprise['illus_description'][ $i ] : '',
+						// Le champ unique pour l'écoute : le texte alternatif,
+						// puis à la ligne la description d'une saisie ancienne.
+						'alt'     => trim( ( isset( $reprise['illus_alt'][ $i ] ) ? $reprise['illus_alt'][ $i ] : '' )
+							. ( ! empty( $reprise['illus_description'][ $i ] ) ? "\n" . $reprise['illus_description'][ $i ] : '' ) ),
+						'description' => '',
 						'nom'     => isset( $reprise['illus_nom'][ $i ] ) ? $reprise['illus_nom'][ $i ] : '',
 						// L'autorisation jointe au dépôt d'avant : le fichier ne
 						// revient pas, la figure dit qu'il est à rejoindre.
@@ -4234,11 +4300,13 @@ class Notice_Archeomed_Pactols {
 			}
 			var AIDES_ILLUS = {
 				titre: 'Une ligne informative, qui nomme ce que montre la figure et son objet' + NBSP + ': Plan des vestiges de la chapelle et du cimetière.',
-				alt: 'Pour qui ne voit pas l’image' + NBSP + ': en quelques mots, l’information visuelle utile. Il ne répète pas la légende. '
+				alt: 'Ce que montre l’image, pour les personnes qui ne la voient pas' + NBSP + ': leur lecteur d’écran lit ce texte à sa place. '
+					+ 'En une ou deux phrases, l’information visuelle utile, sans répéter la légende. '
 					+ 'Ne commencez pas par «' + NBSP + 'Image de' + NBSP + '» ou «' + NBSP + 'Photo de' + NBSP + '», '
-					+ 'et citez un texte important visible dans l’image.',
-				description: 'Pour une figure complexe' + NBSP + ': ce qu’un lecteur qui ne la voit pas doit en savoir — organisation, repères, données. Elle est publiée à la suite de la légende.',
-				legende: 'Le texte qui accompagne la figure. Reprenez-y ce qu’un lecteur qui ne voit pas l’image doit savoir' + NBSP
+					+ 'et citez un texte important visible dans l’image. '
+					+ 'Pour un plan ou une carte, vous pouvez poursuivre à la ligne' + NBSP + ': la suite — organisation, repères, données — '
+					+ 'est publiée sous la légende, pour tous les lecteurs.',
+				legende: 'Le texte qui accompagne la figure. Reprenez-y ce qu’un public empêché de voir l’image doit en savoir' + NBSP
 					+ ': la clé d’un plan ou d’une carte, les inscriptions, les étiquettes, l’échelle, l’orientation.',
 				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
 			};
@@ -4259,25 +4327,35 @@ class Notice_Archeomed_Pactols {
 					var p = document.createElement('p');
 					p.appendChild(document.createTextNode('Légende' + NBSP + ': ' + guillemetsA11y(x[0])));
 					p.appendChild(document.createElement('br'));
-					p.appendChild(document.createTextNode('Texte alternatif' + NBSP + ': ' + guillemetsA11y(x[1])));
+					p.appendChild(document.createTextNode('Pour un public empêché de voir' + NBSP + ': ' + guillemetsA11y(x[1])));
 					d.appendChild(p);
 				});
 				var rappel = document.createElement('p');
-				rappel.textContent = 'Le texte alternatif ne répète pas la légende' + NBSP + ': il restitue l’information visuelle utile.';
+				rappel.textContent = 'Ce texte ne répète pas la légende' + NBSP + ': il restitue l’information visuelle utile.';
 				d.appendChild(rappel);
 				return d;
 			}
 			function guillemetsA11y(t) { return '«' + NBSP + t + NBSP + '»'; }
-			// Les trois champs sont facultatifs, et l'introduction dit que ce qui
-			// l'est porte la mention : ils ne la portaient pas. Le texte
-			// alternatif, lui, est obligatoire : sans lui, la figure n'existe
-			// pas pour qui ne la voit pas.
+			// Comme au serveur (Notice_Archeomed_Controles::separer_l_ecoute) :
+			// le premier paragraphe est le texte alternatif, la suite la
+			// description détaillée.
+			function separerEcoute(t) {
+				var lignes = String(t || '').split(/\r?\n/).map(net).filter(function (l) { return l !== ''; });
+				return { alt: lignes.length ? lignes[0] : '', description: lignes.slice(1).join('\n') };
+			}
+			// Le titre, les crédits et le texte pour l'écoute sont obligatoires,
+			// et portent l'astérisque ; la légende est facultative, et le dit.
+			// Sans texte pour l'écoute, la figure n'existe pas pour qui ne la
+			// voit pas.
+			var OBLIGATOIRES_ILLUS = ['titre', 'credits', 'alt'];
 			function champIllustration(idx, clef, libelle, lignes) {
 				var bloc = document.createElement('div');
 				var id = 'na-illus-' + (idx + 1) + '-' + clef;
+				var obligatoire = OBLIGATOIRES_ILLUS.indexOf(clef) !== -1;
 				var etiquette = document.createElement('label');
 				etiquette.htmlFor = id;
-				etiquette.innerHTML = libelle + (clef === 'alt' ? '' : ' <span class="na-facultatif">(facultatif)</span>');
+				etiquette.innerHTML = libelle + (obligatoire ? ' <span class="na-requis" aria-hidden="true">*</span>'
+					: ' <span class="na-facultatif">(facultatif)</span>');
 				var aide = document.createElement('p');
 				aide.className = 'na-help';
 				aide.id = id + '-aide';
@@ -4288,32 +4366,41 @@ class Notice_Archeomed_Pactols {
 				champ.id = id;
 				champ.name = 'illus_' + clef + '[]';
 				champ.setAttribute('aria-describedby', aide.id);
+				// Une description détaillée d'avant le champ unique rejoint le
+				// texte pour l'écoute, à la ligne : c'est ainsi qu'elle s'y écrit.
+				if (clef === 'alt' && illusMeta[idx] && !vide(illusMeta[idx].description)) {
+					illusMeta[idx].alt = net(illusMeta[idx].alt || '') + '\n' + illusMeta[idx].description;
+					illusMeta[idx].description = '';
+				}
 				champ.value = illusMeta[idx] && illusMeta[idx][clef] ? illusMeta[idx][clef] : '';
+				if (obligatoire) { champ.required = true; }
 				champ.addEventListener('input', function () {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx][clef] = champ.value;
 				});
 				if (clef === 'alt') {
-					champ.required = true;
-					champ.maxLength = ALT_MAX;
+					champ.maxLength = ALT_MAX + DESCRIPTION_MAX + 20;
 					champ.setAttribute('autocomplete', 'off');
-					// Un compteur sous le champ : la longueur conseillée se voit
-					// avant l'avis.
+					// Un compteur sous le champ : la longueur conseillée du
+					// premier paragraphe — le texte alternatif — se voit avant
+					// l'avis.
 					compteur = document.createElement('p');
 					compteur.className = 'na-help na-compteur';
 					compteur.id = id + '-compteur';
 					compter = function () {
-						var n = points(champ.value).length;
+						var n = points(separerEcoute(champ.value).alt).length;
 						compteur.textContent = entier(n) + NBSP + '/' + NBSP + entier(ALT_MAX) + ' caractères'
 							+ (n > ALT_CONSEILLE ? ' — plus de ' + ALT_CONSEILLE + ', c’est long' : ', ' + ALT_CONSEILLE + ' au plus conseillés');
 					};
 					champ.addEventListener('input', compter);
 					champ.setAttribute('aria-describedby', aide.id + ' ' + compteur.id);
 				}
-				champ.addEventListener('blur', function () {
-					avisDeLongueur(champ, { legende: 1500, alt: ALT_MAX, description: DESCRIPTION_MAX }[clef] || 400,
-						{ titre: 'Le titre', legende: 'La légende', credits: 'Le crédit', alt: 'Le texte alternatif', description: 'La description détaillée' }[clef]);
-				});
+				if (clef !== 'alt') {
+					champ.addEventListener('blur', function () {
+						avisDeLongueur(champ, { legende: 1500 }[clef] || 400,
+							{ titre: 'Le titre', legende: 'La légende', credits: 'Le crédit' }[clef]);
+					});
+				}
 				bloc.appendChild(etiquette);
 				bloc.appendChild(aide);
 				if (clef === 'alt') { bloc.appendChild(exemplesDuTexteAlternatif()); }
@@ -4492,17 +4579,23 @@ class Notice_Archeomed_Pactols {
 					}
 					var champs = document.createElement('div');
 					champs.className = 'na-illus-champs';
+					// Deux parties : ce qui s'imprime avec la figure, puis, encadré,
+					// le texte pour qui ne la voit pas — un autre travail, qui
+					// demande d'expliquer l'image et non de la légender.
+					var publication = document.createElement('p');
+					publication.className = 'na-illus-partie';
+					publication.textContent = 'Pour la publication';
 					var titre = champIllustration(idx, 'titre', 'Titre', 0);
-					var alt = champIllustration(idx, 'alt', 'Texte alternatif', 0);
-					var description = champIllustration(idx, 'description', 'Description détaillée', 3);
 					var legende = champIllustration(idx, 'legende', 'Légende', 2);
 					var credits = champIllustration(idx, 'credits', 'Crédits', 0);
+					var alt = champIllustration(idx, 'alt', 'Pour un public empêché de voir <span class="na-illus-terme">— le texte alternatif</span>', 4);
+					alt.bloc.className = 'na-illus-ecoute';
+					champs.appendChild(publication);
 					champs.appendChild(titre.bloc);
-					champs.appendChild(alt.bloc);
-					champs.appendChild(description.bloc);
 					champs.appendChild(legende.bloc);
 					champs.appendChild(credits.bloc);
 					champs.appendChild(champAutorisation(idx));
+					champs.appendChild(alt.bloc);
 					var conseils = document.createElement('div');
 					conseils.className = 'na-conseils';
 					conseils.id = 'na-illus-' + (idx + 1) + '-conseils';
@@ -4520,7 +4613,7 @@ class Notice_Archeomed_Pactols {
 					});
 					li.appendChild(groupe);
 					fileList.appendChild(li);
-					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: description.champ, legende: legende.champ, credits: credits.champ };
+					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ };
 					majFigure(idx);
 				});
 				// Les cartes viennent d'être refaites : une erreur de texte
@@ -4707,14 +4800,14 @@ class Notice_Archeomed_Pactols {
 				if (deplacer) { liste.push(deplacer); }
 				// L'accessibilité de la figure : les avis du serveur, mot pour
 				// mot, chacun paru une fois quitté l'un des champs qu'il regarde.
-				avisDAccessibilite(m, rang, e.vus, f.name).forEach(function (phrase) { liste.push(phrase); });
-				if (e.quittee && !deplacer) {
-					if (!aDuTexte(m)) {
-						liste.push('Rien n’est encore dit de cette figure' + NBSP + ': elle partira quand même, mais sans titre ni légende.');
-					} else if (vide(m.credits) && avisActif('credits')) {
-						liste.push(NORMES.figure + NBSP + rang + NBSP + ': pas de crédits (auteur, détenteur des droits).');
-					}
-				}
+				// Le champ pour l'écoute porte, dans son premier paragraphe, le
+				// texte alternatif et, à la suite, la description détaillée : les
+				// avis les lisent séparés, comme le serveur. Titre et crédits
+				// manquants ne sont plus des avis : ce sont des champs
+				// obligatoires, que la vérification de l'envoi signale.
+				var ecoute = separerEcoute(m.alt);
+				var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description };
+				avisDAccessibilite(lu, rang, e.vus, f.name).forEach(function (phrase) { liste.push(phrase); });
 				montrerConseils(c.zone, liste, [c.titre, c.alt, c.description, c.legende, c.credits]);
 			}
 			fileInput.addEventListener('change', function () {
@@ -5460,20 +5553,35 @@ class Notice_Archeomed_Pactols {
 					var b = el('na-matiere-bloc');
 					return !b || b.hidden || !vide(el('na-matiere').value);
 				},
-				// Le texte alternatif de chaque figure choisie. Le contrôle ne
-				// joue que si la carte est là : sans fichier, rien à décrire.
-				illus_alt_1: function () { return texteAlternatifDonne(1); },
-				illus_alt_2: function () { return texteAlternatifDonne(2); },
-				illus_alt_3: function () { return texteAlternatifDonne(3); },
+				// Le titre, les crédits et le texte alternatif de chaque figure
+				// choisie. Le contrôle ne joue que si la carte est là : sans
+				// fichier, rien à décrire.
+				illus_titre_1: function () { return champDeFigureDonne(1, 'titre'); },
+				illus_credits_1: function () { return champDeFigureDonne(1, 'credits'); },
+				illus_alt_1: function () { return champDeFigureDonne(1, 'alt'); },
+				illus_titre_2: function () { return champDeFigureDonne(2, 'titre'); },
+				illus_credits_2: function () { return champDeFigureDonne(2, 'credits'); },
+				illus_alt_2: function () { return champDeFigureDonne(2, 'alt'); },
+				illus_titre_3: function () { return champDeFigureDonne(3, 'titre'); },
+				illus_credits_3: function () { return champDeFigureDonne(3, 'credits'); },
+				illus_alt_3: function () { return champDeFigureDonne(3, 'alt'); },
 				originaux_lien: function () {
 					var c = el('na-originaux');
 					var v = c ? c.value.trim() : '';
 					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
 				},
+				// La date d'expiration, demandée avec un lien : elle ne peut être
+				// passée.
+				originaux_jusqua: function () {
+					var lien = el('na-originaux'), date = el('na-originaux-jusqua');
+					if (!lien || !date || vide(lien.value)) { return true; }
+					var j = new Date(), aujourdhui = j.getFullYear() + '-' + ('0' + (j.getMonth() + 1)).slice(-2) + '-' + ('0' + j.getDate()).slice(-2);
+					return /^\d{4}-\d{2}-\d{2}$/.test(date.value) && date.value >= aujourdhui;
+				},
 				puzzle: function () { return puzzleFait(); }
 			};
-			function texteAlternatifDonne(rang) {
-				var c = el('na-illus-' + rang + '-alt');
+			function champDeFigureDonne(rang, clef) {
+				var c = el('na-illus-' + rang + '-' + clef);
 				return !c || rang > selected.length || !vide(c.value);
 			}
 			function cibleDe(cle) {
@@ -5485,7 +5593,7 @@ class Notice_Archeomed_Pactols {
 				var c = cle === 'nature' ? el('na-nature-1') : cibleDe(cle);
 				// Revenu d'un refus, le formulaire n'a plus les fichiers : le
 				// lien du texte alternatif mène à la zone où les redéposer.
-				if (!c && /^illus_alt_/.test(cle)) { c = fileInput; }
+				if (!c && /^illus_(titre|credits|alt)_/.test(cle)) { c = fileInput; }
 				if (!c) { return; }
 				if (c.scrollIntoView) { c.scrollIntoView({ block: 'center' }); }
 				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
@@ -5494,7 +5602,7 @@ class Notice_Archeomed_Pactols {
 				if (cle === 'resp_email' && resultat === 'forme') { return CHAMPS.email_forme[1]; }
 				// La figure se nomme aussi par son fichier : le numéro suit
 				// l'ordre, qu'on a pu changer.
-				var rang = /^illus_alt_(\d)$/.exec(cle);
+				var rang = /^illus_(?:titre|credits|alt)_(\d)$/.exec(cle);
 				if (rang && selected[rang[1] - 1]) { return CHAMPS[cle][1] + ' (' + selected[rang[1] - 1].name + ')'; }
 				return CHAMPS[cle][1];
 			}
@@ -5504,11 +5612,13 @@ class Notice_Archeomed_Pactols {
 			// Une figure sans texte alternatif qu'on déplace emporte son erreur
 			// à sa nouvelle place.
 			function revoirLesTextesAlternatifs() {
-				if (!erreurs || !Object.keys(erreurs).some(function (k) { return /^illus_alt_/.test(k); })) { return; }
+				if (!erreurs || !Object.keys(erreurs).some(function (k) { return /^illus_(titre|credits|alt)_/.test(k); })) { return; }
 				for (var rang = 1; rang <= MAX_FILES; rang++) {
-					var cle = 'illus_alt_' + rang;
-					var r = CONTROLES[cle]();
-					if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
+					['titre', 'credits', 'alt'].forEach(function (clef) {
+						var cle = 'illus_' + clef + '_' + rang;
+						var r = CONTROLES[cle]();
+						if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
+					});
 				}
 			}
 			function signaler(cle, message) {
@@ -6630,18 +6740,24 @@ class Notice_Archeomed_Pactols {
 
 		$items = array();
 		for ( $i = 0; $i < $combien; $i++ ) {
-			$item = array( 'rang' => $i + 1 );
+			$item  = array( 'rang' => $i + 1 );
+			$suite = '';
 			foreach ( $parts as $clef => $liste ) {
 				$brut = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? $liste[ $i ] : '';
 				if ( 'alt' === $clef ) {
 					// Le texte alternatif, que liront les personnes malvoyantes
 					// ou non voyantes : une ligne, sans balise. Le même
 					// nettoyage sert à la rédaction qui le corrige sur la fiche.
+					// Le champ unique du formulaire porte à la suite la
+					// description détaillée.
+					list( $brut, $suite ) = Notice_Archeomed_Controles::separer_l_ecoute( $brut );
 					$item['alt'] = $this->limit_string( Notice_Archeomed_Controles::texte_alternatif_propre( $brut ),
 						Notice_Archeomed_Controles::ALT_MAX, 'le texte alternatif de la fig. ' . ( $i + 1 ) );
 					continue;
 				}
 				if ( 'description' === $clef ) {
+					// Un formulaire d'avant le champ unique l'envoyait à part.
+					$brut = '' !== trim( $brut ) ? $brut : $suite;
 					// La description détaillée d'une figure complexe : plusieurs
 					// paragraphes permis, sans balise, chaque ligne nettoyée.
 					$item['description'] = $this->limit_string( Notice_Archeomed_Controles::description_propre( $brut ),
@@ -6904,19 +7020,103 @@ class Notice_Archeomed_Pactols {
 			&& '' === self::matiere_de( $d ) ) {
 			$manquants[] = 'rubrique_matiere';
 		}
-		// Le texte alternatif de chaque figure déposée, que la revue veut
-		// pour ses lecteurs malvoyants et non voyants. Une figure sans
-		// fichier — une notice ancienne, une correction qui ne redépose rien
-		// — n'en demande pas.
+		// Le titre, les crédits et le texte alternatif de chaque figure
+		// déposée, dans l'ordre de la carte : le titre et les crédits
+		// s'impriment avec elle, le texte alternatif sert les lecteurs
+		// malvoyants et non voyants. Une figure sans fichier — une notice
+		// ancienne, une correction qui ne redépose rien — n'en demande pas.
 		$deposes = $this->fichiers_deposes();
 		foreach ( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() as $item ) {
 			$rang = is_array( $item ) && isset( $item['rang'] ) ? (int) $item['rang'] : 0;
-			if ( $rang >= 1 && $rang <= min( $deposes, self::MAX_FILES )
-				&& '' === trim( isset( $item['alt'] ) ? (string) $item['alt'] : '' ) ) {
-				$manquants[] = 'illus_alt_' . $rang;
+			if ( $rang < 1 || $rang > min( $deposes, self::MAX_FILES ) ) {
+				continue;
+			}
+			foreach ( array( 'titre', 'credits', 'alt' ) as $clef ) {
+				if ( '' === trim( isset( $item[ $clef ] ) ? (string) $item[ $clef ] : '' ) ) {
+					$manquants[] = 'illus_' . $clef . '_' . $rang;
+				}
 			}
 		}
+		// Un lien vers les originaux sans sa date d'expiration : la
+		// rédaction ne saurait pas jusqu'à quand le télécharger.
+		if ( ! empty( $d['originaux_lien'] ) && empty( $d['originaux_jusqua'] ) ) {
+			$manquants[] = 'originaux_jusqua';
+		}
 		return $manquants;
+	}
+
+	/** Une date « AAAA-MM-JJ » qui existe au calendrier. */
+	private static function date_valide( $date ) {
+		return is_string( $date ) && preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $date, $m )
+			&& checkdate( (int) $m[2], (int) $m[3], (int) $m[1] );
+	}
+
+	/** « 2026-10-24 » devient « 24 octobre 2026 », dans la langue du site. */
+	private static function date_en_lettres( $date ) {
+		if ( ! self::date_valide( $date ) ) {
+			return (string) $date;
+		}
+		$jour = new DateTimeImmutable( $date . ' 12:00:00', wp_timezone() );
+		return wp_date( 'j F Y', $jour->getTimestamp() );
+	}
+
+	/**
+	 * Combien de jours restent avant la date dite, ce jour compris :
+	 * 0 le jour même, négatif une fois passée.
+	 */
+	private static function jours_avant( $date ) {
+		$aujourdhui = new DateTimeImmutable( 'today', wp_timezone() );
+		$fin        = new DateTimeImmutable( $date, wp_timezone() );
+		return (int) $aujourdhui->diff( $fin )->format( '%r%a' );
+	}
+
+	/**
+	 * L'alerte des originaux : un courriel à part, à la rédaction, quand
+	 * l'auteur a déposé ses originaux sur un service de transfert. Le lien
+	 * se perdait dans la notice, et le service effaçait les fichiers avant
+	 * qu'on les ait téléchargés. L'objet dit tout, en capitales, pour être
+	 * vu dans une boîte pleine.
+	 *
+	 * Un échec ne compte pas comme un échec de la notice, qui est partie :
+	 * il est consigné, et le lien reste dans la notice et le Word.
+	 */
+	private function alerter_pour_les_originaux( $d, $destinataires, $entetes, $titre, $reference ) {
+		if ( empty( $d['originaux_lien'] ) || empty( $destinataires ) ) {
+			return;
+		}
+		$date   = isset( $d['originaux_jusqua'] ) ? (string) $d['originaux_jusqua'] : '';
+		$quand  = '';
+		$phrase = 'avant que le service de transfert ne les efface';
+		if ( self::date_valide( $date ) ) {
+			$jours  = self::jours_avant( $date );
+			$lettre = self::date_en_lettres( $date );
+			if ( $jours > 1 ) {
+				$quand = ' DANS ' . $jours . ' JOURS, JUSQU’AU ' . $lettre;
+			} elseif ( 1 === $jours ) {
+				$quand = ' AVANT DEMAIN SOIR, ' . $lettre;
+			} elseif ( 0 === $jours ) {
+				$quand = ' AUJOURD’HUI, ' . $lettre;
+			} else {
+				$quand = ' — LIEN PEUT-ÊTRE EXPIRÉ DEPUIS LE ' . $lettre;
+			}
+			$quand  = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $quand, 'UTF-8' ) : strtoupper( $quand );
+			$phrase = 'avant le ' . $lettre . ', date à laquelle le service de transfert les efface';
+		}
+		$objet = str_replace( array( "\r", "\n" ), ' ', 'ATTENTION — LIEN À TÉLÉCHARGER' . $quand . ' — ' . $titre
+			. ( '' !== $reference ? ' — réf. ' . $reference : '' ) );
+		$corps = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">'
+			. '<div style="background:#fcefed;border:2px solid #b3261e;padding:14px 18px;margin:0 0 18px;">'
+			. '<p style="margin:0 0 8px;font-size:17px;"><strong>Originaux à télécharger</strong></p>'
+			. '<p style="margin:0 0 8px;">L’auteur de la notice « ' . esc_html( $titre ) . ' » a déposé les originaux de ses figures sur un service de transfert. '
+			. 'Téléchargez-les ' . esc_html( $phrase ) . '.</p>'
+			. '<p style="margin:0;"><a href="' . esc_url( $d['originaux_lien'] ) . '">' . esc_html( $d['originaux_lien'] ) . '</a></p>'
+			. '</div>'
+			. ( ! empty( $d['resp_email'] ) && is_email( $d['resp_email'] )
+				? '<p>Si le lien a expiré, il faut les redemander à l’auteur&nbsp;: ' . esc_html( $d['resp_email'] ) . '.</p>' : '' )
+			. '</div></body></html>';
+		if ( ! wp_mail( $destinataires, $objet, $corps, $entetes ) ) {
+			error_log( 'Notice Archeomed: alerte des originaux non envoyée (' . $titre . ').' );
+		}
 	}
 	/**
 	 * Met en gras l'intitulé d'une ligne de métadonnée (la partie avant " : ").
@@ -7056,7 +7256,9 @@ class Notice_Archeomed_Pactols {
 			$admin_lines[] = $this->meta_line( 'Identifiant Patriarche', $d['id_patriarche'] );
 		}
 		if ( ! empty( $d['originaux_lien'] ) ) {
-			$admin_lines[] = $this->meta_line( 'Originaux des figures à télécharger', $d['originaux_lien'] );
+			$admin_lines[] = $this->meta_line( 'Originaux des figures à télécharger'
+				. ( ! empty( $d['originaux_jusqua'] ) ? ' avant le ' . self::date_en_lettres( $d['originaux_jusqua'] ) : '' ),
+				$d['originaux_lien'] );
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Rapport final', $d['rapport_lien'] );
@@ -7929,7 +8131,8 @@ class Notice_Archeomed_Pactols {
 		// renseignement pour la rédaction, qui s'ôte avec le reste.
 		if ( ! empty( $d['originaux_lien'] ) ) {
 			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
-				$doc->plain( 'Originaux des figures à télécharger : ' )
+				$doc->plain( 'Originaux des figures à télécharger'
+					. ( ! empty( $d['originaux_jusqua'] ) ? ' avant le ' . self::date_en_lettres( $d['originaux_jusqua'] ) : '' ) . ' : ' )
 					. $doc->hyperlink( $d['originaux_lien'], $d['originaux_lien'] ) );
 		}
 
@@ -8275,7 +8478,7 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom', 'resp_nom', 'resp_inst', 'resp_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_inst', 'coresp_email',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst', 'coauteur_email',
-			'rapport_lien', 'originaux_lien',
+			'rapport_lien', 'originaux_lien', 'originaux_jusqua',
 		);
 		$simples = array_merge( $une_ligne, array(
 			'commentaires', 'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
@@ -8395,6 +8598,11 @@ class Notice_Archeomed_Pactols {
 		$d['originaux_lien'] = isset( $_POST['originaux_lien'] )
 			? esc_url_raw( trim( wp_unslash( $_POST['originaux_lien'] ) ), array( 'http', 'https' ) ) : '';
 		$d['originaux_lien'] = $this->limit_string( $d['originaux_lien'], 500, 'le lien des originaux' );
+		// Le jour où le service de transfert efface les originaux : la
+		// rédaction reçoit une alerte qui le dit. Une date mal formée vaut
+		// une date manquante.
+		$jusqua = isset( $_POST['originaux_jusqua'] ) ? trim( (string) wp_unslash( $_POST['originaux_jusqua'] ) ) : '';
+		$d['originaux_jusqua'] = ( '' !== $d['originaux_lien'] && self::date_valide( $jusqua ) ) ? $jusqua : '';
 		$d['resp_email'] = isset( $_POST['resp_email'] ) ? sanitize_email( wp_unslash( $_POST['resp_email'] ) ) : '';
 		$d['coresp_email'] = isset( $_POST['coresp_email'] ) ? sanitize_email( wp_unslash( $_POST['coresp_email'] ) ) : '';
 		$d['coauteur_email'] = isset( $_POST['coauteur_email'] ) ? sanitize_email( wp_unslash( $_POST['coauteur_email'] ) ) : '';
@@ -8764,6 +8972,13 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: ' . $pourquoi );
 			return false;
 		}
+
+		// Les originaux déposés ailleurs ont leur propre courriel, que l'objet
+		// rend impossible à manquer.
+		$this->alerter_pour_les_originaux( $d, $pour_la_redaction, $headers,
+			( isset( $lieux[0] ) ? $lieux[0]['nom'] : $d['commune'] ) . ' (' . $d['departement'] . ')'
+				. ( '' !== trim( (string) $d['lieu_dit'] ) ? ', ' . trim( (string) $d['lieu_dit'] ) : '' ),
+			$reference );
 
 		$destinataires = array_unique( array_filter(
 			array( $d['resp_email'], $d['coresp_email'], $d['coauteur_email'] ), 'is_email' ) );

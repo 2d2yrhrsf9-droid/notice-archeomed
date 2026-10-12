@@ -621,6 +621,20 @@ class Notice_Archeomed_Controles {
 	}
 
 	/**
+	 * Le champ « Pour un public empêché de voir », en ses deux parts : le
+	 * premier paragraphe est le texte alternatif, que le lecteur d'écran lit
+	 * à la place de l'image ; la suite, s'il y en a une, est la description
+	 * détaillée, publiée sous la légende. Un seul champ pour l'auteur, qui
+	 * ne comprenait pas pourquoi on lui en demandait deux.
+	 *
+	 * Rend array( texte alternatif brut, description brute ).
+	 */
+	public static function separer_l_ecoute( $brut ) {
+		$lignes = array_values( array_filter( array_map( 'trim', preg_split( '/\R/u', (string) $brut ) ), 'strlen' ) );
+		return array( isset( $lignes[0] ) ? $lignes[0] : '', implode( "\n", array_slice( $lignes, 1 ) ) );
+	}
+
+	/**
 	 * La description détaillée telle que le dépôt la garde : des paragraphes
 	 * simples, un par ligne, sans balise. Non coupée.
 	 */
