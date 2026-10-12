@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.55
+ * Version: 3.56
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -2088,16 +2088,6 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Le formulaire de dépôt.
-	 *
-	 * Soixante-quinze commandes se suivaient à plat, sans introduction ni
-	 * section, le facultatif tout déployé. Elles se rangent maintenant en six
-	 * sections numérotées, et ce qui ne sert qu'à certains — co-responsable,
-	 * co-auteur, lieux et organismes supplémentaires, renvois — s'ouvre à la
-	 * demande. Les noms des champs n'ont pas changé : le serveur reçoit
-	 * exactement ce qu'il recevait. Sans script, rien n'est replié.
-	 */
-	/**
 	 * Ce que le shortcode pose dans la page : le formulaire, ses scripts
 	 * renvoyés au pied de page.
 	 *
@@ -2129,6 +2119,16 @@ class Notice_Archeomed_Pactols {
 		$this->scripts_du_pied = array();
 	}
 
+	/**
+	 * Le formulaire de dépôt.
+	 *
+	 * Soixante-quinze commandes se suivaient à plat, sans introduction ni
+	 * section, le facultatif tout déployé. Elles se rangent maintenant en six
+	 * sections numérotées, et ce qui ne sert qu'à certains — co-responsable,
+	 * co-auteur, lieux et organismes supplémentaires, renvois — s'ouvre à la
+	 * demande. Les noms des champs n'ont pas changé : le serveur reçoit
+	 * exactement ce qu'il recevait. Sans script, rien n'est replié.
+	 */
 	public function render_form() {
 		// Le dépôt a abouti : on le dit, et l'on s'arrête là.
 		if ( isset( $_GET['notice_envoyee'] ) && '1' === $_GET['notice_envoyee'] ) {
