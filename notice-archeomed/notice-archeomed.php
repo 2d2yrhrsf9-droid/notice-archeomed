@@ -2355,6 +2355,11 @@ class Notice_Archeomed_Pactols {
 				font-size: var(--na-t-m); line-height: 1.65; color: var(--na-encre); }
 			.na-form#na-form #na-editor .ql-editor p { margin: 0; color: inherit; }
 			.na-form#na-form #na-editor .ql-editor .na-pc { font-variant: small-caps; }
+			.na-form#na-form .ql-toolbar.ql-snow button.na-bouton-titre { width: auto; min-width: 2.25rem; padding: 0 .375rem;
+				font-family: var(--na-serif); font-size: var(--na-t-s); font-weight: 700; color: var(--na-encre); }
+			.na-form#na-form .ql-toolbar.ql-snow button.na-bouton-titre.ql-active { color: var(--na-accent); }
+			.na-form#na-form .ql-editor h3 { margin: 1em 0 .4em; font-family: var(--na-serif); font-size: var(--na-t-l); font-weight: 700; }
+			.na-form#na-form .ql-editor h4 { margin: .9em 0 .3em; font-family: var(--na-serif); font-size: var(--na-t-m); font-weight: 700; font-style: italic; }
 			.na-form#na-form .ql-toolbar.ql-snow button.ql-petitescapitales { width: auto; min-width: 2.25rem; padding: 0 .375rem;
 				font: inherit; font-size: var(--na-t-m); font-weight: 700; font-variant: small-caps; color: var(--na-encre); }
 			.na-form#na-form .ql-toolbar.ql-snow button.ql-petitescapitales:hover,
@@ -2817,7 +2822,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; titres et listes deviennent des paragraphes. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -3202,9 +3207,13 @@ class Notice_Archeomed_Pactols {
 					// Les seuls formats que le document sait rendre. Sans cette
 					// liste, un collage depuis Word apportait listes, titres et
 					// citations, que le serveur aplatissait en un paragraphe.
-					formats: ['bold', 'italic', 'script'].concat(petitesCapitales ? ['petitescapitales'] : []),
+					// Deux niveaux d'intertitre, « h3 » et « h4 » : sous le titre de
+					// la notice, ce sont des titres de niveau 3 et 4, que le
+					// document pose sous les styles Métopes réglés pour eux.
+					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
+							[{ 'header': 3 }, { 'header': 4 }],
 							['bold', 'italic'].concat(petitesCapitales ? ['petitescapitales'] : []),
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
@@ -3257,6 +3266,20 @@ class Notice_Archeomed_Pactols {
 							if (collageEnCours) { commentairesOtes = true; }
 							return new Delta();
 						}
+						// Un titre collé garde son rang, ramené aux deux niveaux
+						// d'intertitre : 1 à 3 deviennent le premier, 4 à 6 le second.
+						if (delta.ops.some(function (op) { return op.attributes && op.attributes.header; })) {
+							delta = delta.reduce(function (d, op) {
+								var a = op.attributes;
+								if (a && a.header) {
+									var b = {};
+									Object.keys(a).forEach(function (k) { b[k] = a[k]; });
+									b.header = a.header <= 3 ? 3 : 4;
+									return d.insert(op.insert, b);
+								}
+								return d.insert(op.insert, a);
+							}, new Delta());
+						}
 						// Les petites capitales de Word — « xii » d'un siècle —
 						// arrivaient en bas de casse.
 						if (petitesCapitales && /font-variant\s*:\s*small-caps/i.test(styleDe(node))) {
@@ -3290,7 +3313,8 @@ class Notice_Archeomed_Pactols {
 				if (barre) {
 					barre.setAttribute('role', 'toolbar');
 					barre.setAttribute('aria-label', 'Mise en forme du texte');
-					[['.ql-bold', 'Gras'], ['.ql-italic', 'Italique'], ['.ql-petitescapitales', 'Petites capitales'],
+					[['.ql-header[value="3"]', 'Intertitre, premier niveau'], ['.ql-header[value="4"]', 'Intertitre, second niveau'],
+						['.ql-bold', 'Gras'], ['.ql-italic', 'Italique'], ['.ql-petitescapitales', 'Petites capitales'],
 						['.ql-script[value="super"]', 'Exposant'],
 						['.ql-script[value="sub"]', 'Indice'], ['.ql-clean', 'Effacer la mise en forme']].forEach(function (p) {
 						var b = barre.querySelector(p[0]);
@@ -3300,6 +3324,12 @@ class Notice_Archeomed_Pactols {
 					// petites capitales elles-mêmes.
 					var pc = barre.querySelector('.ql-petitescapitales');
 					if (pc) { pc.innerHTML = '<span aria-hidden="true">Pc</span>'; }
+					// Les intertitres : « T1 » et « T2 », plus parlants que les
+					// « H3 » et « H4 » du HTML.
+					[['3', 'T1'], ['4', 'T2']].forEach(function (t) {
+						var h = barre.querySelector('.ql-header[value="' + t[0] + '"]');
+						if (h) { h.innerHTML = '<span aria-hidden="true">' + t[1] + '</span>'; h.classList.add('na-bouton-titre'); }
+					});
 				}
 			}
 			// Le compteur passait au rouge dès le premier mot et jusqu'au
@@ -3455,6 +3485,11 @@ class Notice_Archeomed_Pactols {
 			var deptInput = document.getElementById('na-departement');
 			var deptAuto = document.getElementById('na-departement-auto');
 			var lieuDitInput = document.getElementById('na-lieu-dit');
+			// Comme au serveur (capitale_initiale) : la première lettre, et elle
+			// seule, passe en capitale ; les blancs de tête ne comptent pas.
+			function capitaleInitiale(t) {
+				return String(t || '').replace(/^(\s*)(\S)/, function (tout, blancs, l) { return blancs + l.toUpperCase(); });
+			}
 			// La parenthèse tapée par l'auteur ne s'écrase plus : choisir la
 			// commune la vidait, même quand Pactols n'avait rien à y remettre.
 			var deptSaisiMain = !vide(deptInput.value);
@@ -3543,7 +3578,7 @@ class Notice_Archeomed_Pactols {
 				var dept = sansParentheses(deptInput.value);
 				// Sans le point final qu'on y met par habitude, comme au document —
 				// sauf abréviation : « Le XXe s. ».
-				var lieuDit = net(lieuDitInput.value);
+				var lieuDit = capitaleInitiale(net(lieuDitInput.value));
 				if (/\.$/.test(lieuDit) && !/\.\.\.$/.test(lieuDit) && !/(^|\s)(\S{1,3}|\S+\.\S*)\.$/.test(lieuDit)) {
 					lieuDit = lieuDit.slice(0, -1).trim();
 				}
@@ -5108,6 +5143,12 @@ class Notice_Archeomed_Pactols {
 			}
 			var texteVu = false;
 			var zoneTexte = zoneDeConseils('na-texte-conseils', wc);
+			// Les paragraphes du texte sans ses intertitres, qui ne prennent pas
+			// de point final : comme au serveur.
+			function parasSansIntertitres() {
+				return quill.getLines().filter(function (l) { return !(l.formats && l.formats().header); })
+					.map(function (l) { return quill.getText(quill.getIndex(l), l.length()).trim(); }).filter(Boolean);
+			}
 			function majConseilsDuTexte() {
 				if (!texteVu || !quill) { return; }
 				var paras = quill.getText().split('\n').map(function (p) { return p.trim(); }).filter(Boolean);
@@ -5116,7 +5157,7 @@ class Notice_Archeomed_Pactols {
 					longueur > 30000 ? ['Le texte dépasse 30' + NBSP + '000 caractères, mise en forme comprise (' + entier(longueur) + ')'
 						+ NBSP + ': le serveur en couperait la fin.'] : [],
 					avisDuCollage(paras),
-					avisActif('ponctuation') ? ponctuationFinale(paras) : [],
+					avisActif('ponctuation') ? ponctuationFinale(parasSansIntertitres()) : [],
 					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), selected.length) : [],
 					avisActif('ordinaux') ? ordinauxFautifs(paras) : [],
 					avisActif('annees_espacees') ? datesEspacees(paras) : [],
@@ -5263,6 +5304,10 @@ class Notice_Archeomed_Pactols {
 			(function () {
 				var z = zoneDeConseils('na-lieu-dit-conseils', lieuDitInput);
 				lieuDitInput.addEventListener('blur', function () {
+					// La première lettre en capitale, comme le titre l'imprimera :
+					// « la Croix-Blanche » devient « La Croix-Blanche ».
+					var cap = capitaleInitiale(lieuDitInput.value);
+					if (cap !== lieuDitInput.value) { lieuDitInput.value = cap; marquerModifie(); }
 					var v = net(lieuDitInput.value);
 					montrerConseils(z, enCapitales(v)
 						? ['Le lieu-dit est en capitales (' + guillemets(v) + ')' + NBSP
@@ -6089,11 +6134,17 @@ class Notice_Archeomed_Pactols {
 			'p' => array(),
 			'br' => array(),
 			'span' => array( 'class' => true ),
+			'h3' => array(),
+			'h4' => array(),
 		);
-		// Un élément de liste, un intertitre ou une citation collés font
-		// chacun un paragraphe. Sans cela, kses ôtait la balise en gardant le
-		// texte, et « Phase 1 : fossé » se soudait à « Phase 2 : mur ».
-		$html = preg_replace( '#</(li|h[1-6]|blockquote|div|pre|tr)\s*>#i', '</p><p>', (string) $html );
+		// Les deux niveaux d'intertitre de l'éditeur, « h3 » et « h4 » ; un
+		// titre d'un autre niveau, venu d'ailleurs, rejoint le plus proche.
+		$html = preg_replace( '#<(/?)h[12](\s[^>]*)?>#i', '<$1h3>', (string) $html );
+		$html = preg_replace( '#<(/?)h[56](\s[^>]*)?>#i', '<$1h4>', (string) $html );
+		// Un élément de liste ou une citation collés font chacun un
+		// paragraphe. Sans cela, kses ôtait la balise en gardant le texte, et
+		// « Phase 1 : fossé » se soudait à « Phase 2 : mur ».
+		$html = preg_replace( '#</(li|blockquote|div|pre|tr)\s*>#i', '</p><p>', (string) $html );
 		return self::petites_capitales_seules( wp_kses( $html, $allowed ) );
 	}
 
@@ -7987,19 +8038,24 @@ class Notice_Archeomed_Pactols {
 		// Ou, si la correspondance des styles le demande, dans un paragraphe
 		// à lui, sans parenthèses : c'est la forme que la documentation
 		// Métopes donne au paragraphe d'autorités.
-		$paragraphes = $doc->html_to_paragraphs( $d['texte_notice'] );
-		$a_part      = Notice_Archeomed_Styles::responsabilites_a_part();
-		$bloc_resp   = $this->responsables_rtf( $doc, $d, ! $a_part );
+		// Les paragraphes et les deux niveaux d'intertitre, chacun sous son
+		// style.
+		$blocs     = $doc->html_to_blocs( $d['texte_notice'] );
+		$a_part    = Notice_Archeomed_Styles::responsabilites_a_part();
+		$bloc_resp = $this->responsables_rtf( $doc, $d, ! $a_part );
 		if ( ! $a_part ) {
-			if ( empty( $paragraphes ) ) {
-				$paragraphes = array( $bloc_resp );
+			$last = count( $blocs ) - 1;
+			// Collé au dernier paragraphe — jamais à un intertitre, qu'un
+			// texte finirait par hasard : il prend alors son paragraphe.
+			if ( $last < 0 || 0 !== $blocs[ $last ]['niveau'] ) {
+				$blocs[] = array( 'niveau' => 0, 'runs' => $bloc_resp );
 			} else {
-				$last                 = count( $paragraphes ) - 1;
-				$paragraphes[ $last ] = $paragraphes[ $last ] . $bloc_resp;
+				$blocs[ $last ]['runs'] .= $bloc_resp;
 			}
 		}
-		foreach ( $paragraphes as $p ) {
-			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'texte' ), $p );
+		$styles_des_niveaux = array( 0 => 'texte', 1 => 'intertitre_1', 2 => 'intertitre_2' );
+		foreach ( $blocs as $bloc ) {
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( $styles_des_niveaux[ $bloc['niveau'] ] ), $bloc['runs'] );
 		}
 		if ( $a_part && '' !== $bloc_resp ) {
 			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'responsabilites' ), $bloc_resp );
@@ -8622,6 +8678,9 @@ class Notice_Archeomed_Pactols {
 		// Un titre ne prend pas de point final : « Rue de Reviers. » donnait
 		// un titre pointé, au document comme au renvoi.
 		$d['lieu_dit'] = Notice_Archeomed_Controles::sans_point_final( $d['lieu_dit'] );
+		// La première lettre en capitale : le lieu-dit ouvre une phrase du
+		// titre, après le point — « Caen (Calvados). La Croix-Blanche ».
+		$d['lieu_dit'] = $this->capitale_initiale( $d['lieu_dit'] );
 		$d['lieux'] = $this->collect_lieux();
 		// « commune » reste le premier lieu : c'est lui qui donne le titre de
 		// la fiche, le nom du fichier, l'objet du courriel et le rang au

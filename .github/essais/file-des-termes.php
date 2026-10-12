@@ -2084,6 +2084,34 @@ foreach ( array( $cand_a, $cand_b, $cand_remplacee, $cand_correction ) as $cand_
 	wp_delete_post( $cand_id, true );
 }
 
+WP_CLI::log( 'Les intertitres du texte et le lieu-dit' );
+$propre_titres = na_appel( $plugin, 'clean_richtext', array( '<h1 class="x">Le site</h1><p>Texte.</p><h2>Phase 1</h2><h5>Le mur</h5><h3>Garde</h3><ul><li>un</li></ul>' ) );
+na_verifier( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h4>Le mur</h4><h3>Garde</h3>' === substr( $propre_titres, 0, strlen( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h4>Le mur</h4><h3>Garde</h3>' ) ),
+	'les titres collés rejoignent les deux niveaux d\'intertitre, « h3 » et « h4 »', $propre_titres );
+$doc_titres = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_titres, array_merge( $saisie_styles, array(
+	'texte_notice' => '<p>Le site domine la vallée.</p><h3>La phase 1</h3><p>Un fossé.</p><h4>Le comblement</h4><p>Des tessons.</p><h3>Bilan</h3>' ) ) ) );
+$xml_titres = implode( '', $corps->getValue( $doc_titres ) );
+$index_titres = new ReflectionProperty( $doc_titres, 'styles' );
+$index_titres->setAccessible( true );
+$ids_titres    = $index_titres->getValue( $doc_titres );
+$styles_titres = array();
+foreach ( array( 'heading 3', 'heading 4' ) as $nom_titre ) {
+	$styles_titres[ $nom_titre ] = isset( $ids_titres[ $nom_titre ] ) ? $ids_titres[ $nom_titre ] : '';
+}
+na_verifier( '' !== $styles_titres['heading 3'] && '' !== $styles_titres['heading 4']
+	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>.*?La phase 1#s', $xml_titres )
+	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 4'] . '"/>.*?Le comblement#s', $xml_titres )
+	&& 2 === substr_count( $xml_titres, '<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>' )
+	&& 1 === preg_match( '#Bilan</w:t>.*?</w:p><w:p><w:pPr><w:pStyle w:val="[^"]+"/>.*?Responsable#s', $xml_titres ),
+	'au Word, les intertitres prennent les styles de leurs niveaux, « Titre 3 » et « Titre 4 » ; la responsabilité ne se colle pas à un intertitre final', $styles_titres );
+na_verifier( array() === Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>' ) + array( 'illustrations' => array() ) )
+	|| ! preg_grep( '/La phase 1/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
+	'un intertitre sans point final ne reçoit pas l\'avis de ponctuation' );
+na_verifier( 'La Croix-Blanche' === na_appel( $plugin, 'capitale_initiale', array( 'la Croix-Blanche' ) )
+	&& 'Église Saint-Martin' === na_appel( $plugin, 'capitale_initiale', array( 'église Saint-Martin' ) ),
+	'le lieu-dit prend une capitale initiale, accents compris' );
+
 WP_CLI::log( 'La documentation' );
 $D = 'Notice_Archeomed_Documentation';
 $rendu_md = $D::rendre( "# Titre\n\nUn **gras**, un *italique*, du `<code>` et un [lien](https://exemple.org) ; [piège](javascript:alert(1)).\n\n- un\n  - sous-élément\n- deux\n  suite de deux\n\n1. premier\n2. second\n\n| Clé | Sens |\n|---|---|\n| `a` | b |\n\n```\n<script>x</script>\n```\n\n> cité\n\n<script>alert(1)</script>" );

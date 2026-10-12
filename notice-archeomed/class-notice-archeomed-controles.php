@@ -115,8 +115,10 @@ class Notice_Archeomed_Controles {
 		$figures     = isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array();
 		// Chaque famille d'avis se donne ou non, selon les normes de la revue.
 		$familles = array(
-			'ponctuation'      => function () use ( $paragraphes ) {
-				return self::ponctuation_finale( $paragraphes );
+			// Un intertitre ne prend pas de point final : il n'est pas lu.
+			'ponctuation'      => function () use ( $d ) {
+				return self::ponctuation_finale( self::paragraphes( preg_replace( '#<h([1-6])\b[^>]*>.*?</h\1\s*>#is', '',
+					isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '' ) ) );
 			},
 			'figures_appelees' => function () use ( $paragraphes, $figures ) {
 				return self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) );

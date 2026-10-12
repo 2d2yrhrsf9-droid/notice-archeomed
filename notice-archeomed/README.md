@@ -454,6 +454,8 @@ exemple, pour la tenir hors de l'imprimé).
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
+| Intertitre du texte, premier niveau (T1) | `heading 3` (Titre 3) |
+| Intertitre du texte, second niveau (T2) | `heading 4` (Titre 4) |
 | Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
 | Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
 | Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
@@ -504,9 +506,16 @@ en A4 ; chaque image a pour texte de remplacement le titre de sa figure.
 
 ## Texte saisi dans l'éditeur
 
-Gras, italique, exposant et indice sont convertis. Une liste, un intertitre
-ou une citation collés depuis Word deviennent chacun un paragraphe, au lieu de
-se souder au suivant. Les entités HTML sont
+Gras, italique, exposant et indice sont convertis. Deux niveaux
+d'**intertitre** se posent par les boutons T1 et T2 de la barre (écrits `h3` et
+`h4`) : sous le titre de la notice, qui est de niveau 2, ce sont des titres de
+niveau 3 et 4, que le document pose sous les styles des blocs « Intertitre du
+texte » de l'onglet Styles Métopes — « heading 3 » et « heading 4 » (Titre 3
+et Titre 4 de Word) par défaut. Un titre collé d'un autre niveau rejoint le
+plus proche (1 à 3 le premier, 4 à 6 le second) ; un intertitre ne reçoit pas
+l'avis de ponctuation finale, et le bloc de responsabilité ne s'y colle pas.
+Une liste ou une citation collées depuis Word deviennent chacune un paragraphe,
+au lieu de se souder au suivant. Les entités HTML sont
 résolues. Les caractères accentués et typographiques (œ, €, guillemets,
 apostrophes courbes) sont encodés en notation Unicode RTF, que Word et
 LibreOffice lisent sans réglage particulier. Un balisage mal équilibré est
@@ -1087,7 +1096,9 @@ partent sous « À vérifier » dans le courriel, dans le document (style « à
 supprimer ») et dans la page de relecture du dossier. La norme des
 photographies est posée en un seul endroit, qui sert à l'aide et au contrôle.
 
-Le lieu-dit perd le point final qu'on y met par habitude, sauf abréviation ;
+Le lieu-dit prend une **capitale initiale** (au formulaire, à la sortie du
+champ, et au serveur) : il ouvre la phrase du titre, après le point. Il perd le
+point final qu'on y met par habitude, sauf abréviation ;
 une opération sur plusieurs années s'écrit « 2004-2005 ».
 
 ## Le thésaurus Pactols

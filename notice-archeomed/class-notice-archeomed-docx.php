@@ -835,20 +835,38 @@ class Notice_Archeomed_DOCX {
 	 * chacun rendu sous forme de runs WordprocessingML.
 	 */
 	public function html_to_paragraphs( $html ) {
+		return array_column( $this->html_to_blocs( $html ), 'runs' );
+	}
+
+	/**
+	 * Le texte de l'éditeur en blocs : paragraphes et intertitres. Chaque
+	 * bloc porte son niveau — 0 pour un paragraphe, 1 et 2 pour les deux
+	 * niveaux d'intertitre, écrits « h3 » et « h4 » par l'éditeur — et ses
+	 * runs. Le style de chaque niveau est celui que la correspondance des
+	 * styles lui donne.
+	 */
+	public function html_to_blocs( $html ) {
 		$html = (string) $html;
 		if ( '' === trim( wp_strip_all_tags( $html ) ) ) {
 			return array();
 		}
 		$html   = preg_replace( '#<br\s*/?>#i', "\n", $html );
+		// Un intertitre s'ouvre sur une marque de bloc suivie de son niveau.
+		$html   = preg_replace( '#<h([34])\b[^>]*>#i', "\x00\x01$1", $html );
+		$html   = preg_replace( '#</h[34]\s*>#i', "\x00", $html );
 		$html   = preg_replace( '#</p>#i', "\x00", $html );
 		$html   = preg_replace( '#<p[^>]*>#i', '', $html );
-		$chunks = explode( "\x00", $html );
 		$out    = array();
-		foreach ( $chunks as $chunk ) {
+		foreach ( explode( "\x00", $html ) as $chunk ) {
+			$niveau = 0;
+			if ( preg_match( '/^\x01([34])/', $chunk, $m ) ) {
+				$niveau = (int) $m[1] - 2;
+				$chunk  = substr( $chunk, 2 );
+			}
 			if ( '' === trim( wp_strip_all_tags( $chunk ) ) ) {
 				continue;
 			}
-			$out[] = $this->inline_html_to_runs( $chunk );
+			$out[] = array( 'niveau' => $niveau, 'runs' => $this->inline_html_to_runs( $chunk ) );
 		}
 		return $out;
 	}

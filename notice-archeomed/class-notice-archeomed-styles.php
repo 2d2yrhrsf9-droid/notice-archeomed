@@ -74,6 +74,13 @@ class Notice_Archeomed_Styles {
 				'titre'  => 'Le texte et les responsabilités',
 				'blocs'  => array(
 					'texte'           => array( 'libelle' => 'Texte de la notice', 'type' => 'paragraphe', 'defaut' => 'Normal' ),
+					// Les deux niveaux d'intertitre du texte. Sous le titre de
+					// la notice (« TEI_Titre 2+notice », niveau 2), un intertitre
+					// est un titre de niveau 3, puis 4 : « Titre 3 » et
+					// « Titre 4 » de Word, nommés « heading 3 » et « heading 4 »
+					// dans la feuille.
+					'intertitre_1'    => array( 'libelle' => 'Intertitre du texte, premier niveau', 'type' => 'paragraphe', 'defaut' => 'heading 3' ),
+					'intertitre_2'    => array( 'libelle' => 'Intertitre du texte, second niveau', 'type' => 'paragraphe', 'defaut' => 'heading 4' ),
 					'responsabilites' => array( 'libelle' => 'Bloc de responsabilité « (Responsable de l’opération : … ; …) »', 'type' => 'paragraphe', 'defaut' => self::COLLE_AU_TEXTE, 'colle' => true ),
 					'responsable'     => array( 'libelle' => 'Nom du responsable', 'type' => 'caractere', 'defaut' => 'TEI_archeoCHR_name:fld' ),
 					'coresponsable'   => array( 'libelle' => 'Nom du co-responsable', 'type' => 'caractere', 'defaut' => 'TEI_archeoCHR_name:fld' ),
