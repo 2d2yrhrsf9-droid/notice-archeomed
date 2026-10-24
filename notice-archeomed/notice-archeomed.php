@@ -1852,12 +1852,15 @@ class Notice_Archeomed_Pactols {
 			'illus_titre_1'       => array( 'na-illus-1-titre', 'Donnez un titre à la figure 1' ),
 			'illus_credits_1'     => array( 'na-illus-1-credits', 'Indiquez les crédits de la figure 1, son auteur et le détenteur des droits' ),
 			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, pour un public empêché de voir' ),
+			'illus_type_1'        => array( 'na-illus-1-type', 'Choisissez la nature de la figure 1' ),
 			'illus_titre_2'       => array( 'na-illus-2-titre', 'Donnez un titre à la figure 2' ),
 			'illus_credits_2'     => array( 'na-illus-2-credits', 'Indiquez les crédits de la figure 2, son auteur et le détenteur des droits' ),
 			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, pour un public empêché de voir' ),
+			'illus_type_2'        => array( 'na-illus-2-type', 'Choisissez la nature de la figure 2' ),
 			'illus_titre_3'       => array( 'na-illus-3-titre', 'Donnez un titre à la figure 3' ),
 			'illus_credits_3'     => array( 'na-illus-3-credits', 'Indiquez les crédits de la figure 3, son auteur et le détenteur des droits' ),
 			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, pour un public empêché de voir' ),
+			'illus_type_3'        => array( 'na-illus-3-type', 'Choisissez la nature de la figure 3' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
@@ -4539,7 +4542,7 @@ class Notice_Archeomed_Pactols {
 				var id = 'na-illus-' + (idx + 1) + '-type';
 				var etiquette = document.createElement('label');
 				etiquette.htmlFor = id;
-				etiquette.innerHTML = 'Nature de la figure <span class="na-facultatif">(facultatif)</span>';
+				etiquette.innerHTML = 'Nature de la figure <span class="na-requis" aria-hidden="true">*</span>';
 				var aide = document.createElement('p');
 				aide.className = 'na-help';
 				aide.id = id + '-aide';
@@ -4547,6 +4550,7 @@ class Notice_Archeomed_Pactols {
 				var champ = document.createElement('select');
 				champ.id = id;
 				champ.name = 'illus_type[]';
+				champ.required = true;
 				var vide0 = document.createElement('option');
 				vide0.value = '';
 				vide0.textContent = 'Choisir…';
@@ -5786,12 +5790,15 @@ class Notice_Archeomed_Pactols {
 				illus_titre_1: function () { return champDeFigureDonne(1, 'titre'); },
 				illus_credits_1: function () { return champDeFigureDonne(1, 'credits'); },
 				illus_alt_1: function () { return champDeFigureDonne(1, 'alt'); },
+				illus_type_1: function () { return champDeFigureDonne(1, 'type'); },
 				illus_titre_2: function () { return champDeFigureDonne(2, 'titre'); },
 				illus_credits_2: function () { return champDeFigureDonne(2, 'credits'); },
 				illus_alt_2: function () { return champDeFigureDonne(2, 'alt'); },
+				illus_type_2: function () { return champDeFigureDonne(2, 'type'); },
 				illus_titre_3: function () { return champDeFigureDonne(3, 'titre'); },
 				illus_credits_3: function () { return champDeFigureDonne(3, 'credits'); },
 				illus_alt_3: function () { return champDeFigureDonne(3, 'alt'); },
+				illus_type_3: function () { return champDeFigureDonne(3, 'type'); },
 				originaux_lien: function () {
 					var c = el('na-originaux');
 					var v = c ? c.value.trim() : '';
@@ -5820,7 +5827,7 @@ class Notice_Archeomed_Pactols {
 				var c = cle === 'nature' ? el('na-nature-1') : cibleDe(cle);
 				// Revenu d'un refus, le formulaire n'a plus les fichiers : le
 				// lien du texte alternatif mène à la zone où les redéposer.
-				if (!c && /^illus_(titre|credits|alt)_/.test(cle)) { c = fileInput; }
+				if (!c && /^illus_(titre|credits|alt|type)_/.test(cle)) { c = fileInput; }
 				if (!c) { return; }
 				if (c.scrollIntoView) { c.scrollIntoView({ block: 'center' }); }
 				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
@@ -5829,7 +5836,7 @@ class Notice_Archeomed_Pactols {
 				if (cle === 'resp_email' && resultat === 'forme') { return CHAMPS.email_forme[1]; }
 				// La figure se nomme aussi par son fichier : le numéro suit
 				// l'ordre, qu'on a pu changer.
-				var rang = /^illus_(?:titre|credits|alt)_(\d)$/.exec(cle);
+				var rang = /^illus_(?:titre|credits|alt|type)_(\d)$/.exec(cle);
 				if (rang && selected[rang[1] - 1]) { return CHAMPS[cle][1] + ' (' + selected[rang[1] - 1].name + ')'; }
 				return CHAMPS[cle][1];
 			}
@@ -5839,9 +5846,9 @@ class Notice_Archeomed_Pactols {
 			// Une figure sans texte alternatif qu'on déplace emporte son erreur
 			// à sa nouvelle place.
 			function revoirLesTextesAlternatifs() {
-				if (!erreurs || !Object.keys(erreurs).some(function (k) { return /^illus_(titre|credits|alt)_/.test(k); })) { return; }
+				if (!erreurs || !Object.keys(erreurs).some(function (k) { return /^illus_(titre|credits|alt|type)_/.test(k); })) { return; }
 				for (var rang = 1; rang <= MAX_FILES; rang++) {
-					['titre', 'credits', 'alt'].forEach(function (clef) {
+					['titre', 'credits', 'alt', 'type'].forEach(function (clef) {
 						var cle = 'illus_' + clef + '_' + rang;
 						var r = CONTROLES[cle]();
 						if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
@@ -7255,10 +7262,10 @@ class Notice_Archeomed_Pactols {
 			&& '' === self::matiere_de( $d ) ) {
 			$manquants[] = 'rubrique_matiere';
 		}
-		// Le titre, les crédits et le texte alternatif de chaque figure
-		// déposée, dans l'ordre de la carte : le titre et les crédits
-		// s'impriment avec elle, le texte alternatif sert les lecteurs
-		// malvoyants et non voyants. Une figure sans fichier — une notice
+		// Le titre, les crédits, la nature et le texte alternatif de chaque
+		// figure déposée, dans l'ordre de la carte : le titre et les crédits
+		// s'impriment avec elle, la nature et le texte alternatif servent les
+		// lecteurs malvoyants et non voyants. Une figure sans fichier — une notice
 		// ancienne, une correction qui ne redépose rien — n'en demande pas.
 		$deposes = $this->fichiers_deposes();
 		foreach ( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() as $item ) {
@@ -7266,7 +7273,7 @@ class Notice_Archeomed_Pactols {
 			if ( $rang < 1 || $rang > min( $deposes, self::MAX_FILES ) ) {
 				continue;
 			}
-			foreach ( array( 'titre', 'credits', 'alt' ) as $clef ) {
+			foreach ( array( 'titre', 'credits', 'alt', 'type' ) as $clef ) {
 				if ( '' === trim( isset( $item[ $clef ] ) ? (string) $item[ $clef ] : '' ) ) {
 					$manquants[] = 'illus_' . $clef . '_' . $rang;
 				}

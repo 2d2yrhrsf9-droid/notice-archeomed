@@ -621,11 +621,15 @@ rédaction se déplient sous l'aide (« Exemples ») :
 | Fig. 12. Plan général des vestiges de la phase 2. | Deux bâtiments occupent l'ouest de l'enclos fossoyé, entourés de fosses et de silos. |
 | Fig. 8. Vue du foyer du bâtiment 1. | Foyer quadrangulaire installé contre la paroi nord du bâtiment. |
 
-**La nature de la figure.** Un choix facultatif — photographie, plan (relevé,
-dessin), carte, graphique ou diagramme, planche, tableau en image, autre —
-posé en tête du bloc « Pour un public empêché de voir » (`illus_type[]`, gardé
-avec la figure : brouillon, reprise, correction). Facultatif : une notice ne se
-perd pas pour une case non remplie. Elle sert à trois choses :
+**La nature de la figure.** Un choix **obligatoire** — photographie, plan
+(relevé, dessin), carte, graphique ou diagramme, planche, tableau en image,
+autre — posé en tête du bloc « Pour un public empêché de voir »
+(`illus_type[]`, gardé avec la figure : brouillon, reprise, correction).
+Facultatif, il serait resté vide ; « Autre » sert à ce qui n'entre nulle part.
+L'oubli se signale comme celui du texte alternatif (sous le champ, dans le
+récapitulatif, au serveur : `illus_type_N`). Une notice d'avant le champ, reprise
+en correction, demande de le choisir. Elle sert à trois choses :
+Elle sert à trois choses :
 
 - un **conseil** propre à chaque nature s'affiche sous le choix
   (`Notice_Archeomed_Controles::aides_par_type()`) ;

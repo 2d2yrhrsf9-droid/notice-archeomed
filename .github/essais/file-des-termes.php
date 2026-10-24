@@ -1443,9 +1443,11 @@ na_verifier( array( 'illus_alt_2' ) === $manquent_alt && array() === $manquent_s
 	&& isset( $table_alt['illus_alt_2'] ) && false !== strpos( $table_alt['illus_alt_2'][1], 'figure 2' )
 	&& 'na-illus-2-alt' === $table_alt['illus_alt_2'][0],
 	'il est obligatoire pour une figure déposée, et le message dit laquelle ; sans fichier, rien n\'est demandé', array( $manquent_alt, $manquent_sans_fichier ) );
-na_verifier( array( 'illus_credits_1', 'illus_credits_2', 'illus_alt_2' ) === $manquent_figures
-	&& isset( $table_alt['illus_titre_3'], $table_alt['illus_credits_3'] ) && 'na-illus-2-credits' === $table_alt['illus_credits_2'][0],
-	'le titre et les crédits d\'une figure déposée sont obligatoires, comme son texte alternatif, dans l\'ordre de la carte', $manquent_figures );
+na_verifier( isset( $table_alt['illus_titre_3'], $table_alt['illus_credits_3'] ) && 'na-illus-2-credits' === $table_alt['illus_credits_2'][0]
+	&& 'na-illus-2-type' === $table_alt['illus_type_2'][0] && false !== strpos( $table_alt['illus_type_1'][1], 'figure 1' )
+	&& in_array( 'illus_credits_1', $manquent_figures, true ) && in_array( 'illus_alt_2', $manquent_figures, true )
+	&& in_array( 'illus_type_1', $manquent_figures, true ) && in_array( 'illus_type_2', $manquent_figures, true ),
+	'le titre, les crédits, la nature et le texte alternatif d\'une figure déposée sont obligatoires, dans l\'ordre de la carte', $manquent_figures );
 $sans_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '' ) ) ) );
 $avec_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '2026-12-31' ) ) ) );
 $dates_lues = array( na_appel( $plugin, 'date_valide', array( '2026-02-30' ) ), na_appel( $plugin, 'date_valide', array( '2026-12-31' ) ), na_appel( $plugin, 'date_valide', array( '31/12/2026' ) ) );
