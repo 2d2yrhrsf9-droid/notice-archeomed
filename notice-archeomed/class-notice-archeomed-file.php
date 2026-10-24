@@ -50,6 +50,14 @@ class Notice_Archeomed_File {
 	 * de cent notices reviendrait à recréer le blocage qu'on supprime.
 	 */
 	const PAR_PASSAGE = 5;
+	/**
+	 * Combien de notices la relance périodique reprend, au plus, en vingt
+	 * secondes. WordPress inscrit les envois par une lecture puis une écriture
+	 * de son tableau de tâches : des dépôts simultanés en perdent, et c'est
+	 * cette relance, toutes les cinq minutes, qui les rattrape. Elle doit donc
+	 * absorber une salve entière sans la faire attendre plusieurs passages.
+	 */
+	const PAR_RELANCE = 15;
 
 	/** Au-delà, on cesse de represser et l'on demande une main humaine. */
 	const ESSAIS_MAX = 5;
@@ -368,13 +376,13 @@ class Notice_Archeomed_File {
 		// passage suivant reprend.
 		$debut   = microtime( true );
 		$reprises = 0;
-		foreach ( $this->en_attente( 4 * self::PAR_PASSAGE ) as $id ) {
+		foreach ( $this->en_attente( 4 * self::PAR_RELANCE ) as $id ) {
 			// Le délai croissant d'une notice qui vient d'échouer est respecté :
 			// la reprise périodique ne la représente pas avant l'heure dite.
 			if ( (int) get_post_meta( $id, '_na_pas_avant', true ) > time() ) {
 				continue;
 			}
-			if ( $reprises >= self::PAR_PASSAGE || ( microtime( true ) - $debut ) > 20 ) {
+			if ( $reprises >= self::PAR_RELANCE || ( microtime( true ) - $debut ) > 20 ) {
 				break;
 			}
 			++$reprises;

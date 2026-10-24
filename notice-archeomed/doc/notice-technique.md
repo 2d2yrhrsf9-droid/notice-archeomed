@@ -134,6 +134,8 @@ Rendu vrai : état `envoyee`, note, effacement du Word temporaire. Rendu faux : 
 
 ### Tâches planifiées (WP-Cron)
 
+WordPress inscrit un envoi par une lecture puis une écriture de son tableau de tâches : des dépôts simultanés en perdent (l'essai de charge de l'intégration continue en a montré : vingt-et-une inscriptions sur vingt-cinq). Ce n'est pas une perte de notice : c'est la relance périodique (`na_relancer_les_notices`, toutes les cinq minutes, quinze notices et vingt secondes au plus par passage) qui expédie celles dont l'inscription a été perdue.
+
 | Crochet | Fréquence | Rôle |
 |---|---|---|
 | `na_expedier_notice` (argument : id) | ponctuelle | expédier une notice |

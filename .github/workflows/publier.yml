@@ -318,7 +318,10 @@ jobs:
           set -u
           for tour in 1 2 3 4 5 6 7 8 9 10 11 12; do
             for k in 1 2 3 4; do
-              wp cron event run --due-now > /tmp/cron-$tour-$k.log 2>&1 &
+              # Les envois inscrits que WordPress n'a pas perdus, et la relance
+              # périodique, qui rattrape les autres : des dépôts simultanés
+              # perdent des inscriptions dans le tableau de tâches de WordPress.
+              ( wp cron event run --due-now; wp cron event run na_relancer_les_notices ) > /tmp/cron-$tour-$k.log 2>&1 &
             done
             wait
             RESTE=$(wp eval 'echo count( get_posts( array( "post_type" => "na_notice", "post_status" => "any", "posts_per_page" => -1, "fields" => "ids", "meta_query" => array( array( "key" => "_na_etat", "value" => array( "en_attente", "en_cours" ), "compare" => "IN" ) ) ) ) );')
@@ -341,7 +344,7 @@ jobs:
           echo "— événements planifiés :"
           wp cron event list --format=table | head -40 || true
           echo "— premier passage du planificateur :"
-          head -c 3000 /tmp/cron-1-1.log || true
+          head -c 1200 /tmp/cron-1-1.log | tr '\n' ' ' || true
           echo "— journal de WordPress :"
           tail -n 40 /tmp/wp/wp-content/debug.log 2>/dev/null || true
           ) 2>&1 | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:600]) for l in sys.stdin if l.strip()]'
