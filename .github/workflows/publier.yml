@@ -331,6 +331,19 @@ jobs:
         working-directory: /tmp/wp
         run: NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php"
 
+      - name: Ce qui reste en route, quand la charge n'a pas passé
+        if: failure()
+        working-directory: /tmp/wp
+        run: |
+          echo "— notices qui n'ont pas été expédiées :"
+          wp eval 'foreach ( get_posts( array( "post_type" => "na_notice", "post_status" => "any", "posts_per_page" => 6, "fields" => "ids", "meta_query" => array( array( "key" => "_na_etat", "value" => "envoyee", "compare" => "!=" ) ) ) ) as $id ) { echo $id, " etat=", get_post_meta( $id, "_na_etat", true ), " essais=", get_post_meta( $id, "_na_essais", true ), " prise=", get_post_meta( $id, "_na_prise", true ), " prepa=", get_post_meta( $id, "_na_preparation", true ), " pas_avant=", get_post_meta( $id, "_na_pas_avant", true ), " erreur=", get_post_meta( $id, "_na_erreur", true ), "\n"; }' || true
+          echo "— événements planifiés :"
+          wp cron event list --format=table | head -40 || true
+          echo "— premier passage du planificateur :"
+          head -c 3000 /tmp/cron-1-1.log || true
+          echo "— journal de WordPress :"
+          tail -n 40 /tmp/wp/wp-content/debug.log 2>/dev/null || true
+
       - name: Aucune erreur fatale
         if: always()
         run: |
