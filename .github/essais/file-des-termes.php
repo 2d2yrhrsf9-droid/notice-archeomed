@@ -1352,6 +1352,15 @@ $forger = function ( $vers ) {
 	throw new RuntimeException( (string) $vers );
 };
 add_filter( 'wp_redirect', $forger );
+$cible_vieille = 50;
+$heure_defi   = na_appel( $plugin, 'heure_du_defi' );
+$_POST = array( 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $heure_defi - 22 ) ) );
+$puzzle_vieux = na_appel( $plugin, 'verifier_le_puzzle' );
+$_POST = array( 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $heure_defi - 30 ) ) );
+$puzzle_perime = na_appel( $plugin, 'verifier_le_puzzle' );
+$_POST = array();
+na_verifier( true === $puzzle_vieux && false === $puzzle_perime,
+	'un défi du puzzle reste valable plus de vingt heures (limite de temps du RGAA), et se périme ensuite' );
 $defi_forge = na_appel( $plugin, 'defi_du_puzzle' );
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = array(
@@ -1612,6 +1621,27 @@ na_verifier( false !== strpos( $recommandee( array( 'titre' => 'Coupe stratigrap
 	&& '' === $recommandee( array( 'titre' => 'Vue du foyer', 'alt' => 'Foyer contre la paroi nord' ) )
 	&& '' === $recommandee( array( 'titre' => 'Coupe stratigraphique', 'alt' => 'Couches', 'description' => 'Trois couches.' ) ),
 	'un plan, une coupe, un relevé, un graphique sans description détaillée : elle est recommandée ; décrite, rien' );
+// La nature de la figure décide de ce qu'on demande.
+$donnees = function ( $item ) use ( $avis_de ) {
+	return count( preg_grep( '/ne se lit pas à l’écoute/u', $avis_de( array_merge( array( 'description' => '' ), $item ) ) ) );
+};
+na_verifier( 1 === $donnees( array( 'type' => 'graphique', 'alt' => 'Courbe des effectifs' ) )
+	&& 1 === $donnees( array( 'type' => 'tableau', 'alt' => 'Tableau des mesures' ) )
+	&& 0 === $donnees( array( 'type' => 'graphique', 'alt' => 'Courbe', 'description' => 'Valeurs : 1, 2, 3.' ) )
+	&& 0 === $donnees( array( 'type' => 'photo', 'alt' => 'Vue du foyer' ) )
+	&& 0 === $donnees( array( 'alt' => 'Courbe des effectifs' ) ),
+	'un graphique ou un tableau en image sans données en texte reçoit un avis ; décrit, une photographie ou sans nature, non' );
+na_verifier( 1 === count( preg_grep( '/description détaillée recommandée.*carte/u', $avis_de( array( 'description' => '', 'type' => 'carte', 'alt' => 'Les voies' ) ) ) )
+	&& array() === preg_grep( '/description détaillée recommandée/u', $avis_de( array( 'description' => '', 'type' => 'photo', 'titre' => 'Plan du château vu du ciel', 'alt' => 'Vue aérienne' ) ) )
+	&& 'graphique' === $C::type_de_figure( ' Graphique ' ) && '' === $C::type_de_figure( 'image' ) && '' === $C::type_de_figure( array( 'photo' ) ),
+	'une carte sans description est signalée ; une photographie n\'est pas prise pour un plan par son titre ; la nature inconnue se perd' );
+$_POST = array( 'illus_titre' => array( 'Courbe', 'Vue' ), 'illus_alt' => array( 'Courbe', 'Vue' ), 'illus_type' => array( 'graphique', 'inconnue' ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'a.jpg', 'b.jpg' ), 'error' => array( 0, 0 ) ) );
+$natures = na_appel( $plugin, 'collect_illustrations' );
+$_POST = array();
+$_FILES = array();
+na_verifier( 'graphique' === $natures[0]['type'] && '' === $natures[1]['type'],
+	'la nature de chaque figure se collecte dans l\'ordre des fichiers, et une valeur inconnue est écartée', array( $natures[0]['type'], $natures[1]['type'] ) );
 $figures_a11y = array(
 	array( 'rang' => 1, 'titre' => 'Coupe du fossé', 'legende' => 'Fig. 1. Coupe du fossé nord.', 'credits' => 'A', 'alt' => 'Coupe du fossé nord' ),
 	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => 'A', 'alt' => 'DSC_0042.JPG', 'description' => 'x' ) );
@@ -1660,6 +1690,22 @@ na_verifier( false !== strpos( $rendu_a11y_form, 'var A11Y = {' ) && false !== s
 	&& false !== strpos( $rendu_a11y_form, 'Deux bâtiments occupent l’ouest de l’enclos fossoyé' ) && false !== strpos( $rendu_a11y_form, 'Développez chaque sigle à sa première mention' )
 	&& false !== strpos( $rendu_a11y_form, 'Appelez chaque figure dans le texte' ) && false === strpos( $rendu_a11y_form, '?.' ),
 	'le formulaire porte les règles du serveur, les exemples du texte alternatif et les aides des sigles et des appels de figure' );
+// Accessibilité du formulaire : voie de secours, déclaration, langue, nature.
+$reglages_acces = get_option( Notice_Archeomed_Settings::OPTION_NAME );
+$acces_avant    = get_option( Notice_Archeomed_Accessibilite::OPTION, null );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_acces, array(
+	'destinataires' => array( array( 'email' => 'redaction@example.org', 'notices' => 1, 'recap' => 0 ) ) ) ) );
+update_option( Notice_Archeomed_Accessibilite::OPTION, array( 'ara' => array( 'declaration' => 'https://www.cnrs.fr/fr/accessibilite' ) ), false );
+$rendu_acces = (string) $plugin->render_form();
+update_option( Notice_Archeomed_Accessibilite::OPTION, array(), false );
+$rendu_sans_declaration = (string) $plugin->render_form();
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_acces );
+if ( null === $acces_avant ) { delete_option( Notice_Archeomed_Accessibilite::OPTION ); } else { update_option( Notice_Archeomed_Accessibilite::OPTION, $acces_avant, false ); }
+na_verifier( false !== strpos( $rendu_acces, 'id="na-form" lang="fr"' )
+	&& 1 === preg_match( '#class="na-intro-acces".*Envoyez votre notice par courriel.*mailto:.*href="https://www\.cnrs\.fr/fr/accessibilite">Déclaration d’accessibilité#us', $rendu_acces )
+	&& false === strpos( $rendu_sans_declaration, 'Déclaration d’accessibilité' ) && false !== strpos( $rendu_sans_declaration, 'Envoyez votre notice par courriel' )
+	&& false !== strpos( $rendu_acces, 'Nature de la figure' ) && false !== strpos( $rendu_acces, 'Ctrl+B' ),
+	'le formulaire est en français, donne la voie de secours par courriel et, si elle est réglée, la déclaration d\'accessibilité ; il propose la nature de la figure et les raccourcis' );
 
 WP_CLI::log( 'Les siècles sur la fiche' );
 $fiche_siecle = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Siècles' ) );
@@ -1970,11 +2016,11 @@ na_verifier( 50 === $controle_propre['score'] && 2 === count( $controle_propre['
 	&& '' === $controle_propre['echecs'][1]['gravite'] && '' === $controle_propre['echecs'][1]['origine'] && 0 === $controle_propre['echecs'][1]['n']
 	&& $A::PLAFOND === count( $controle_propre['a_verifier'] ) && '4.10.2' === $controle_propre['moteur'],
 	'un contrôle reçu se nettoie : score recalculé (conformes / conformes + échecs), textes tamisés, listes plafonnées', $controle_propre );
-list( $audit_propre, $audit_refuses ) = $A::nettoyer_l_audit( array( 'taux' => '87,5 %', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x' ) );
-list( $audit_faux, $refuses_faux ) = $A::nettoyer_l_audit( array( 'taux' => '120', 'date' => '2026-02-30', 'lien' => 'javascript:alert(1)' ) );
-na_verifier( array( 'taux' => '87.5', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x' ) === $audit_propre && array() === $audit_refuses
-	&& array( 'taux', 'date', 'lien' ) === $refuses_faux && array( 'taux' => '', 'date' => '', 'lien' => '' ) === $audit_faux,
-	'l\'audit Ara se garde : taux à virgule, date du calendrier, lien http(s) ; le reste est écarté', array( $audit_propre, $refuses_faux ) );
+list( $audit_propre, $audit_refuses ) = $A::nettoyer_l_audit( array( 'taux' => '87,5 %', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x', 'declaration' => 'https://www.cnrs.fr/fr/accessibilite' ) );
+list( $audit_faux, $refuses_faux ) = $A::nettoyer_l_audit( array( 'taux' => '120', 'date' => '2026-02-30', 'lien' => 'javascript:alert(1)', 'declaration' => 'ftp://x.fr/d' ) );
+na_verifier( array( 'taux' => '87.5', 'date' => '2026-09-30', 'lien' => 'https://ara.numerique.gouv.fr/rapport/x', 'declaration' => 'https://www.cnrs.fr/fr/accessibilite' ) === $audit_propre && array() === $audit_refuses
+	&& array( 'taux', 'date', 'lien', 'declaration' ) === $refuses_faux && array( 'taux' => '', 'date' => '', 'lien' => '', 'declaration' => '' ) === $audit_faux,
+	'l\'audit Ara se garde : taux à virgule, date du calendrier, liens http(s) (rapport et déclaration) ; le reste est écarté', array( $audit_propre, $refuses_faux ) );
 $option_avant = get_option( $A::OPTION, null );
 $utilisateur_avant = get_current_user_id();
 $admins = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ids' ) );

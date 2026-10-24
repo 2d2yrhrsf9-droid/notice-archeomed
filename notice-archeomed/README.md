@@ -69,14 +69,18 @@ champ-piège, le délai minimal de trois secondes et les plafonds horaires.
 
 **Au clavier**, la poignée se rejoint par la tabulation, se déplace aux
 flèches — de dix crans la touche Majuscule enfoncée — et se valide par Entrée.
-Le fond et la pièce sont dessinés à chaque affichage : un lecteur d'écran ne
-peut pas résoudre un alignement visuel, et c'est la limite reconnue de ce
-genre de vérification. Turnstile, lui, sait s'en passer.
+La poignée annonce sa position et celle de l'encoche
+(`aria-valuetext`) : un lecteur d'écran peut donc la placer à l'oreille, sans
+voir le dessin. Reste que la vérification demande un geste précis ; le
+formulaire donne, dans son introduction, l'adresse où envoyer la notice par
+courriel quand il fait obstacle, et Turnstile sait s'en passer.
 
 **Le sceau porte l'heure.** Il ne portait que la réponse : un couple
 (réponse, sceau) récolté une fois valait indéfiniment, sur toutes les pages.
-Il vaut désormais l'heure en cours et la précédente — deux heures au pire, de
-quoi laisser partir un formulaire ouvert à la charnière. Rien n'est retenu
+Il vaut désormais l'heure en cours et les vingt-quatre précédentes
+(`PUZZLE_VALIDITE`) : la limite de temps du RGAA (critère 13.1) veut vingt
+heures au moins, et un formulaire ouvert le soir doit pouvoir partir le
+lendemain. Rien n'est retenu
 entre l'affichage et l'envoi, et une page mise en cache reste donc valable.
 
 Turnstile n'est pas une protection si le serveur ne joint pas Cloudflare.
@@ -617,6 +621,24 @@ rédaction se déplient sous l'aide (« Exemples ») :
 | Fig. 12. Plan général des vestiges de la phase 2. | Deux bâtiments occupent l'ouest de l'enclos fossoyé, entourés de fosses et de silos. |
 | Fig. 8. Vue du foyer du bâtiment 1. | Foyer quadrangulaire installé contre la paroi nord du bâtiment. |
 
+**La nature de la figure.** Un choix facultatif — photographie, plan (relevé,
+dessin), carte, graphique ou diagramme, planche, tableau en image, autre —
+posé en tête du bloc « Pour un public empêché de voir » (`illus_type[]`, gardé
+avec la figure : brouillon, reprise, correction). Facultatif : une notice ne se
+perd pas pour une case non remplie. Elle sert à trois choses :
+
+- un **conseil** propre à chaque nature s'affiche sous le choix
+  (`Notice_Archeomed_Controles::aides_par_type()`) ;
+- un **graphique** ou un **tableau en image** sans description détaillée reçoit
+  l'avis « figure de type … : son contenu ne se lit pas à l'écoute. Recopiez
+  les données… » ; un **plan**, une **carte** ou une **planche** celui de la
+  description recommandée ; une **photographie** n'en reçoit aucun, et n'est
+  pas prise pour un plan à cause d'un mot du titre. Sans nature, les mots du
+  titre, de la légende et du texte font foi, comme avant ;
+- elle figure dans le courriel de la rédaction, la page de relecture et la fiche
+  (« Nature : Carte »), non dans le document Word : la chaîne Métopes ne la
+  lit pas.
+
 L'aide du **titre** demande une ligne informative, qui nomme ce que montre la
 figure et son objet ; celle de la **légende**, d'y reprendre ce qu'un lecteur
 qui ne voit pas l'image doit savoir — la clé d'un plan ou d'une carte, les
@@ -631,7 +653,7 @@ saisie et dit quelle figure décrire.
 - **Longueur.** Un compteur sous le champ. Au-delà d'un seuil, un avis, sans
   refus : 150 caractères par défaut, réglable dans **Normes éditoriales ▸
   L'accessibilité** (de 20 à 300) ; le formulaire, le compteur et le serveur
-  lisent ce même réglage. Le formulaire n'en laisse pas taper plus de 300, et
+  lisent ce même réglage. Le compteur le signale au-delà de 300, et
   le serveur coupe au-delà en le nommant dans les avis — limite dure de la
   rédaction, non réglable. Le RGAA 4.1, plus strict, « recommande fortement »
   80 caractères (glossaire, « Alternative courte et concise », test 1.3.9).
@@ -1150,7 +1172,7 @@ comptées ; la saisie se lit par paquets de deux cents.
 Plus bas, le bouton « Contrôler l'accessibilité du
 formulaire » charge la page publiée du formulaire dans un cadre et la fait
 passer, dans le navigateur de l'administrateur, au moteur libre axe-core
-(4.10.2, règles `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`). Il affiche un
+(4.10.2, règles `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`). Il affiche un
 **score indicatif** — règles conformes / (conformes + en échec) —, les règles
 en échec (gravité, nombre d'éléments, explication courte, et si l'élément vient
 de l'extension ou du thème), les conformes, et ce qui reste à vérifier à la
@@ -1158,10 +1180,32 @@ main. Le dernier résultat se garde avec sa date (requête authentifiée, jeton,
 droit `manage_options`). **Ce score n'est pas le taux de conformité RGAA** :
 les tests automatiques ne couvrent qu'une partie des critères.
 
+**Ce que le formulaire fait pour être accessible** (RGAA 4.1, critères
+vérifiés à la main au-delà d'axe-core) :
+
+- `lang="fr"` sur le formulaire et dans les courriels HTML ;
+- une **voie de secours** dans l'introduction : l'adresse de la rédaction, où
+  envoyer la notice par courriel si le formulaire fait obstacle (lecteur
+  d'écran, clavier…) — c'est aussi l'alternative quand la protection
+  anti-robot ne peut se résoudre ; et, si l'onglet l'a, le lien de la
+  déclaration d'accessibilité ;
+- une limite de temps de vingt-quatre heures pour le puzzle (critère 13.1) ;
+- les **avis** et les résultats vides de la recherche de lieux sont annoncés
+  par la région `role=status` (critère 7.5), regroupés par rafale et jamais
+  répétés ;
+- le focus visible sur tous les champs, y compris dates et liens ; les cases à
+  cocher à 24 px ;
+- la barre de mise en forme de l'éditeur est un seul arrêt de tabulation, les
+  flèches passent d'un bouton à l'autre ; l'aide rappelle Ctrl+B et Ctrl+I ;
+- chaque liste de propositions porte le nom de son champ ; les champs
+  facultatifs le disent, la matière de la rubrique V est marquée obligatoire.
+
 L'audit officiel se fait avec **Ara** (DINUM, libre et gratuit, RGAA 4.1,
 <https://ara.numerique.gouv.fr/>), audit manuel dont le taux est celui qui
-compte ; l'onglet en garde le taux, la date et le lien du rapport, et rappelle
-qu'un organisme public publie une déclaration d'accessibilité. Le script et le
+compte ; l'onglet en garde le taux, la date, le lien du rapport et l'adresse de la
+page de la **déclaration d'accessibilité** — que l'introduction du formulaire
+reprend en lien, avec l'adresse de secours pour envoyer sa notice par
+courriel — et rappelle qu'un organisme public publie cette déclaration. Le script et le
 style de l'onglet ne se chargent que sur lui, et le serveur n'appelle aucun
 service.
 

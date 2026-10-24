@@ -52,6 +52,34 @@ class Notice_Archeomed_Controles {
 	const FIGURES_COMPLEXES = array( 'plan', 'carte', 'coupe', 'stratigraphie', 'profil', 'relevé', 'graphique', 'diagramme',
 		'histogramme', 'courbe', 'tableau', 'schéma', 'restitution', 'élévation' );
 
+	/**
+	 * La nature d'une figure, que l'auteur choisit : elle décide de ce qu'on
+	 * lui demande pour la rendre accessible. Une photographie se décrit en
+	 * une phrase ; un graphique ou un tableau en image se lisent par leurs
+	 * données, qu'il faut donner en texte.
+	 */
+	const TYPES_DE_FIGURE = array(
+		'photo'     => 'Photographie',
+		'plan'      => 'Plan, relevé ou dessin',
+		'carte'     => 'Carte',
+		'graphique' => 'Graphique ou diagramme',
+		'planche'   => 'Planche',
+		'tableau'   => 'Tableau en image',
+		'autre'     => 'Autre',
+	);
+
+	/** Chaque nature dans une phrase d'avis : « figure de type {mot} ». */
+	const TYPES_MOTS = array(
+		'photo' => 'photographie', 'plan' => 'plan', 'carte' => 'carte', 'graphique' => 'graphique',
+		'planche' => 'planche', 'tableau' => 'tableau en image', 'autre' => 'autre figure',
+	);
+
+	/** Celles qu'on ne comprend que par leurs données : un équivalent en texte est demandé. */
+	const TYPES_AVEC_DONNEES = array( 'graphique', 'tableau' );
+
+	/** Celles dont l'organisation se dit : la description détaillée est recommandée. */
+	const TYPES_A_DECRIRE = array( 'plan', 'carte', 'planche' );
+
 	/** Les extensions d'un nom de fichier d'image, celles du dépôt comprises. */
 	const EXTENSIONS_D_IMAGE = array( 'jpg', 'jpeg', 'jpe', 'png', 'tif', 'tiff', 'gif', 'bmp', 'webp', 'heic', 'heif', 'svg', 'pdf', 'psd', 'jp2', 'dng', 'cr2', 'nef', 'raw' );
 
@@ -369,6 +397,29 @@ class Notice_Archeomed_Controles {
 		return $avis;
 	}
 
+	/** La nature d'une figure telle qu'on la garde : une clef connue, ou rien. */
+	public static function type_de_figure( $brut ) {
+		$brut = is_scalar( $brut ) ? strtolower( trim( (string) $brut ) ) : '';
+		return isset( self::TYPES_DE_FIGURE[ $brut ] ) ? $brut : '';
+	}
+
+	/**
+	 * Ce qu'on dit à l'auteur pour décrire chaque nature de figure : le
+	 * formulaire l'affiche sous le choix, avec un exemple.
+	 */
+	public static function aides_par_type() {
+		$nb = "\u{00A0}";
+		return array(
+			'photo'     => "Dites ce qu’on y voit\u{00A0}: le sujet, la vue, les éléments utiles. Par exemple\u{00A0}: «{$nb}Mur en moellons vu du nord, avec un chaînage d’angle en pierre de taille.{$nb}»",
+			'plan'      => "Dites ce que le plan représente et comment il s’organise\u{00A0}: bâtiments, états, repères. Par exemple\u{00A0}: «{$nb}Deux bâtiments à l’ouest d’un enclos fossoyé, entourés de fosses et de silos.{$nb}» Poursuivez à la ligne pour le détail.",
+			'carte'     => "Dites la zone figurée, l’orientation ou l’échelle utiles et ce que désignent les symboles. Poursuivez à la ligne pour le détail.",
+			'graphique' => "Dites la nature du graphique et ce qu’il montre en conclusion. Les données elles-mêmes — valeurs, axes, séries — vont à la ligne, sous forme de texte\u{00A0}: elles sont publiées sous la légende.",
+			'planche'   => "Dites ce que réunit la planche et comment elle est organisée. Par exemple\u{00A0}: «{$nb}Planche de dix tessons de céramique, numérotés de 1 à 10.{$nb}» Détaillez chaque élément à la ligne.",
+			'tableau'   => "Un tableau en image ne se lit pas à l’écoute\u{00A0}: résumez ici ce qu’il montre, puis recopiez son contenu à la ligne, ligne par ligne.",
+			'autre'     => "Dites ce que montre la figure et ce qu’elle apporte au texte.",
+		);
+	}
+
 	/** Le seuil de l'avis de longueur du texte alternatif, selon les normes. */
 	public static function alt_conseille() {
 		return max( 1, min( self::ALT_MAX, (int) Notice_Archeomed_Normes::valeur( 'alt_conseille' ) ) );
@@ -389,6 +440,7 @@ class Notice_Archeomed_Controles {
 			'debut'       => "le texte alternatif commence par «\u{00A0}{debut}\u{00A0}», que le lecteur d’écran annonce déjà.",
 			'couleur'     => "«\u{00A0}{couleur}\u{00A0}» — l’information ne doit pas reposer sur la seule couleur\u{00A0}; nommez aussi ce qu’elle désigne.",
 			'description' => "description détaillée recommandée («\u{00A0}{mot}\u{00A0}»)\u{00A0}; dites-y ce qu’un lecteur qui ne voit pas la figure doit en savoir — organisation, repères, données.",
+			'donnees'     => "figure de type {mot}\u{00A0}: son contenu ne se lit pas à l’écoute. Recopiez les données (valeurs, séries, lignes du tableau) dans la description détaillée, à la suite du texte alternatif.",
 			// Celle-ci ne suit pas « Fig. N : » : elle porte sur le texte.
 			'sigle'       => "Le sigle «\u{00A0}{sigle}\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}{developpement} ({sigle})\u{00A0}».",
 			'sigle_casse' => "«\u{00A0}{ecrit}\u{00A0}» s’écrit «\u{00A0}{sigle}\u{00A0}»\u{00A0}: un sigle qu’on épelle prend toutes ses capitales, un sigle qu’on prononce comme un mot n’en prend qu’une, à l’initiale.",
@@ -436,6 +488,11 @@ class Notice_Archeomed_Controles {
 			'phrases'    => self::phrases_d_accessibilite(),
 			'motifs'     => self::motifs_d_accessibilite(),
 			'complexes'  => self::FIGURES_COMPLEXES,
+			'types'      => self::TYPES_DE_FIGURE,
+			'typesMots'  => self::TYPES_MOTS,
+			'avecDonnees' => self::TYPES_AVEC_DONNEES,
+			'aDecrire'   => self::TYPES_A_DECRIRE,
+			'aidesTypes' => self::aides_par_type(),
 			'repriseMin' => self::REPRISE_MOTS_MIN,
 			'repriseDice' => self::REPRISE_DICE,
 			'sigles'     => Notice_Archeomed_Normes::avis_actif( 'sigles' ) ? self::sigles_de_la_norme() : array(),
@@ -613,9 +670,20 @@ class Notice_Archeomed_Controles {
 		if ( preg_match( self::COULEUR_SEULE, $alt . "\n" . $legende, $couleur ) ) {
 			$avis[] = self::phrase( 'couleur', array( 'couleur' => $couleur[0] ) );
 		}
-		if ( '' === $description && preg_match( '/' . $motifs['complexe'] . '/',
-			self::plier_pour_comparer( $titre . ' ' . $legende . ' ' . $alt ), $mot ) ) {
-			$avis[] = self::phrase( 'description', array( 'mot' => self::mot_complexe( $mot[1] ) ) );
+		// Une nature choisie décide : les données d'un graphique ou d'un
+		// tableau, la description d'un plan, d'une carte ou d'une planche ;
+		// une photographie n'en demande pas. Sans nature, les mots du titre
+		// et de la légende font foi, comme avant.
+		$type = self::type_de_figure( isset( $item['type'] ) ? $item['type'] : '' );
+		if ( '' === $description ) {
+			if ( in_array( $type, self::TYPES_AVEC_DONNEES, true ) ) {
+				$avis[] = self::phrase( 'donnees', array( 'mot' => self::TYPES_MOTS[ $type ] ) );
+			} elseif ( in_array( $type, self::TYPES_A_DECRIRE, true ) ) {
+				$avis[] = self::phrase( 'description', array( 'mot' => self::TYPES_MOTS[ $type ] ) );
+			} elseif ( 'photo' !== $type && preg_match( '/' . $motifs['complexe'] . '/',
+				self::plier_pour_comparer( $titre . ' ' . $legende . ' ' . $alt ), $mot ) ) {
+				$avis[] = self::phrase( 'description', array( 'mot' => self::mot_complexe( $mot[1] ) ) );
+			}
 		}
 		return $avis;
 	}

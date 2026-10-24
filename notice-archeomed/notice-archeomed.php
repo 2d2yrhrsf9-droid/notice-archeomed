@@ -187,6 +187,10 @@ class Notice_Archeomed_Pactols {
 	// Les bornes de l'encoche, en centièmes de la largeur utile : assez loin
 	// des bords pour que la pièce reste entière et la cible non devinable.
 	const PUZZLE_MIN          = 30;
+	// Combien d'heures un défi reste valable. Un formulaire ouvert le soir et
+	// envoyé le lendemain ne doit pas être refusé sans un mot : la limite de
+	// temps du RGAA (13.1) veut vingt heures au moins.
+	const PUZZLE_VALIDITE     = 24;
 	const PUZZLE_MAX          = 88;
 	// L'écart admis entre la pièce et son encoche. Assez large pour qu'on y
 	// arrive au doigt et à la flèche du clavier, assez étroit pour qu'il
@@ -377,8 +381,8 @@ class Notice_Archeomed_Pactols {
 	 * L'heure entre dans le sceau, et c'est ce qui a changé. Le sceau ne
 	 * portait que la réponse : un couple (réponse, sceau) récolté une fois
 	 * valait indéfiniment, sur toutes les pages, pour tout le monde. Il vaut
-	 * maintenant l'heure en cours et la précédente — deux heures au pire, le
-	 * temps qu'un formulaire ouvert à midi moins deux parte à midi passé.
+	 * maintenant PUZZLE_VALIDITE heures : on ne refuse pas sans un mot qui a
+	 * laissé son formulaire ouvert pour la nuit.
 	 */
 	private function sceau_du_defi( $cible, $heure ) {
 		return hash_hmac( 'sha256', (int) $cible . '|' . (int) $heure,
@@ -431,11 +435,10 @@ class Notice_Archeomed_Pactols {
 		if ( $cible < self::PUZZLE_MIN || $cible > self::PUZZLE_MAX ) {
 			return false;
 		}
-		// L'heure en cours, puis celle d'avant : un formulaire ouvert à la
-		// charnière ne se fait pas refuser pour une minute.
+		// L'heure en cours et les précédentes, sur toute la durée de validité.
 		$maintenant = $this->heure_du_defi();
-		foreach ( array( $maintenant, $maintenant - 1 ) as $heure ) {
-			if ( hash_equals( $this->sceau_du_defi( $cible, $heure ), $preuve ) ) {
+		for ( $recul = 0; $recul <= self::PUZZLE_VALIDITE; $recul++ ) {
+			if ( hash_equals( $this->sceau_du_defi( $cible, $maintenant - $recul ), $preuve ) ) {
 				return true;
 			}
 		}
@@ -916,6 +919,10 @@ class Notice_Archeomed_Pactols {
 					$h .= '<br><em>' . esc_html( $item['credits'] ) . '</em>';
 				}
 				// Le relecteur voit ce que l'image dira à qui ne la voit pas.
+				$nature = Notice_Archeomed_Controles::type_de_figure( isset( $item['type'] ) ? $item['type'] : '' );
+				if ( '' !== $nature ) {
+					$h .= '<br><span class="alt">' . esc_html( "Nature\u{00A0}: " . Notice_Archeomed_Controles::TYPES_DE_FIGURE[ $nature ] ) . '</span>';
+				}
 				if ( ! empty( $item['alt'] ) ) {
 					$h .= '<br><span class="alt">' . esc_html( "Texte alternatif\u{00A0}: " . Notice_Archeomed_Controles::une_ligne( $item['alt'] ) ) . '</span>';
 				}
@@ -1243,7 +1250,7 @@ class Notice_Archeomed_Pactols {
 				array_map( 'strval', wp_unslash( $_POST['nature'] ) ) );
 		}
 		foreach ( array( 'commune', 'commune_ark', 'organisme',
-			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description' ) as $champ ) {
+			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type' ) as $champ ) {
 			if ( isset( $_POST[ $champ ] ) && is_array( $_POST[ $champ ] ) ) {
 				$garde[ $champ ] = array_map( 'sanitize_textarea_field',
 					array_map( 'strval', wp_unslash( $_POST[ $champ ] ) ) );
@@ -1306,7 +1313,7 @@ class Notice_Archeomed_Pactols {
 		if ( ! is_array( $avant ) || empty( $avant['illus_titre'] ) || ! is_array( $avant['illus_titre'] ) ) {
 			return $garde;
 		}
-		$champs = array( 'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_nom', 'illus_autorisation' );
+		$champs = array( 'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type', 'illus_nom', 'illus_autorisation' );
 		$postes = isset( $garde['illus_titre'] ) ? count( $garde['illus_titre'] ) : 0;
 		$noms   = isset( $garde['illus_nom'] ) ? array_filter( array_map( 'strval', (array) $garde['illus_nom'] ) ) : array();
 		foreach ( $champs as $champ ) {
@@ -2233,7 +2240,7 @@ class Notice_Archeomed_Pactols {
 				font-size: var(--na-t-s); font-weight: 400; line-height: 1.5; color: var(--na-sourd); }
 			.na-form#na-form .na-help strong { font-weight: 600; color: var(--na-encre); }
 			.na-form#na-form input[type=text], .na-form#na-form input[type=email], .na-form#na-form input[type=url],
-			.na-form#na-form select, .na-form#na-form textarea {
+			.na-form#na-form input[type=date], .na-form#na-form select, .na-form#na-form textarea {
 				display: block; width: 100%; max-width: 100%; min-height: var(--na-cible); margin: 0;
 				padding: .5625rem .75rem; font: inherit; font-size: var(--na-t-m); line-height: 1.5; color: var(--na-encre);
 				background-color: var(--na-papier); border: 1px solid var(--na-filet); border-radius: var(--na-r1);
@@ -2245,10 +2252,14 @@ class Notice_Archeomed_Pactols {
 				background-repeat: no-repeat; background-position: right .875rem center; background-size: 12px 8px; }
 			.na-form#na-form ::placeholder { color: var(--na-indice); opacity: 1; }
 			.na-form#na-form input[type=text]:hover, .na-form#na-form input[type=email]:hover,
+			.na-form#na-form input[type=url]:hover, .na-form#na-form input[type=date]:hover,
 			.na-form#na-form select:hover, .na-form#na-form textarea:hover { border-color: var(--na-encre); }
 			.na-form#na-form input[type=text]:focus, .na-form#na-form input[type=email]:focus,
+			.na-form#na-form input[type=url]:focus, .na-form#na-form input[type=date]:focus,
 			.na-form#na-form select:focus, .na-form#na-form textarea:focus {
 				border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; box-shadow: none; color: var(--na-encre); }
+			.na-form#na-form a:focus-visible { outline: var(--na-anneau); outline-offset: 2px; border-radius: var(--na-r1); }
+			.na-form#na-form input[type=date] { max-width: 16rem; }
 			/* Un seul filet rouge, posé dans la marge. Le bloc en portait un et le
 			   champ un second, parallèle ; et le bloc glissait de seize pixels à
 			   chaque erreur, puis revenait quand elle s'effaçait. */
@@ -2315,7 +2326,7 @@ class Notice_Archeomed_Pactols {
 				margin: 0; padding: var(--na-e1) var(--na-e2); font-weight: 400; line-height: 1.35; border-radius: var(--na-r1); cursor: pointer; }
 			.na-form#na-form label.na-check:hover { background: var(--na-fond); }
 			.na-form#na-form input[type=checkbox] { -webkit-appearance: auto; appearance: auto; flex: none;
-				width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--na-accent); cursor: pointer; }
+				width: 1.5rem; height: 1.5rem; margin: 0; accent-color: var(--na-accent); cursor: pointer; }
 
 			/* ── Autocomplétion ── */
 			.na-form#na-form .na-suggestions, .na-form#na-form .na-pactols-suggestions {
@@ -2430,6 +2441,8 @@ class Notice_Archeomed_Pactols {
 			   et teinté, en fin de carte. */
 			.na-form#na-form .na-illus-ecoute { margin-top: var(--na-e3); padding: var(--na-e4); background: var(--na-accent-voile);
 				border: 2px solid var(--na-accent); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
+			.na-form#na-form .na-illus-type select { max-width: 22rem; }
 			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
 			.na-form#na-form .na-illus-terme { font-weight: 400; color: var(--na-sourd); }
 			.na-form#na-form .na-illus button.na-fileremove { position: absolute; top: var(--na-e3); right: var(--na-e3); margin: 0; }
@@ -2572,7 +2585,7 @@ class Notice_Archeomed_Pactols {
 					forced-color-adjust: none; color: HighlightText; background: Highlight; }
 			}
 		</style>
-		<form class="na-form" id="na-form" method="post" enctype="multipart/form-data"
+		<form class="na-form" id="na-form" lang="fr" method="post" enctype="multipart/form-data"
 			data-reprise="<?php echo empty( $reprise ) ? '0' : '1'; ?>"
 			data-brouillon="<?php echo $correction ? '0' : '1'; ?>">
 			<?php
@@ -2615,6 +2628,22 @@ class Notice_Archeomed_Pactols {
 					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>), avec leurs légendes et crédits.</li>
 				</ul>
 				<p>Les champs obligatoires portent un astérisque (<span class="na-requis">*</span>)&nbsp;; les autres sont marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?> Votre saisie est gardée sur cet appareil jusqu’à l’envoi.<?php endif; ?> Après l’envoi, le responsable d’opération — et, s’il y a lieu, le co-responsable et le co-auteur — reçoit une copie par courriel, avec un lien pour corriger la notice pendant un mois.</p>
+				<?php
+				$secours     = $this->adresse_de_contact();
+				$accessible  = Notice_Archeomed_Accessibilite::lire();
+				$declaration = isset( $accessible['ara']['declaration'] ) ? (string) $accessible['ara']['declaration'] : '';
+				if ( '' !== $secours || '' !== $declaration ) :
+					?>
+				<p class="na-intro-acces"><?php
+					if ( '' !== $secours ) {
+						echo $this->typo( 'Ce formulaire vous pose difficulté (lecteur d’écran, clavier, vue…)&nbsp;? Envoyez votre notice par courriel à <a href="mailto:'
+							. esc_attr( antispambot( $secours ) ) . '">' . esc_html( antispambot( $secours ) ) . '</a>&nbsp;: elle sera reprise à la main.' );
+					}
+					if ( '' !== $declaration ) {
+						echo ( '' !== $secours ? ' ' : '' ) . '<a href="' . esc_url( $declaration ) . '">Déclaration d’accessibilité</a>.';
+					}
+				?></p>
+				<?php endif; ?>
 			</div>
 			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
 			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
@@ -2717,7 +2746,7 @@ class Notice_Archeomed_Pactols {
 
 				<div class="na-half">
 					<div class="na-champ">
-						<label for="na-autorisation">Numéro d’autorisation</label>
+						<label for="na-autorisation">Numéro d’autorisation <span class="na-facultatif">(facultatif)</span></label>
 						<p class="na-help" id="na-autorisation-aide">Le numéro de l’arrêté qui autorise l’opération.</p>
 						<input type="text" id="na-autorisation" name="num_autorisation" aria-describedby="na-autorisation-aide"
 							value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
@@ -2822,7 +2851,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique&nbsp;; dans la barre de mise en forme, les flèches passent d’un bouton à l’autre. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -2840,7 +2869,7 @@ class Notice_Archeomed_Pactols {
 				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
 					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
 					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
-					<select id="na-matiere" name="rubrique_matiere" aria-describedby="na-matiere-aide">
+					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
 						<option value="">Choisir une matière…</option>
 						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
 							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
@@ -3115,12 +3144,34 @@ class Notice_Archeomed_Pactols {
 				}
 				return z;
 			}
+			// Un avis qui apparaît se dit, une fois, au lecteur d'écran : il est
+			// sous le champ, hors de portée de qui continue de taper. On attend
+			// la fin d'une rafale d'avis pour les dire d'un trait, et l'on ne
+			// redit pas ceux qu'une zone montrait déjà.
+			var avisAnnonces = [], attenteAnnonceAvis = null;
+			function annoncerLesAvis(nouveaux) {
+				avisAnnonces = avisAnnonces.concat(nouveaux);
+				window.clearTimeout(attenteAnnonceAvis);
+				attenteAnnonceAvis = window.setTimeout(function () {
+					var tous = avisAnnonces;
+					avisAnnonces = [];
+					if (!tous.length) { return; }
+					var dits = tous.slice(0, 2).map(function (t) { return t.replace(/[.\s]+$/, ''); }).join(NBSP + '; ');
+					annoncer((tous.length > 1 ? tous.length + ' avis à vérifier' : 'Un avis à vérifier') + NBSP + ': ' + dits
+						+ (tous.length > 2 ? ', et ' + (tous.length - 2) + (tous.length - 2 > 1 ? ' autres' : ' autre') : '') + '. Rien n’empêche l’envoi.');
+				}, 1500);
+			}
 			function montrerConseils(z, liste, champs) {
 				var vus = {}, propres = [];
 				liste.forEach(function (m) {
 					var t = typeof m === 'string' ? m : m.texte;
 					if (t && !vus[t]) { vus[t] = true; propres.push(m); }
 				});
+				var avant = z.getAttribute('data-avis') ? JSON.parse(z.getAttribute('data-avis')) : [];
+				var textes = propres.map(function (m) { return typeof m === 'string' ? m : m.texte; });
+				z.setAttribute('data-avis', JSON.stringify(textes));
+				var nouveaux = textes.filter(function (t) { return avant.indexOf(t) === -1; });
+				if (nouveaux.length && !z.hasAttribute('data-sans-annonce')) { annoncerLesAvis(nouveaux); }
 				z.innerHTML = '';
 				(champs || []).forEach(function (c) { if (c) { retirerDescription(c, z.id); } });
 				if (!propres.length) { z.hidden = true; return; }
@@ -3320,6 +3371,27 @@ class Notice_Archeomed_Pactols {
 						var b = barre.querySelector(p[0]);
 						if (b) { b.setAttribute('aria-label', p[1]); b.title = p[1]; }
 					});
+					// Une barre d'outils ne prend qu'un arrêt de tabulation : une
+					// seule touche Tab la franchit, et les flèches passent d'un
+					// bouton à l'autre.
+					var boutons = [].slice.call(barre.querySelectorAll('button'));
+					function poserLArret(b) {
+						boutons.forEach(function (x) { x.setAttribute('tabindex', x === b ? '0' : '-1'); });
+					}
+					if (boutons.length) {
+						poserLArret(boutons[0]);
+						boutons.forEach(function (b) { b.addEventListener('focus', function () { poserLArret(b); }); });
+						barre.addEventListener('keydown', function (e) {
+							var i = boutons.indexOf(document.activeElement);
+							if (i < 0) { return; }
+							var vers = e.key === 'ArrowRight' || e.key === 'Right' ? (i + 1) % boutons.length
+								: e.key === 'ArrowLeft' || e.key === 'Left' ? (i + boutons.length - 1) % boutons.length
+								: e.key === 'Home' ? 0 : e.key === 'End' ? boutons.length - 1 : -1;
+							if (vers < 0) { return; }
+							e.preventDefault();
+							boutons[vers].focus();
+						});
+					}
 					// Quill n'a pas d'icône pour ce format : deux lettres, en
 					// petites capitales elles-mêmes.
 					var pc = barre.querySelector('.ql-petitescapitales');
@@ -3372,7 +3444,11 @@ class Notice_Archeomed_Pactols {
 				champ.setAttribute('aria-expanded', 'false');
 				champ.setAttribute('aria-controls', liste.id);
 				liste.setAttribute('role', 'listbox');
-				liste.setAttribute('aria-label', 'Propositions');
+				// Un nom par liste : une page en porte plusieurs, et « Propositions »
+				// seul ne dit pas de quel champ elles viennent.
+				var etiquette = champ.id ? document.querySelector('label[for="' + champ.id + '"]') : null;
+				var nomDuChamp = etiquette ? etiquette.textContent.replace(/\s*\(facultatif\)\s*$/, '').replace(/\s*\*\s*$/, '').replace(/\s+/g, ' ').trim() : '';
+				liste.setAttribute('aria-label', nomDuChamp ? 'Propositions pour ' + nomDuChamp : 'Propositions');
 				liste.hidden = true;
 				// Le champ garde le focus : la liste ne se ferme pas sous le
 				// doigt avant que le clic n'arrive.
@@ -3694,6 +3770,11 @@ class Notice_Archeomed_Pactols {
 								// La réponse arrive après qu'on a quitté le champ : le
 								// lieu identique se retient quand même.
 								if (document.activeElement !== champ) { prendreLIdentique(); cb.fermer(); return; }
+								if (!items.length) {
+									cb.fermer();
+									annoncer('Aucun lieu ne correspond. Votre saisie sera gardée telle quelle.');
+									return;
+								}
 								cb.ouvrir(items.slice(0, 20), function (li, c, i) {
 									var nom = document.createElement('span');
 									nom.textContent = c.label;
@@ -3704,7 +3785,11 @@ class Notice_Archeomed_Pactols {
 										getDepartmentFromArk(c.uri).then(function (d) { if (d) { precision(li, d); } });
 									}
 								});
-							}, function () { if (ce === tour) { cb.fermer(); } });
+							}, function () {
+								if (ce !== tour) { return; }
+								cb.fermer();
+								annoncer('Le service des lieux ne répond pas pour l’instant. Votre saisie sera gardée telle quelle.');
+							});
 					}, 250);
 				});
 			}
@@ -4227,6 +4312,7 @@ class Notice_Archeomed_Pactols {
 						'alt'     => trim( ( isset( $reprise['illus_alt'][ $i ] ) ? $reprise['illus_alt'][ $i ] : '' )
 							. ( ! empty( $reprise['illus_description'][ $i ] ) ? "\n" . $reprise['illus_description'][ $i ] : '' ) ),
 						'description' => '',
+						'type'    => isset( $reprise['illus_type'][ $i ] ) ? Notice_Archeomed_Controles::type_de_figure( $reprise['illus_type'][ $i ] ) : '',
 						'nom'     => isset( $reprise['illus_nom'][ $i ] ) ? $reprise['illus_nom'][ $i ] : '',
 						// L'autorisation jointe au dépôt d'avant : le fichier ne
 						// revient pas, la figure dit qu'il est à rejoindre.
@@ -4443,6 +4529,53 @@ class Notice_Archeomed_Pactols {
 				if (compteur) { bloc.appendChild(compteur); compter(); }
 				return { bloc: bloc, champ: champ };
 			}
+			// La nature de la figure : facultative, car une notice ne se perd pas
+			// pour une case non cochée. Elle adapte le conseil donné pour le
+			// texte alternatif, et fait demander les données d'un graphique ou
+			// d'un tableau en image.
+			function champType(idx) {
+				var bloc = document.createElement('div');
+				bloc.className = 'na-illus-type';
+				var id = 'na-illus-' + (idx + 1) + '-type';
+				var etiquette = document.createElement('label');
+				etiquette.htmlFor = id;
+				etiquette.innerHTML = 'Nature de la figure <span class="na-facultatif">(facultatif)</span>';
+				var aide = document.createElement('p');
+				aide.className = 'na-help';
+				aide.id = id + '-aide';
+				aide.textContent = 'Elle adapte le conseil pour le texte ci-dessous.';
+				var champ = document.createElement('select');
+				champ.id = id;
+				champ.name = 'illus_type[]';
+				var vide0 = document.createElement('option');
+				vide0.value = '';
+				vide0.textContent = 'Choisir…';
+				champ.appendChild(vide0);
+				Object.keys(A11Y.types).forEach(function (k) {
+					var o = document.createElement('option');
+					o.value = k;
+					o.textContent = A11Y.types[k];
+					champ.appendChild(o);
+				});
+				champ.value = illusMeta[idx] && illusMeta[idx].type && A11Y.types[illusMeta[idx].type] ? illusMeta[idx].type : '';
+				var conseil = document.createElement('p');
+				conseil.className = 'na-help na-illus-type-conseil';
+				conseil.id = id + '-conseil';
+				function poser() { conseil.textContent = A11Y.aidesTypes[champ.value] || ''; conseil.hidden = !champ.value; }
+				poser();
+				champ.setAttribute('aria-describedby', aide.id + ' ' + conseil.id);
+				champ.addEventListener('change', function () {
+					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
+					illusMeta[idx].type = champ.value;
+					poser();
+					marquerModifie();
+				});
+				bloc.appendChild(etiquette);
+				bloc.appendChild(aide);
+				bloc.appendChild(champ);
+				bloc.appendChild(conseil);
+				return { bloc: bloc, champ: champ };
+			}
 			function champAutorisation(idx) {
 				var bloc = document.createElement('div');
 				bloc.className = 'na-illus-autorisation';
@@ -4625,6 +4758,8 @@ class Notice_Archeomed_Pactols {
 					var credits = champIllustration(idx, 'credits', 'Crédits', 0);
 					var alt = champIllustration(idx, 'alt', 'Pour un public empêché de voir <span class="na-illus-terme">— le texte alternatif</span>', 4);
 					alt.bloc.className = 'na-illus-ecoute';
+					var nature = champType(idx);
+					alt.bloc.insertBefore(nature.bloc, alt.bloc.firstChild);
 					champs.appendChild(publication);
 					champs.appendChild(titre.bloc);
 					champs.appendChild(legende.bloc);
@@ -4641,14 +4776,14 @@ class Notice_Archeomed_Pactols {
 					// avant qu'on ait pu écrire un mot : il attend qu'on ait quitté
 					// la carte.
 					groupe.addEventListener('focusout', function (e) {
-						var cle = /^illus_(titre|legende|credits|alt|description)/.exec(e.target.name || '');
+						var cle = /^illus_(titre|legende|credits|alt|description|type)/.exec(e.target.name || '');
 						if (cle) { etat.vus[cle[1]] = true; }
 						if (!(e.relatedTarget && groupe.contains(e.relatedTarget))) { etat.quittee = true; }
 						majFigure(idx);
 					});
 					li.appendChild(groupe);
 					fileList.appendChild(li);
-					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ };
+					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ, type: nature.champ };
 					majFigure(idx);
 				});
 				// Les cartes viennent d'être refaites : une erreur de texte
@@ -4787,11 +4922,19 @@ class Notice_Archeomed_Pactols {
 				if ((vus.alt || vus.legende) && (trouve = COULEUR_SEULE.exec(alt + ' | ' + legende))) {
 					phrases.push(phraseA11y('couleur', { couleur: trouve[0] }));
 				}
-				if ((vus.alt || vus.titre || vus.legende || vus.description) && vide(m.description)
-					&& (trouve = MOTIFS_A11Y.complexe.exec(plierA11y(titre + ' ' + legende + ' ' + alt)))) {
-					var mot = trouve[1];
-					A11Y.complexes.forEach(function (c) { if (plierA11y(c) === trouve[1]) { mot = c; } });
-					phrases.push(phraseA11y('description', { mot: mot }));
+				// Comme au serveur : la nature choisie décide ; sans elle, les mots
+				// du titre, de la légende et du texte font foi.
+				var type = A11Y.types[m.type] ? m.type : '';
+				if ((vus.alt || vus.titre || vus.legende || vus.description || vus.type) && vide(m.description)) {
+					if (A11Y.avecDonnees.indexOf(type) !== -1) {
+						phrases.push(phraseA11y('donnees', { mot: A11Y.typesMots[type] }));
+					} else if (A11Y.aDecrire.indexOf(type) !== -1) {
+						phrases.push(phraseA11y('description', { mot: A11Y.typesMots[type] }));
+					} else if (type !== 'photo' && (trouve = MOTIFS_A11Y.complexe.exec(plierA11y(titre + ' ' + legende + ' ' + alt)))) {
+						var mot = trouve[1];
+						A11Y.complexes.forEach(function (c) { if (plierA11y(c) === trouve[1]) { mot = c; } });
+						phrases.push(phraseA11y('description', { mot: mot }));
+					}
 				}
 				return phrases.map(function (p) { return NORMES.figure + ' ' + rang + NBSP + ': ' + p; });
 			}
@@ -4841,9 +4984,9 @@ class Notice_Archeomed_Pactols {
 				// manquants ne sont plus des avis : ce sont des champs
 				// obligatoires, que la vérification de l'envoi signale.
 				var ecoute = separerEcoute(m.alt);
-				var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description };
+				var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description, type: m.type };
 				avisDAccessibilite(lu, rang, e.vus, f.name).forEach(function (phrase) { liste.push(phrase); });
-				montrerConseils(c.zone, liste, [c.titre, c.alt, c.description, c.legende, c.credits]);
+				montrerConseils(c.zone, liste, [c.titre, c.alt, c.description, c.legende, c.credits, c.type]);
 			}
 			fileInput.addEventListener('change', function () {
 				var incoming = Array.prototype.slice.call(fileInput.files);
@@ -6816,6 +6959,7 @@ class Notice_Archeomed_Pactols {
 			$brut = isset( $_POST[ 'illus_' . $clef ] ) ? wp_unslash( $_POST[ 'illus_' . $clef ] ) : array();
 			$parts[ $clef ] = is_array( $brut ) ? array_values( $brut ) : array();
 		}
+		$types = isset( $_POST['illus_type'] ) && is_array( $_POST['illus_type'] ) ? array_values( wp_unslash( $_POST['illus_type'] ) ) : array();
 		$combien = 0;
 		foreach ( $parts as $liste ) {
 			$combien = max( $combien, count( $liste ) );
@@ -6831,6 +6975,7 @@ class Notice_Archeomed_Pactols {
 		$items = array();
 		for ( $i = 0; $i < $combien; $i++ ) {
 			$item  = array( 'rang' => $i + 1 );
+			$item['type'] = Notice_Archeomed_Controles::type_de_figure( isset( $types[ $i ] ) ? $types[ $i ] : '' );
 			$suite = '';
 			foreach ( $parts as $clef => $liste ) {
 				$brut = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? $liste[ $i ] : '';
@@ -7194,7 +7339,7 @@ class Notice_Archeomed_Pactols {
 		}
 		$objet = str_replace( array( "\r", "\n" ), ' ', 'ATTENTION — LIEN À TÉLÉCHARGER' . $quand . ' — ' . $titre
 			. ( '' !== $reference ? ' — réf. ' . $reference : '' ) );
-		$corps = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">'
+		$corps = '<html lang="fr"><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">'
 			. '<div style="background:#fcefed;border:2px solid #b3261e;padding:14px 18px;margin:0 0 18px;">'
 			. '<p style="margin:0 0 8px;font-size:17px;"><strong>Originaux à télécharger</strong></p>'
 			. '<p style="margin:0 0 8px;">L’auteur de la notice « ' . esc_html( $titre ) . ' » a déposé les originaux de ses figures sur un service de transfert. '
@@ -7274,6 +7419,10 @@ class Notice_Archeomed_Pactols {
 			}
 			if ( '' !== $item['credits'] ) {
 				$lignes[] = '<em>' . esc_html( $item['credits'] ) . '</em>';
+			}
+			$nature = Notice_Archeomed_Controles::type_de_figure( isset( $item['type'] ) ? $item['type'] : '' );
+			if ( '' !== $nature ) {
+				$lignes[] = esc_html( "Nature\u{00A0}: " . Notice_Archeomed_Controles::TYPES_DE_FIGURE[ $nature ] );
 			}
 			if ( ! empty( $item['alt'] ) ) {
 				$lignes[] = esc_html( "Texte alternatif\u{00A0}: " . Notice_Archeomed_Controles::une_ligne( $item['alt'] ) );
@@ -8589,7 +8738,7 @@ class Notice_Archeomed_Pactols {
 		// simples : une chaîne s'y lit encore.
 		$listes = array(
 			'nature' => true, 'commune' => true, 'commune_ark' => true, 'organisme' => true,
-			'illus_titre' => true, 'illus_credits' => true, 'illus_alt' => true, 'illus_legende' => false, 'illus_description' => false,
+			'illus_titre' => true, 'illus_credits' => true, 'illus_alt' => true, 'illus_legende' => false, 'illus_description' => false, 'illus_type' => true,
 		);
 		foreach ( $listes as $champ => $ligne ) {
 			if ( ! isset( $_POST[ $champ ] ) ) {
@@ -8980,7 +9129,7 @@ class Notice_Archeomed_Pactols {
 		&$restees = array(), $avertissement = '', &$legeres = array() ) {
 		$pourquoi = '';
 		$restees  = array();
-		$wrap_open  = '<html><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">';
+		$wrap_open  = '<html lang="fr"><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">';
 		$wrap_close = '</div></body></html>';
 
 		$resp_complet = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );

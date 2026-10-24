@@ -883,11 +883,13 @@ class Notice_Archeomed_File {
 			$titre = isset( $dites[ $rang ]['titre'] ) ? $dites[ $rang ]['titre'] : '';
 			$alt   = isset( $dites[ $rang ]['alt'] ) && is_scalar( $dites[ $rang ]['alt'] ) ? trim( (string) $dites[ $rang ]['alt'] ) : '';
 			$description = isset( $dites[ $rang ]['description'] ) && is_scalar( $dites[ $rang ]['description'] ) ? trim( (string) $dites[ $rang ]['description'] ) : '';
+			$nature = Notice_Archeomed_Controles::type_de_figure( isset( $dites[ $rang ]['type'] ) ? $dites[ $rang ]['type'] : '' );
 			echo '<li><a href="' . esc_url( $url ) . '">'
 				. esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . '</a>'
 				. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
 				. ' <span class="description">('
 				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span>'
+				. ( '' !== $nature ? ' <span class="description">— ' . esc_html( Notice_Archeomed_Controles::TYPES_DE_FIGURE[ $nature ] ) . '</span>' : '' )
 				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids )
 				// Le texte alternatif, que les notices d'avant ce champ n'ont
 				// pas : leur titre en tient lieu.

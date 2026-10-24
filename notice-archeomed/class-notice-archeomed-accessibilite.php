@@ -46,8 +46,8 @@ class Notice_Archeomed_Accessibilite {
 	 */
 	const AXE_EMPREINTE = 'sha512-L2dmfC6LEkRQ7X+1d1KEBA3Qe/E8OvB4kSSr+luMNilFtuBsvglrQcdM9jd6uiFbeI+Pqax+M6s/vak/okidBw==';
 
-	/** Les règles jouées : WCAG 2.0 et 2.1, niveaux A et AA. */
-	const NORMES = array( 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa' );
+	/** Les règles jouées : WCAG 2.0, 2.1 et 2.2, niveaux A et AA. */
+	const NORMES = array( 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa' );
 
 	/** Ce qu'on garde au plus de chaque liste : de quoi lire, non archiver. */
 	const PLAFOND = 120;
@@ -147,7 +147,7 @@ class Notice_Archeomed_Accessibilite {
 	 */
 	public static function nettoyer_l_audit( $brut ) {
 		$brut    = is_array( $brut ) ? $brut : array();
-		$audit   = array( 'taux' => '', 'date' => '', 'lien' => '' );
+		$audit   = array( 'taux' => '', 'date' => '', 'lien' => '', 'declaration' => '' );
 		$refuses = array();
 		$taux    = isset( $brut['taux'] ) && is_scalar( $brut['taux'] ) ? trim( str_replace( array( ',', '%', ' ', "\u{00A0}" ), array( '.', '', '', '' ), (string) $brut['taux'] ) ) : '';
 		if ( '' !== $taux ) {
@@ -165,13 +165,16 @@ class Notice_Archeomed_Accessibilite {
 				$refuses[] = 'date';
 			}
 		}
-		$lien = isset( $brut['lien'] ) && is_scalar( $brut['lien'] ) ? trim( (string) $brut['lien'] ) : '';
-		if ( '' !== $lien ) {
+		foreach ( array( 'lien', 'declaration' ) as $cle ) {
+			$lien = isset( $brut[ $cle ] ) && is_scalar( $brut[ $cle ] ) ? trim( (string) $brut[ $cle ] ) : '';
+			if ( '' === $lien ) {
+				continue;
+			}
 			$propre = esc_url_raw( $lien, array( 'http', 'https' ) );
 			if ( '' !== $propre && preg_match( '#^https?://[^\s/]+\.[^\s]+#', $propre ) ) {
-				$audit['lien'] = $propre;
+				$audit[ $cle ] = $propre;
 			} else {
-				$refuses[] = 'lien';
+				$refuses[] = $cle;
 			}
 		}
 		return array( $audit, $refuses );
@@ -209,6 +212,7 @@ class Notice_Archeomed_Accessibilite {
 			'taux' => isset( $_POST['na_ara_taux'] ) ? wp_unslash( $_POST['na_ara_taux'] ) : '',
 			'date' => isset( $_POST['na_ara_date'] ) ? wp_unslash( $_POST['na_ara_date'] ) : '',
 			'lien' => isset( $_POST['na_ara_lien'] ) ? wp_unslash( $_POST['na_ara_lien'] ) : '',
+			'declaration' => isset( $_POST['na_ara_declaration'] ) ? wp_unslash( $_POST['na_ara_declaration'] ) : '',
 		) );
 		$garde = self::lire();
 		$avant = $garde['ara'];
@@ -594,7 +598,7 @@ class Notice_Archeomed_Accessibilite {
 			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Audit enregistré.', 'notice-archeomed' ) . '</p></div>';
 		} elseif ( '' !== $retour ) {
 			echo '<div class="notice notice-error inline"><p>' . esc_html( "Valeur écartée, la précédente est gardée\u{00A0}: "
-				. str_replace( array( 'taux', 'date', 'lien' ), array( 'le taux (entre 0 et 100)', 'la date', 'le lien' ), $retour ) . '.' ) . '</p></div>';
+				. str_replace( array( 'taux', 'date', 'lien', 'declaration' ), array( 'le taux (entre 0 et 100)', 'la date', 'le lien', 'la page de la déclaration' ), $retour ) . '.' ) . '</p></div>';
 		}
 		self::afficher_le_recapitulatif();
 		?>
@@ -660,6 +664,13 @@ class Notice_Archeomed_Accessibilite {
 					<th scope="row"><label for="na-ara-lien"><?php esc_html_e( 'Lien vers le rapport', 'notice-archeomed' ); ?></label></th>
 					<td><input type="url" id="na-ara-lien" name="na_ara_lien" class="regular-text"
 						value="<?php echo esc_attr( isset( $garde['ara']['lien'] ) ? (string) $garde['ara']['lien'] : '' ); ?>"></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="na-ara-declaration"><?php esc_html_e( 'Page de la déclaration d’accessibilité', 'notice-archeomed' ); ?></label></th>
+					<td><input type="url" id="na-ara-declaration" name="na_ara_declaration" class="regular-text"
+						value="<?php echo esc_attr( isset( $garde['ara']['declaration'] ) ? (string) $garde['ara']['declaration'] : '' ); ?>"
+						aria-describedby="na-ara-declaration-aide">
+						<p class="description" id="na-ara-declaration-aide"><?php esc_html_e( 'Si elle est renseignée, le formulaire y renvoie par un lien « Accessibilité » en tête de page.', 'notice-archeomed' ); ?></p></td>
 				</tr>
 			</table>
 			<?php submit_button( __( 'Enregistrer l’audit', 'notice-archeomed' ) ); ?>
