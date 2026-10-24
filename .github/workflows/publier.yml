@@ -310,7 +310,10 @@ jobs:
           grep -q 'id="na-form"' /tmp/page.html
 
       - name: Vingt-cinq dépôts à la même seconde
-        run: php .github/essais/charge.php http://127.0.0.1:8080 25
+        run: |
+          set -o pipefail
+          php .github/essais/charge.php http://127.0.0.1:8080 25 | tee /tmp/charge.log
+          echo "::notice::$(head -1 /tmp/charge.log)"
 
       - name: Quatre passages du planificateur se disputent les notices
         working-directory: /tmp/wp
@@ -332,7 +335,10 @@ jobs:
 
       - name: Rien perdu, rien doublé
         working-directory: /tmp/wp
-        run: NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php"
+        run: |
+          set -o pipefail
+          NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php" | tee /tmp/verification.log
+          echo "::notice::$(tr '\n' ' ' < /tmp/verification.log)"
 
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
