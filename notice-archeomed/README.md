@@ -71,7 +71,7 @@ champ-piège, le délai minimal de trois secondes et les plafonds horaires.
 flèches — de dix crans la touche Majuscule enfoncée — et se valide par Entrée.
 La poignée annonce sa position et celle de l'encoche
 (`aria-valuetext`) : un lecteur d'écran peut donc la placer à l'oreille, sans
-voir le dessin. Reste que la vérification demande un geste précis ; le
+voir le dessin, au prix de plusieurs frappes. La vérification demande un geste précis ; le
 formulaire donne, dans son introduction, l'adresse où envoyer la notice par
 courriel quand il fait obstacle, et Turnstile sait s'en passer.
 
@@ -82,6 +82,18 @@ Il vaut désormais l'heure en cours et les vingt-quatre précédentes
 heures au moins, et un formulaire ouvert le soir doit pouvoir partir le
 lendemain. Rien n'est retenu
 entre l'affichage et l'envoi, et une page mise en cache reste donc valable.
+
+**Les autres garde-fous du serveur.** Le jeton du formulaire (`nonce`) vit de
+24 à 48 heures, pour ce seul formulaire, et non les 12 à 24 de WordPress : sans
+cela, le puzzle valable 24 h n'aurait servi à rien. L'heure d'affichage de la
+page (`na_ts`) est exigée — absente, dans le futur, vieille d'une semaine ou de
+moins de trois secondes, l'envoi est refusé. Le plafond de tentatives compte les
+refus, et passe avant le contrôle du jeton. Un plafond global de 100 dépôts par
+heure, toutes adresses confondues, tient quand la vérification anti-robot laisse
+passer (Turnstile ouvert faute de Cloudflare). L'adresse du visiteur est
+`REMOTE_ADDR`, sauf derrière des relais déclarés dans `NA_PROXYS` (wp-config).
+La page n'est jamais servie d'un cache (`DONOTCACHEPAGE`, en-têtes de non-cache).
+Voir la section « Exploitation » de `doc/notice-technique.md`.
 
 Turnstile n'est pas une protection si le serveur ne joint pas Cloudflare.
 Derrière un proxy filtrant — hébergement institutionnel — la vérification
@@ -494,11 +506,11 @@ dans la feuille de styles Métopes du modèle. Modifier le modèle suffit à
 changer l'apparence de toutes les notices produites ensuite.
 
 Le lieu-dit passe en italique dans le titre de notice. Le bloc
-« Responsable d'opération : … » se colle à la fin du dernier paragraphe du
+« Responsable de l'opération : … » se colle à la fin du dernier paragraphe du
 texte, entre parenthèses, comme dans le fichier de stylage de référence.
 
-Les ARK Pactols sont posés en liens cliquables, dont le libellé se limite à
-l'identifiant (`26678/pcrtd1Ms3ERUXz`).
+Les ARK Pactols sont posés en liens cliquables, dont le libellé est le terme
+lui-même ; l'adresse de l'ARK complet est la cible du lien.
 
 ## Nom du fichier joint
 
@@ -506,7 +518,8 @@ l'identifiant (`26678/pcrtd1Ms3ERUXz`).
 sans `ZipArchive`), par exemple `notice-archeomed-Caen-2025-87f1ea09.docx`.
 La commune et l'année en clair facilitent le classement par rubrique avant
 montage du volume. Ses propriétés portent le titre de la notice ; la page est
-en A4 ; chaque image a pour texte de remplacement le titre de sa figure.
+en A4 ; chaque image a pour texte de remplacement le texte alternatif de l'auteur (à
+défaut, pour une notice d'avant ce champ, le titre de sa figure).
 
 ## Texte saisi dans l'éditeur
 
@@ -576,7 +589,7 @@ Un fascicule, et une notice isolée, se composent ainsi :
 [Title]                            IV. – Sépultures et nécropoles
 [TEI_Titre 1+rubrique]             IV. 1. – Opérations de terrain
 [TEI_Titre 2+notice]               Beneuvre, Vanvey (Côte-d'Or), Mont Aigu
-[TEI_archeoCHR_fieldwork_method]   Fouille programmée [26678/crtSrWQs2w2KV]
+[TEI_archeoCHR_fieldwork_method]   Fouille programmée
 [TEI_archeoCHR_fieldwork_year]     Année de l'opération : 2024
 …
 ```
@@ -629,7 +642,6 @@ Facultatif, il serait resté vide ; « Autre » sert à ce qui n'entre nulle par
 L'oubli se signale comme celui du texte alternatif (sous le champ, dans le
 récapitulatif, au serveur : `illus_type_N`). Une notice d'avant le champ, reprise
 en correction, demande de le choisir. Elle sert à trois choses :
-Elle sert à trois choses :
 
 - un **conseil** propre à chaque nature s'affiche sous le choix
   (`Notice_Archeomed_Controles::aides_par_type()`) ;
@@ -1184,8 +1196,8 @@ main. Le dernier résultat se garde avec sa date (requête authentifiée, jeton,
 droit `manage_options`). **Ce score n'est pas le taux de conformité RGAA** :
 les tests automatiques ne couvrent qu'une partie des critères.
 
-**Ce que le formulaire fait pour être accessible** (RGAA 4.1, critères
-vérifiés à la main au-delà d'axe-core) :
+**Ce que le formulaire fait pour être accessible** (points pris en compte à la
+conception, selon le RGAA 4.1 ; ils n'ont pas fait l'objet d'un audit complet) :
 
 - `lang="fr"` sur le formulaire et dans les courriels HTML ;
 - une **voie de secours** dans l'introduction : l'adresse de la rédaction, où

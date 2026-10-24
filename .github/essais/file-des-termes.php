@@ -493,10 +493,12 @@ na_verifier( '2004-2005' === na_appel( $plugin, 'annee_normalisee', array( '2004
 
 WP_CLI::log( 'Les contrôles du dépôt' );
 $C = 'Notice_Archeomed_Controles';
-$avis_ponct = $C::ponctuation_finale( array( 'Certaines de ces', 'structures sont datées.', 'Une fin sans point' ) );
+$avis_ponct = $C::ponctuation_finale( array( 'Certaines de ces structures sont datées du haut Moyen Âge, comme le montrent les céramiques', 'trouvées dans le comblement du fossé nord de l’enclos.', 'Une fin sans point mais assez longue pour être une phrase tronquée au collage' ) );
 na_verifier( 2 === count( $avis_ponct ) && false !== strpos( $avis_ponct[0], 'suivant reprend' )
 	&& false !== strpos( $avis_ponct[1], 'aucune ponctuation' ),
 	'le paragraphe coupé et le texte tronqué se nomment chacun', $avis_ponct );
+na_verifier( array() === $C::ponctuation_finale( array( 'Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau' ) ),
+	'des éléments de liste ou des cellules de tableau collés (moins de huit mots) ne passent pas pour du texte tronqué' );
 $avis_fig = $C::appels_de_figure( 'Voir fig. 1-2 et la figure 3.', 2 );
 na_verifier( 1 === count( $avis_fig ) && false !== strpos( $avis_fig[0], 'fig. 3' ),
 	'un appel à une figure qui n\'est pas jointe', $avis_fig );
@@ -508,6 +510,8 @@ na_verifier( array( '« XIIème » s’abrège « XIIe ».', '« 1ère » s’ab
 	'les ordinaux fautifs, et « Mère » laissée tranquille', $ordinaux );
 na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis abandonné' ) ) ),
 	'l\'année espacée' );
+na_verifier( array() === $C::dates_espacees( array( 'on y trouve en 1 250 tessons, et après 2 000 m² de décapage, vers 1 100 individus' ) ),
+	'un nombre suivi d\'une unité ou d\'un objet (« en 1 250 tessons », « après 2 000 m² ») n\'est pas pris pour une année' );
 // Les siècles en petites capitales : tapés en capitales, en bas de casse ou
 // l'ordinal en exposant, ils sortent « xii » en petites capitales et « e » en
 // exposant. « ce siècle » et un « XII » sans siècle derrière ne bougent pas.
@@ -652,6 +656,106 @@ wp_delete_post( $course, true );
 na_verifier( $premiere && ! $seconde, 'une notice prise ne se reprend pas' );
 na_verifier( ! $apres_un_autre, 'une notice qu\'un autre passage vient de prendre en base ne se prend pas, même lue « en attente » juste avant' );
 na_verifier( $reprise && ! $reprise_bis, 'une prise abandonnée se reprend une fois, et une seule' );
+
+// Un envoi qui tue son processus à chaque fois ne recommence pas sans fin :
+// chaque prise reprise compte pour un essai.
+$boucle = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Boucle' ) );
+update_post_meta( $boucle, '_na_etat', 'en_cours' );
+update_post_meta( $boucle, '_na_essais', 0 );
+$reprises_comptees = 0;
+for ( $tour = 0; $tour < Notice_Archeomed_File::ESSAIS_MAX + 2; $tour++ ) {
+	update_post_meta( $boucle, '_na_etat', (string) get_post_meta( $boucle, '_na_etat', true ) === 'echec' ? 'echec' : 'en_cours' );
+	update_post_meta( $boucle, '_na_prise', time() - Notice_Archeomed_File::ABANDON - 5 );
+	if ( $file_course->prendre( $boucle ) ) {
+		++$reprises_comptees;
+	}
+}
+$etat_boucle = (string) get_post_meta( $boucle, '_na_etat', true );
+// Un essai raté attend l'heure dite : la reprise périodique ne le représente pas avant.
+update_post_meta( $boucle, '_na_etat', 'en_attente' );
+update_post_meta( $boucle, '_na_pas_avant', time() + 3600 );
+$appels_relance = 0;
+add_action( Notice_Archeomed_File::HOOK_UNE, function ( $id ) use ( &$appels_relance, $boucle ) {
+	if ( (int) $id === (int) $boucle ) { ++$appels_relance; }
+}, 1 );
+$file_course->relancer();
+$apres_attente = $appels_relance;
+update_post_meta( $boucle, '_na_pas_avant', time() - 5 );
+$file_course->relancer();
+wp_delete_post( $boucle, true );
+na_verifier( Notice_Archeomed_File::ESSAIS_MAX - 1 === $reprises_comptees && 'echec' === $etat_boucle,
+	'une prise reprise compte pour un essai : au cinquième, la notice est marquée en échec au lieu de repartir sans fin', array( $reprises_comptees, $etat_boucle ) );
+na_verifier( 0 === $apres_attente && 1 === $appels_relance,
+	'la reprise périodique respecte l\'heure du prochain essai d\'une notice qui vient d\'échouer', array( $apres_attente, $appels_relance ) );
+
+WP_CLI::log( 'Les plafonds, le jeton, l\'adresse du visiteur' );
+// L'adresse derrière un relais déclaré, et seulement alors.
+na_verifier( true === $plugin::ip_dans_la_liste( '10.1.2.3', array( '10.0.0.0/8' ) ) && false === $plugin::ip_dans_la_liste( '11.1.2.3', array( '10.0.0.0/8' ) )
+	&& true === $plugin::ip_dans_la_liste( '192.168.1.5', array( '192.168.1.5' ) ) && true === $plugin::ip_dans_la_liste( '192.168.3.200', array( '192.168.2.0/23' ) )
+	&& true === $plugin::ip_dans_la_liste( '2001:db8::1', array( '2001:db8::/32' ) ) && false === $plugin::ip_dans_la_liste( '2001:db9::1', array( '2001:db8::/32' ) )
+	&& false === $plugin::ip_dans_la_liste( '10.1.2.3', array( '2001:db8::/32' ) ),
+	'les relais de confiance se reconnaissent, en adresses et en blocs CIDR, IPv4 comme IPv6' );
+$serveur_avant = $_SERVER;
+$_SERVER['REMOTE_ADDR'] = '203.0.113.9';
+$_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.7';
+$ip_sans_relais = na_appel( $plugin, 'get_client_ip' );
+$_SERVER = $serveur_avant;
+na_verifier( '203.0.113.9' === $ip_sans_relais, 'sans relais déclaré, l\'en-tête X-Forwarded-For est ignoré : n\'importe qui choisirait son adresse' );
+// Le jeton du formulaire vit de 24 à 48 heures, pour ce seul formulaire.
+$jeton_long = na_appel( $plugin, 'champ_du_jeton' );
+preg_match( '/value="([a-z0-9]+)"/', $jeton_long, $m_jeton );
+$jeton_valable = isset( $m_jeton[1] ) && na_appel( $plugin, 'verifier_le_jeton', array( $m_jeton[1] ) );
+na_verifier( $jeton_valable && ! wp_verify_nonce( 'xx' . ( isset( $m_jeton[1] ) ? $m_jeton[1] : '' ), 'notice_archeomed_submit' ) && false === na_appel( $plugin, 'verifier_le_jeton', array( array( 'x' ) ) ),
+	'le jeton du formulaire se vérifie ; un jeton faux ou d\'un autre type est refusé' );
+// Le plafond de toute la revue.
+$global_avant = get_transient( 'na_envois_global' );
+set_transient( 'na_envois_global', $plugin::MAX_SENDS_GLOBAL_PER_HOUR, HOUR_IN_SECONDS );
+$plein = na_appel( $plugin, 'check_global_limit' );
+set_transient( 'na_envois_global', 0, HOUR_IN_SECONDS );
+$vide = na_appel( $plugin, 'check_global_limit' );
+if ( false === $global_avant ) { delete_transient( 'na_envois_global' ); } else { set_transient( 'na_envois_global', $global_avant, HOUR_IN_SECONDS ); }
+na_verifier( false === $plein && true === $vide, 'le plafond de dépôts de toute la revue se referme à son seuil, et s\'ouvre en dessous' );
+// La saisie gardée après un refus ne gonfle pas la base.
+$_POST = array( 'texte_notice' => str_repeat( 'a', 900000 ), 'commentaires' => str_repeat( 'b', 900000 ), 'illus_titre' => array_fill( 0, 40, str_repeat( 'c', 9000 ) ) );
+$jeton_gros = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
+$gros = '' === $jeton_gros ? array() : get_transient( 'na_reprise_' . $jeton_gros );
+if ( '' !== $jeton_gros ) { delete_transient( 'na_reprise_' . $jeton_gros ); }
+$_POST = array();
+na_verifier( empty( $gros ) || ( strlen( maybe_serialize( $gros ) ) < 1500000 && count( $gros['illus_titre'] ) <= 10 && strlen( $gros['commentaires'] ) <= 20000 ),
+	'la saisie gardée après un refus est bornée : dix éléments par liste, 20 000 caractères par champ, 1,5 Mo en tout', array( strlen( maybe_serialize( $gros ) ) ) );
+
+// Les notices ne se lisent qu'avec le droit de gérer l'extension, non avec celui d'un Éditeur.
+$fiche_droits = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Droits' ) );
+$editeur = wp_insert_user( array( 'user_login' => 'na_editeur_essai', 'user_pass' => wp_generate_password(), 'role' => 'editor' ) );
+$droits_editeur = user_can( $editeur, 'read_post', $fiche_droits ) || user_can( $editeur, 'edit_post', $fiche_droits ) || user_can( $editeur, 'delete_post', $fiche_droits );
+$droits_admin   = user_can( 1, 'read_post', $fiche_droits ) && user_can( 1, 'edit_post', $fiche_droits ) && user_can( 1, 'delete_post', $fiche_droits );
+require_once ABSPATH . 'wp-admin/includes/user.php';
+wp_delete_user( $editeur );
+wp_delete_post( $fiche_droits, true );
+na_verifier( ! $droits_editeur && $droits_admin, 'un Éditeur du site ne lit ni ne supprime les notices ; l\'administrateur le peut', array( $droits_editeur, $droits_admin ) );
+
+WP_CLI::log( 'Les données personnelles' );
+$fiche_perso = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Perso' ) );
+update_post_meta( $fiche_perso, '_na_donnees', wp_slash( array(
+	'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'resp@example.org', 'resp_inst' => 'Inrap',
+	'coauteur_prenom' => 'Jean', 'coauteur_nom' => 'Martin', 'coauteur_email' => 'Co.Auteur@example.org', 'coauteur_inst' => 'CNRS' ) ) );
+update_post_meta( $fiche_perso, '_na_reference', 'ABC123' );
+$confidentialite = new Notice_Archeomed_Confidentialite();
+$export_resp = $confidentialite->exporter( 'resp@example.org' );
+$export_co   = $confidentialite->exporter( 'co.auteur@EXAMPLE.org' );
+$export_nul  = $confidentialite->exporter( 'inconnu@example.org' );
+$effacement  = $confidentialite->effacer( 'resp@example.org' );
+$effacement_nul = $confidentialite->effacer( 'inconnu@example.org' );
+$exporteurs = apply_filters( 'wp_privacy_personal_data_exporters', array() );
+wp_delete_post( $fiche_perso, true );
+$valeurs_resp = array_column( $export_resp['data'][0]['data'], 'value', 'name' );
+na_verifier( 1 === count( $export_resp['data'] ) && 'Responsable d’opération' === $valeurs_resp['Rôle'] && 'Aude' === $valeurs_resp['Prénom'] && 'ABC123' === $valeurs_resp['Référence']
+	&& 1 === count( $export_co['data'] ) && 'Co-auteur' === array_column( $export_co['data'][0]['data'], 'value', 'name' )['Rôle'] && array() === $export_nul['data']
+	&& isset( $exporteurs['notice-archeomed'] ),
+	'l\'exportation de WordPress rend les notices où figure l\'adresse, avec le rôle de la personne ; une adresse inconnue n\'a rien', array( $export_resp, $export_co ) );
+na_verifier( false === $effacement['items_removed'] && true === $effacement['items_retained'] && ! empty( $effacement['messages'] )
+	&& false === $effacement_nul['items_retained'],
+	'l\'effacement de WordPress n\'efface aucune notice, le dit, et laisse la décision à la rédaction' );
 
 WP_CLI::log( 'Les bandeaux de l\'administration' );
 // Ils s'exécutent sur chaque page d'administration : une erreur fatale dans
@@ -1390,6 +1494,19 @@ try {
 } catch ( RuntimeException $e ) {
 	$vers_ts = $e->getMessage();
 }
+// L'heure d'affichage est exigée : sans elle, le délai minimal se contournait.
+$sans_heure = array();
+foreach ( array( 'absente' => null, 'dans le futur' => (string) ( time() + 7200 ), 'très ancienne' => '1000', 'trop rapide' => (string) time() ) as $cas => $heure ) {
+	$_POST = array( 'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ), 'rubrique_principale' => 'I' );
+	if ( null !== $heure ) { $_POST['na_ts'] = $heure; }
+	$sans_heure[ $cas ] = '';
+	try {
+		$plugin->handle_submission();
+	} catch ( RuntimeException $e ) {
+		$sans_heure[ $cas ] = $e->getMessage();
+	}
+}
+$sans_heure_ok = array_filter( $sans_heure, function ( $vers ) { return false !== strpos( $vers, 'notice_erreur=securite' ); } );
 $_POST = array();
 remove_filter( 'wp_redirect', $forger );
 parse_str( (string) wp_parse_url( $vers_forge, PHP_URL_QUERY ), $retour_forge );
@@ -1403,6 +1520,7 @@ na_verifier( '' === $erreur_forge && isset( $retour_forge['notice_envoyee'] ) &&
 	&& false !== strpos( $retour_forge['notice_champs'], 'resp_email' ),
 	'un dépôt aux champs forgés en tableau est refusé proprement, les champs nommés, sans erreur', array( $erreur_forge, $retour_forge ) );
 na_verifier( false !== strpos( $vers_ts, 'notice_erreur=securite' ), 'un délai d\'envoi forgé en tableau est refusé', $vers_ts );
+na_verifier( 4 === count( $sans_heure_ok ), 'une heure d\'affichage absente, dans le futur, très ancienne ou trop récente est refusée', $sans_heure );
 
 WP_CLI::log( 'Les illustrations d\'une saisie ancienne, en texte libre' );
 $libre = na_notice( array_merge( $saisie_styles, array( 'illustrations' => 'Fig. 1 : plan ; fig. 2 : coupe' ) ) );
@@ -1444,10 +1562,19 @@ na_verifier( array( 'illus_alt_2' ) === $manquent_alt && array() === $manquent_s
 	&& 'na-illus-2-alt' === $table_alt['illus_alt_2'][0],
 	'il est obligatoire pour une figure déposée, et le message dit laquelle ; sans fichier, rien n\'est demandé', array( $manquent_alt, $manquent_sans_fichier ) );
 na_verifier( isset( $table_alt['illus_titre_3'], $table_alt['illus_credits_3'] ) && 'na-illus-2-credits' === $table_alt['illus_credits_2'][0]
-	&& 'na-illus-2-type' === $table_alt['illus_type_2'][0] && false !== strpos( $table_alt['illus_type_1'][1], 'figure 1' )
 	&& in_array( 'illus_credits_1', $manquent_figures, true ) && in_array( 'illus_alt_2', $manquent_figures, true )
-	&& in_array( 'illus_type_1', $manquent_figures, true ) && in_array( 'illus_type_2', $manquent_figures, true ),
-	'le titre, les crédits, la nature et le texte alternatif d\'une figure déposée sont obligatoires, dans l\'ordre de la carte', $manquent_figures );
+	&& array() === preg_grep( '/^illus_type_/', $manquent_figures ),
+	'le titre, les crédits et le texte alternatif d\'une figure déposée sont obligatoires ; un formulaire d\'avant la nature de la figure ne se voit pas refuser pour elle', $manquent_figures );
+$_POST = array( 'illus_titre' => array( 'Plan', 'Vue' ), 'illus_legende' => array( '', '' ), 'illus_credits' => array( 'A', 'A' ),
+	'illus_alt' => array( 'Plan des murs', 'Vue du fossé' ), 'illus_type' => array( '', 'carte' ) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg', 'vue.jpg' ), 'error' => array( 0, 0 ) ) );
+$figures_type = na_appel( $plugin, 'collect_illustrations' );
+$manquent_type = array_values( preg_grep( '/^illus_/', na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'illustrations' => $figures_type ) ) ) ) ) );
+$_POST = array();
+$_FILES = array();
+na_verifier( array( 'illus_type_1' ) === $manquent_type && 'na-illus-1-type' === $table_alt['illus_type_1'][0]
+	&& false !== strpos( $table_alt['illus_type_1'][1], 'figure 1' ),
+	'la nature de la figure est obligatoire quand le formulaire la propose, et le message dit laquelle manque', $manquent_type );
 $sans_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '' ) ) ) );
 $avec_date  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'originaux_lien' => 'https://filesender.renater.fr/x', 'originaux_jusqua' => '2026-12-31' ) ) ) );
 $dates_lues = array( na_appel( $plugin, 'date_valide', array( '2026-02-30' ) ), na_appel( $plugin, 'date_valide', array( '2026-12-31' ) ), na_appel( $plugin, 'date_valide', array( '31/12/2026' ) ) );

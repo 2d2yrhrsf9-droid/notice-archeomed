@@ -33,7 +33,8 @@ class Notice_Archeomed_Normes {
 	 * la rédaction complète ou corrige dans les normes. La règle de la
 	 * revue : en capitales le sigle qu'on épelle (« CNRS »), en bas de casse
 	 * avec une capitale initiale celui qu'on prononce (« Inrap »). Ceux qui
-	 * suivent la note sont à confirmer.
+	 * suivent la note sont à confirmer : ils sont inactifs tant que la
+	 * rédaction ne les a pas validés.
 	 */
 	const SIGLES = "SRA = service régional de l’archéologie\n"
 		. "Drac = direction régionale des affaires culturelles\n"
@@ -57,11 +58,11 @@ class Notice_Archeomed_Normes {
 		. "NMI = nombre minimum d’individus\n"
 		. "TCA = terre cuite architecturale\n"
 		. "ZPPA = zone de présomption de prescription archéologique\n"
-		. "# À confirmer par la rédaction :\n"
-		. "SAD = service archéologique départemental\n"
-		. "NR = nombre de restes\n"
-		. "AMS = spectrométrie de masse par accélérateur\n"
-		. "OSL = luminescence stimulée optiquement\n";
+		. "# À confirmer par la rédaction (retirer le « # » pour les activer) :\n"
+		. "# SAD = service archéologique départemental\n"
+		. "# NR = nombre de restes\n"
+		. "# AMS = spectrométrie de masse par accélérateur\n"
+		. "# OSL = luminescence stimulée optiquement\n";
 
 	/** Les choix lus une fois par requête. */
 	private static $enregistrees = null;

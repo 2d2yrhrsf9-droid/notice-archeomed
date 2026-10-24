@@ -12,18 +12,18 @@ Le code est commenté en français, en phrases : chaque fonction dit ce qu'elle 
 | PHP | 7.2 au moins (essayé en 7.2, 7.4, 8.1, 8.3 et 8.4) |
 | WordPress | 5.6 au moins (essayé en 6.9 et en dernière version) |
 | Extensions PHP | `zip` (DOCX et dossiers ; sans elle, repli en RTF), `imagick` (versions allégées et conversions ; sans elle, les originaux voyagent), `mbstring` conseillée |
-| Bibliothèques chargées par le navigateur | Quill 2.0.3 (éditeur du texte, jsDelivr, avec empreinte SRI), Turnstile de Cloudflare (selon la protection choisie), axe-core 4.10.2 (onglet Accessibilité seulement, cdnjs, avec empreinte SRI) |
+| Bibliothèques chargées par le navigateur | Quill 2.0.3 (éditeur du texte, servi par le site lui-même, dossier `assets/quill/`), Turnstile de Cloudflare (selon la protection choisie), axe-core 4.10.2 (onglet Accessibilité seulement, cdnjs, avec empreinte SRI) |
 | Services joints par le serveur | Pactols (`pactols.frantiq.fr`, lecture des termes, coupable dans les réglages), Cloudflare (vérification Turnstile, si choisie), GitHub (mises à jour), le serveur de courriel |
 | Shortcode | `[notice_archeomed_pactols]` |
 | Domaine de traduction | `notice-archeomed` (les textes sont écrits en français dans le code) |
 
-Le principe directeur : **accepter vite, expédier ensuite**. Le dépôt d'un auteur est inscrit en base en une fraction de seconde ; tout ce qui est lent — versions allégées, document Word, courriels, lecture du thésaurus — se fait après, sous le planificateur de WordPress. Deux dépôts simultanés ne doivent jamais se gêner, et une notice ne doit jamais se perdre parce qu'un courriel échoue ou qu'une métadonnée manque.
+Le principe directeur : **accepter vite, expédier ensuite**. Le dépôt d'un auteur est inscrit en base en une fraction de seconde ; tout ce qui est lent — courriels, accusés de réception, lecture du thésaurus — se fait après, sous le planificateur de WordPress. Les versions allégées des figures et le document Word se fabriquent encore dans la requête du dépôt, mais dans un bloc qui attrape toute erreur : leur échec ne fait ni échouer ni doubler un dépôt déjà inscrit. Deux dépôts simultanés ne doivent jamais se gêner, et une notice ne doit jamais se perdre parce qu'un courriel échoue ou qu'une métadonnée manque.
 
 ## 2. Les fichiers
 
 ```
 notice-archeomed/                     le dossier de l'extension, tel qu'il est installé
-  notice-archeomed.php                classe principale Notice_Archeomed_Pactols (≈ 10 800 lignes)
+  notice-archeomed.php                classe principale Notice_Archeomed_Pactols (≈ 11 500 lignes)
   class-notice-archeomed-file.php     la file d'attente et l'administration des notices reçues
   class-notice-archeomed-settings.php la page de réglages et ses onglets
   class-notice-archeomed-docx.php     le générateur de DOCX à partir du gabarit Métopes
@@ -61,7 +61,7 @@ L'ordre des `require_once`, en tête de `notice-archeomed.php`, compte : les cla
 
 Le nom est historique : la classe porte tout le formulaire, pas seulement Pactols. Ses grands blocs, dans l'ordre du fichier :
 
-- **Constantes** : gabarits, plafonds (`MAX_FILES` = 3, `MAX_TOTAL_FILESIZE` = 20 Mo — le plafond réel est le plus petit de celui-ci et de ceux de PHP, voir `plafonds_des_fichiers()`), quotas (`MAX_ATTEMPTS_PER_HOUR`, `MAX_SENDS_PER_IP`, `MAX_SENDS_PER_EMAIL`, `MAX_LOOKUPS_PER_HOUR`), extensions admises, constantes du puzzle, empreintes SRI de Quill, identifiants des thésaurus Pactols (`TH_1` pour sujets et périodes, `th17` pour les lieux), rubriques et matières.
+- **Constantes** : gabarits, plafonds (`MAX_FILES` = 3, `MAX_TOTAL_FILESIZE` = 20 Mo — le plafond réel est le plus petit de celui-ci et de ceux de PHP, voir `plafonds_des_fichiers()`), quotas (`MAX_ATTEMPTS_PER_HOUR`, `MAX_SENDS_PER_IP`, `MAX_SENDS_PER_EMAIL`, `MAX_LOOKUPS_PER_HOUR`), extensions admises, constantes du puzzle, identifiants des thésaurus Pactols (`TH_1` pour sujets et périodes, `th17` pour les lieux), rubriques et matières.
 - **Listes métier** : `$rubriques` (sept rubriques), les natures d'opération avec leur ARK (`$natures`), les familles d'opérations, les matières de la rubrique V, les anciens libellés de rubrique (`RUBRIQUES_ANCIENNES`, pour relire les notices déposées avant un changement de nom).
 - **Protection** : `protection()`, `verifier_la_protection()`, le puzzle (`defi_du_puzzle()`, `verifier_le_puzzle()`, sceau HMAC à l'heure, sans rien stocker), Turnstile (`verify_turnstile()`), et `protection_suspendue()` pour les sites d'essai.
 - **Formulaire** : `render_form()` (de la ligne ≈ 2 090 à ≈ 5 960 : HTML, CSS et JavaScript en ligne), `enqueue_assets()`, la reprise d'une saisie (`garder_la_saisie()`, `reprise()`, `repris*()`), les messages de retour (`messages_du_retour()`, `panneau_de_fin()`).
@@ -84,7 +84,7 @@ Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices re
 - **Notice_Archeomed_Paquet** : l'atelier d'un dossier Métopes (`style/`, `XML/`, `icono/hr`, `icono/br`, `icono/originaux`), les deux définitions de chaque image, le lisez-moi, l'archive zip ; la fabrication des aperçus (`apercu_du_document()`).
 - **Notice_Archeomed_Thesaurus** : `resoudre()` (un concept, sa chaîne ascendante et ses étiquettes en toutes langues), `index_tei()`, la mise en réserve (transients d'un mois pour un concept lu, d'une heure pour un échec).
 - **Notice_Archeomed_Typographie** : la correction typographique française (insécables, apostrophes, ponctuation d'un passage en langue étrangère). Corpus d'essai : `.github/essais/typographie.json`.
-- **Notice_Archeomed_Controles** : les avis du dépôt. Chaque contrôle existe en PHP et en JavaScript avec les mêmes phrases et les mêmes seuils ; le serveur envoie au navigateur phrases, motifs et seuils (`regles_d_accessibilite()`), pour qu'ils ne divergent pas.
+- **Notice_Archeomed_Controles** : les avis du dépôt. Chaque contrôle existe en PHP et en JavaScript avec les mêmes seuils et, à quelques exceptions près, les mêmes phrases ; le serveur envoie au navigateur phrases, motifs et seuils (`regles_d_accessibilite()`), pour qu'ils ne divergent pas.
 - **Notice_Archeomed_Normes** et **Notice_Archeomed_Styles** : deux catalogues déclaratifs d'où se construisent les onglets de réglages et que le code lit (section 7).
 - **Notice_Archeomed_Accessibilite** : contrôle axe-core lancé depuis le navigateur de l'administrateur, trace de l'audit Ara, encart « Accessibilité des illustrations » sur la fiche avec historique des corrections.
 - **Notice_Archeomed_Candidats** : relevé des termes gardés hors de Pactols, statut et note de la rédaction, export CSV.
@@ -257,7 +257,7 @@ Avis éventuels (« à supprimer ») ; titre (lieux, département, lieu-dit) ; m
 
 Tout le JavaScript est en ligne dans `render_form()`, sans outil de construction, et doit rester compatible avec les navigateurs courants sans transpilation (ni `?.`, ni assertion arrière dans les expressions régulières). Les données du serveur arrivent par `wp_json_encode` : normes, phrases et motifs des avis (`A11Y`), plafonds réels de PHP. Les avis du navigateur et ceux du serveur doivent rester identiques : **toute modification d'un contrôle se fait des deux côtés**, et les essais comparent les phrases.
 
-Accessibilité : chaque champ a son étiquette et son `aria-describedby`, les erreurs sont listées et reliées à leur champ, les états ne reposent jamais sur la seule couleur, le puzzle a une alternative au clavier. L'onglet Accessibilité fait passer la page publiée à axe-core.
+Accessibilité : chaque champ a son étiquette et son `aria-describedby`, les erreurs sont listées et reliées à leur champ, les états ne reposent, en règle générale, pas sur la seule couleur (un point connu : l'état actif de la barre d'outils de l'éditeur), le puzzle se manœuvre au clavier. L'onglet Accessibilité fait passer la page publiée à axe-core. Ces points sont pris en compte à la conception ; **ils n'ont pas fait l'objet d'un audit RGAA complet** ni d'essais systématiques avec des utilisateurs de lecteurs d'écran.
 
 ## 11. Sécurité
 
@@ -266,7 +266,7 @@ Accessibilité : chaque champ a son étiquette et son `aria-describedby`, les er
 - Sorties : échappement systématique (`esc_html`, `esc_attr`, `esc_url`) ; échappement XML propre au DOCX et au TEI ; cellules CSV protégées contre les formules.
 - Fichiers reçus hors de la portée du web ; servis seulement par l'extension.
 - Quotas par IP et par adresse ; pot de miel ; délai minimal ; puzzle signé ; Turnstile au choix.
-- Scripts tiers chargés avec leur empreinte SRI.
+- Le seul script tiers côté visiteur est Turnstile (Cloudflare), qui n'admet pas d'empreinte, selon la protection choisie ; Quill est servi par le site, axe-core (administration seulement) porte son empreinte SRI.
 - Aucune donnée d'auteur dans une URL, sauf le jeton de reprise.
 
 ## 12. Développer et éprouver
@@ -312,7 +312,7 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 - **Styles Métopes** : toujours par `Notice_Archeomed_Styles::de()`, jamais en dur.
 - **Normes** : toujours par `Notice_Archeomed_Normes::valeur()` ; un nouveau choix éditorial s'ajoute au catalogue, avec le choix actuel par défaut.
 - **Avis** : jamais bloquants ; même phrase au serveur et au navigateur.
-- **Règles acquises** : une notice ne se perd pas parce qu'un courriel échoue ou qu'une métadonnée manque ; deux dépôts simultanés ne se gênent pas ; toute écriture concurrente passe par une écriture conditionnelle.
+- **Règles acquises** : une notice ne se perd pas parce qu'un courriel échoue ou qu'une métadonnée manque ; deux dépôts simultanés ne se gênent pas ; la prise d'une notice, point où deux processus se disputent, est une écriture conditionnelle ; les compteurs de quotas (transients) ne le sont pas, et sous-comptent au pire sans conséquence.
 
 ## 14. Points d'attention
 
@@ -322,3 +322,54 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 - **Concurrence** : à éprouver sur une vraie base MySQL ; les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées.
 - **Évolutions de Métopes** : remplacer le gabarit, lancer `verifier-les-styles`, ajuster la correspondance dans l'onglet Styles Métopes plutôt que le code.
 - **Courriel** : le serveur de la revue refuse au-delà d'une dizaine de méga-octets ; l'essai de poids de l'onglet Courriel mesure la limite réelle.
+
+## 15. Exploitation
+
+Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail technique est dans les sections précédentes.
+
+### Prérequis
+
+- **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures).
+- **WordPress 5.6 au moins**, base MySQL ou MariaDB.
+- **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
+- **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.
+- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, non depuis le serveur.
+
+### Réglages posés dans `wp-config.php`
+
+| Constante | Effet |
+|---|---|
+| `NA_TURNSTILE_SECRET` | clé secrète Turnstile |
+| `NA_PROTECTION` | `aucune` suspend la vérification, **sur un site déclaré `local` ou `development` seulement** |
+| `NA_PROXYS` | relais de confiance (adresses ou blocs CIDR, séparés par des virgules), derrière lesquels l'adresse du visiteur se lit dans `X-Forwarded-For` ; sans elle, `REMOTE_ADDR` seul |
+| `NA_SUPPRIMER_LES_NOTICES` | à `true` avant de supprimer l'extension : efface aussi les notices et leurs fichiers (sinon ils restent) |
+
+Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vérification quand Cloudflare est injoignable ; par défaut elle laisse passer, pour ne pas perdre de notice derrière un proxy qui le bloque.
+
+### Cache et réseau
+
+- La page du formulaire porte un jeton, une heure d'affichage et un défi propres à chaque affichage : le plugin envoie `DONOTCACHEPAGE` et les en-têtes de non-cache. Un cache de page qui les ignore doit exclure l'adresse du formulaire.
+- Le jeton du formulaire vit de 24 à 48 heures (le défaut de WordPress est de 12 à 24), pour ce seul formulaire.
+- **Sous nginx**, le `.htaccess` du dossier `uploads/notice-archeomed/` est sans effet : seul le nom aléatoire de 32 caractères protège les fichiers. Ajouter `location ~ ^/wp-content/uploads/notice-archeomed/ { deny all; }`.
+
+### Sauvegarde et restauration
+
+À sauvegarder : **la base de données** (les notices et leurs métadonnées y sont) **et le dossier `wp-content/uploads/notice-archeomed/`** (figures, autorisations, documents Word, paquets). Les originaux jusqu'à 20 Mo par notice : prévoir quelques Go par an. Restaurer les deux ensemble ; une notice dont le fichier manque s'affiche « fichier introuvable sur le serveur » dans sa fiche.
+
+### Supervision
+
+- Le bandeau de l'administration signale les notices en échec ou en attente depuis plus de 30 minutes ; il ne se voit que si quelqu'un ouvre l'administration. Une sonde externe peut interroger la liste des notices en état `en_attente` ou `echec`.
+- Les incidents s'écrivent dans le journal PHP, préfixe `Notice Archeomed:`.
+- Plafonds : 300 tentatives et 150 envois par heure et par adresse, 100 dépôts par heure toutes adresses confondues. Un refus « quota » à répétition indique un robot, ou un relais non déclaré dans `NA_PROXYS`.
+
+### Données personnelles
+
+L'outil d'exportation de WordPress rend les notices où figure une adresse de courriel ; celui d'effacement n'efface rien et dit à la rédaction de décider (une notice est une archive éditoriale). Un texte est proposé à la page de politique de confidentialité du site ; **le responsable du traitement, la base légale et la durée de conservation sont à écrire par la revue**. Le brouillon gardé dans le navigateur de l'auteur s'efface au bout de 30 jours.
+
+### Désinstallation
+
+Supprimer l'extension efface les réglages et leurs secrets, et les attentes en base ; les notices et les fichiers restent, sauf `NA_SUPPRIMER_LES_NOTICES`.
+
+### Mise à jour
+
+Par dépôt manuel de `notice-archeomed.zip` (produit par `./empaqueter`, ou téléchargé depuis la version publiée sur GitHub). La mise à jour automatique depuis GitHub est inactive par défaut ; l'archive n'est pas signée, la confiance repose sur le compte GitHub du dépôt.

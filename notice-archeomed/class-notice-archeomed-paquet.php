@@ -42,6 +42,8 @@ class Notice_Archeomed_Paquet {
 	 * bureau, et trois illustrations n'ajoutent pas un demi-méga au courriel.
 	 */
 	const LARGEUR_APERCU = 1000;
+	/** Au-delà, une image se déclare trop grande pour qu'on tente de la lire : mémoire, temps. */
+	const MEGAPIXELS_MAX = 100;
 	const POIDS_APERCU   = 150;
 
 	/**
@@ -519,7 +521,24 @@ class Notice_Archeomed_Paquet {
 			? 0 : (int) round( $poids_max * ( 100 - $tolerance ) / 100 );
 		$image = null;
 		try {
+			// Un fichier d'inconnu ne doit pas pouvoir épuiser le serveur : on
+			// refuse ce qui se déclare gigantesque avant de le lire, et l'on
+			// borne la mémoire et le temps d'Imagick. Les PDF n'ont pas de
+			// dimension à lire d'avance : leur résolution est déjà plafonnée.
+			$dimensions = @getimagesize( $source );
+			if ( is_array( $dimensions ) && (int) $dimensions[0] * (int) $dimensions[1] > self::MEGAPIXELS_MAX * 1000000 ) {
+				$this->erreurs[] = basename( $source ) . ' : image trop grande (plus de ' . self::MEGAPIXELS_MAX . ' millions de pixels), aperçu non fabriqué.';
+				return false;
+			}
 			$image = new Imagick();
+			foreach ( array( 'RESOURCETYPE_MEMORY' => 256, 'RESOURCETYPE_MAP' => 512 ) as $ressource => $mo ) {
+				if ( defined( 'Imagick::' . $ressource ) ) {
+					@$image->setResourceLimit( constant( 'Imagick::' . $ressource ), $mo * 1048576 );
+				}
+			}
+			if ( defined( 'Imagick::RESOURCETYPE_TIME' ) ) {
+				@$image->setResourceLimit( Imagick::RESOURCETYPE_TIME, 60 );
+			}
 			// Un PDF se dessine à la résolution qu'on lui donne avant de le
 			// lire : sans elle, Imagick le rend à 72 ppp, et un plan au trait
 			// devenait une image floue étiquetée 1 200. Plafonnée à 600 : une
@@ -542,7 +561,11 @@ class Notice_Archeomed_Paquet {
 			// Ce qui reste de calques dans cette vue s'aplatit. L'objet
 			// d'origine se libère : sur une centaine d'illustrations, les
 			// abandonner l'un après l'autre finissait par épuiser la mémoire.
-			$plat = $image->flattenImages();
+			// « flattenImages » a disparu d'ImageMagick 7 : on retombe alors sur
+			// « mergeImageLayers », qui fait la même chose.
+			$plat = method_exists( $image, 'flattenImages' )
+				? $image->flattenImages()
+				: $image->mergeImageLayers( Imagick::LAYERMETHOD_FLATTEN );
 			if ( $plat instanceof Imagick ) {
 				$image->clear();
 				$image->destroy();
@@ -594,7 +617,9 @@ class Notice_Archeomed_Paquet {
 			$image->clear();
 			$image->destroy();
 			return $ok && file_exists( $cible );
-		} catch ( Exception $e ) {
+		} catch ( Throwable $e ) {
+			// Pas seulement « Exception » : une « Error » (méthode absente,
+			// mémoire) n'est pas une Exception, et remontait jusqu'à l'auteur.
 			if ( $image instanceof Imagick ) {
 				$image->clear();
 			}

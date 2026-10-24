@@ -30,11 +30,13 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-accessibilite.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-candidats.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-documentation.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-confidentialite.php';
 
 new Notice_Archeomed_Settings();
 new Notice_Archeomed_Accessibilite();
 new Notice_Archeomed_Candidats();
 new Notice_Archeomed_Documentation();
+new Notice_Archeomed_Confidentialite();
 
 // La file d'attente vit indépendamment du formulaire : elle doit tourner sur
 // les requêtes d'administration et les passages du planificateur, où aucun
@@ -168,6 +170,9 @@ class Notice_Archeomed_Pactols {
 	const MAX_SENDS_PER_IP      = 150;   // par adresse IP, envois aboutis
 	const MAX_SENDS_PER_EMAIL   = 25;    // par personne : là, une IP vaut bien une personne
 	const MAX_LOOKUPS_PER_HOUR  = 400;
+	// Tous dépôts confondus, par heure : un humain n'y arrive jamais, une
+	// boucle de robots si.
+	const MAX_SENDS_GLOBAL_PER_HOUR = 100;
 	const MAX_FILES           = 3;
 	// Une autorisation de reproduction est une lettre ou un formulaire signé :
 	// dix méga-octets suffisent largement.
@@ -204,8 +209,6 @@ class Notice_Archeomed_Pactols {
 	// Laissée vide, la vérification Turnstile échoue et les envois sont bloqués.
 	const TURNSTILE_SECRET_KEY = '';
 	const TURNSTILE_FAIL_OPEN_ON_NETWORK_ERROR = true;
-	const QUILL_JS_SRI  = 'sha384-utBUCeG4SYaCm4m7GQZYr8Hy8Fpy3V4KGjBZaf4WTKOcwhCYpt/0PfeEe3HNlwx8';
-	const QUILL_CSS_SRI = 'sha384-ecIckRi4QlKYya/FQUbBUjS4qp65jF/J87Guw5uzTbO1C1Jfa/6kYmd6dXUF6D7i';
 	const PACTOLS_API_BASE          = 'https://pactols.frantiq.fr/api/';
 	const PACTOLS_LANG              = 'fr';
 	const PACTOLS_PERIOD_THESO_ID   = 'TH_1';
@@ -285,6 +288,7 @@ class Notice_Archeomed_Pactols {
 	public function __construct() {
 		add_shortcode( 'notice_archeomed_pactols', array( $this, 'afficher_le_formulaire' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'template_redirect', array( $this, 'ne_pas_mettre_en_cache' ) );
 		add_action( 'init', array( $this, 'handle_submission' ) );
 		// Après « init » : il faut savoir quelle page est demandée.
 		add_action( 'template_redirect', array( $this, 'refuser_l_envoi_trop_lourd' ) );
@@ -1240,20 +1244,29 @@ class Notice_Archeomed_Pactols {
 			// repassera par les mêmes contrôles au renvoi suivant. Le texte de
 			// l'éditeur fait exception — il arrive encodé, et c'est encodé
 			// qu'il ressortait sous les yeux de l'auteur.
+			// Les bornes comptent : cette saisie se range en base avant tout
+			// contrôle, y compris pour qui n'a pas de jeton valable. Le texte
+			// de la notice a sa place, les autres champs sont courts. Le
+			// texte est coupé avant d'être lu, non après.
 			$valeur = wp_unslash( $_POST[ $champ ] );
-			$garde[ $champ ] = ( 'texte_notice' === $champ )
-				? $this->texte_notice_pose( $valeur )
-				: $this->limit_string( $valeur, 200000 );
+			if ( 'texte_notice' === $champ ) {
+				$garde[ $champ ] = $this->texte_notice_pose( function_exists( 'mb_substr' ) ? mb_substr( $valeur, 0, 200000 ) : substr( $valeur, 0, 200000 ) );
+			} else {
+				$garde[ $champ ] = $this->limit_string( $valeur, 20000 );
+			}
 		}
 		if ( isset( $_POST['nature'] ) && is_array( $_POST['nature'] ) ) {
 			$garde['nature'] = array_map( 'sanitize_text_field',
-				array_map( 'strval', wp_unslash( $_POST['nature'] ) ) );
+				array_map( 'strval', array_slice( wp_unslash( $_POST['nature'] ), 0, 30 ) ) );
 		}
 		foreach ( array( 'commune', 'commune_ark', 'organisme',
 			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type' ) as $champ ) {
 			if ( isset( $_POST[ $champ ] ) && is_array( $_POST[ $champ ] ) ) {
+				// Au plus dix éléments, de 5 000 caractères : un formulaire
+				// n'en porte jamais autant.
 				$garde[ $champ ] = array_map( 'sanitize_textarea_field',
-					array_map( 'strval', wp_unslash( $_POST[ $champ ] ) ) );
+					array_map( function ( $v ) { return $this->limit_string( (string) $v, 5000 ); },
+						array_slice( wp_unslash( $_POST[ $champ ] ), 0, 10 ) ) );
 			}
 		}
 		// Le nom de chaque fichier, dans l'ordre des légendes : au retour, les
@@ -1277,7 +1290,8 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		$garde = $this->garder_les_figures_en_attente( $garde );
-		if ( empty( $garde ) ) {
+		// Un plafond d'ensemble : au-delà, ce n'est plus une saisie d'auteur.
+		if ( empty( $garde ) || strlen( maybe_serialize( $garde ) ) > 1500000 ) {
 			return '';
 		}
 		// Une correction qui échoue reste une correction : la référence
@@ -1538,25 +1552,14 @@ class Notice_Archeomed_Pactols {
 		if ( ! $this->page_porte_le_formulaire() ) {
 			return;
 		}
-		wp_enqueue_style( 'quill-snow', 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css', array(), null );
-		wp_enqueue_script( 'quill', 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js', array(), null, true );
-		add_filter( 'style_loader_tag', array( $this, 'add_sri_style' ), 10, 4 );
-		add_filter( 'script_loader_tag', array( $this, 'add_sri_script' ), 10, 3 );
+		// L'éditeur est servi par le site lui-même (assets/quill, version 2.0.3) :
+		// plus de dépendance à un CDN qui, en tombant, rendait le dépôt
+		// impossible, et plus d'adresse IP de visiteur envoyée à un tiers.
+		wp_enqueue_style( 'quill-snow', plugins_url( 'assets/quill/quill.snow.css', __FILE__ ), array(), '2.0.3' );
+		wp_enqueue_script( 'quill', plugins_url( 'assets/quill/quill.js', __FILE__ ), array(), '2.0.3', true );
 		if ( $this->protection_utilise_turnstile() && $this->turnstile_site_key_is_set() ) {
 			wp_enqueue_script( 'cf-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', array(), null, true );
 		}
-	}
-	public function add_sri_style( $tag, $handle, $href, $media ) {
-		if ( 'quill-snow' === $handle ) {
-			$tag = str_replace( ' />', ' integrity="' . esc_attr( self::QUILL_CSS_SRI ) . '" crossorigin="anonymous" />', $tag );
-		}
-		return $tag;
-	}
-	public function add_sri_script( $tag, $handle, $src ) {
-		if ( 'quill' === $handle ) {
-			$tag = str_replace( ' src=', ' integrity="' . esc_attr( self::QUILL_JS_SRI ) . '" crossorigin="anonymous" src=', $tag );
-		}
-		return $tag;
 	}
 	/**
 	 * Les options d'une liste déroulante, précédées du choix vide.
@@ -1851,16 +1854,16 @@ class Notice_Archeomed_Pactols {
 			// fichier choisi : le lien y mène quand il existe.
 			'illus_titre_1'       => array( 'na-illus-1-titre', 'Donnez un titre à la figure 1' ),
 			'illus_credits_1'     => array( 'na-illus-1-credits', 'Indiquez les crédits de la figure 1, son auteur et le détenteur des droits' ),
-			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, pour un public empêché de voir' ),
 			'illus_type_1'        => array( 'na-illus-1-type', 'Choisissez la nature de la figure 1' ),
+			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, pour un public empêché de voir' ),
 			'illus_titre_2'       => array( 'na-illus-2-titre', 'Donnez un titre à la figure 2' ),
 			'illus_credits_2'     => array( 'na-illus-2-credits', 'Indiquez les crédits de la figure 2, son auteur et le détenteur des droits' ),
-			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, pour un public empêché de voir' ),
 			'illus_type_2'        => array( 'na-illus-2-type', 'Choisissez la nature de la figure 2' ),
+			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, pour un public empêché de voir' ),
 			'illus_titre_3'       => array( 'na-illus-3-titre', 'Donnez un titre à la figure 3' ),
 			'illus_credits_3'     => array( 'na-illus-3-credits', 'Indiquez les crédits de la figure 3, son auteur et le détenteur des droits' ),
-			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, pour un public empêché de voir' ),
 			'illus_type_3'        => array( 'na-illus-3-type', 'Choisissez la nature de la figure 3' ),
+			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, pour un public empêché de voir' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
@@ -2181,7 +2184,7 @@ class Notice_Archeomed_Pactols {
 				--na-e1: .25rem; --na-e2: .5rem; --na-e3: .75rem; --na-e4: 1rem;
 				--na-e5: 1.5rem; --na-e6: 2rem; --na-e7: 3rem;
 				--na-r1: 3px; --na-r2: 6px; --na-cible: 2.75rem; --na-mesure: 68ch;
-				--na-anneau: 3px solid var(--na-accent);
+				--na-anneau: 3px solid var(--na-encre);
 				position: relative; max-width: 60rem; margin: 0 0 var(--na-e7); padding: 0;
 				font-size: var(--na-t-m); font-weight: 400; line-height: 1.5; color: var(--na-encre);
 			}
@@ -2348,7 +2351,8 @@ class Notice_Archeomed_Pactols {
 
 			/* ── Éditeur ── */
 			.na-form#na-form .na-editeur { margin-top: var(--na-e2); }
-			.na-form#na-form .ql-toolbar.ql-snow { display: flex; flex-wrap: wrap; gap: var(--na-e1); padding: var(--na-e1) var(--na-e2);
+			.na-form#na-form .ql-toolbar.ql-snow { position: sticky; top: var(--wp-admin--admin-bar--height, 0px); z-index: 5;
+				display: flex; flex-wrap: wrap; gap: var(--na-e1); padding: var(--na-e1) var(--na-e2);
 				font-family: inherit; background: var(--na-fond); border: 1px solid var(--na-filet);
 				border-bottom-color: var(--na-filet-doux); border-radius: var(--na-r1) var(--na-r1) 0 0; }
 			.na-form#na-form .ql-toolbar.ql-snow .ql-formats { display: flex; gap: 2px; margin: 0 var(--na-e3) 0 0; }
@@ -2428,7 +2432,7 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-fichiers-refuses:empty { display: none; }
 			.na-form#na-form .na-fichiers-refuses { margin-top: var(--na-e2); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
 				color: var(--na-erreur); background: var(--na-erreur-fond); border-left: 3px solid var(--na-erreur); }
-			.na-form#na-form .na-filelist { display: grid; gap: var(--na-e3); margin-top: var(--na-e3); }
+			.na-form#na-form .na-filelist { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--na-e3); margin-top: var(--na-e3); }
 			/* Une carte par figure, qui se détache de la page : fond teinté,
 			   filet appuyé, titre en grand. Les champs restent sur fond blanc. */
 			.na-form#na-form .na-illus { position: relative; padding: var(--na-e5); background: var(--na-surface);
@@ -2442,8 +2446,12 @@ class Notice_Archeomed_Pactols {
 				text-transform: uppercase; color: var(--na-sourd); }
 			/* Le texte pour qui ne voit pas l'image : un autre travail, encadré
 			   et teinté, en fin de carte. */
-			.na-form#na-form .na-illus-ecoute { margin-top: var(--na-e3); padding: var(--na-e4); background: var(--na-accent-voile);
-				border: 2px solid var(--na-accent); border-radius: var(--na-r2); }
+			.na-form#na-form .na-illus-ecoute { margin-top: var(--na-e3); padding: var(--na-e4); background: var(--na-fond);
+				border: 1px solid var(--na-filet); border-radius: var(--na-r2); }
+			.na-form#na-form .na-originaux { margin-top: var(--na-e4); }
+			.na-form#na-form .na-originaux > summary { cursor: pointer; font-size: var(--na-t-m); font-weight: 600; color: var(--na-accent); }
+			.na-form#na-form .na-originaux > summary:focus-visible { outline: var(--na-anneau); outline-offset: 2px; border-radius: var(--na-r1); }
+			.na-form#na-form .na-originaux[open] > summary { margin-bottom: var(--na-e3); }
 			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
 			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
@@ -2461,7 +2469,7 @@ class Notice_Archeomed_Pactols {
 				margin: 0 0 var(--na-e3); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r1); }
 			/* Le champ d'autorisation était le seul bouton natif de la page, gris
 			   et étranger au reste : il prend l'allure du bouton de dépôt. */
-			.na-form#na-form .na-illus-autorisation input[type=file] { display: block; max-width: 100%; font: inherit;
+			.na-form#na-form .na-illus-autorisation input[type=file] { display: block; width: 100%; min-width: 0; max-width: 100%; font: inherit;
 				font-size: var(--na-t-s); color: var(--na-sourd); }
 			.na-form#na-form .na-illus-autorisation input[type=file]::file-selector-button { min-height: var(--na-cible);
 				margin: 0 var(--na-e3) 0 0; padding: .5rem 1rem; font: inherit; font-size: var(--na-t-m); font-weight: 600;
@@ -2649,7 +2657,7 @@ class Notice_Archeomed_Pactols {
 				<?php endif; ?>
 			</div>
 			<p class="na-sr" id="na-annonce" role="status" aria-live="polite"></p>
-			<?php wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce' ); ?>
+			<?php echo $this->champ_du_jeton(); // Champ caché fabriqué par WordPress. ?>
 			<div aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:0;overflow:hidden;">
 				<label>Ne pas remplir ce champ
 					<input type="text" name="na_website" tabindex="-1" autocomplete="off" value="">
@@ -2932,20 +2940,24 @@ class Notice_Archeomed_Pactols {
 				<ul class="na-filelist" id="na-filelist"></ul>
 				<button type="button" class="na-ajout na-ajout-figure" id="na-ajout-figure" aria-describedby="na-illus-aide" hidden><span aria-hidden="true">+</span> Ajouter une figure</button>
 
-				<div class="na-champ">
-					<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
-					<p class="na-help" id="na-originaux-aide">Des originaux trop lourds pour ce formulaire&nbsp;? Joignez-en ici des versions allégées, et déposez les originaux sur un service de transfert — FileSender de RENATER, ou l’espace de partage de votre établissement. Collez ici le lien de téléchargement, qui doit rester valable quelques semaines.</p>
-					<input type="text" inputmode="url" id="na-originaux" name="originaux_lien" autocomplete="off"
-						spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
-						value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">
-				</div>
-				<div class="na-champ">
-					<label for="na-originaux-jusqua">Lien valable jusqu’au <span class="na-requis" aria-hidden="true">*</span> <span class="na-facultatif">si vous donnez un lien</span></label>
-					<p class="na-help" id="na-originaux-jusqua-aide">La date à laquelle le service de transfert effacera les fichiers&nbsp;: la rédaction est prévenue qu’elle doit les télécharger avant.</p>
-					<input type="date" id="na-originaux-jusqua" name="originaux_jusqua" aria-describedby="na-originaux-jusqua-aide"
-						min="<?php echo esc_attr( wp_date( 'Y-m-d' ) ); ?>"
-						value="<?php echo esc_attr( $this->repris( 'originaux_jusqua' ) ); ?>">
-				</div>
+				<?php $originaux_remplis = '' !== $this->repris( 'originaux_lien' ) || '' !== $this->repris( 'originaux_jusqua' ); ?>
+				<details class="na-originaux" id="na-originaux-details"<?php echo $originaux_remplis ? ' open' : ''; ?>>
+					<summary>Un fichier est trop lourd pour ce formulaire&nbsp;?</summary>
+					<div class="na-champ">
+						<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
+						<p class="na-help" id="na-originaux-aide">Joignez ci-dessus des versions allégées, déposez les originaux sur un service de transfert (FileSender de RENATER, espace de votre établissement), puis collez ici le lien de téléchargement.</p>
+						<input type="text" inputmode="url" id="na-originaux" name="originaux_lien" autocomplete="off"
+							spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
+							value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">
+					</div>
+					<div class="na-champ">
+						<label for="na-originaux-jusqua">Lien valable jusqu’au <span class="na-requis" aria-hidden="true">*</span> <span class="na-facultatif">si vous donnez un lien</span></label>
+						<p class="na-help" id="na-originaux-jusqua-aide">La date à laquelle le service effacera les fichiers&nbsp;: la rédaction les télécharge avant.</p>
+						<input type="date" id="na-originaux-jusqua" name="originaux_jusqua" aria-describedby="na-originaux-jusqua-aide"
+							min="<?php echo esc_attr( wp_date( 'Y-m-d' ) ); ?>"
+							value="<?php echo esc_attr( $this->repris( 'originaux_jusqua' ) ); ?>">
+					</div>
+				</details>
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s6">
@@ -3001,15 +3013,25 @@ class Notice_Archeomed_Pactols {
 			// Le script valide lui-même, en une passe et dans la page. Sans lui,
 			// la validation du navigateur reste en place.
 			form.noValidate = true;
+			// Si une erreur de script interrompt l'initialisation, plus rien ne
+			// validerait ni n'avertirait : on rend alors la validation au
+			// navigateur et l'on dit quoi faire. Armée jusqu'à la dernière ligne.
+			var initialisationFinie = false;
+			window.addEventListener('error', function () {
+				if (initialisationFinie) { return; }
+				initialisationFinie = true;
+				form.noValidate = false;
+				showJsError('Une erreur technique empêche une partie du formulaire de fonctionner.');
+			});
 
-			var CHAMPS = <?php echo wp_json_encode( $this->champs_du_formulaire() ); ?>;
+			var CHAMPS = <?php echo wp_json_encode( $this->champs_du_formulaire(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
 			var MAX_FILES = <?php echo (int) self::MAX_FILES; ?>;
 			// Le texte alternatif d'une figure : un avis au-delà du seuil des
 			// normes (150 caractères par défaut), coupé au-delà de 300. Les
 			// avis d'accessibilité viennent du serveur — phrases, motifs,
 			// listes —, pour que le navigateur dise mot pour mot ce que la
 			// rédaction lira.
-			var A11Y = <?php echo wp_json_encode( Notice_Archeomed_Controles::regles_d_accessibilite() ); ?>;
+			var A11Y = <?php echo wp_json_encode( Notice_Archeomed_Controles::regles_d_accessibilite(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
 			var ALT_CONSEILLE = A11Y.conseille;
 			var ALT_MAX = A11Y.max;
 			var DESCRIPTION_MAX = <?php echo (int) Notice_Archeomed_Controles::DESCRIPTION_MAX; ?>;
@@ -3151,7 +3173,7 @@ class Notice_Archeomed_Pactols {
 			// sous le champ, hors de portée de qui continue de taper. On attend
 			// la fin d'une rafale d'avis pour les dire d'un trait, et l'on ne
 			// redit pas ceux qu'une zone montrait déjà.
-			var avisAnnonces = [], attenteAnnonceAvis = null;
+			var avisAnnonces = [], attenteAnnonceAvis = null, avisParZone = {}, avisDits = {};
 			function annoncerLesAvis(nouveaux) {
 				avisAnnonces = avisAnnonces.concat(nouveaux);
 				window.clearTimeout(attenteAnnonceAvis);
@@ -3170,11 +3192,20 @@ class Notice_Archeomed_Pactols {
 					var t = typeof m === 'string' ? m : m.texte;
 					if (t && !vus[t]) { vus[t] = true; propres.push(m); }
 				});
-				var avant = z.getAttribute('data-avis') ? JSON.parse(z.getAttribute('data-avis')) : [];
+				// Ce que les zones montrent, gardé hors de la page : les cartes de
+				// figures se redessinent à chaque ajout, retrait ou déplacement, et
+				// leurs avis déjà dits ne doivent pas l'être de nouveau.
 				var textes = propres.map(function (m) { return typeof m === 'string' ? m : m.texte; });
-				z.setAttribute('data-avis', JSON.stringify(textes));
-				var nouveaux = textes.filter(function (t) { return avant.indexOf(t) === -1; });
-				if (nouveaux.length && !z.hasAttribute('data-sans-annonce')) { annoncerLesAvis(nouveaux); }
+				var avant = avisParZone[z.id] || [];
+				avisParZone[z.id] = textes;
+				avant.forEach(function (t) {
+					if (textes.indexOf(t) === -1 && !Object.keys(avisParZone).some(function (k) { return avisParZone[k].indexOf(t) !== -1; })) {
+						delete avisDits[t];
+					}
+				});
+				var nouveaux = textes.filter(function (t) { return !avisDits[t]; });
+				nouveaux.forEach(function (t) { avisDits[t] = true; });
+				if (nouveaux.length) { annoncerLesAvis(nouveaux); }
 				z.innerHTML = '';
 				(champs || []).forEach(function (c) { if (c) { retirerDescription(c, z.id); } });
 				if (!propres.length) { z.hidden = true; return; }
@@ -3223,8 +3254,11 @@ class Notice_Archeomed_Pactols {
 			}
 
 			var jsErrorBox = document.getElementById('na-js-error');
+			// L'adresse où envoyer la notice si le formulaire ne marche pas : c'est
+			// le moment où l'auteur en a le plus besoin.
+			var SECOURS = <?php echo wp_json_encode( $secours, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?>;
 			function showJsError(msg) {
-				jsErrorBox.textContent = msg;
+				jsErrorBox.textContent = msg + (SECOURS ? ' Vous pouvez aussi envoyer votre notice par courriel à ' + SECOURS + '.' : '');
 				jsErrorBox.hidden = false;
 			}
 
@@ -3258,6 +3292,7 @@ class Notice_Archeomed_Pactols {
 				} catch (e) { petitesCapitales = false; }
 				quill = new Quill('#na-editor', {
 					theme: 'snow',
+					placeholder: 'Collez ici le texte de votre notice, ou écrivez-le.',
 					// Les seuls formats que le document sait rendre. Sans cette
 					// liste, un collage depuis Word apportait listes, titres et
 					// citations, que le serveur aplatissait en un paragraphe.
@@ -3690,6 +3725,18 @@ class Notice_Archeomed_Pactols {
 				// l'identifiant : le nom restait le même, et le lieu partait
 				// « sans identifiant ».
 				var choisi = ark.value ? { label: net(champ.value), uri: ark.value } : null;
+				// Quand la recherche ne donne rien ou ne répond pas, la ligne le dit
+				// sous le champ pour qui voit, et l'annonce pour qui écoute : il
+				// n'y avait que l'annonce.
+				var etatLieu = document.createElement('p');
+				etatLieu.className = 'na-help na-lieu-etat';
+				etatLieu.hidden = true;
+				boite.parentNode.insertBefore(etatLieu, boite.nextSibling);
+				function direLieu(texte) {
+					etatLieu.textContent = texte;
+					etatLieu.hidden = !texte;
+					if (texte) { annoncer(texte); }
+				}
 				// Un lieu reposé par le brouillon, avec son identifiant : on le
 				// connaît avant la première retouche.
 				champ.addEventListener('focus', function () {
@@ -3751,6 +3798,7 @@ class Notice_Archeomed_Pactols {
 					var q = champ.value.trim();
 					ark.value = memeLieu(q) ? choisi.uri : '';
 					derniers = [];
+					direLieu('');
 					majApercu();
 					if (minuterie) { window.clearTimeout(minuterie); }
 					var ce = ++tour;
@@ -3775,7 +3823,7 @@ class Notice_Archeomed_Pactols {
 								if (document.activeElement !== champ) { prendreLIdentique(); cb.fermer(); return; }
 								if (!items.length) {
 									cb.fermer();
-									annoncer('Aucun lieu ne correspond. Votre saisie sera gardée telle quelle.');
+									direLieu('Aucun lieu ne correspond. Votre saisie sera gardée telle quelle.');
 									return;
 								}
 								cb.ouvrir(items.slice(0, 20), function (li, c, i) {
@@ -3791,7 +3839,7 @@ class Notice_Archeomed_Pactols {
 							}, function () {
 								if (ce !== tour) { return; }
 								cb.fermer();
-								annoncer('Le service des lieux ne répond pas pour l’instant. Votre saisie sera gardée telle quelle.');
+								direLieu('Le service des lieux ne répond pas pour l’instant. Votre saisie sera gardée telle quelle.');
 							});
 					}, 250);
 				});
@@ -3881,6 +3929,12 @@ class Notice_Archeomed_Pactols {
 					lignes.forEach(function (l) { l.hidden = !aDesValeurs(l); });
 					maj();
 				});
+			});
+			// Les originaux : le bloc replié s'ouvre si un brouillon ou une reprise
+			// l'a rempli.
+			replis.push(function () {
+				var d = el('na-originaux-details');
+				if (d && aDesValeurs(d)) { d.open = true; }
 			});
 			function ajusterLesReplis() { replis.forEach(function (f) { f(); }); }
 			ajusterLesReplis();
@@ -4323,7 +4377,7 @@ class Notice_Archeomed_Pactols {
 						'numero'  => $i + 1,
 					);
 				}
-				echo wp_json_encode( $garde_illus );
+				echo wp_json_encode( $garde_illus, JSON_HEX_TAG | JSON_HEX_AMP );
 			?>.filter(function (m) { return m && (m.nom || aDuTexte(m)); });
 			function aDuTexte(m) { return !!m && !(vide(m.titre) && vide(m.legende) && vide(m.credits) && vide(m.alt) && vide(m.description)); }
 			// L'autorisation choisie pour une figure retirée la suit dans
@@ -4424,14 +4478,10 @@ class Notice_Archeomed_Pactols {
 			}
 			var AIDES_ILLUS = {
 				titre: 'Une ligne informative, qui nomme ce que montre la figure et son objet' + NBSP + ': Plan des vestiges de la chapelle et du cimetière.',
-				alt: 'Ce que montre l’image, pour les personnes qui ne la voient pas' + NBSP + ': leur lecteur d’écran lit ce texte à sa place. '
-					+ 'En une ou deux phrases, l’information visuelle utile, sans répéter la légende. '
-					+ 'Ne commencez pas par «' + NBSP + 'Image de' + NBSP + '» ou «' + NBSP + 'Photo de' + NBSP + '», '
-					+ 'et citez un texte important visible dans l’image. '
-					+ 'Pour un plan ou une carte, vous pouvez poursuivre à la ligne' + NBSP + ': la suite — organisation, repères, données — '
-					+ 'est publiée sous la légende, pour tous les lecteurs.',
-				legende: 'Le texte qui accompagne la figure. Reprenez-y ce qu’un public empêché de voir l’image doit en savoir' + NBSP
-					+ ': la clé d’un plan ou d’une carte, les inscriptions, les étiquettes, l’échelle, l’orientation.',
+				alt: 'Ce que montre l’image, en une ou deux phrases, pour qui ne la voit pas' + NBSP + ': son lecteur d’écran lit ce texte à sa place. '
+					+ 'Ne répétez pas la légende, ne commencez pas par «' + NBSP + 'Image de' + NBSP + '». '
+					+ 'Pour un plan ou une carte, poursuivez à la ligne' + NBSP + ': le détail est publié sous la légende.',
+				legende: 'Le texte imprimé sous la figure' + NBSP + ': clé, échelle, orientation, inscriptions.',
 				credits: 'Auteur et détenteur des droits' + NBSP + ': © Prénom Nom, organisme.'
 			};
 			// Deux exemples de la rédaction, repliés sous l'aide du texte
@@ -4532,8 +4582,9 @@ class Notice_Archeomed_Pactols {
 				if (compteur) { bloc.appendChild(compteur); compter(); }
 				return { bloc: bloc, champ: champ };
 			}
-			// La nature de la figure : facultative, car une notice ne se perd pas
-			// pour une case non cochée. Elle adapte le conseil donné pour le
+			// La nature de la figure : obligatoire, comme le texte alternatif
+			// qu'elle sert — « Autre » est là pour ce qui n'entre nulle part.
+			// Elle adapte le conseil donné pour le
 			// texte alternatif, et fait demander les données d'un graphique ou
 			// d'un tableau en image.
 			function champType(idx) {
@@ -4546,7 +4597,7 @@ class Notice_Archeomed_Pactols {
 				var aide = document.createElement('p');
 				aide.className = 'na-help';
 				aide.id = id + '-aide';
-				aide.textContent = 'Elle adapte le conseil pour le texte ci-dessous.';
+				aide.textContent = 'Elle adapte le conseil ci-dessous.';
 				var champ = document.createElement('select');
 				champ.id = id;
 				champ.name = 'illus_type[]';
@@ -4561,7 +4612,7 @@ class Notice_Archeomed_Pactols {
 					o.textContent = A11Y.types[k];
 					champ.appendChild(o);
 				});
-				champ.value = illusMeta[idx] && illusMeta[idx].type && A11Y.types[illusMeta[idx].type] ? illusMeta[idx].type : '';
+				champ.value = illusMeta[idx] && illusMeta[idx].type && Object.prototype.hasOwnProperty.call(A11Y.types, illusMeta[idx].type) ? illusMeta[idx].type : '';
 				var conseil = document.createElement('p');
 				conseil.className = 'na-help na-illus-type-conseil';
 				conseil.id = id + '-conseil';
@@ -4672,7 +4723,11 @@ class Notice_Archeomed_Pactols {
 						refreshFileInput();
 						annoncer('Figure ' + (idx + 1) + ' retirée.' + (idx < selected.length
 							? ' Les suivantes changent de numéro' + NBSP + ': vérifiez les appels du texte.' : ''));
-						(fileList.querySelector('.na-fileremove') || fileInput).focus();
+						// Le focus va à la figure qui prend la place, non au premier
+						// « Retirer » de la liste : un second Entrée supprimerait la
+						// figure 1.
+						var voisine = el('na-illus-' + (Math.min(idx, selected.length - 1) + 1) + '-titre');
+						(voisine || fileInput).focus();
 						marquerModifie();
 						majConseilsDuTexte();
 					});
@@ -4928,7 +4983,7 @@ class Notice_Archeomed_Pactols {
 				}
 				// Comme au serveur : la nature choisie décide ; sans elle, les mots
 				// du titre, de la légende et du texte font foi.
-				var type = A11Y.types[m.type] ? m.type : '';
+				var type = Object.prototype.hasOwnProperty.call(A11Y.types, m.type) ? m.type : '';
 				if ((vus.alt || vus.titre || vus.legende || vus.description || vus.type) && vide(m.description)) {
 					if (A11Y.avecDonnees.indexOf(type) !== -1) {
 						phrases.push(phraseA11y('donnees', { mot: A11Y.typesMots[type] }));
@@ -5195,10 +5250,13 @@ class Notice_Archeomed_Pactols {
 			// une phrase tronquée au collage. Et le paragraphe coupé en deux, dont
 			// la suite reprend en bas de casse — un retour de trop, venu d'un PDF.
 			// Le paragraphe en cours de frappe (« sauf ») attend sa fin.
+			var PARAGRAPHE_COURT = <?php echo (int) Notice_Archeomed_Controles::PARAGRAPHE_COURT; ?>;
 			function ponctuationFinale(paras, sauf) {
 				var avis = [];
 				paras.forEach(function (p, i) {
-					if (i === sauf || finitBien(p)) { return; }
+					// Moins de huit mots : un élément de liste ou une cellule de
+					// tableau collés, non une phrase tronquée (comme au serveur).
+					if (i === sauf || finitBien(p) || p.trim().split(/\s+/).length < PARAGRAPHE_COURT) { return; }
 					if (i + 1 < paras.length && reprendEnBasDeCasse(paras[i + 1])) {
 						avis.push('Le paragraphe ' + (i + 1) + ' s’arrête au milieu d’une phrase que le suivant reprend ('
 							+ guillemets('…' + extrait(p, -30)) + ' puis ' + guillemets(extrait(paras[i + 1], 30) + '…')
@@ -5275,7 +5333,7 @@ class Notice_Archeomed_Pactols {
 				return avis;
 			}
 			// « vers 1 250 » : une année tapée avec une espace.
-			var DATE_ESPACEE = motif('(?:(^|[^\\p{L}\\d])(?:en|vers|an|années?|dès|depuis|jusqu’en|jusqu\'en|avant|après)\\s+([12] \\d{3})(?![\\p{L}\\d])|([12] \\d{3})\\s*(?:av\\.|apr?\\.|ap\\.)\\s*J\\.-C\\.)', 'giu');
+			var DATE_ESPACEE = motif('(?:(^|[^\\p{L}\\d])(?:en|vers|an|années?|dès|depuis|jusqu’en|jusqu\'en|avant|après)\\s+([12] \\d{3})(?![\\p{L}\\d])(?!\\s*(?:' + <?php echo wp_json_encode( Notice_Archeomed_Controles::UNITES_APRES_UN_NOMBRE ); ?> + ')(?![\\p{L}\\d]))|([12] \\d{3})\\s*(?:av\\.|apr?\\.|ap\\.)\\s*J\\.-C\\.)', 'giu');
 			function datesEspacees(paras) {
 				var avis = [];
 				if (!DATE_ESPACEE) { return avis; }
@@ -5789,16 +5847,16 @@ class Notice_Archeomed_Pactols {
 				// fichier, rien à décrire.
 				illus_titre_1: function () { return champDeFigureDonne(1, 'titre'); },
 				illus_credits_1: function () { return champDeFigureDonne(1, 'credits'); },
-				illus_alt_1: function () { return champDeFigureDonne(1, 'alt'); },
 				illus_type_1: function () { return champDeFigureDonne(1, 'type'); },
+				illus_alt_1: function () { return champDeFigureDonne(1, 'alt'); },
 				illus_titre_2: function () { return champDeFigureDonne(2, 'titre'); },
 				illus_credits_2: function () { return champDeFigureDonne(2, 'credits'); },
-				illus_alt_2: function () { return champDeFigureDonne(2, 'alt'); },
 				illus_type_2: function () { return champDeFigureDonne(2, 'type'); },
+				illus_alt_2: function () { return champDeFigureDonne(2, 'alt'); },
 				illus_titre_3: function () { return champDeFigureDonne(3, 'titre'); },
 				illus_credits_3: function () { return champDeFigureDonne(3, 'credits'); },
-				illus_alt_3: function () { return champDeFigureDonne(3, 'alt'); },
 				illus_type_3: function () { return champDeFigureDonne(3, 'type'); },
+				illus_alt_3: function () { return champDeFigureDonne(3, 'alt'); },
 				originaux_lien: function () {
 					var c = el('na-originaux');
 					var v = c ? c.value.trim() : '';
@@ -5829,6 +5887,9 @@ class Notice_Archeomed_Pactols {
 				// lien du texte alternatif mène à la zone où les redéposer.
 				if (!c && /^illus_(titre|credits|alt|type)_/.test(cle)) { c = fileInput; }
 				if (!c) { return; }
+				// Un champ dans un bloc replié ne reçoit pas le focus : on l'ouvre.
+				var replie = c.closest ? c.closest('details') : null;
+				if (replie) { replie.open = true; }
 				if (c.scrollIntoView) { c.scrollIntoView({ block: 'center' }); }
 				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
 			}
@@ -5848,7 +5909,7 @@ class Notice_Archeomed_Pactols {
 			function revoirLesTextesAlternatifs() {
 				if (!erreurs || !Object.keys(erreurs).some(function (k) { return /^illus_(titre|credits|alt|type)_/.test(k); })) { return; }
 				for (var rang = 1; rang <= MAX_FILES; rang++) {
-					['titre', 'credits', 'alt', 'type'].forEach(function (clef) {
+					['titre', 'credits', 'type', 'alt'].forEach(function (clef) {
 						var cle = 'illus_' + clef + '_' + rang;
 						var r = CONTROLES[cle]();
 						if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
@@ -6109,6 +6170,12 @@ class Notice_Archeomed_Pactols {
 			if (brouillonActif && form.getAttribute('data-reprise') === '0') {
 				var brouillon = null;
 				try { brouillon = JSON.parse(lire() || 'null'); } catch (e) { brouillon = null; }
+				// Un brouillon garde noms et courriels sur l'appareil : au bout de
+				// trente jours, on ne le propose plus et on l'oublie.
+				if (brouillon && brouillon.quand && (Date.now() - brouillon.quand) > 30 * 86400000) {
+					oublierBrouillon();
+					brouillon = null;
+				}
 				if (brouillon && brouillon.champs && contenuUtile(brouillon)) {
 					avisBrouillon = document.createElement('div');
 					avisBrouillon.className = 'na-message na-avis';
@@ -6288,6 +6355,7 @@ class Notice_Archeomed_Pactols {
 				var relais = form.querySelector('input[type=hidden][name="notice_archeomed_envoi"]');
 				if (relais) { relais.remove(); }
 			});
+			initialisationFinie = true;
 		});
 		</script>
 		<?php
@@ -6983,6 +7051,13 @@ class Notice_Archeomed_Pactols {
 		for ( $i = 0; $i < $combien; $i++ ) {
 			$item  = array( 'rang' => $i + 1 );
 			$item['type'] = Notice_Archeomed_Controles::type_de_figure( isset( $types[ $i ] ) ? $types[ $i ] : '' );
+			// Un formulaire d'avant ce champ (un onglet resté ouvert pendant une
+			// mise à jour, une page en cache) ne l'envoie pas du tout : ce n'est
+			// pas un oubli de l'auteur, et le refuser ferait redéposer des
+			// fichiers de vingt méga-octets pour rien.
+			if ( ! isset( $_POST['illus_type'] ) ) {
+				$item['type_absent'] = true;
+			}
 			$suite = '';
 			foreach ( $parts as $clef => $liste ) {
 				$brut = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? $liste[ $i ] : '';
@@ -7273,7 +7348,10 @@ class Notice_Archeomed_Pactols {
 			if ( $rang < 1 || $rang > min( $deposes, self::MAX_FILES ) ) {
 				continue;
 			}
-			foreach ( array( 'titre', 'credits', 'alt', 'type' ) as $clef ) {
+			foreach ( array( 'titre', 'credits', 'type', 'alt' ) as $clef ) {
+				if ( 'type' === $clef && ! empty( $item['type_absent'] ) ) {
+					continue;
+				}
 				if ( '' === trim( isset( $item[ $clef ] ) ? (string) $item[ $clef ] : '' ) ) {
 					$manquants[] = 'illus_' . $clef . '_' . $rang;
 				}
@@ -8798,8 +8876,15 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: forged timestamp.' );
 			$this->redirect_result( false, 'securite' );
 		}
+		// Le plafond de tentatives d'abord, et il compte les refus : un robot
+		// qui martèle sans jeton valable ne doit pas passer, lui, sous le
+		// plafond que seuls ses essais aboutis feraient monter.
+		if ( ! $this->check_attempt_limit() ) {
+			error_log( 'Notice Archeomed: attempt limit reached.' );
+			$this->redirect_result( false, 'quota' );
+		}
 		self::entrees_attendues();
-		if ( ! isset( $_POST['notice_archeomed_nonce'] ) || ! wp_verify_nonce( $_POST['notice_archeomed_nonce'], 'notice_archeomed_submit' ) ) {
+		if ( ! isset( $_POST['notice_archeomed_nonce'] ) || ! $this->verifier_le_jeton( $_POST['notice_archeomed_nonce'] ) ) {
 			error_log( 'Notice Archeomed: nonce verification failed.' );
 			$this->redirect_result( false, 'securite' );
 		}
@@ -8807,17 +8892,26 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: honeypot triggered.' );
 			$this->redirect_result( false, 'securite' );
 		}
+		// L'heure d'affichage de la page est exigée : sans elle, le délai
+		// minimal se contournait en l'omettant. Un humain l'a toujours, posée
+		// par la page ; elle ne peut pas être dans le futur, ni vieille de
+		// plus d'une semaine.
 		$ts = isset( $_POST['na_ts'] ) ? absint( $_POST['na_ts'] ) : 0;
-		if ( $ts > 0 && ( time() - $ts ) < 3 ) {
-			error_log( 'Notice Archeomed: submission too fast.' );
+		if ( $ts <= 0 || $ts > time() + 300 || ( time() - $ts ) < 3 || ( time() - $ts ) > WEEK_IN_SECONDS ) {
+			error_log( 'Notice Archeomed: horodatage absent, invraisemblable ou trop rapide.' );
 			$this->redirect_result( false, 'securite' );
-		}
-		if ( ! $this->check_attempt_limit() ) {
-			error_log( 'Notice Archeomed: attempt limit reached.' );
-			$this->redirect_result( false, 'quota' );
 		}
 		if ( ! $this->verifier_la_protection() ) {
 			$this->redirect_result( false, 'verification' );
+		}
+		// Le plafond de toute la revue, quelle que soit l'adresse : la barrière
+		// ultime contre un remplissage du disque ou une pluie de courriels, que
+		// la protection anti-robot ne tiendrait pas (Turnstile laisse passer
+		// quand Cloudflare est injoignable). Largement au-dessus d'une
+		// campagne : 250 à 300 notices par an.
+		if ( ! $this->check_global_limit() ) {
+			error_log( 'Notice Archeomed: plafond global de dépôts atteint.' );
+			$this->redirect_result( false, 'quota' );
 		}
 		$d = array();
 		$d['rubrique_principale'] = $this->collect_select( 'rubrique_principale', $this->rubriques, true );
@@ -8994,6 +9088,7 @@ class Notice_Archeomed_Pactols {
 			$fichiers = array_merge( $gardees, $this->archiver_les_autorisations( $id, $autorisations ) );
 			update_post_meta( $id, '_na_fichiers', $fichiers );
 			$this->record_send( $d['resp_email'] );
+			$this->record_global_send();
 
 			// Les figures que le document emportera. Elles se fabriquent avant
 			// lui, puisqu'il les porte : le Word envoyé par courriel voyage
@@ -9006,11 +9101,21 @@ class Notice_Archeomed_Pactols {
 			// avec son chemin sur le serveur. Le dossier en a posé une : une
 			// image de mille pixels, dans le fichier, que la mise en page ne
 			// pouvait remplacer.
-			$apercus = $this->fabriquer_les_apercus( $gardees, $d );
-			if ( ! empty( $apercus ) ) {
-				update_post_meta( $id, '_na_apercus', $apercus );
+			// Ni les aperçus ni le Word ne doivent faire échouer un dépôt déjà
+			// inscrit : une erreur ici, même fatale pour PHP (« Error »), ne
+			// doit pas montrer une page d'échec à l'auteur, qui redéposerait
+			// une notice que la rédaction a déjà.
+			$apercus  = array();
+			$document = '';
+			try {
+				$apercus = $this->fabriquer_les_apercus( $gardees, $d );
+				if ( ! empty( $apercus ) ) {
+					update_post_meta( $id, '_na_apercus', $apercus );
+				}
+				$document = $this->fabriquer_le_document( $this->attacher_les_apercus( $d, $apercus ) );
+			} catch ( Throwable $e ) {
+				error_log( 'Notice Archeomed: aperçus ou document non fabriqués (' . get_class( $e ) . ' : ' . $e->getMessage() . ').' );
 			}
-			$document = $this->fabriquer_le_document( $this->attacher_les_apercus( $d, $apercus ) );
 			if ( '' !== $document ) {
 				$fichiers[] = $document;
 				update_post_meta( $id, '_na_fichiers', $fichiers );
@@ -9062,6 +9167,7 @@ class Notice_Archeomed_Pactols {
 		$envoyee = $this->expedier( $d, $notice, $produits, $document );
 		if ( $envoyee ) {
 			$this->record_send( $d['resp_email'] );
+			$this->record_global_send();
 			$this->nettoyer( $produits );
 			$this->redirect_result( true, '', '', $reference );
 		}
@@ -9163,7 +9269,9 @@ class Notice_Archeomed_Pactols {
 		$subject = str_replace( array( "\r", "\n" ), ' ', $subject );
 		$headers = array( 'Content-Type: text/html; charset=UTF-8' );
 		if ( is_email( $d['resp_email'] ) ) {
-			$resp_name_safe = str_replace( array( "\r", "\n", '<', '>' ), '', $resp_complet );
+			// Aussi la virgule, le point-virgule et le guillemet : dans un nom, ils
+			// ouvriraient une seconde adresse dans l'en-tête.
+			$resp_name_safe = str_replace( array( "\r", "\n", '<', '>', ',', ';', '"' ), '', $resp_complet );
 			$headers[] = 'Reply-To: ' . $resp_name_safe . ' <' . $d['resp_email'] . '>';
 		}
 
@@ -9321,6 +9429,10 @@ class Notice_Archeomed_Pactols {
 			return;   // mode choisi mais relais non nommé : on ne casse rien
 		}
 		$phpmailer->isSMTP();
+		// Quinze secondes, non les cinq minutes de PHPMailer : un relais muet
+		// retiendrait sinon un processus PHP par envoi, et la campagne serait
+		// bloquée par ce qu'on cherchait à ne pas faire attendre.
+		$phpmailer->Timeout = 15;
 		$phpmailer->Host = $hote;
 		$phpmailer->Port = (int) Notice_Archeomed_Settings::get( 'smtp_port' );
 
@@ -9520,7 +9632,7 @@ class Notice_Archeomed_Pactols {
 		$resp  = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
 		$reply = '';
 		if ( is_email( $d['resp_email'] ) ) {
-			$sans = str_replace( array( "\r", "\n", '<', '>' ), '', $resp );
+			$sans = str_replace( array( "\r", "\n", '<', '>', ',', ';', '"' ), '', $resp );
 			$reply = 'Reply-To: ' . $sans . ' <' . $d['resp_email'] . '>';
 		}
 
@@ -10978,9 +11090,116 @@ class Notice_Archeomed_Pactols {
 		wp_safe_redirect( $redirect );
 		exit;
 	}
+	/**
+	 * L'adresse du visiteur.
+	 *
+	 * REMOTE_ADDR, et rien d'autre, sauf derrière un relais déclaré : sans
+	 * liste blanche, lire « X-Forwarded-For » laisserait n'importe qui choisir
+	 * son adresse et contourner les plafonds. Derrière un frontal, tous les
+	 * chercheurs partagent pourtant la sienne et se compteraient comme un seul.
+	 * Les relais de confiance se déclarent donc dans wp-config.php :
+	 *     define( 'NA_PROXYS', '10.0.0.0/8, 192.168.1.5' );
+	 * (adresses ou CIDR, IPv4 ou IPv6). L'en-tête n'est lu que si la requête
+	 * vient de l'un d'eux, et l'on remonte la chaîne jusqu'à la première
+	 * adresse qui n'en est pas un.
+	 */
 	private function get_client_ip() {
 		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? wp_unslash( $_SERVER['REMOTE_ADDR'] ) : '0.0.0.0';
-		return filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '0.0.0.0';
+		$ip = filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '0.0.0.0';
+		$relais = defined( 'NA_PROXYS' ) ? array_filter( array_map( 'trim', explode( ',', (string) NA_PROXYS ) ) ) : array();
+		if ( empty( $relais ) || ! self::ip_dans_la_liste( $ip, $relais ) || empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+			return $ip;
+		}
+		$chaine = array_reverse( array_map( 'trim', explode( ',', (string) wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) ) );
+		foreach ( $chaine as $candidate ) {
+			if ( ! filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
+				return $ip;   // chaîne illisible : l'adresse du relais, par prudence
+			}
+			if ( ! self::ip_dans_la_liste( $candidate, $relais ) ) {
+				return $candidate;
+			}
+		}
+		return $ip;
+	}
+
+	/** Une adresse est-elle dans la liste d'adresses et de blocs CIDR ? */
+	public static function ip_dans_la_liste( $ip, $liste ) {
+		$binaire = @inet_pton( $ip );
+		if ( false === $binaire ) {
+			return false;
+		}
+		foreach ( $liste as $entree ) {
+			$morceaux = explode( '/', $entree, 2 );
+			$reseau   = @inet_pton( $morceaux[0] );
+			if ( false === $reseau || strlen( $reseau ) !== strlen( $binaire ) ) {
+				continue;
+			}
+			$bits = isset( $morceaux[1] ) && ctype_digit( $morceaux[1] ) ? min( (int) $morceaux[1], 8 * strlen( $reseau ) ) : 8 * strlen( $reseau );
+			$octets = intdiv( $bits, 8 );
+			if ( substr( $binaire, 0, $octets ) !== substr( $reseau, 0, $octets ) ) {
+				continue;
+			}
+			$reste = $bits % 8;
+			if ( 0 === $reste ) {
+				return true;
+			}
+			$masque = ( 0xFF << ( 8 - $reste ) ) & 0xFF;
+			if ( ( ord( $binaire[ $octets ] ) & $masque ) === ( ord( $reseau[ $octets ] ) & $masque ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Le jeton du formulaire, valable de 24 à 48 heures pour ce seul
+	 * formulaire (le défaut de WordPress est de 12 à 24 heures, trop court
+	 * pour qui laisse sa page ouverte la nuit : critère 13.1 du RGAA).
+	 */
+	private function verifier_le_jeton( $jeton ) {
+		$duree = function () { return 2 * DAY_IN_SECONDS; };
+		add_filter( 'nonce_life', $duree );
+		$ok = wp_verify_nonce( is_string( $jeton ) ? $jeton : '', 'notice_archeomed_submit' );
+		remove_filter( 'nonce_life', $duree );
+		// Une page servie avant cette durée (un onglet resté ouvert pendant la
+		// mise à jour) porte un jeton de durée ordinaire : on l'accepte encore,
+		// pour ne pas refuser des notices que leur auteur vient d'écrire.
+		if ( ! $ok ) {
+			$ok = wp_verify_nonce( is_string( $jeton ) ? $jeton : '', 'notice_archeomed_submit' );
+		}
+		return $ok;
+	}
+
+	/** Le champ du jeton, de la même durée que sa vérification. */
+	private function champ_du_jeton() {
+		$duree = function () { return 2 * DAY_IN_SECONDS; };
+		add_filter( 'nonce_life', $duree );
+		$champ = wp_nonce_field( 'notice_archeomed_submit', 'notice_archeomed_nonce', true, false );
+		remove_filter( 'nonce_life', $duree );
+		return $champ;
+	}
+
+	/**
+	 * La page du formulaire ne doit jamais être servie d'un cache : elle porte
+	 * un jeton, une heure et un défi propres à chaque affichage.
+	 */
+	public function ne_pas_mettre_en_cache() {
+		if ( ! $this->page_porte_le_formulaire() ) {
+			return;
+		}
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		nocache_headers();
+	}
+
+	/** Le plafond de toute la revue : lu avant, incrémenté après un dépôt abouti. */
+	private function check_global_limit() {
+		return (int) get_transient( 'na_envois_global' ) < self::MAX_SENDS_GLOBAL_PER_HOUR;
+	}
+
+	private function record_global_send() {
+		set_transient( 'na_envois_global', (int) get_transient( 'na_envois_global' ) + 1, HOUR_IN_SECONDS );
 	}
 	private function verify_turnstile() {
 		$secret = $this->turnstile_secret();
@@ -11003,7 +11222,10 @@ class Notice_Archeomed_Pactols {
 		);
 		if ( is_wp_error( $response ) ) {
 			error_log( 'Notice Archeomed: Turnstile request failed, degraded mode: ' . $response->get_error_message() );
-			return self::TURNSTILE_FAIL_OPEN_ON_NETWORK_ERROR;
+			// Ouvert par défaut : derrière un proxy qui bloque Cloudflare, fermer
+			// perdrait toutes les notices. Une plateforme qui a ouvert la
+			// sortie le ferme (« add_filter( 'notice_archeomed_turnstile_ouvert', '__return_false' ) »).
+			return (bool) apply_filters( 'notice_archeomed_turnstile_ouvert', self::TURNSTILE_FAIL_OPEN_ON_NETWORK_ERROR );
 		}
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
 		return is_array( $body ) && ! empty( $body['success'] );

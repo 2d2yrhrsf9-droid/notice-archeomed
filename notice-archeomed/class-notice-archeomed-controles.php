@@ -37,6 +37,14 @@ class Notice_Archeomed_Controles {
 	const ALT_MAX = 300;
 
 	/**
+	 * En deçà de ce nombre de mots, un paragraphe qui ne finit pas par une
+	 * ponctuation n'est pas signalé : c'est un élément de liste, une cellule de
+	 * tableau, un libellé — que le collage a mis chacun en paragraphe. Un texte
+	 * tronqué, lui, est une phrase longue.
+	 */
+	const PARAGRAPHE_COURT = 8;
+
+	/**
 	 * Ce qui ne dit rien de l'image, seul ou suivi d'un numéro : « Image »,
 	 * « Photo 3 », « Fig. 2 ». Le lecteur d'écran annonce déjà une image.
 	 * Liste de la rédaction.
@@ -236,7 +244,7 @@ class Notice_Archeomed_Controles {
 		$avis = array();
 		$n    = count( $paragraphes );
 		foreach ( $paragraphes as $i => $p ) {
-			if ( self::finit_bien( $p ) ) {
+			if ( self::finit_bien( $p ) || count( preg_split( '/\s+/u', trim( $p ) ) ) < self::PARAGRAPHE_COURT ) {
 				continue;
 			}
 			$fin = self::extrait( $p, -40 );
@@ -342,13 +350,20 @@ class Notice_Archeomed_Controles {
 	}
 
 	/**
+	 * Ce qui, après « en 1 250 » ou « après 2 000 », fait d'un nombre une
+	 * quantité et non une année : « en 1 250 tessons », « après 2 000 m² ».
+	 * Alternance de motif, reprise telle quelle par le navigateur.
+	 */
+	const UNITES_APRES_UN_NOMBRE = 'm²|m³|m|cm|mm|km|ha|kg|g|litres?|mètres?|hectares?|euros?|francs?|habitants?|individus?|tessons?|fragments?|tombes?|sépultures?|monnaies?|pièces?|objets?|exemplaires?|restes?|ans|hommes?|personnes?';
+
+	/**
 	 * « vers 1 250 », « les années 1 960 » : une année tapée avec une espace.
 	 * La typographie ne la soude pas en tranche de milliers ; on la montre.
 	 */
 	public static function dates_espacees( $paragraphes ) {
 		$avis = array();
 		foreach ( $paragraphes as $p ) {
-			if ( preg_match_all( '/(*UCP)(?:\b(?:en|vers|an|années?|dès|depuis|jusqu’en|jusqu\'en|avant|après)\s+([12] \d{3})\b|([12] \d{3})\s*(?:av\.|apr?\.|ap\.)\s*J\.-C\.)/iu', $p, $trouves, PREG_SET_ORDER ) ) {
+			if ( preg_match_all( '/(*UCP)(?:\b(?:en|vers|an|années?|dès|depuis|jusqu’en|jusqu\'en|avant|après)\s+([12] \d{3})\b(?!\s*(?:' . self::UNITES_APRES_UN_NOMBRE . ')\b)|([12] \d{3})\s*(?:av\.|apr?\.|ap\.)\s*J\.-C\.)/iu', $p, $trouves, PREG_SET_ORDER ) ) {
 				foreach ( $trouves as $m ) {
 					$annee  = trim( ! empty( $m[1] ) ? $m[1] : $m[2] );
 					$avis[] = sprintf( '« %1$s » : une année s’écrit sans espace, « %2$s ».', $annee, str_replace( ' ', '', $annee ) );

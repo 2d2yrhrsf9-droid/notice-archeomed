@@ -230,7 +230,24 @@ class Notice_Archeomed_File {
 				'show_in_rest'        => false,
 				'menu_icon'           => self::icone_du_menu(),
 				'capability_type'     => 'post',
-				'capabilities'        => array( 'create_posts' => 'do_not_allow' ),
+				// Les notices portent des noms, des courriels et des fichiers
+				// d'auteurs : seule la gestion de l'extension (« manage_options »)
+				// les lit, les corbeille ou les supprime. Avec les droits d'un
+				// article, tout Éditeur du site les voyait, alors que les
+				// téléchargements exigeaient déjà ce droit.
+				'capabilities'        => array(
+					'create_posts'           => 'do_not_allow',
+					'edit_posts'             => 'manage_options',
+					'edit_others_posts'      => 'manage_options',
+					'edit_private_posts'     => 'manage_options',
+					'edit_published_posts'   => 'manage_options',
+					'publish_posts'          => 'manage_options',
+					'read_private_posts'     => 'manage_options',
+					'delete_posts'           => 'manage_options',
+					'delete_others_posts'    => 'manage_options',
+					'delete_private_posts'   => 'manage_options',
+					'delete_published_posts' => 'manage_options',
+				),
 				'map_meta_cap'        => true,
 				// Rien à rédiger : le titre modifiable invitait à retoucher une
 				// notice dont la saisie, seule, fait foi. « false » et non un
@@ -294,7 +311,14 @@ class Notice_Archeomed_File {
 		// l'état, elle ne laisse aucun instant où une relance verrait la
 		// notice en attente et la préparerait en même temps qu'elle.
 		update_post_meta( $id, '_na_preparation', time() );
-		update_post_meta( $id, '_na_etat', 'en_attente' );
+		// Sans cet état, la notice serait inscrite et jamais expédiée, tandis
+		// que l'auteur lirait « déposée ». Une écriture refusée (base pleine,
+		// erreur SQL) défait l'inscription : l'appelant bascule alors sur
+		// l'envoi direct, qui ne dépend pas de la file.
+		if ( false === update_post_meta( $id, '_na_etat', 'en_attente' ) ) {
+			wp_delete_post( $id, true );
+			return 0;
+		}
 		update_post_meta( $id, '_na_essais', 0 );
 		return (int) $id;
 	}
@@ -338,7 +362,22 @@ class Notice_Archeomed_File {
 	 * Le filet : ce que le planificateur aurait manqué repart ici.
 	 */
 	public function relancer() {
-		foreach ( $this->en_attente( self::PAR_PASSAGE ) as $id ) {
+		// Un passage ne s'éternise pas : un relais de courriel muet retient
+		// chaque envoi jusqu'au délai, et cinq notices à la suite occuperaient
+		// un processus des minutes. On s'arrête passé vingt secondes ; le
+		// passage suivant reprend.
+		$debut   = microtime( true );
+		$reprises = 0;
+		foreach ( $this->en_attente( 4 * self::PAR_PASSAGE ) as $id ) {
+			// Le délai croissant d'une notice qui vient d'échouer est respecté :
+			// la reprise périodique ne la représente pas avant l'heure dite.
+			if ( (int) get_post_meta( $id, '_na_pas_avant', true ) > time() ) {
+				continue;
+			}
+			if ( $reprises >= self::PAR_PASSAGE || ( microtime( true ) - $debut ) > 20 ) {
+				break;
+			}
+			++$reprises;
 			do_action( self::HOOK_UNE, (int) $id );
 		}
 	}
@@ -383,6 +422,7 @@ class Notice_Archeomed_File {
 		update_post_meta( $id, '_na_essais', 0 );
 		update_post_meta( $id, '_na_etat', 'en_attente' );
 		delete_post_meta( $id, '_na_erreur' );
+		delete_post_meta( $id, '_na_pas_avant' );
 		// On envoie sur-le-champ plutôt que d'inscrire un rendez-vous. Le
 		// planificateur de WordPress attend la requête suivante, et une seule
 		// notice en attente ne déclenche rien. Qui presse « Relancer » veut
@@ -504,6 +544,10 @@ class Notice_Archeomed_File {
 		wp_cache_delete( $id, 'post_meta' );
 		$etat = (string) get_post_meta( $id, '_na_etat', true );
 		if ( 'en_attente' === $etat ) {
+			// La prise est posée avant l'état : entre les deux, une prise
+			// périmée de l'essai précédent faisait passer la notice pour
+			// abandonnée, et un second passage la reprenait.
+			update_post_meta( $id, '_na_prise', time() );
 			$pris = $wpdb->query( $wpdb->prepare(
 				"UPDATE {$wpdb->postmeta} SET meta_value = 'en_cours' WHERE post_id = %d AND meta_key = '_na_etat' AND meta_value = 'en_attente'",
 				$id ) );
@@ -527,6 +571,17 @@ class Notice_Archeomed_File {
 			return false;       // un autre passage l'a prise juste avant
 		}
 		update_post_meta( $id, '_na_prise', time() );
+		// Une prise reprise est un essai raté : sans le compter, un envoi qui
+		// tue son processus à chaque fois (mémoire sur une pièce jointe)
+		// recommencerait sans fin, et chaque tour renverrait un courriel.
+		if ( 'en_cours' === $etat ) {
+			$essais = (int) get_post_meta( $id, '_na_essais', true ) + 1;
+			update_post_meta( $id, '_na_essais', $essais );
+			if ( $essais >= self::ESSAIS_MAX ) {
+				$this->marquer( $id, 'echec', 'Cinq tentatives sans succès : le traitement s’interrompt avant la fin.' );
+				return false;
+			}
+		}
 		return true;
 	}
 
@@ -1390,8 +1445,9 @@ class Notice_Archeomed_File {
 		// Espacement croissant : une panne de serveur de courriel dure
 		// rarement dix secondes, et représenter aussitôt ne fait qu'ajouter
 		// à la charge.
-		wp_schedule_single_event( time() + ( $essais * 5 * MINUTE_IN_SECONDS ),
-			self::HOOK_UNE, array( (int) $id ) );
+		$delai = $essais * 5 * MINUTE_IN_SECONDS;
+		update_post_meta( $id, '_na_pas_avant', time() + $delai );
+		wp_schedule_single_event( time() + $delai, self::HOOK_UNE, array( (int) $id ) );
 		return true;
 	}
 

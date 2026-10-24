@@ -48,9 +48,9 @@ L'auteur reçoit aussitôt une **référence** de dépôt. Le formulaire rend la
 
 Le document Word est construit sur la **feuille de styles Métopes**, la chaîne d'édition structurée utilisée pour publier en ligne et en volume imprimé à partir d'un même fichier. Chaque élément de la notice — titre, métadonnées, texte, légende, crédits — reçoit le style que la chaîne attend, ce qui supprime le stylage à la main.
 
-Le document applique aussi les normes de la revue : typographie française (espaces insécables, apostrophes), siècles en petites capitales avec l'abréviation « s. », forme du titre, numérotation des figures. Ces normes ne sont pas figées dans le code : elles se règlent dans l'administration, avec pour chacune les choix possibles et un exemple, ce qui permet d'adapter l'outil à une autre revue.
+Le document applique aussi les normes de la revue : typographie française (espaces insécables, apostrophes), siècles en petites capitales avec l'abréviation « s. », forme du titre, numérotation des figures. Ces normes ne sont pas figées dans le code : elles se règlent dans l'administration, avec pour chacune les choix possibles et un exemple, ce qui permet d'adapter l'outil à une autre revue. Seules la liste des rubriques et des matières, et celle des champs obligatoires, sont dans le code.
 
-Le texte alternatif de chaque image est inscrit dans le document à l'endroit où la chaîne d'édition le lit, pour qu'il accompagne l'image jusqu'à la publication en ligne.
+Le texte alternatif de chaque image est inscrit dans le document à l'endroit où la chaîne d'édition le lit, pour qu'il accompagne l'image jusqu'à la chaîne d'édition ; son passage jusqu'à la publication en ligne dépend de cette chaîne.
 
 ## Ce que la rédaction trouve dans l'administration
 
@@ -66,7 +66,7 @@ Tout ce qui change d'une revue à l'autre ou d'une année à l'autre se règle s
 
 ## Accessibilité
 
-Le formulaire est conçu pour être utilisable au clavier et avec un lecteur d'écran : chaque champ est étiqueté, les erreurs sont listées et reliées au champ concerné, aucune information ne repose sur la seule couleur, et la vérification anti-robot propose une alternative au geste de la souris. Un onglet de l'administration fait passer le formulaire publié à un outil de contrôle automatique libre et garde la trace de l'audit manuel de référence.
+Le formulaire a été conçu en tenant compte du clavier et des lecteurs d'écran : chaque champ est étiqueté, les erreurs sont listées et reliées au champ concerné, la vérification anti-robot se manœuvre au clavier, et une adresse de courriel est donnée en tête de page pour qui préfère envoyer sa notice autrement. Il n'a pas encore fait l'objet d'un audit RGAA complet ni d'essais systématiques avec des utilisateurs de lecteurs d'écran. Un onglet de l'administration fait passer le formulaire publié à un outil de contrôle automatique libre et garde la trace de l'audit manuel de référence.
 
 Au-delà du formulaire, l'extension cherche à rendre les **notices publiées** plus accessibles : textes alternatifs obligatoires, descriptions détaillées pour les figures complexes, sigles développés, siècles que la synthèse vocale lit comme des nombres.
 
