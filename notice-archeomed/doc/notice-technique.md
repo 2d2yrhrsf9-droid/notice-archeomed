@@ -319,7 +319,7 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 - **Hébergement derrière un proxy** : Turnstile (Cloudflare) et la lecture de Pactols demandent une sortie HTTPS ; à défaut, protection locale et `pactols_serveur` = `non`.
 - **Limites de PHP** : `upload_max_filesize` et `post_max_size` bornent les fichiers ; une requête plus lourde que `post_max_size` arrive vide, ce que `refuser_l_envoi_trop_lourd()` détecte et dit à l'auteur.
 - **Planificateur** : sans WP-Cron ni tâche système, rien ne part en différé.
-- **Concurrence** : à éprouver sur une vraie base MySQL ; les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées.
+- **Concurrence** : éprouvée à chaque envoi sur `main` par le travail `charger` de l'intégration continue : un WordPress sur MariaDB, servi par huit processus PHP, reçoit vingt-cinq dépôts de deux figures à la même seconde, puis quatre passages du planificateur se disputent les notices ; il doit rester vingt-cinq notices, chacune sa référence, toutes expédiées une seule fois (`.github/essais/charge.php` et `charge-verification.php`). Ce n'est pas une mesure de charge de la production : les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées, et la vérification anti-robot est suspendue pour l'essai.
 - **Évolutions de Métopes** : remplacer le gabarit, lancer `verifier-les-styles`, ajuster la correspondance dans l'onglet Styles Métopes plutôt que le code.
 - **Courriel** : le serveur de la revue refuse au-delà d'une dizaine de méga-octets ; l'essai de poids de l'onglet Courriel mesure la limite réelle.
 

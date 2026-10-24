@@ -216,10 +216,137 @@ jobs:
             exit 1
           fi
 
+  # Vingt-cinq chercheurs qui déposent le même matin.
+  #
+  # « Deux dépôts simultanés ne doivent jamais se gêner » : c'est la règle que
+  # la revue tient pour décisive, et la seule que les essais, joués les uns
+  # après les autres, ne pouvaient pas éprouver. Ici, un vrai WordPress sur une
+  # vraie base (MariaDB), servi par un PHP à huit processus : vingt-cinq envois
+  # de deux figures chacun partent ensemble, puis quatre passages du
+  # planificateur se disputent les notices. Les courriels ne partent nulle
+  # part : un bouchon les note. Au bout, il doit y avoir vingt-cinq notices,
+  # chacune sa référence, toutes expédiées une seule fois.
+  #
+  # La protection anti-robot est suspendue (NA_PROTECTION, site déclaré
+  # « development ») : c'est ce que le plugin n'admet que sur un site d'essai.
+  charger:
+    needs: analyser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      base:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: essai
+          MARIADB_DATABASE: essai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - name: Prendre le code
+        uses: actions/checkout@v4
+
+      - name: Installer PHP 8.3 et WP-CLI
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli, zip, gd, curl
+          tools: wp-cli
+          coverage: none
+
+      - name: WP-CLI présent
+        run: |
+          set -eu
+          if ! command -v wp >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            php /tmp/wp-cli.phar --info >/dev/null
+            sudo install -m 0755 /tmp/wp-cli.phar /usr/local/bin/wp
+          fi
+          wp --version
+
+      - name: Monter un WordPress d'essai, protection suspendue
+        run: |
+          set -Eeu
+          trap 'echo "::error::montage : « $BASH_COMMAND » a échoué (ligne $LINENO)"' ERR
+          mkdir -p /tmp/wp && cd /tmp/wp
+          wp core download --quiet
+          wp config create --dbname=essai --dbuser=root --dbpass=essai \
+            --dbhost=127.0.0.1:3306 --skip-check
+          wp config set WP_DEBUG true --raw
+          wp config set WP_DEBUG_LOG true --raw
+          wp config set WP_DEBUG_DISPLAY false --raw
+          wp config set WP_ENVIRONMENT_TYPE development
+          wp config set NA_PROTECTION aucune
+          wp core install --url=http://127.0.0.1:8080 --title=Essai \
+            --admin_user=essai --admin_password=essai-jetable \
+            --admin_email=essai@example.org --skip-email
+          cp -r "$GITHUB_WORKSPACE/notice-archeomed" wp-content/plugins/
+          # Un bouchon de courriel : chaque envoi est noté, aucun ne part.
+          mkdir -p wp-content/mu-plugins
+          cat > wp-content/mu-plugins/bouchon-courriel.php <<'PHP'
+          <?php
+          add_filter( 'pre_wp_mail', function ( $court, $atts ) {
+          	$vers = is_array( $atts['to'] ) ? implode( ',', $atts['to'] ) : (string) $atts['to'];
+          	file_put_contents( '/tmp/courriels.log', $vers . "\t" . $atts['subject'] . "\n", FILE_APPEND | LOCK_EX );
+          	return true;
+          }, 10, 2 );
+          PHP
+          wp plugin activate notice-archeomed
+          wp option update notice_archeomed_options \
+            '{"destinataires":[{"email":"redaction@example.org","notices":1,"recap":0}],"pactols_serveur":"non","mode_envoi":"differe"}' --format=json
+          ID=$(wp post create --post_type=page --post_status=publish \
+            --post_title=Formulaire --post_content='[notice_archeomed_pactols]' --porcelain)
+          echo "NA_PAGE_ID=$ID" >> "$GITHUB_ENV"
+
+      - name: Servir WordPress par huit processus PHP
+        run: |
+          cd /tmp/wp
+          PHP_CLI_SERVER_WORKERS=8 php -S 127.0.0.1:8080 > /tmp/serveur.log 2>&1 &
+          sleep 3
+          curl -fsS "http://127.0.0.1:8080/?page_id=$NA_PAGE_ID" -o /tmp/page.html
+          grep -q 'id="na-form"' /tmp/page.html
+
+      - name: Vingt-cinq dépôts à la même seconde
+        run: php .github/essais/charge.php http://127.0.0.1:8080 25
+
+      - name: Quatre passages du planificateur se disputent les notices
+        working-directory: /tmp/wp
+        run: |
+          set -u
+          for tour in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            for k in 1 2 3 4; do
+              wp cron event run --due-now > /tmp/cron-$tour-$k.log 2>&1 &
+            done
+            wait
+            RESTE=$(wp eval 'echo count( get_posts( array( "post_type" => "na_notice", "post_status" => "any", "posts_per_page" => -1, "fields" => "ids", "meta_query" => array( array( "key" => "_na_etat", "value" => array( "en_attente", "en_cours" ), "compare" => "IN" ) ) ) ) );')
+            echo "tour $tour : $RESTE notices encore en route"
+            [ "$RESTE" = "0" ] && break
+            sleep 5
+          done
+
+      - name: Rien perdu, rien doublé
+        working-directory: /tmp/wp
+        run: NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php"
+
+      - name: Aucune erreur fatale
+        if: always()
+        run: |
+          for f in /tmp/serveur.log /tmp/wp/wp-content/debug.log; do
+            [ -f "$f" ] || continue
+            if grep -qE "PHP (Fatal|Parse) error|Allowed memory size" "$f"; then
+              echo "::error::Erreur fatale dans $f"
+              grep -E "PHP (Fatal|Parse) error|Allowed memory size" "$f" | head -5 | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:400]) for l in sys.stdin]'
+              exit 1
+            fi
+          done
+
   publier:
     # Seule une étiquette publie, et seulement si le site d'essai a tenu.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [analyser, essayer]
+    needs: [analyser, essayer, charger]
     runs-on: ubuntu-latest
     permissions:
       # Le jeton fourni par GitHub suffit à créer une release : aucune clé à
