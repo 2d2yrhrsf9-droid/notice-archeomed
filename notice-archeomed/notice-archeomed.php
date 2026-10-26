@@ -1831,11 +1831,10 @@ class Notice_Archeomed_Pactols {
 	 * suit l'ordre de la page, qui est celui du récapitulatif.
 	 */
 	private function champs_du_formulaire() {
-		$deux_points = "\u{00A0}:";
 		return array(
 			'commune'             => array( 'na-lieu-1', 'Indiquez la commune ou le territoire de l’opération' ),
 			'departement'         => array( 'na-departement', 'Indiquez ce qui figure entre parenthèses, le plus souvent le département' ),
-			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez ce qui suit le point' . $deux_points . ' lieu-dit, adresse ou nom du projet' ),
+			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez un lieu-dit, une adresse ou le nom du projet' ),
 			'nature'              => array( 'na-nature-1', 'Cochez au moins une nature d’opération' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’organisme qui gère l’opération' ),
@@ -5175,7 +5174,7 @@ class Notice_Archeomed_Pactols {
 				return NORMES.figure + NBSP + rang + NBSP + ': ' + entier(l) + NBSP + '×' + NBSP + entier(h) + NBSP + 'pixels, soit '
 					+ cm(l) + NBSP + '×' + NBSP + cm(h) + NBSP + 'cm à ' + entier(NORME.ppp) + NBSP + 'ppp — sous la norme de '
 					+ entier(NORME.largeurCm) + NBSP + '×' + NBSP + entier(NORME.hauteurCm) + NBSP
-					+ 'cm. À vérifier s’il s’agit d’une photographie.';
+					+ 'cm. Vérifier que la taille d’impression convient.';
 			}
 
 			// ── Les champs des figures ─────────────────────────────────────

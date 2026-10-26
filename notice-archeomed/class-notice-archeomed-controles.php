@@ -377,7 +377,7 @@ class Notice_Archeomed_Controles {
 				$h = (int) $item['pixels'][1];
 				$ppp = (int) Notice_Archeomed_Normes::valeur( 'photo_ppp' );
 				if ( min( $l, $h ) < $petit || max( $l, $h ) < $grand ) {
-					$avis[] = sprintf( '%1$s : %2$s × %3$s pixels, soit %4$s × %5$s cm à %6$d ppp — sous la norme de %7$d × %8$d cm. À vérifier s’il s’agit d’une photographie.',
+					$avis[] = sprintf( '%1$s : %2$s × %3$s pixels, soit %4$s × %5$s cm à %6$d ppp — sous la norme de %7$d × %8$d cm. Vérifier que la taille d’impression convient.',
 						Notice_Archeomed_Normes::numero_de_figure( $rang ), number_format_i18n( $l ), number_format_i18n( $h ),
 						number_format_i18n( $l / $ppp * 2.54, 1 ), number_format_i18n( $h / $ppp * 2.54, 1 ),
 						$ppp, (int) Notice_Archeomed_Normes::valeur( 'photo_largeur_cm' ), (int) Notice_Archeomed_Normes::valeur( 'photo_hauteur_cm' ) );
