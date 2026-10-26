@@ -387,28 +387,35 @@ près) ; la qualité baisse par paliers jusqu'à ce que le fichier tienne. La
 haute définition d'une photographie tient dans la norme de la revue,
 **10 × 15 cm à 300 dpi** (1 181 × 1 772 px), sans jamais agrandir.
 
-### Les TIFF, quand le serveur n'a pas Imagick
+### Les TIFF et les PDF, quand le serveur n'a pas Imagick
 
-Sans Imagick, le serveur ne sait pas lire un TIFF. C'est alors le **navigateur
-de l'auteur** qui le lit (UTIF.js, dans `assets/utif/`, chargé seulement dans ce
-cas) et qui en tire deux JPEG, joints à l'envoi dans des champs cachés par rang
-de figure (`na_conv_hr_N`, `na_conv_br_N`) :
+Sans Imagick, le serveur ne sait pas lire un TIFF ni un PDF. C'est alors le
+**navigateur de l'auteur** qui le lit — UTIF.js pour un TIFF (`assets/utif/`,
+chargé seulement dans ce cas), pdf.js pour un PDF (`assets/pdfjs/`, 1,4 Mo,
+chargé seulement quand un auteur choisit un PDF) — et qui en tire des JPEG,
+joints à l'envoi dans des champs cachés par rang de figure (`na_conv_hr_N`,
+`na_conv_br_N`) :
 
 - la **haute définition**, dans la boîte 10 × 15 cm à 300 dpi, tournée comme
   l'image ; la **basse**, aux mesures réglées de la basse définition ;
 - la densité est inscrite dans l'en-tête JFIF du JPEG ;
 - le TIFF original part aussi, et reste dans `icono/originaux` ;
+- **un PDF** ne donne que la basse définition, dessinée par pdf.js à partir de
+  sa **première page** (l'auteur est prévenu s'il en compte plusieurs, et
+  pdf.js tourne sans « eval », un PDF n'ayant pas à faire exécuter de code à la
+  bibliothèque) ; le **PDF d'origine tient lieu de haute définition** : il garde
+  ses vecteurs, et la mise en page le préfère à toute image ;
 - le serveur reconnaît chaque JPEG à son contenu et à ses mesures
   (`jpeg_converti_acceptable()`), le range à demeure, et en tire le dossier
   Métopes (`icono/hr`, `icono/br`), le Word, la relecture et l'aperçu du courriel.
 
 Ce qui ne passe pas est **refusé, et l'auteur enregistre lui-même la figure en
-JPEG** : un TIFF que le navigateur ne sait pas lire (compression rare, fichier
-abîmé), de plus de 36 millions de pixels, ou qui ferait dépasser la limite de
-taille une fois converti. Les **PDF sont refusés** de la même façon, le serveur
-ne sachant pas les lire. Un navigateur sans canvas ou sans `DataTransfer` refuse
-aussi le TIFF. Les profils colorimétriques ne sont pas gérés (un TIFF en CMYK
-donne des couleurs approximatives).
+JPEG** : un TIFF ou un PDF que le navigateur ne sait pas lire (compression
+rare, fichier abîmé, PDF protégé, lecture qui dépasse une minute), de plus de 36
+millions de pixels, ou qui ferait dépasser la limite de taille une fois converti.
+Un navigateur sans canvas ou sans `DataTransfer` refuse aussi la conversion. Les
+profils colorimétriques ne sont pas gérés (un TIFF en CMYK donne des couleurs
+approximatives).
 
 `icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
 a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.

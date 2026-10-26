@@ -319,6 +319,35 @@ if ( ! Notice_Archeomed_Paquet::imagick_disponible() && function_exists( 'imagec
 		'sans Imagick, le dossier Métopes prend la haute et la basse définition du navigateur, et la figure est posée', array( $erreur_conv, $plan_conv, $fichiers_hr, $fichiers_br ) );
 	$paquet_conv->nettoyer();
 
+	// Un PDF : la basse définition vient du navigateur, et le PDF d'origine tient
+	// lieu de haute définition (il garde ses vecteurs).
+	$faux_pdf = trailingslashit( get_temp_dir() ) . 'na-essai-conv-original.pdf';
+	file_put_contents( $faux_pdf, "%PDF-1.4\n%%EOF\n" );
+	$paquet_pdf = new Notice_Archeomed_Paquet();
+	$erreur_pdf = '';
+	$plan_pdf = $paquet_pdf->preparer( 'I. Constructions et habitats civils', array( array(
+		'id'            => 0,
+		'd'             => array( 'commune' => 'Caen', 'lieu_dit' => 'Essai PDF', 'annee' => '2026',
+			'illustrations' => array( array( 'rang' => 1, 'titre' => 'Plan' ) ) ),
+		'illustrations' => array( $faux_pdf ),
+		'conversions'   => array( 1 => array( 'br' => $br_ok ) ),
+	) ), $erreur_pdf );
+	$atelier_pdf = new ReflectionProperty( $paquet_pdf, 'atelier' );
+	$atelier_pdf->setAccessible( true );
+	$dossier_pdf = (string) $atelier_pdf->getValue( $paquet_pdf );
+	$hr_pdf = glob( $dossier_pdf . '/icono/hr/*.pdf' );
+	$br_pdf = glob( $dossier_pdf . '/icono/br/*.jpg' );
+	$mesure_br_pdf = ! empty( $br_pdf ) ? getimagesize( $br_pdf[0] ) : false;
+	na_verifier( ! empty( $hr_pdf ) && $mesure_br_pdf && 2400 === $mesure_br_pdf[0],
+		'un PDF sans Imagick : le PDF d\'origine tient lieu de haute définition, et la basse définition vient du navigateur', array( $erreur_pdf, $hr_pdf, $br_pdf ) );
+	$paquet_pdf->nettoyer();
+	$apercus_pdf = na_appel( $plugin, 'fabriquer_les_apercus', array( array( $faux_pdf ), array( 'illustrations' => array( array( 'rang' => 1 ) ) ),
+		array( 1 => array( 'br' => $br_ok ) ) ) );
+	na_verifier( isset( $apercus_pdf[1]['apercu'] ) && file_exists( $apercus_pdf[1]['apercu'] ),
+		'l\'aperçu d\'un PDF se tire de sa basse définition convertie', $apercus_pdf );
+	if ( isset( $apercus_pdf[1]['apercu'] ) ) { @unlink( $apercus_pdf[1]['apercu'] ); }
+	@unlink( $faux_pdf );
+
 	// L'aperçu du courriel : tiré de la basse définition, pour un TIFF que le serveur ne lit pas.
 	$apercus_conv = na_appel( $plugin, 'fabriquer_les_apercus', array( array( $faux_tif ), array( 'illustrations' => array( array( 'rang' => 1 ) ) ),
 		array( 1 => array( 'br' => $br_ok ) ) ) );

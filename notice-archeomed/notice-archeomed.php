@@ -131,7 +131,7 @@ add_action(
 		// plaigne : on le dit en tête de l'administration.
 		if ( ! Notice_Archeomed_Paquet::imagick_disponible() ) {
 			echo '<div class="notice notice-warning"><p><strong>Chronique&nbsp;:</strong> '
-				. esc_html__( 'l’extension PHP Imagick est absente de ce serveur. Les illustrations en TIFF ou en PDF n’auront ni version allégée ni basse définition : le courriel joindra l’original, et le Word ne posera pas la figure. Les JPEG et les PNG passent par GD. À demander à l’hébergeur : l’installation de php-imagick.', 'notice-archeomed' )
+				. esc_html__( 'l’extension PHP Imagick est absente de ce serveur. Les TIFF et les PDF sont convertis en JPEG par le navigateur de l’auteur, qui doit donc être récent ; un fichier que son navigateur ne lit pas lui est refusé. Les JPEG et les PNG passent par GD. À demander à l’hébergeur, pour retrouver le comportement complet : l’installation de php-imagick.', 'notice-archeomed' )
 				. '</p></div>';
 		}
 		// L'adresse de destination manquante se dit ailleurs, en tête de
@@ -1580,7 +1580,9 @@ class Notice_Archeomed_Pactols {
 	public function reglages_de_conversion() {
 		return array(
 			'imagick'    => Notice_Archeomed_Paquet::imagick_disponible(),
-			'pixelsMax'  => 100000000,
+			// Le lecteur de PDF (pdf.js) ne se charge que si un auteur choisit un PDF.
+			'pdfjs'      => Notice_Archeomed_Paquet::imagick_disponible() ? '' : plugins_url( 'assets/pdfjs/', __FILE__ ),
+			'pixelsMax'  => 36000000,
 			'hr'         => array(
 				'dpi'       => (int) Notice_Archeomed_Settings::get( 'hr_photo_dpi' ),
 				'largeurCm' => (float) Notice_Archeomed_Normes::valeur( 'photo_largeur_cm' ),
@@ -4404,7 +4406,7 @@ class Notice_Archeomed_Pactols {
 			function totalSelectedSize() {
 				return selected.reduce(function (sum, f) {
 					var c = etatDe(f).conv;
-					return sum + f.size + (c && c.etat === 'ok' ? c.hr.size + c.br.size : 0);
+					return sum + f.size + (c && c.etat === 'ok' ? (c.hr ? c.hr.size : 0) + c.br.size : 0);
 				}, 0) + poidsAutorisations();
 			}
 			function refreshFileInput() {
@@ -4417,7 +4419,7 @@ class Notice_Archeomed_Pactols {
 				renderFileList();
 			}
 
-			// ── Les TIFF, convertis dans le navigateur ─────────────────────
+			// ── Les TIFF et les PDF, convertis dans le navigateur ──────────
 			// Sans Imagick, le serveur ne lit pas un TIFF : ni version allégée, ni
 			// basse définition. Le navigateur de l'auteur le lit à sa place
 			// (UTIF.js) et en tire deux JPEG qui voyagent avec la figure : la
@@ -4426,8 +4428,10 @@ class Notice_Archeomed_Pactols {
 			// grand côté et d'un méga-octet environ. Le TIFF original part aussi.
 			// Ce que le navigateur ne sait pas lire, ou ce qui est trop gros, est
 			// refusé : l'auteur l'enregistre lui-même en JPEG.
-			var CONV_PRET = !CONV.imagick && typeof UTIF !== 'undefined' && !!document.createElement('canvas').getContext
+			var CONV_BASE = !CONV.imagick && !!document.createElement('canvas').getContext && typeof Promise !== 'undefined'
 				&& (function () { try { new DataTransfer(); return true; } catch (e) { return false; } }());
+			var CONV_PRET = CONV_BASE && typeof UTIF !== 'undefined';
+			var PDF_PRET = CONV_BASE && !!CONV.pdfjs;
 			function lireLeBuffer(blob) {
 				if (blob.arrayBuffer) { return blob.arrayBuffer(); }
 				return new Promise(function (ok, ko) {
@@ -4548,9 +4552,55 @@ class Notice_Archeomed_Pactols {
 					});
 				});
 			}
+			// Un PDF : pdf.js, chargé à la demande, dessine la première page aux
+			// mesures de la basse définition. Le PDF d'origine, lui, tient lieu de
+			// haute définition : il garde ses vecteurs, et la mise en page le
+			// préfère à toute image.
+			function chargerPdfJs() {
+				if (window.pdfjsLib) { return Promise.resolve(window.pdfjsLib); }
+				return new Promise(function (ok, ko) {
+					var s = document.createElement('script');
+					s.src = CONV.pdfjs + 'pdf.min.js';
+					s.onload = function () {
+						if (!window.pdfjsLib) { ko(new Error('pdfjs')); return; }
+						window.pdfjsLib.GlobalWorkerOptions.workerSrc = CONV.pdfjs + 'pdf.worker.min.js';
+						ok(window.pdfjsLib);
+					};
+					s.onerror = function () { ko(new Error('pdfjs')); };
+					document.head.appendChild(s);
+				});
+			}
+			function convertirLePdf(f) {
+				var base = f.name.replace(/\.[^.]+$/, '');
+				var delai = new Promise(function (ok, ko) { window.setTimeout(function () { ko(new Error('delai')); }, 60000); });
+				var travail = Promise.all([chargerPdfJs(), lireLeBuffer(f)]).then(function (r) {
+					// Sans « eval » : un PDF n'a pas à faire exécuter de code à la bibliothèque.
+					return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false, enableXfa: false }).promise;
+				}).then(function (pdf) {
+					return pdf.getPage(1).then(function (page) {
+						var v1 = page.getViewport({ scale: 1 });
+						var echelle = CONV.br.cote / Math.max(v1.width, v1.height);
+						var vue = page.getViewport({ scale: echelle });
+						var canvas = document.createElement('canvas');
+						canvas.width = Math.max(1, Math.round(vue.width));
+						canvas.height = Math.max(1, Math.round(vue.height));
+						if (canvas.width * canvas.height > CONV.pixelsMax) { throw new Error('grand'); }
+						return page.render({ canvasContext: canvas.getContext('2d'), viewport: vue, background: '#ffffff' }).promise.then(function () {
+							return jpegSousLePlafond(canvas, CONV.br.poidsKo * 1024, CONV.br.tolerance);
+						}).then(function (b) {
+							return etiqueterLeJpeg(b, CONV.br.dpi, base + '-br.jpg');
+						}).then(function (br) {
+							var pages = pdf.numPages;
+							try { pdf.destroy(); } catch (x) {}
+							return { hr: null, br: br, pages: pages };
+						});
+					});
+				});
+				return Promise.race([travail, delai]);
+			}
 			function aConvertir(f) {
 				var ext = extOf(f.name);
-				return !CONV.imagick && (ext === 'tif' || ext === 'tiff');
+				return !CONV.imagick && (ext === 'tif' || ext === 'tiff' || ext === 'pdf');
 			}
 			// Les JPEG convertis suivent leur figure dans des champs cachés, par
 			// rang : une figure déplacée ou retirée emporte les siens.
@@ -4582,6 +4632,9 @@ class Notice_Archeomed_Pactols {
 			function messageDeConversion(f, erreur) {
 				var raison = erreur && erreur.message;
 				var fin = ' Enregistrez la figure vous-même en JPEG de bonne qualité, puis redéposez-la.';
+				if (raison === 'delai') {
+					return guillemets(f.name) + ' est trop long à lire dans votre navigateur.' + fin;
+				}
 				if (raison === 'grand') {
 					return guillemets(f.name) + ' est trop grand pour être converti dans le navigateur (plus de ' + entier(CONV.pixelsMax / 1000000) + NBSP + 'millions de pixels).' + fin;
 				}
@@ -4599,14 +4652,17 @@ class Notice_Archeomed_Pactols {
 				e.statutEl = null;
 			}
 			function lancerLaConversion(f) {
-				convertirLeTiff(f).then(function (r) {
+				(extOf(f.name) === 'pdf' ? convertirLePdf(f) : convertirLeTiff(f)).then(function (r) {
 					var e = etatDe(f);
-					e.conv = { etat: 'ok', hr: r.hr, br: r.br };
+					e.conv = { etat: 'ok', hr: r.hr, br: r.br, pages: r.pages || 0 };
 					if (selected.indexOf(f) !== -1 && totalSelectedSize() > MAX_TOTAL_SIZE) { throw new Error('plafond'); }
 					try { e.vignette = URL.createObjectURL(r.br); } catch (x) {}
 					poserLesConversions();
 					majLeStatutDeConversion(f);
-					annoncer(guillemets(f.name) + ' est converti.');
+					annoncer(guillemets(f.name) + ' est converti.' + (r.pages > 1 ? ' Seule la première page de ce PDF est retenue.' : ''));
+					if (r.pages > 1) {
+						refuses.textContent = (refuses.textContent ? refuses.textContent + ' ' : '') + guillemets(f.name) + ' compte ' + r.pages + ' pages : seule la première est retenue pour la figure.';
+					}
 				}).catch(function (erreur) {
 					var i = selected.indexOf(f);
 					etatDe(f).conv = null;
@@ -5091,7 +5147,7 @@ class Notice_Archeomed_Pactols {
 						sans.className = 'na-illus-sans-apercu';
 						sans.setAttribute('role', 'status');
 						sans.textContent = (etat.conv && etat.conv.etat === 'cours')
-							? 'Conversion du TIFF en cours…'
+							? 'Conversion du ' + extOf(f.name).toUpperCase() + ' en cours…'
 							: 'Pas d’aperçu pour ce format (' + extOf(f.name).toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
 						etat.statutEl = sans;
 						groupe.appendChild(sans);
@@ -5356,14 +5412,10 @@ class Notice_Archeomed_Pactols {
 					if (dup) { return; }
 					if (selected.length >= MAX_FILES) { refused.push(guillemets(f.name) + ' n’a pas été ajouté' + NBSP + ': trois fichiers au plus.'); return; }
 					if (ALLOWED.indexOf(extOf(f.name)) === -1) { refused.push(guillemets(f.name) + ' n’est pas en JPEG, TIFF ou PDF.'); return; }
-					// Sans Imagick, le serveur ne lit ni le PDF ni le TIFF : le PDF est
-					// refusé, le TIFF se convertit ici, dans le navigateur.
-					if (!CONV.imagick && extOf(f.name) === 'pdf') {
-						refused.push(guillemets(f.name) + ' : ce serveur ne sait pas lire les PDF. Enregistrez la figure en JPEG, puis redéposez-la.');
-						return;
-					}
-					if (aConvertir(f) && !CONV_PRET) {
-						refused.push(guillemets(f.name) + ' : ce navigateur ne sait pas convertir un TIFF. Enregistrez la figure en JPEG, puis redéposez-la.');
+					// Sans Imagick, le serveur ne lit ni le PDF ni le TIFF : ils se
+					// convertissent ici, dans le navigateur.
+					if (aConvertir(f) && !(extOf(f.name) === 'pdf' ? PDF_PRET : CONV_PRET)) {
+						refused.push(guillemets(f.name) + ' : ce navigateur ne sait pas convertir un ' + extOf(f.name).toUpperCase() + '. Enregistrez la figure en JPEG, puis redéposez-la.');
 						return;
 					}
 					if (f.size > MAX_FILE_SIZE) { refused.push(guillemets(f.name) + ' dépasse ' + moPlafond(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.'); return; }
@@ -6640,7 +6692,7 @@ class Notice_Archeomed_Pactols {
 				}
 				if (selected.some(function (f) { var c = etatDe(f).conv; return c && c.etat === 'cours'; })) {
 					e.preventDefault();
-					refuses.textContent = 'La conversion d’un TIFF est en cours : patientez quelques secondes, puis envoyez de nouveau.';
+					refuses.textContent = 'La conversion d’une figure est en cours : patientez quelques secondes, puis envoyez de nouveau.';
 					refuses.scrollIntoView({ block: 'center' });
 					return;
 				}
@@ -11380,9 +11432,9 @@ class Notice_Archeomed_Pactols {
 			}
 			$cible  = $dossier . 'apercu-' . wp_generate_password( 10, false, false ) . '.jpg';
 			$source = $fichiers[ $rang - 1 ];
-			// Un TIFF que le serveur ne sait pas lire : l'aperçu se tire de la
-			// basse définition que le navigateur de l'auteur a fabriquée.
-			if ( ! Notice_Archeomed_Paquet::imagick_disponible() && in_array( strtolower( pathinfo( $source, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff' ), true )
+			// Un TIFF ou un PDF que le serveur ne sait pas lire : l'aperçu se tire
+			// de la basse définition que le navigateur de l'auteur a fabriquée.
+			if ( ! Notice_Archeomed_Paquet::imagick_disponible() && in_array( strtolower( pathinfo( $source, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff', 'pdf' ), true )
 				&& ! empty( $conversions[ $rang ]['br'] ) && is_readable( $conversions[ $rang ]['br'] ) ) {
 				$source = $conversions[ $rang ]['br'];
 			}
@@ -11760,10 +11812,10 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Les JPEG qu'un navigateur a tirés des TIFF de l'auteur, par rang de
-	 * figure : « na_conv_hr_N » (la haute définition) et « na_conv_br_N » (la
-	 * basse). Ils n'existent que si le serveur n'a pas Imagick pour lire le
-	 * TIFF lui-même.
+	 * Les JPEG qu'un navigateur a tirés des TIFF et des PDF de l'auteur, par rang
+	 * de figure : « na_conv_hr_N » (la haute définition) et « na_conv_br_N » (la
+	 * basse ; un PDF n'a que la basse, son original tenant lieu de haute). Ils
+	 * n'existent que si le serveur n'a pas Imagick pour lire le fichier lui-même.
 	 *
 	 * Rien ici n'arrête le dépôt. Le navigateur a déjà tout vérifié, et une
 	 * conversion absente ou douteuse laisse simplement la figure sans version
@@ -11777,7 +11829,7 @@ class Notice_Archeomed_Pactols {
 		wp_mkdir_p( $dossier );
 		foreach ( array_values( (array) $attachments ) as $i => $original ) {
 			$rang = $i + 1;
-			if ( $rang > self::MAX_FILES || ! in_array( strtolower( pathinfo( (string) $original, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff' ), true ) ) {
+			if ( $rang > self::MAX_FILES || ! in_array( strtolower( pathinfo( (string) $original, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff', 'pdf' ), true ) ) {
 				continue;
 			}
 			foreach ( array( 'hr', 'br' ) as $famille ) {

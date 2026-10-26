@@ -789,7 +789,7 @@ class Notice_Archeomed_Settings {
 
 		$magick = Notice_Archeomed_Paquet::imagick_disponible();
 		$ligne( 'Imagick', 'présente', $magick ? 'présente' : 'absente', $magick,
-			'Seule à lire le TIFF et le PDF côté serveur. Sans elle, le TIFF est converti par le navigateur de l\'auteur et le PDF est refusé.' );
+			'Seule à lire le TIFF et le PDF côté serveur. Sans elle, le TIFF et le PDF sont convertis par le navigateur de l\'auteur.' );
 
 		$gd = extension_loaded( 'gd' );
 		$ligne( 'GD', 'présente', $gd ? 'présente' : 'absente', $gd,
