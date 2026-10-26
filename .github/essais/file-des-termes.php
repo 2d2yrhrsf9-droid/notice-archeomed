@@ -538,6 +538,11 @@ na_verifier( 2 === count( $avis_ponct ) && false !== strpos( $avis_ponct[0], 'su
 	'le paragraphe coupé et le texte tronqué se nomment chacun', $avis_ponct );
 na_verifier( array() === $C::ponctuation_finale( array( 'Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau' ) ),
 	'des éléments de liste ou des cellules de tableau collés (moins de huit mots) ne passent pas pour du texte tronqué' );
+$ordre_fig = $C::appels_de_figure( 'Le mur (fig. 2) et le fossé (fig. 1), puis la coupe (fig. 3).', 3 );
+na_verifier( array( "La fig.\u{00A0}2 est appelée avant la fig.\u{00A0}1\u{00A0}: le texte appelle les figures dans l’ordre." ) === $ordre_fig
+	&& array() === $C::appels_de_figure( 'Le fossé (fig. 1), le mur (fig. 2) et la coupe (fig. 3), puis encore fig. 1.', 3 )
+	&& array() === $C::appels_de_figure( 'Voir fig. 1-3, puis la fig. 2.', 3 ),
+	'une figure 2 appelée avant la 1 reçoit un avis ; l\'ordre normal, un rappel de la 1 après la 2, une plage, non', $ordre_fig );
 $avis_fig = $C::appels_de_figure( 'Voir fig. 1-2 et la figure 3.', 2 );
 na_verifier( 1 === count( $avis_fig ) && false !== strpos( $avis_fig[0], 'fig. 3' ),
 	'un appel à une figure qui n\'est pas jointe', $avis_fig );

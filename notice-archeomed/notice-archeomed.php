@@ -124,6 +124,16 @@ add_action(
 				. esc_html__( 'cet hébergement n’a pas l’extension ZipArchive, le document doit donc se fabriquer en RTF — et le gabarit modele-metopes.rtf est introuvable.', 'notice-archeomed' )
 				. '</p></div>';
 		}
+		// Sans Imagick, un TIFF ou un PDF n'a ni version allégée ni basse
+		// définition : le courriel joint l'original, le Word et la relecture
+		// ne posent pas la figure. Une mise à jour de PHP chez l'hébergeur
+		// suffit à faire disparaître l'extension sans que rien ne s'en
+		// plaigne : on le dit en tête de l'administration.
+		if ( ! ( extension_loaded( 'imagick' ) && class_exists( 'Imagick' ) ) ) {
+			echo '<div class="notice notice-warning"><p><strong>Chronique&nbsp;:</strong> '
+				. esc_html__( 'l’extension PHP Imagick est absente de ce serveur. Les illustrations en TIFF ou en PDF n’auront ni version allégée ni basse définition : le courriel joindra l’original, et le Word ne posera pas la figure. Les JPEG et les PNG passent par GD. À demander à l’hébergeur : l’installation de php-imagick.', 'notice-archeomed' )
+				. '</p></div>';
+		}
 		// L'adresse de destination manquante se dit ailleurs, en tête de
 		// toutes les pages et avec ce qu'elle retient : voir
 		// Notice_Archeomed_File::signaler_l_adresse_manquante().
@@ -2464,6 +2474,9 @@ class Notice_Archeomed_Pactols {
 				background: var(--na-avis-fond); border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
 			.na-form#na-form .na-illus-ecoute > .na-illus-partie { margin-bottom: var(--na-e3); }
 			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
+			.na-form#na-form .na-illus-champs .na-illus-type .na-illus-type-conseil { margin: var(--na-e3) 0 0; }
+			.na-form#na-form .na-illus-sans-apercu { margin: 0 0 var(--na-e3); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
+				color: var(--na-sourd); background: var(--na-fond); border: 1px dashed var(--na-filet); border-radius: var(--na-r1); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
 			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
 			.na-form#na-form .na-illus-terme { font-weight: 400; color: var(--na-sourd); }
@@ -4810,6 +4823,14 @@ class Notice_Archeomed_Pactols {
 						im.className = 'na-illus-vignette';
 						groupe.appendChild(im);
 					}
+					else {
+						// Un TIFF ou un PDF ne s'affiche pas dans un navigateur : on le dit,
+						// pour que l'absence d'image ne passe pas pour un fichier perdu.
+						var sans = document.createElement('p');
+						sans.className = 'na-illus-sans-apercu';
+						sans.textContent = 'Pas d’aperçu pour ce format (' + extOf(f.name).toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
+						groupe.appendChild(sans);
+					}
 					var champs = document.createElement('div');
 					champs.className = 'na-illus-champs';
 					// Deux parties : ce qui s'imprime avec la figure, puis, encadré,
@@ -5297,13 +5318,24 @@ class Notice_Archeomed_Pactols {
 			}
 			function appelsDeFigure(texte, combien) {
 				if (!APPEL) { return []; }
-				var appeles = {}, m;
+				var appeles = {}, ordre = [], m;
 				APPEL.lastIndex = 0;
 				while ((m = APPEL.exec(texte)) !== null) {
-					developper(m[2]).forEach(function (n) { appeles[n] = true; });
+					developper(m[2]).forEach(function (n) {
+						if (!appeles[n]) { ordre.push(n); }
+						appeles[n] = true;
+					});
 				}
 				var numeros = Object.keys(appeles).map(Number).sort(function (a, b) { return a - b; });
 				var avis = [];
+				// Comme au serveur : les figures s'appellent dans l'ordre du texte.
+				var plusGrand = 0;
+				ordre.forEach(function (n) {
+					if (n < plusGrand) {
+						avis.push('La fig.' + NBSP + plusGrand + ' est appelée avant la fig.' + NBSP + n + NBSP + ': le texte appelle les figures dans l’ordre.');
+					}
+					plusGrand = Math.max(plusGrand, n);
+				});
 				numeros.forEach(function (n) {
 					if (n <= combien) { return; }
 					avis.push(0 === combien

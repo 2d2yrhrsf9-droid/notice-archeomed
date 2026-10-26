@@ -25,7 +25,7 @@ Le formulaire inverse la démarche : il guide l'auteur champ par champ, lui sign
 Le formulaire ne refuse que l'indispensable — un champ obligatoire vide, un fichier d'un format non admis ou trop lourd. Pour le reste, il **avertit sans bloquer** : une notice ne doit jamais être perdue parce qu'un contrôle s'est trompé. Il signale, par exemple :
 
 - une image dont la définition est insuffisante pour la taille d'impression prévue ;
-- une figure appelée dans le texte (« fig. 3 ») qui n'est pas jointe, ou une figure jointe que le texte n'appelle pas ;
+- une figure appelée dans le texte (« fig. 3 ») qui n'est pas jointe, ou une figure jointe que le texte n'appelle pas, ou une figure 2 appelée avant la 1 ;
 - un paragraphe sans ponctuation finale, signe fréquent d'un texte coupé au copier-coller, ou au contraire un intertitre qui finit par un point ;
 - un ordinal fautif (« XIIème » pour « XIIe »), une année tapée avec une espace (« 1 250 ») ;
 - un sigle qui n'est pas développé à sa première mention, ou qui n'est pas écrit à la forme de la revue (en capitales s'il s'épelle, avec une seule capitale s'il se prononce) ;

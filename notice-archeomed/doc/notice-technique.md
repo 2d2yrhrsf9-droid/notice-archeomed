@@ -372,6 +372,10 @@ L'outil d'exportation de WordPress rend les notices où figure une adresse de co
 
 Supprimer l'extension efface les réglages et leurs secrets, et les attentes en base ; les notices et les fichiers restent, sauf `NA_SUPPRIMER_LES_NOTICES`.
 
+### Imagick
+
+Sans l'extension `imagick`, un TIFF ou un PDF n'a ni version allégée ni basse définition : le courriel joint l'original, le Word et la page de relecture ne posent pas la figure, et le formulaire dit « Pas d'aperçu pour ce format ». Un bandeau d'administration le signale, et l'onglet des réglages donne l'état du serveur (Imagick, GD, formats acceptés). Une mise à jour de PHP chez l'hébergeur peut retirer l'extension sans prévenir ; à redemander alors : l'installation de `php-imagick`, et, pour les PDF, Ghostscript autorisé par la politique d'ImageMagick.
+
 ### Mise à jour
 
 Par dépôt manuel de `notice-archeomed.zip` (produit par `./empaqueter`, ou téléchargé depuis la version publiée sur GitHub). La mise à jour automatique depuis GitHub est inactive par défaut ; l'archive n'est pas signée, la confiance repose sur le compte GitHub du dépôt.

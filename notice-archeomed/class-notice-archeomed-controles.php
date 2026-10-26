@@ -277,15 +277,29 @@ class Notice_Archeomed_Controles {
 	 */
 	public static function appels_de_figure( $texte, $combien ) {
 		$appeles = array();
+		$ordre   = array();
 		if ( preg_match_all( '/(*UCP)\b(?:fig(?:ure)?s?\.?|ill(?:ustration)?s?\.?)\s*(\d+[a-z]?(?:\s*(?:[-–—]|à|to|et|and|,|;|\/)\s*\d+[a-z]?){0,12})/iu',
 			(string) $texte, $trouves ) ) {
 			foreach ( $trouves[1] as $corps ) {
 				foreach ( self::developper( $corps ) as $numero ) {
+					if ( ! isset( $appeles[ $numero ] ) ) {
+						$ordre[] = $numero;   // l'ordre de la première mention
+					}
 					$appeles[ $numero ] = true;
 				}
 			}
 		}
 		$avis = array();
+		// Les figures s'appellent dans l'ordre du texte : la 2 avant la 1, c'est
+		// presque toujours une figure mal numérotée, ou jointe dans le mauvais ordre.
+		$plus_grand = 0;
+		foreach ( $ordre as $numero ) {
+			if ( $numero < $plus_grand ) {
+				$avis[] = sprintf( "La fig.\u{00A0}%1\$d est appelée avant la fig.\u{00A0}%2\$d\u{00A0}: le texte appelle les figures dans l’ordre.",
+					$plus_grand, $numero );
+			}
+			$plus_grand = max( $plus_grand, $numero );
+		}
 		ksort( $appeles );
 		foreach ( array_keys( $appeles ) as $numero ) {
 			if ( $numero > $combien ) {
