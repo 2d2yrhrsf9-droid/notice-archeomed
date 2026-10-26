@@ -398,6 +398,25 @@ if ( function_exists( 'imagecreatetruecolor' ) ) {
 	}
 	na_verifier( 1 === preg_match( '/^1000x66[67] /', $resultats_gd['jpg'] ) && 1 === preg_match( '/^1000x66[67] /', $resultats_gd['png'] ),
 		'sans Imagick, GD réduit un JPEG et un PNG à la largeur dite : la figure ne disparaît pas du document', $resultats_gd );
+	// La haute définition par le repli : un JPEG entier part tel quel, un PNG devient un JPEG qui porte sa densité.
+	$jpeg_hr = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-hr.jpg';
+	$png_hr  = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-hr.png';
+	$sortie_hr_a = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-hr-a.jpg';
+	$sortie_hr_b = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-hr-b.jpg';
+	$img = imagecreatetruecolor( 1200, 800 );
+	imagefilledrectangle( $img, 0, 0, 1199, 799, imagecolorallocate( $img, 200, 120, 40 ) );
+	imagejpeg( $img, $jpeg_hr, 90 );
+	imagepng( $img, $png_hr );
+	imagedestroy( $img );
+	na_appel( $paquet_gd, 'reduire_par_gd', array( $jpeg_hr, $sortie_hr_a, PHP_INT_MAX, 92, Notice_Archeomed_Paquet::SANS_PLAFOND, 300 ) );
+	na_appel( $paquet_gd, 'reduire_par_gd', array( $png_hr, $sortie_hr_b, PHP_INT_MAX, 92, Notice_Archeomed_Paquet::SANS_PLAFOND, 300 ) );
+	$octets_b = (string) file_get_contents( $sortie_hr_b );
+	$densite_b = strlen( $octets_b ) > 18 ? array( ord( $octets_b[13] ), unpack( 'n', substr( $octets_b, 14, 2 ) )[1], unpack( 'n', substr( $octets_b, 16, 2 ) )[1] ) : array();
+	$mesure_a = getimagesize( $sortie_hr_a );
+	$mesure_b = getimagesize( $sortie_hr_b );
+	na_verifier( md5_file( $jpeg_hr ) === md5_file( $sortie_hr_a ) && $mesure_a[0] === 1200 && $mesure_b[0] === 1200 && array( 1, 300, 300 ) === $densite_b,
+		'la haute définition par le repli : un JPEG entier part tel quel, un PNG devient un JPEG à sa taille pleine, avec sa densité de 300 ppp', array( $mesure_a, $mesure_b, $densite_b ) );
+	foreach ( array( $jpeg_hr, $png_hr, $sortie_hr_a, $sortie_hr_b ) as $f ) { @unlink( $f ); }
 	na_verifier( false === na_appel( $paquet_gd, 'reduire_par_gd', array( '/inexistant.tif', '/tmp/x.jpg', 1000, 92, 150 ) ),
 		'GD ne lit pas ce qui n\'est pas un JPEG ou un PNG : la figure part alors sans aperçu, sans erreur' );
 } else {

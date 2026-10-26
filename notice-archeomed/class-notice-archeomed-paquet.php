@@ -515,7 +515,7 @@ class Notice_Archeomed_Paquet {
 	 */
 	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance, $ecran = false ) {
 		if ( ! class_exists( 'Imagick' ) ) {
-			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max );
+			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max, $dpi );
 		}
 		$plancher = ( self::SANS_PLAFOND === $poids_max )
 			? 0 : (int) round( $poids_max * ( 100 - $tolerance ) / 100 );
@@ -620,8 +620,27 @@ class Notice_Archeomed_Paquet {
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
 			// Une figure absente du document vaut moins qu'une figure moins bien
 			// réduite : GD prend le relais pour un JPEG ou un PNG.
-			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max );
+			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max, $dpi );
 		}
+	}
+
+	/**
+	 * Inscrit la densité (points par pouce) dans l'en-tête JFIF d'un JPEG.
+	 * GD ne l'écrit pas : l'image sortait « sans résolution », que la mise en
+	 * page lisait comme 72 ppp et posait deux à quatre fois trop grande.
+	 */
+	private static function poser_la_densite_du_jpeg( $fichier, $dpi ) {
+		$dpi = (int) $dpi;
+		if ( $dpi < 1 || $dpi > 65535 || ! is_writable( $fichier ) ) {
+			return;
+		}
+		$octets = @file_get_contents( $fichier );
+		// SOI (2 octets), marqueur APP0 (2), longueur (2), « JFIF\0 » (5), version (2) : l'unité est à 13.
+		if ( ! is_string( $octets ) || strlen( $octets ) < 20 || "\xFF\xD8\xFF\xE0" !== substr( $octets, 0, 4 ) || 'JFIF' !== substr( $octets, 6, 4 ) ) {
+			return;
+		}
+		$octets = substr( $octets, 0, 13 ) . chr( 1 ) . pack( 'nn', $dpi, $dpi ) . substr( $octets, 18 );
+		@file_put_contents( $fichier, $octets );
 	}
 
 	/**
@@ -631,7 +650,7 @@ class Notice_Archeomed_Paquet {
 	 *
 	 * Rend vrai si la cible a été écrite.
 	 */
-	private function reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max ) {
+	private function reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max, $dpi = 0 ) {
 		$dimensions = @getimagesize( $source );
 		if ( ! function_exists( 'imagecreatetruecolor' ) || ! is_array( $dimensions )
 			|| (int) $dimensions[0] * (int) $dimensions[1] > self::MEGAPIXELS_MAX * 1000000 ) {
@@ -640,6 +659,12 @@ class Notice_Archeomed_Paquet {
 		$lecteurs = array( IMAGETYPE_JPEG => 'imagecreatefromjpeg', IMAGETYPE_PNG => 'imagecreatefrompng' );
 		if ( ! isset( $lecteurs[ $dimensions[2] ] ) || ! function_exists( $lecteurs[ $dimensions[2] ] ) ) {
 			return false;
+		}
+		// Un JPEG qu'il n'y a ni à rétrécir ni à alléger part tel quel : le
+		// recompresser ne ferait que l'abîmer, et il garde ainsi sa densité et
+		// ses métadonnées. C'est le cas de la haute définition d'une photographie.
+		if ( IMAGETYPE_JPEG === $dimensions[2] && $dimensions[0] <= $largeur && self::SANS_PLAFOND === $poids_max ) {
+			return @copy( $source, $cible ) && file_exists( $cible );
 		}
 		try {
 			$image = @call_user_func( $lecteurs[ $dimensions[2] ], $source );
@@ -669,6 +694,7 @@ class Notice_Archeomed_Paquet {
 				$qualite = max( self::QUALITE_PLANCHER, $qualite - self::QUALITE_PALIER );
 			}
 			imagedestroy( $fond );
+			self::poser_la_densite_du_jpeg( $cible, $dpi );
 			return file_exists( $cible );
 		} catch ( Throwable $e ) {
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
