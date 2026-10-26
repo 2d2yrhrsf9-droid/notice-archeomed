@@ -3185,8 +3185,8 @@ class Notice_Archeomed_Pactols {
 					avisAnnonces = [];
 					if (!tous.length) { return; }
 					var dits = tous.slice(0, 2).map(function (t) { return t.replace(/[.\s]+$/, ''); }).join(NBSP + '; ');
-					annoncer((tous.length > 1 ? tous.length + ' avis à vérifier' : 'Un avis à vérifier') + NBSP + ': ' + dits
-						+ (tous.length > 2 ? ', et ' + (tous.length - 2) + (tous.length - 2 > 1 ? ' autres' : ' autre') : '') + '. Rien n’empêche l’envoi.');
+					annoncer((tous.length > 1 ? tous.length + ' conseils à relire' : 'Un conseil à relire') + NBSP + ': ' + dits
+						+ (tous.length > 2 ? ', et ' + (tous.length - 2) + (tous.length - 2 > 1 ? ' autres' : ' autre') : '') + '. Conseil, non obligatoire.');
 				}, 1500);
 			}
 			function montrerConseils(z, liste, champs) {
@@ -3214,7 +3214,7 @@ class Notice_Archeomed_Pactols {
 				if (!propres.length) { z.hidden = true; return; }
 				var titre = document.createElement('p');
 				titre.className = 'na-conseils-titre';
-				titre.textContent = 'À vérifier — rien n’empêche l’envoi';
+				titre.textContent = 'À relire (conseil, non obligatoire)';
 				var ul = document.createElement('ul');
 				propres.forEach(function (m) {
 					var li = document.createElement('li');
