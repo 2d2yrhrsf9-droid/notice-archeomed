@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.60
+ * Version: 3.61
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3185,8 +3185,8 @@ class Notice_Archeomed_Pactols {
 					avisAnnonces = [];
 					if (!tous.length) { return; }
 					var dits = tous.slice(0, 2).map(function (t) { return t.replace(/[.\s]+$/, ''); }).join(NBSP + '; ');
-					annoncer((tous.length > 1 ? tous.length + ' conseils à relire' : 'Un conseil à relire') + NBSP + ': ' + dits
-						+ (tous.length > 2 ? ', et ' + (tous.length - 2) + (tous.length - 2 > 1 ? ' autres' : ' autre') : '') + '. Conseil, non obligatoire.');
+					annoncer('Merci de bien vouloir vérifier les informations' + NBSP + ': ' + (tous.length > 1 ? tous.length + ' points' : 'un point') + NBSP + '— ' + dits
+						+ (tous.length > 2 ? ', et ' + (tous.length - 2) + (tous.length - 2 > 1 ? ' autres' : ' autre') : '') + '.');
 				}, 1500);
 			}
 			function montrerConseils(z, liste, champs) {
@@ -3214,7 +3214,7 @@ class Notice_Archeomed_Pactols {
 				if (!propres.length) { z.hidden = true; return; }
 				var titre = document.createElement('p');
 				titre.className = 'na-conseils-titre';
-				titre.textContent = 'À relire (conseil, non obligatoire)';
+				titre.textContent = 'Merci de bien vouloir vérifier les informations';
 				var ul = document.createElement('ul');
 				propres.forEach(function (m) {
 					var li = document.createElement('li');
