@@ -2452,6 +2452,8 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-originaux > summary { cursor: pointer; font-size: var(--na-t-m); font-weight: 600; color: var(--na-accent); }
 			.na-form#na-form .na-originaux > summary:focus-visible { outline: var(--na-anneau); outline-offset: 2px; border-radius: var(--na-r1); }
 			.na-form#na-form .na-originaux[open] > summary { margin-bottom: var(--na-e3); }
+			.na-form#na-form .na-lieu-etat { margin: var(--na-e2) 0 0; padding: var(--na-e2) var(--na-e3); line-height: 1.45; color: var(--na-avis);
+				background: var(--na-avis-fond); border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
 			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
 			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
@@ -3839,7 +3841,7 @@ class Notice_Archeomed_Pactols {
 							}, function () {
 								if (ce !== tour) { return; }
 								cb.fermer();
-								direLieu('Le service des lieux ne répond pas pour l’instant. Votre saisie sera gardée telle quelle.');
+								direLieu('Pactols ne répond pas pour l’instant. Votre saisie sera gardée telle quelle.');
 							});
 					}, 250);
 				});
