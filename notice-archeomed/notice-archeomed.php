@@ -2473,8 +2473,13 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-lieu-etat { margin: var(--na-e2) 0 0; padding: var(--na-e2) var(--na-e3); line-height: 1.45; color: var(--na-avis);
 				background: var(--na-avis-fond); border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
 			.na-form#na-form .na-illus-ecoute > .na-illus-partie { margin-bottom: var(--na-e3); }
+			.na-form#na-form .na-confirmer { margin: var(--na-e3) 0 0; }
+			.na-form#na-form .na-confirmer label { display: flex; gap: var(--na-e2); align-items: flex-start; font-size: var(--na-t-m); cursor: pointer; }
 			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
 			.na-form#na-form .na-illus-champs .na-illus-type .na-illus-type-conseil { margin: var(--na-e3) 0 0; }
+			/* L'anneau de focus déborde de 5 px : sans cet écart, il mordait le libellé au-dessus. */
+			.na-form#na-form .na-illus-champs .na-illus-type > label { display: block; margin: 0 0 var(--na-e2); }
+			.na-form#na-form .na-illus-type select { margin-top: 0; }
 			.na-form#na-form .na-illus-sans-apercu { margin: 0 0 var(--na-e3); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
 				color: var(--na-sourd); background: var(--na-fond); border: 1px dashed var(--na-filet); border-radius: var(--na-r1); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
@@ -4501,7 +4506,8 @@ class Notice_Archeomed_Pactols {
 				return e;
 			}
 			var AIDES_ILLUS = {
-				titre: 'Une ligne informative, qui nomme ce que montre la figure et son objet' + NBSP + ': Plan des vestiges de la chapelle et du cimetière.',
+				titre: 'Une ligne informative, qui nomme ce que montre la figure et son objet' + NBSP + ': Plan des vestiges de la chapelle et du cimetière. '
+					+ 'Inutile d’écrire «' + NBSP + 'Fig.' + NBSP + '1' + NBSP + '»' + NBSP + ': la numérotation est automatique.',
 				alt: 'Ce que montre l’image, en une ou deux phrases, pour qui ne la voit pas' + NBSP + ': son lecteur d’écran lit ce texte à sa place. '
 					+ 'Ne répétez pas la légende, ne commencez pas par «' + NBSP + 'Image de' + NBSP + '». '
 					+ 'Pour un plan ou une carte, poursuivez à la ligne' + NBSP + ': le détail est publié sous la légende.',
@@ -4992,30 +4998,34 @@ class Notice_Archeomed_Pactols {
 				if (!fichier || !plie) { return false; }
 				return plie === plierA11y(fichier) || plie === plierA11y(fichier.replace(/\.[A-Za-z0-9]{1,5}$/, ''));
 			}
-			function avisDAccessibilite(m, rang, vus, fichier) {
+			function avisDAccessibilite(m, rang, vus, fichier, cles) {
 				if (!A11Y.actif) { return []; }
 				var alt = net(m.alt), titre = net(m.titre), legende = net(m.legende), phrases = [], trouve;
+				// « cles » : ne rendre que ces avis-là (ceux qui bloquent l'envoi).
+				function ajouter(cle, valeurs) {
+					if (!cles || cles.indexOf(cle) !== -1) { phrases.push(phraseA11y(cle, valeurs)); }
+				}
 				var longueur = points(alt).length;
 				if (vus.alt && longueur > A11Y.conseille) {
-					phrases.push(phraseA11y('longueur', { n: longueur, max: A11Y.conseille }));
+					ajouter('longueur', { n: longueur, max: A11Y.conseille });
 				}
 				if (alt) {
 					if (nomDeFichierA11y(alt, fichier)) {
-						if (vus.alt) { phrases.push(phraseA11y('fichier', { texte: alt })); }
+						if (vus.alt) { ajouter('fichier', { texte: alt }); }
 					} else if (MOTIFS_A11Y.sansContenu.test(plierA11y(alt))) {
-						if (vus.alt) { phrases.push(phraseA11y('sans_contenu', { texte: alt })); }
+						if (vus.alt) { ajouter('sans_contenu', { texte: alt }); }
 					} else {
-						if ((vus.alt || vus.titre) && titre && reprendA11y(alt, titre)) { phrases.push(phraseA11y('titre')); }
-						if ((vus.alt || vus.legende) && legende && reprendA11y(alt, legende)) { phrases.push(phraseA11y('legende')); }
+						if ((vus.alt || vus.titre) && titre && reprendA11y(alt, titre)) { ajouter('titre'); }
+						if ((vus.alt || vus.legende) && legende && reprendA11y(alt, legende)) { ajouter('legende'); }
 						if (vus.alt && /^(image|photo|photographie|illustration)\s+((de|du|des)(?=\s|$)|d’|d')/i.test(alt)) {
-							phrases.push(phraseA11y('debut', { debut: alt.split(/\s+/).slice(0, 2).join(' ') }));
+							ajouter('debut', { debut: alt.split(/\s+/).slice(0, 2).join(' ') });
 						}
 					}
 				}
 				// Une information portée par la seule couleur ne passe ni à qui
 				// ne voit pas l'image, ni à qui ne distingue pas les couleurs.
 				if ((vus.alt || vus.legende) && (trouve = COULEUR_SEULE.exec(alt + ' | ' + legende))) {
-					phrases.push(phraseA11y('couleur', { couleur: trouve[0] }));
+					ajouter('couleur', { couleur: trouve[0] });
 				}
 				// Comme au serveur : seules les figures qu'on ne comprend que par
 				// leurs données — un graphique, un tableau en image — demandent ces
@@ -5024,7 +5034,7 @@ class Notice_Archeomed_Pactols {
 				// réclame pas une description de plus à qui a déjà rempli le champ.
 				var type = Object.prototype.hasOwnProperty.call(A11Y.types, m.type) ? m.type : '';
 				if ((vus.alt || vus.type) && vide(m.description) && A11Y.avecDonnees.indexOf(type) !== -1) {
-					phrases.push(phraseA11y('donnees', { mot: A11Y.typesMots[type] }));
+					ajouter('donnees', { mot: A11Y.typesMots[type] });
 				}
 				return phrases.map(function (p) { return NORMES.figure + ' ' + rang + NBSP + ': ' + p; });
 			}
@@ -6060,6 +6070,38 @@ class Notice_Archeomed_Pactols {
 				li.appendChild(a);
 				return li;
 			}
+			// Les avis qui empêchent l'envoi, sauf confirmation. Tous les autres
+			// avis restent des conseils ; ceux-ci touchent à ce que la revue
+			// imprime : les appels de figure (la 2 avant la 1, une figure jamais
+			// appelée ou appelée sans être jointe) et un texte alternatif qui ne
+			// décrit rien (il reprend le titre ou la légende, il n'est qu'un nom
+			// de fichier ou un « Photo 3 »). La définition d'une image et les
+			// données d'un graphique n'en font pas partie.
+			//
+			// La confirmation existe parce qu'un texte cite des figures d'autres
+			// publications (« fig. 12 de l'article précédent ») : le formulaire
+			// ne peut pas le savoir, et une notice ne doit pas rester en rade
+			// pour cela. Elle ne se coche qu'une fois les points lus.
+			var AVIS_BLOQUANTS_A11Y = ['titre', 'legende', 'fichier', 'sans_contenu'];
+			var avisConfirmes = false;
+			function avisBloquants() {
+				var liste = [];
+				if (quill && avisActif('figures_appelees')) {
+					var paras = quill.getText().split('\n').map(function (p) { return p.trim(); }).filter(Boolean);
+					appelsDeFigure(paras.join('\n'), selected.length).forEach(function (t) {
+						liste.push({ message: t, id: 'na-texte-editeur' });
+					});
+				}
+				var tous = { titre: true, legende: true, alt: true, description: true, type: true };
+				selected.forEach(function (f, idx) {
+					var m = illusMeta[idx] || {}, ecoute = separerEcoute(m.alt);
+					var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description, type: m.type };
+					avisDAccessibilite(lu, idx + 1, tous, f.name, AVIS_BLOQUANTS_A11Y).forEach(function (t) {
+						liste.push({ message: t, id: 'na-illus-' + (idx + 1) + '-alt' });
+					});
+				});
+				return liste;
+			}
 			function montrerRecap(liste) {
 				recap.innerHTML = '';
 				var h = document.createElement('h2');
@@ -6068,6 +6110,20 @@ class Notice_Archeomed_Pactols {
 				liste.forEach(function (er) { ul.appendChild(lienVers(er.cle, er.message)); });
 				recap.appendChild(h);
 				recap.appendChild(ul);
+				if (liste.some(function (er) { return er.bloquant; })) {
+					var conf = document.createElement('p');
+					conf.className = 'na-confirmer';
+					var etiquette = document.createElement('label');
+					var coche = document.createElement('input');
+					coche.type = 'checkbox';
+					coche.id = 'na-avis-confirmes';
+					coche.checked = avisConfirmes;
+					coche.addEventListener('change', function () { avisConfirmes = coche.checked; });
+					etiquette.appendChild(coche);
+					etiquette.appendChild(document.createTextNode(' Les points sur les figures ci-dessus sont justes (par exemple, un renvoi à une figure d’un autre article)' + NBSP + ': envoyer quand même.'));
+					conf.appendChild(etiquette);
+					recap.appendChild(conf);
+				}
 				recap.setAttribute('role', 'alert');
 				recap.hidden = false;
 				if (messageServeur) { messageServeur.hidden = true; }
@@ -6339,6 +6395,13 @@ class Notice_Archeomed_Pactols {
 						retirerDuRecap('kw_' + c.type);
 					});
 				});
+				if (!avisConfirmes) {
+					avisBloquants().forEach(function (b, i) {
+						var cle = 'avis_a_corriger_' + i;
+						CHAMPS[cle] = [b.id, b.message];
+						liste.push({ cle: cle, message: b.message, bloquant: true });
+					});
+				}
 				if (liste.length) {
 					e.preventDefault();
 					montrerRecap(liste);

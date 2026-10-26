@@ -673,7 +673,9 @@ saisie et dit quelle figure décrire.
   le serveur coupe au-delà en le nommant dans les avis — limite dure de la
   rédaction, non réglable. Le RGAA 4.1, plus strict, « recommande fortement »
   80 caractères (glossaire, « Alternative courte et concise », test 1.3.9).
-- **Avis.** Aucun ne refuse le dépôt. Le navigateur les donne à la sortie du
+- **Avis.** Le serveur n'en refuse aucun. Le navigateur, lui, en tient quelques-uns
+  pour des points à corriger avant l'envoi (voir « Les avis qui bloquent » plus
+  bas) ; tous les autres restent des conseils. Le navigateur les donne à la sortie du
   champ, le serveur les range sous « À vérifier », **dans la même phrase** :
   le formulaire reçoit du serveur les phrases, les motifs, les listes et les
   seuils (`Notice_Archeomed_Controles::regles_d_accessibilite()`). Chaque
@@ -705,6 +707,18 @@ saisie et dit quelle figure décrire.
   éditoriales) les tait tous. Un site dont les avis étaient déjà enregistrés
   la trouve cochée : une case ajoutée après coup n'est jamais tenue pour
   décochée.
+- **Les avis qui bloquent.** Depuis la 3.64, le navigateur refuse l'envoi tant
+  que ces points ne sont pas réglés, et les liste dans le récapitulatif :
+  les appels de figure (la figure 2 appelée avant la 1, une figure jamais
+  appelée, une figure appelée sans être jointe) et un texte alternatif qui
+  reprend le titre ou la légende, n'est qu'un nom de fichier, ou ne dit rien
+  (« Photo 3 »). **Ne bloquent pas** : la définition de l'image, les données
+  d'un graphique, la longueur et la couleur du texte alternatif, tous les avis
+  du texte (ponctuation, ordinaux, sigles…). Une case, dans le récapitulatif,
+  confirme que ces points sont justes et laisse partir la notice : un texte cite
+  parfois les figures d'un autre article, ce que le formulaire ne peut pas savoir.
+  Le serveur ne refuse rien de tout cela : seul le navigateur arrête, et une
+  notice envoyée sans lui part quand même.
 - **Texte simple.** Une seule ligne (retours et blancs multiples ramenés à une
   espace), en romain : ni siècles en petites capitales ni exposant, ni italique
   ni gras, au Word comme dans `descr` ; les insécables seules s'appliquent.

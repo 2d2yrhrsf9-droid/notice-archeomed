@@ -313,7 +313,7 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 - **Style** : celui de WordPress (tabulations, espaces dans les parenthèses, `array()`), syntaxe compatible PHP 7.2 (ni `match`, ni `?->`, ni arguments nommés, ni `str_contains`). Dans une fonction anonyme hors classe, jamais `self::`.
 - **Styles Métopes** : toujours par `Notice_Archeomed_Styles::de()`, jamais en dur.
 - **Normes** : toujours par `Notice_Archeomed_Normes::valeur()` ; un nouveau choix éditorial s'ajoute au catalogue, avec le choix actuel par défaut.
-- **Avis** : jamais bloquants ; même phrase au serveur et au navigateur.
+- **Avis** : bloquants seulement ceux des appels de figure et du texte alternatif qui ne décrit rien, et seulement au navigateur, avec une case de confirmation (`avisBloquants()`) ; tous les autres sont des conseils. Le serveur ne refuse jamais sur un avis. Même phrase au serveur et au navigateur.
 - **Règles acquises** : une notice ne se perd pas parce qu'un courriel échoue ou qu'une métadonnée manque ; deux dépôts simultanés ne se gênent pas ; la prise d'une notice, point où deux processus se disputent, est une écriture conditionnelle ; les compteurs de quotas (transients) ne le sont pas, et sous-comptent au pire sans conséquence.
 
 ## 14. Points d'attention

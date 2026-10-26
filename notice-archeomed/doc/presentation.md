@@ -22,7 +22,7 @@ Le formulaire inverse la démarche : il guide l'auteur champ par champ, lui sign
 
 ## Ce que le formulaire vérifie
 
-Le formulaire ne refuse que l'indispensable — un champ obligatoire vide, un fichier d'un format non admis ou trop lourd. Pour le reste, il **avertit sans bloquer** : une notice ne doit jamais être perdue parce qu'un contrôle s'est trompé. Il signale, par exemple :
+Le formulaire ne refuse que l'indispensable — un champ obligatoire vide, un fichier d'un format non admis ou trop lourd. Pour le reste, il **avertit sans bloquer** — sauf sur les figures, où il arrête l'envoi tant que les appels de figure sont dans le désordre ou qu'un texte alternatif ne fait que reprendre le titre (une case permet de passer outre quand le renvoi est juste) : une notice ne doit jamais être perdue parce qu'un contrôle s'est trompé. Il signale, par exemple :
 
 - une image dont la définition est insuffisante pour la taille d'impression prévue ;
 - une figure appelée dans le texte (« fig. 3 ») qui n'est pas jointe, ou une figure jointe que le texte n'appelle pas, ou une figure 2 appelée avant la 1 ;
