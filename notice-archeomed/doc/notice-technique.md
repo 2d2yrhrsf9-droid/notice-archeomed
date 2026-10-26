@@ -211,7 +211,7 @@ Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métop
 - **Destinataires** : `destinataires` (liste d'adresses, chacune cochée pour « notices » et/ou « recap »).
 - **Protection** : `protection` (`locale`, `turnstile`, `les_deux`), `turnstile_site`, `turnstile_secret`.
 - **Envoi** : `mode_envoi` (`differe`, `immediat`), `envoi_mode` (`php` ou `smtp`) et `smtp_*`, `poids_courriel` (Mo).
-- **Iconographie** : `numero`, `nom_modele`, `br_*` (basse définition : largeur, ppp, poids, tolérance), `hr_*` (haute définition des photographies et des traits), `garder_originaux`.
+- **Iconographie** : `numero`, `nom_modele`, `br_*` (basse définition : côté le plus long — 2 500 px —, ppp — 150 —, poids — 1 000 Ko —, tolérance — 10 %), `hr_*` (haute définition des photographies et des traits), `garder_originaux`.
 - **Pactols** : `pactols_serveur` (`oui`/`non` : le serveur lit-il les termes).
 - **Mises à jour** : `maj_github`, `github_depot`, `github_jeton`.
 - **`normes`** : les choix éditoriaux, décrits par `Notice_Archeomed_Normes::catalogue()` — siècles (`siecle_mot`, `siecle_chiffres`, `siecle_ordinal`), typographie (`typographie`, `espace_ponctuation`, `annees`), composition (`titre_notice`, `lieu_dit_italique`, `figure_abreviation`, `figure_numero`), dépôt (`photo_largeur_cm`, `photo_hauteur_cm`, `photo_ppp`, `trait_ppp`, `mots_min`, `mots_max`, `alt_conseille`), `sigles` (liste « SIGLE = développement »), `avis` (les familles d'avis données au dépôt). Le code lit une norme par `Notice_Archeomed_Normes::valeur( 'cle' )`.
@@ -374,7 +374,7 @@ Supprimer l'extension efface les réglages et leurs secrets, et les attentes en 
 
 ### Imagick
 
-Sans l'extension `imagick`, un TIFF ou un PDF n'a ni version allégée ni basse définition : le courriel joint l'original, le Word et la page de relecture ne posent pas la figure, et le formulaire dit « Pas d'aperçu pour ce format ». Un bandeau d'administration le signale, et l'onglet des réglages donne l'état du serveur (Imagick, GD, formats acceptés). Une mise à jour de PHP chez l'hébergeur peut retirer l'extension sans prévenir ; à redemander alors : l'installation de `php-imagick`, et, pour les PDF, Ghostscript autorisé par la politique d'ImageMagick.
+Sans l'extension `imagick`, le serveur ne lit ni TIFF ni PDF. Le **TIFF** se convertit dans le navigateur de l'auteur (UTIF.js) en deux JPEG, la haute définition (10 × 15 cm à 300 dpi) et la basse (2 500 px au plus, 1 Mo environ), que le serveur range à demeure (`_na_conversions`) et dont il tire le dossier Métopes, le Word, la relecture et l'aperçu du courriel. Un TIFF mal lu ou trop lourd, et tout **PDF**, sont refusés : l'auteur enregistre la figure en JPEG. `Notice_Archeomed_Paquet::imagick_disponible()` est le seul test d'Imagick ; la constante `NA_SANS_IMAGICK` le fait échouer sur un site d'essai. Un bandeau d'administration le signale, et l'onglet des réglages donne l'état du serveur (Imagick, GD, formats acceptés). Une mise à jour de PHP chez l'hébergeur peut retirer l'extension sans prévenir ; à redemander alors : l'installation de `php-imagick`, et, pour les PDF, Ghostscript autorisé par la politique d'ImageMagick.
 
 ### Mise à jour
 

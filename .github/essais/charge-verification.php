@@ -37,6 +37,28 @@ if ( array( 'envoyee' => $attendu ) !== $etats ) {
 	$echecs[] = 'Toutes les notices ne sont pas « envoyee » : ' . wp_json_encode( $etats );
 }
 
+// Le TIFF de la figure 2, que le serveur de l'essai ne sait pas lire : chaque
+// notice doit avoir gardé les deux JPEG du navigateur, et en avoir tiré l'aperçu.
+$sans_conversion = array();
+$sans_apercu     = array();
+foreach ( $ids as $id ) {
+	$conv = get_post_meta( $id, '_na_conversions', true );
+	if ( ! is_array( $conv ) || empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] ) || ! is_file( $conv[2]['hr'] ) || ! is_file( $conv[2]['br'] ) ) {
+		$sans_conversion[] = $id;
+	}
+	$apercus = get_post_meta( $id, '_na_apercus', true );
+	if ( ! is_array( $apercus ) || empty( $apercus[2]['apercu'] ) || ! is_file( $apercus[2]['apercu'] ) ) {
+		$sans_apercu[] = $id;
+	}
+}
+echo 'TIFF avec conversions gardées : ', count( $ids ) - count( $sans_conversion ), ' — avec aperçu : ', count( $ids ) - count( $sans_apercu ), "\n";
+if ( ! empty( $sans_conversion ) ) {
+	$echecs[] = count( $sans_conversion ) . ' notices n’ont pas gardé les JPEG convertis de leur TIFF.';
+}
+if ( ! empty( $sans_apercu ) ) {
+	$echecs[] = count( $sans_apercu ) . ' notices n’ont pas d’aperçu pour leur TIFF.';
+}
+
 $lignes   = is_file( $journal ) ? file( $journal, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) : array();
 $rediges  = array();
 $doubles  = array();

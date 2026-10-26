@@ -230,7 +230,9 @@ class Notice_Archeomed_Paquet {
 						'n'        => $n,
 					)
 				) );
-				$figures[ $n ] = $this->poser_une_illustration( $source, $nom );
+				$conversions = isset( $notice['conversions'][ $n ] ) && is_array( $notice['conversions'][ $n ] )
+					? $notice['conversions'][ $n ] : array();
+				$figures[ $n ] = $this->poser_une_illustration( $source, $nom, $conversions );
 			}
 			$plan[ $rang_notice ] = $figures;
 		}
@@ -463,7 +465,7 @@ class Notice_Archeomed_Paquet {
 
 	/** Imagick est-elle là, et sait-elle lire ce format ? */
 	private static function imagick_sait( $format ) {
-		if ( ! extension_loaded( 'imagick' ) || ! class_exists( 'Imagick' ) ) {
+		if ( ! self::imagick_disponible() ) {
 			return false;
 		}
 		$connus = (array) Imagick::queryFormats( strtoupper( $format ) );
@@ -505,6 +507,19 @@ class Notice_Archeomed_Paquet {
 	}
 
 	/**
+	 * Le serveur sait-il lire un TIFF et un PDF ? Oui s'il a Imagick.
+	 *
+	 * « NA_SANS_IMAGICK », posée à vrai dans wp-config.php d'un site d'essai,
+	 * fait comme s'il manquait : c'est ainsi qu'on éprouve ce que le plugin
+	 * fait sans lui — la conversion des TIFF par le navigateur — sur un
+	 * serveur qui l'a.
+	 */
+	public static function imagick_disponible() {
+		return extension_loaded( 'imagick' ) && class_exists( 'Imagick' )
+			&& ! ( defined( 'NA_SANS_IMAGICK' ) && NA_SANS_IMAGICK );
+	}
+
+	/**
 	 * Réduit une image jusqu'à tenir sous le plafond de poids.
 	 *
 	 * La qualité baisse par paliers, et l'on s'arrête dès que le fichier
@@ -514,7 +529,7 @@ class Notice_Archeomed_Paquet {
 	 * Rend vrai si la cible a été écrite.
 	 */
 	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance, $ecran = false ) {
-		if ( ! class_exists( 'Imagick' ) ) {
+		if ( ! self::imagick_disponible() ) {
 			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max, $dpi );
 		}
 		$plancher = ( self::SANS_PLAFOND === $poids_max )
@@ -569,8 +584,17 @@ class Notice_Archeomed_Paquet {
 				self::pour_l_ecran( $image );
 			}
 			$image->setImageFormat( 'jpeg' );
-			if ( $image->getImageWidth() > $largeur ) {
-				$image->resizeImage( $largeur, 0, Imagick::FILTER_LANCZOS, 1 );
+			// Le côté le plus long, hauteur ou largeur, ne dépasse pas la mesure
+			// demandée : une figure en hauteur ne dépasse plus de moitié en
+			// hauteur ce qu'une figure en largeur ne dépasse pas en largeur.
+			$largeur_image = $image->getImageWidth();
+			$hauteur_image = $image->getImageHeight();
+			if ( max( $largeur_image, $hauteur_image ) > $largeur ) {
+				if ( $largeur_image >= $hauteur_image ) {
+					$image->resizeImage( $largeur, 0, Imagick::FILTER_LANCZOS, 1 );
+				} else {
+					$image->resizeImage( 0, $largeur, Imagick::FILTER_LANCZOS, 1 );
+				}
 			}
 			// La résolution s'inscrit, elle ne se fabrique pas : porter une
 			// image à 1200 dpi en inventant des pixels l'abîmerait sans rien
@@ -663,7 +687,7 @@ class Notice_Archeomed_Paquet {
 		// Un JPEG qu'il n'y a ni à rétrécir ni à alléger part tel quel : le
 		// recompresser ne ferait que l'abîmer, et il garde ainsi sa densité et
 		// ses métadonnées. C'est le cas de la haute définition d'une photographie.
-		if ( IMAGETYPE_JPEG === $dimensions[2] && $dimensions[0] <= $largeur && self::SANS_PLAFOND === $poids_max ) {
+		if ( IMAGETYPE_JPEG === $dimensions[2] && max( $dimensions[0], $dimensions[1] ) <= $largeur && self::SANS_PLAFOND === $poids_max ) {
 			return @copy( $source, $cible ) && file_exists( $cible );
 		}
 		try {
@@ -671,8 +695,10 @@ class Notice_Archeomed_Paquet {
 			if ( ! $image ) {
 				return false;
 			}
-			if ( $dimensions[0] > $largeur ) {
-				$reduite = imagescale( $image, (int) $largeur );
+			if ( max( $dimensions[0], $dimensions[1] ) > $largeur ) {
+				$reduite = $dimensions[0] >= $dimensions[1]
+					? imagescale( $image, (int) $largeur )
+					: imagescale( $image, max( 1, (int) round( $dimensions[0] * $largeur / $dimensions[1] ) ), (int) $largeur );
 				if ( $reduite ) {
 					imagedestroy( $image );
 					$image = $reduite;
@@ -779,7 +805,7 @@ class Notice_Archeomed_Paquet {
 	 * « originaux » garde le fichier tel que l'auteur l'a envoyé. « hr » part
 	 * à la mise en page, « br » sert au lien posé dans le document.
 	 */
-	private function poser_une_illustration( $source, $nom_sans_ext ) {
+	private function poser_une_illustration( $source, $nom_sans_ext, $conversion = array() ) {
 		$ext     = strtolower( pathinfo( $source, PATHINFO_EXTENSION ) );
 		$photo   = in_array( $ext, self::MATRICIELS, true );
 		$reglage = function ( $clef ) {
@@ -794,7 +820,15 @@ class Notice_Archeomed_Paquet {
 		$famille = $photo ? 'photo' : 'trait';
 		$en_jpeg = (int) $reglage( 'hr_' . $famille . '_jpeg' );
 		$fait_hr = false;
-		if ( $en_jpeg ) {
+		// Sans Imagick, un TIFF a été converti dans le navigateur de l'auteur :
+		// les deux JPEG, la haute et la basse définition, voyagent avec la notice.
+		// Avec Imagick, le serveur sait faire mieux, et ne s'en sert pas.
+		$converti = ! self::imagick_disponible() && ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ), true );
+		$conv_hr  = ( $converti && ! empty( $conversion['hr'] ) && is_readable( $conversion['hr'] ) ) ? $conversion['hr'] : '';
+		$conv_br  = ( $converti && ! empty( $conversion['br'] ) && is_readable( $conversion['br'] ) ) ? $conversion['br'] : '';
+		if ( $en_jpeg && '' !== $conv_hr ) {
+			$fait_hr = @copy( $conv_hr, $this->atelier . '/icono/hr/' . $nom_sans_ext . '.jpg' );
+		} elseif ( $en_jpeg ) {
 			$cible = $this->atelier . '/icono/hr/' . $nom_sans_ext . '.jpg';
 			// La haute définition ne se rétrécit pas et n'a pas de plafond :
 			// elle part à la mise en page, qui la veut entière.
@@ -826,7 +860,7 @@ class Notice_Archeomed_Paquet {
 		}
 		$cible_br = $this->atelier . '/icono/br/' . $nom_sans_ext . '.jpg';
 		$dpi_br   = (int) $reglage( 'br_dpi' );
-		$fait_br  = $this->reduire( $source_br, $cible_br,
+		$fait_br  = ( '' !== $conv_br ) ? @copy( $conv_br, $cible_br ) : $this->reduire( $source_br, $cible_br,
 			(int) $reglage( 'br_largeur' ), self::QUALITE_HAUTE,
 			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ), true );
 		if ( '' !== $provisoire ) {
@@ -834,7 +868,7 @@ class Notice_Archeomed_Paquet {
 		}
 		if ( ! $fait_br ) {
 			$this->journal[] = $nom_sans_ext . '.' . $ext
-				. ' : pas de basse définition (Imagick absente ou format illisible). Le document ne posera pas cette figure.';
+				. ' : pas de basse définition (Imagick absente, et le fichier n’a pas été converti dans le navigateur de l’auteur, ou son format est illisible). Le document ne posera pas cette figure.';
 			return null;
 		}
 

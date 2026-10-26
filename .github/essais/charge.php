@@ -5,7 +5,7 @@
  *
  * Usage : php charge.php <adresse du site> <nombre de notices>
  *
- * Chaque dépôt porte deux figures (des JPEG de plusieurs centaines de Ko), un
+ * Chaque dépôt porte deux figures (un JPEG de plusieurs centaines de Ko, et un TIFF avec les deux JPEG que le navigateur en aurait tirés), un
  * texte de quatre cents mots et une adresse de responsable qui lui est propre.
  * Le script lit la page du formulaire comme le ferait un navigateur — jeton,
  * heure d'affichage, rubrique et nature offertes —, attend les trois secondes
@@ -61,6 +61,43 @@ for ( $f = 1; $f <= 2; $f++ ) {
 	$figures[ $f ] = $chemin;
 }
 
+// La figure 2 est un TIFF, comme en envoient les auteurs : un vrai fichier TIFF
+// minimal (non compressé, 16 × 16), que PHP reconnaît pour tel. Le serveur de
+// l'essai n'a pas Imagick ; le navigateur de l'auteur aurait donc converti ce
+// TIFF en deux JPEG, que le script joint de même (haute et basse définition).
+function tiff_minimal() {
+	$donnees = '';
+	for ( $y = 0; $y < 16; $y++ ) {
+		for ( $x = 0; $x < 16; $x++ ) {
+			$donnees .= str_repeat( chr( ( $x * 16 ) % 256 ), 3 );
+		}
+	}
+	$entrees = array( array( 256, 3, 1, 16 ), array( 257, 3, 1, 16 ), array( 258, 3, 3, 0 ), array( 259, 3, 1, 1 ),
+		array( 262, 3, 1, 2 ), array( 273, 4, 1, 0 ), array( 277, 3, 1, 3 ), array( 278, 3, 1, 16 ), array( 279, 4, 1, strlen( $donnees ) ) );
+	$n          = count( $entrees );
+	$bits       = 8 + 2 + $n * 12 + 4;
+	$debut      = $bits + 6;
+	$sortie     = "II*\0" . pack( 'V', 8 ) . pack( 'v', $n );
+	foreach ( $entrees as $e ) {
+		$valeur = 258 === $e[0] ? $bits : ( 273 === $e[0] ? $debut : $e[3] );
+		$sortie .= ( 3 === $e[1] && 258 !== $e[0] ) ? pack( 'vvVvv', $e[0], $e[1], $e[2], $valeur, 0 ) : pack( 'vvVV', $e[0], $e[1], $e[2], $valeur );
+	}
+	return $sortie . pack( 'V', 0 ) . pack( 'vvv', 8, 8, 8 ) . $donnees;
+}
+file_put_contents( $dossier . '/figure-2.tif', tiff_minimal() );
+@unlink( $figures[2] );
+$figures[2] = $dossier . '/figure-2.tif';
+foreach ( array( 'hr' => array( 1181, 787 ), 'br' => array( 1600, 1066 ) ) as $famille => $dim ) {
+	$img = imagecreatetruecolor( $dim[0], $dim[1] );
+	mt_srand( 9 );
+	for ( $i = 0; $i < 600; $i++ ) {
+		imagefilledrectangle( $img, mt_rand( 0, $dim[0] - 10 ), mt_rand( 0, $dim[1] - 10 ), mt_rand( 0, $dim[0] - 1 ), mt_rand( 0, $dim[1] - 1 ),
+			imagecolorallocate( $img, mt_rand( 0, 255 ), mt_rand( 0, 255 ), mt_rand( 0, 255 ) ) );
+	}
+	imagejpeg( $img, $dossier . '/conv-' . $famille . '.jpg', 88 );
+	imagedestroy( $img );
+}
+
 $paragraphe = 'Les vestiges mis au jour comprennent un bâtiment sur solins de pierre, un fossé comblé de rejets domestiques et plusieurs fosses dont le mobilier céramique date du haut Moyen Âge. ';
 $texte      = '<p>' . str_repeat( $paragraphe, 10 ) . '</p><p>' . str_repeat( $paragraphe, 8 ) . '</p>';
 
@@ -78,13 +115,17 @@ for ( $i = 1; $i <= $n; $i++ ) {
 		'texte_notice' => $texte,
 	);
 	foreach ( array( 1, 2 ) as $f ) {
-		$champs[ 'illustrations[' . ( $f - 1 ) . ']' ] = new CURLFile( $figures[ $f ], 'image/jpeg', 'figure-' . $i . '-' . $f . '.jpg' );
+		$champs[ 'illustrations[' . ( $f - 1 ) . ']' ] = 2 === $f
+			? new CURLFile( $figures[ $f ], 'image/tiff', 'figure-' . $i . '-' . $f . '.tif' )
+			: new CURLFile( $figures[ $f ], 'image/jpeg', 'figure-' . $i . '-' . $f . '.jpg' );
 		$champs[ 'illus_titre[' . ( $f - 1 ) . ']' ]   = 'Vue ' . $f . ' de l’opération ' . $i;
 		$champs[ 'illus_legende[' . ( $f - 1 ) . ']' ] = '';
 		$champs[ 'illus_credits[' . ( $f - 1 ) . ']' ] = '© Essai ' . $i . ', Inrap';
 		$champs[ 'illus_type[' . ( $f - 1 ) . ']' ]    = 1 === $f ? 'photo' : 'plan';
 		$champs[ 'illus_alt[' . ( $f - 1 ) . ']' ]     = 1 === $f ? 'Mur en moellons vu du nord' : 'Deux bâtiments à l’ouest d’un enclos fossoyé';
 	}
+	$champs['na_conv_hr_2'] = new CURLFile( $dossier . '/conv-hr.jpg', 'image/jpeg', 'figure-' . $i . '-2-hr.jpg' );
+	$champs['na_conv_br_2'] = new CURLFile( $dossier . '/conv-br.jpg', 'image/jpeg', 'figure-' . $i . '-2-br.jpg' );
 	$c = curl_init( $site . '/' );
 	curl_setopt_array( $c, array(
 		CURLOPT_POST => true, CURLOPT_POSTFIELDS => $champs, CURLOPT_RETURNTRANSFER => true,
@@ -116,7 +157,7 @@ foreach ( $poignees as $i => $c ) {
 	}
 	curl_multi_remove_handle( $multi, $c );
 }
-foreach ( $figures as $chemin ) {
+foreach ( array_merge( $figures, array( $dossier . '/conv-hr.jpg', $dossier . '/conv-br.jpg' ) ) as $chemin ) {
 	@unlink( $chemin );
 }
 @rmdir( $dossier );

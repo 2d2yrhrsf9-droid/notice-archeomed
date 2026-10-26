@@ -129,7 +129,7 @@ add_action(
 		// ne posent pas la figure. Une mise à jour de PHP chez l'hébergeur
 		// suffit à faire disparaître l'extension sans que rien ne s'en
 		// plaigne : on le dit en tête de l'administration.
-		if ( ! ( extension_loaded( 'imagick' ) && class_exists( 'Imagick' ) ) ) {
+		if ( ! Notice_Archeomed_Paquet::imagick_disponible() ) {
 			echo '<div class="notice notice-warning"><p><strong>Chronique&nbsp;:</strong> '
 				. esc_html__( 'l’extension PHP Imagick est absente de ce serveur. Les illustrations en TIFF ou en PDF n’auront ni version allégée ni basse définition : le courriel joindra l’original, et le Word ne posera pas la figure. Les JPEG et les PNG passent par GD. À demander à l’hébergeur : l’installation de php-imagick.', 'notice-archeomed' )
 				. '</p></div>';
@@ -672,6 +672,7 @@ class Notice_Archeomed_Pactols {
 				// Tels qu'enregistrés, sans écarter ceux qui manquent : c'est au
 				// paquet de dire qu'un fichier reçu n'est plus là.
 				'illustrations' => self::illustrations_rangees( $id ),
+				'conversions'   => self::conversions_rangees( $id ),
 			);
 		}
 
@@ -1567,9 +1568,43 @@ class Notice_Archeomed_Pactols {
 		return has_shortcode( $objet->post_content, 'notice_archeomed_pactols' );
 	}
 
+	/**
+	 * Ce que le formulaire doit savoir pour convertir un TIFF lui-même.
+	 *
+	 * « imagick » dit si le serveur lit le TIFF et le PDF : sinon, le navigateur
+	 * convertit le TIFF en deux JPEG (la haute et la basse définition) et le
+	 * PDF est refusé. Les mesures sont celles des réglages : la haute
+	 * définition tient dans la norme des photographies (10 × 15 cm à 300 ppp,
+	 * sans agrandir), la basse dans son côté et son poids maximaux.
+	 */
+	public function reglages_de_conversion() {
+		return array(
+			'imagick'    => Notice_Archeomed_Paquet::imagick_disponible(),
+			'pixelsMax'  => 100000000,
+			'hr'         => array(
+				'dpi'       => (int) Notice_Archeomed_Settings::get( 'hr_photo_dpi' ),
+				'largeurCm' => (float) Notice_Archeomed_Normes::valeur( 'photo_largeur_cm' ),
+				'hauteurCm' => (float) Notice_Archeomed_Normes::valeur( 'photo_hauteur_cm' ),
+				'qualite'   => (int) Notice_Archeomed_Settings::get( 'hr_photo_qualite' ),
+			),
+			'br'         => array(
+				'cote'      => (int) Notice_Archeomed_Settings::get( 'br_largeur' ),
+				'dpi'       => (int) Notice_Archeomed_Settings::get( 'br_dpi' ),
+				'poidsKo'   => (int) Notice_Archeomed_Settings::get( 'br_poids' ),
+				'tolerance' => (int) Notice_Archeomed_Settings::get( 'br_tolerance' ),
+			),
+		);
+	}
+
 	public function enqueue_assets() {
 		if ( ! $this->page_porte_le_formulaire() ) {
 			return;
+		}
+		// Le décodeur de TIFF ne se charge que si le serveur ne sait pas lire
+		// les TIFF : sinon, ces 80 Ko n'auraient aucun usage.
+		if ( ! Notice_Archeomed_Paquet::imagick_disponible() ) {
+			wp_enqueue_script( 'na-pako', plugins_url( 'assets/utif/pako_inflate.min.js', __FILE__ ), array(), '2.1.0', true );
+			wp_enqueue_script( 'na-utif', plugins_url( 'assets/utif/UTIF.js', __FILE__ ), array( 'na-pako' ), '3.1.0', true );
 		}
 		// L'éditeur est servi par le site lui-même (assets/quill, version 2.0.3) :
 		// plus de dépendance à un CDN qui, en tombant, rendait le dépôt
@@ -3061,6 +3096,9 @@ class Notice_Archeomed_Pactols {
 			// listes —, pour que le navigateur dise mot pour mot ce que la
 			// rédaction lira.
 			var A11Y = <?php echo wp_json_encode( Notice_Archeomed_Controles::regles_d_accessibilite(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			// Ce que le serveur sait faire des images, et les mesures des JPEG que
+			// le navigateur fabrique à sa place quand il ne sait pas lire un TIFF.
+			var CONV = <?php echo wp_json_encode( $this->reglages_de_conversion(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
 			var ALT_CONSEILLE = A11Y.conseille;
 			var ALT_MAX = A11Y.max;
 			var DESCRIPTION_MAX = <?php echo (int) Notice_Archeomed_Controles::DESCRIPTION_MAX; ?>;
@@ -4364,7 +4402,10 @@ class Notice_Archeomed_Pactols {
 				}, 0);
 			}
 			function totalSelectedSize() {
-				return selected.reduce(function (sum, f) { return sum + f.size; }, 0) + poidsAutorisations();
+				return selected.reduce(function (sum, f) {
+					var c = etatDe(f).conv;
+					return sum + f.size + (c && c.etat === 'ok' ? c.hr.size + c.br.size : 0);
+				}, 0) + poidsAutorisations();
 			}
 			function refreshFileInput() {
 				try {
@@ -4372,7 +4413,212 @@ class Notice_Archeomed_Pactols {
 					selected.forEach(function (f) { dt.items.add(f); });
 					fileInput.files = dt.files;
 				} catch (e) {}
+				poserLesConversions();
 				renderFileList();
+			}
+
+			// ── Les TIFF, convertis dans le navigateur ─────────────────────
+			// Sans Imagick, le serveur ne lit pas un TIFF : ni version allégée, ni
+			// basse définition. Le navigateur de l'auteur le lit à sa place
+			// (UTIF.js) et en tire deux JPEG qui voyagent avec la figure : la
+			// haute définition, dans la norme des photographies (10 × 15 cm à
+			// 300 ppp, sans agrandir), et la basse, de 2 500 px au plus sur son
+			// grand côté et d'un méga-octet environ. Le TIFF original part aussi.
+			// Ce que le navigateur ne sait pas lire, ou ce qui est trop gros, est
+			// refusé : l'auteur l'enregistre lui-même en JPEG.
+			var CONV_PRET = !CONV.imagick && typeof UTIF !== 'undefined' && !!document.createElement('canvas').getContext
+				&& (function () { try { new DataTransfer(); return true; } catch (e) { return false; } }());
+			function lireLeBuffer(blob) {
+				if (blob.arrayBuffer) { return blob.arrayBuffer(); }
+				return new Promise(function (ok, ko) {
+					var r = new FileReader();
+					r.onload = function () { ok(r.result); };
+					r.onerror = ko;
+					r.readAsArrayBuffer(blob);
+				});
+			}
+			// L'en-tête JFIF d'un JPEG porte la densité : un canvas ne l'écrit pas
+			// (ou la met à 1 par 1), et la mise en page lirait 72 ppp.
+			function jpegAvecDensite(buffer, dpi) {
+				var b = new Uint8Array(buffer), sortie;
+				var hi = (dpi >> 8) & 255, lo = dpi & 255;
+				if (b[2] === 0xFF && b[3] === 0xE0 && b[6] === 0x4A && b[7] === 0x46 && b[8] === 0x49 && b[9] === 0x46) {
+					sortie = b.slice(0);
+					sortie[13] = 1; sortie[14] = hi; sortie[15] = lo; sortie[16] = hi; sortie[17] = lo;
+				} else {
+					var jfif = [0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, hi, lo, hi, lo, 0x00, 0x00];
+					sortie = new Uint8Array(b.length + jfif.length);
+					sortie.set(b.subarray(0, 2), 0);
+					sortie.set(jfif, 2);
+					sortie.set(b.subarray(2), 2 + jfif.length);
+				}
+				return sortie;
+			}
+			function enJpeg(canvas, qualite) {
+				return new Promise(function (ok, ko) {
+					canvas.toBlob(function (b) { if (b) { ok(b); } else { ko(new Error('jpeg')); } }, 'image/jpeg', qualite);
+				});
+			}
+			function etiqueterLeJpeg(blob, dpi, nom) {
+				return lireLeBuffer(blob).then(function (buf) {
+					return new File([jpegAvecDensite(buf, dpi)], nom, { type: 'image/jpeg' });
+				});
+			}
+			// Une réduction par moitiés tant que l'écart est grand : d'un coup,
+			// le navigateur saute des pixels et l'image se crénelle.
+			function reduireLeCanvas(source, largeur, hauteur) {
+				var c = source, cl = source.width, ch = source.height;
+				while (cl / 2 >= largeur && ch / 2 >= hauteur) {
+					var m = document.createElement('canvas');
+					m.width = Math.max(1, Math.round(cl / 2));
+					m.height = Math.max(1, Math.round(ch / 2));
+					var mx = m.getContext('2d');
+					mx.fillStyle = '#fff'; mx.fillRect(0, 0, m.width, m.height);
+					mx.imageSmoothingQuality = 'high';
+					mx.drawImage(c, 0, 0, m.width, m.height);
+					c = m; cl = m.width; ch = m.height;
+				}
+				var fin = document.createElement('canvas');
+				fin.width = Math.max(1, largeur);
+				fin.height = Math.max(1, hauteur);
+				var fx = fin.getContext('2d');
+				fx.fillStyle = '#fff'; fx.fillRect(0, 0, fin.width, fin.height);
+				fx.imageSmoothingQuality = 'high';
+				fx.drawImage(c, 0, 0, fin.width, fin.height);
+				return fin;
+			}
+			// La qualité la plus haute dont le fichier tient sous le plafond de poids :
+			// une recherche par moitiés, qui s'arrête dès que le poids tombe entre
+			// le plafond moins la tolérance et le plafond.
+			function jpegSousLePlafond(canvas, plafondOctets, tolerance) {
+				var bas = plafondOctets * (100 - tolerance) / 100;
+				var lo = 0.3, hi = 0.95, q = 0.9, meilleur = null, essais = 0;
+				function tour() {
+					return enJpeg(canvas, q).then(function (b) {
+						if (b.size <= plafondOctets) {
+							meilleur = b;
+							if (b.size >= bas || essais >= 8) { return meilleur; }
+							lo = q;
+						} else {
+							hi = q;
+							if (essais >= 8 && meilleur) { return meilleur; }
+						}
+						if (++essais > 10) { return meilleur; }
+						q = (lo + hi) / 2;
+						return tour();
+					});
+				}
+				return tour().then(function (b) {
+					if (!b) { throw new Error('lourd'); }
+					return b;
+				});
+			}
+			function convertirLeTiff(f) {
+				var base = f.name.replace(/\.[^.]+$/, '');
+				return lireLeBuffer(f).then(function (buf) {
+					var ifds = UTIF.decode(buf), ifd = ifds && ifds[0];
+					var w = ifd && ifd.t256 && ifd.t256[0], h = ifd && ifd.t257 && ifd.t257[0];
+					if (!w || !h) { throw new Error('illisible'); }
+					if (w * h > CONV.pixelsMax) { throw new Error('grand'); }
+					UTIF.decodeImage(buf, ifd);
+					var rgba = UTIF.toRGBA8(ifd);
+					// Un décodage manqué laisse l'image vide : rien d'opaque nulle part.
+					var opaque = false;
+					for (var p = 3; p < rgba.length; p += 4 * 997) { if (rgba[p] !== 0) { opaque = true; break; } }
+					if (!opaque) { throw new Error('illisible'); }
+					var plein = document.createElement('canvas');
+					plein.width = w; plein.height = h;
+					plein.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
+					// La haute définition : dans la boîte 10 × 15 cm à 300 ppp, tournée comme l'image.
+					var dpiHr = CONV.hr.dpi;
+					var grand = Math.round(Math.max(CONV.hr.largeurCm, CONV.hr.hauteurCm) * dpiHr / 2.54);
+					var court = Math.round(Math.min(CONV.hr.largeurCm, CONV.hr.hauteurCm) * dpiHr / 2.54);
+					var echelleHr = Math.min(1, grand / Math.max(w, h), court / Math.min(w, h));
+					var cHr = reduireLeCanvas(plein, Math.round(w * echelleHr), Math.round(h * echelleHr));
+					// La basse définition : le grand côté ne dépasse pas la mesure réglée.
+					var echelleBr = Math.min(1, CONV.br.cote / Math.max(w, h));
+					var cBr = reduireLeCanvas(plein, Math.round(w * echelleBr), Math.round(h * echelleBr));
+					plein.width = plein.height = 1;
+					return enJpeg(cHr, CONV.hr.qualite / 100).then(function (b) {
+						return etiqueterLeJpeg(b, dpiHr, base + '-hr.jpg');
+					}).then(function (hr) {
+						return jpegSousLePlafond(cBr, CONV.br.poidsKo * 1024, CONV.br.tolerance).then(function (b) {
+							return etiqueterLeJpeg(b, CONV.br.dpi, base + '-br.jpg');
+						}).then(function (br) { return { hr: hr, br: br }; });
+					});
+				});
+			}
+			function aConvertir(f) {
+				var ext = extOf(f.name);
+				return !CONV.imagick && (ext === 'tif' || ext === 'tiff');
+			}
+			// Les JPEG convertis suivent leur figure dans des champs cachés, par
+			// rang : une figure déplacée ou retirée emporte les siens.
+			var champsConv = {};
+			function champDeConversion(famille, rang) {
+				var nom = 'na_conv_' + famille + '_' + rang;
+				if (!champsConv[nom]) {
+					var c = document.createElement('input');
+					c.type = 'file'; c.name = nom; c.hidden = true; c.tabIndex = -1;
+					c.setAttribute('aria-hidden', 'true');
+					form.appendChild(c);
+					champsConv[nom] = c;
+				}
+				return champsConv[nom];
+			}
+			function poserLesConversions() {
+				if (CONV.imagick || !CONV_PRET) { return; }
+				for (var r = 1; r <= MAX_FILES; r++) {
+					['hr', 'br'].forEach(function (famille) {
+						var f = selected[r - 1], e = f ? etatDe(f).conv : null;
+						try {
+							var dt = new DataTransfer();
+							if (e && e.etat === 'ok' && e[famille]) { dt.items.add(e[famille]); }
+							champDeConversion(famille, r).files = dt.files;
+						} catch (x) {}
+					});
+				}
+			}
+			function messageDeConversion(f, erreur) {
+				var raison = erreur && erreur.message;
+				var fin = ' Enregistrez la figure vous-même en JPEG de bonne qualité, puis redéposez-la.';
+				if (raison === 'grand') {
+					return guillemets(f.name) + ' est trop grand pour être converti dans le navigateur (plus de ' + entier(CONV.pixelsMax / 1000000) + NBSP + 'millions de pixels).' + fin;
+				}
+				if (raison === 'plafond') {
+					return guillemets(f.name) + ' ferait dépasser ' + moPlafond(MAX_TOTAL_SIZE) + ' en tout une fois converti.' + fin;
+				}
+				return guillemets(f.name) + ' n’a pas pu être lu par votre navigateur.' + fin;
+			}
+			function majLeStatutDeConversion(f) {
+				var e = etatDe(f), el = e.statutEl;
+				if (!el || !el.parentNode || !e.conv || e.conv.etat !== 'ok') { return; }
+				var im = document.createElement('img');
+				im.src = e.vignette; im.alt = ''; im.className = 'na-illus-vignette';
+				el.parentNode.replaceChild(im, el);
+				e.statutEl = null;
+			}
+			function lancerLaConversion(f) {
+				convertirLeTiff(f).then(function (r) {
+					var e = etatDe(f);
+					e.conv = { etat: 'ok', hr: r.hr, br: r.br };
+					if (selected.indexOf(f) !== -1 && totalSelectedSize() > MAX_TOTAL_SIZE) { throw new Error('plafond'); }
+					try { e.vignette = URL.createObjectURL(r.br); } catch (x) {}
+					poserLesConversions();
+					majLeStatutDeConversion(f);
+					annoncer(guillemets(f.name) + ' est converti.');
+				}).catch(function (erreur) {
+					var i = selected.indexOf(f);
+					etatDe(f).conv = null;
+					if (i !== -1) {
+						selected.splice(i, 1);
+						illusMeta.splice(i, 1);
+						illusAuto.splice(i, 1);
+						refreshFileInput();
+						majConseilsDuTexte();
+					}
+					refuses.textContent = (refuses.textContent ? refuses.textContent + ' ' : '') + messageDeConversion(f, erreur);
+				});
 			}
 			// Ce que l'auteur a écrit sur chaque illustration, gardé à part des
 			// fichiers : la liste se redessine à chaque retrait, et retaper trois
@@ -4829,12 +5075,25 @@ class Notice_Archeomed_Pactols {
 						im.className = 'na-illus-vignette';
 						groupe.appendChild(im);
 					}
+					else if (etat.conv && etat.conv.etat === 'ok' && etat.vignette) {
+						// Un TIFF converti : la vignette est tirée de sa basse définition.
+						var imc = document.createElement('img');
+						imc.src = etat.vignette;
+						imc.alt = '';
+						imc.className = 'na-illus-vignette';
+						groupe.appendChild(imc);
+					}
 					else {
-						// Un TIFF ou un PDF ne s'affiche pas dans un navigateur : on le dit,
-						// pour que l'absence d'image ne passe pas pour un fichier perdu.
+						// Un TIFF en cours de conversion, ou un format qui ne s'affiche pas
+						// dans un navigateur : on le dit, pour que l'absence d'image ne passe
+						// pas pour un fichier perdu.
 						var sans = document.createElement('p');
 						sans.className = 'na-illus-sans-apercu';
-						sans.textContent = 'Pas d’aperçu pour ce format (' + extOf(f.name).toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
+						sans.setAttribute('role', 'status');
+						sans.textContent = (etat.conv && etat.conv.etat === 'cours')
+							? 'Conversion du TIFF en cours…'
+							: 'Pas d’aperçu pour ce format (' + extOf(f.name).toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
+						etat.statutEl = sans;
 						groupe.appendChild(sans);
 					}
 					var champs = document.createElement('div');
@@ -5097,10 +5356,21 @@ class Notice_Archeomed_Pactols {
 					if (dup) { return; }
 					if (selected.length >= MAX_FILES) { refused.push(guillemets(f.name) + ' n’a pas été ajouté' + NBSP + ': trois fichiers au plus.'); return; }
 					if (ALLOWED.indexOf(extOf(f.name)) === -1) { refused.push(guillemets(f.name) + ' n’est pas en JPEG, TIFF ou PDF.'); return; }
+					// Sans Imagick, le serveur ne lit ni le PDF ni le TIFF : le PDF est
+					// refusé, le TIFF se convertit ici, dans le navigateur.
+					if (!CONV.imagick && extOf(f.name) === 'pdf') {
+						refused.push(guillemets(f.name) + ' : ce serveur ne sait pas lire les PDF. Enregistrez la figure en JPEG, puis redéposez-la.');
+						return;
+					}
+					if (aConvertir(f) && !CONV_PRET) {
+						refused.push(guillemets(f.name) + ' : ce navigateur ne sait pas convertir un TIFF. Enregistrez la figure en JPEG, puis redéposez-la.');
+						return;
+					}
 					if (f.size > MAX_FILE_SIZE) { refused.push(guillemets(f.name) + ' dépasse ' + moPlafond(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.'); return; }
 					if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) { refused.push(guillemets(f.name) + ' ferait dépasser ' + moPlafond(MAX_TOTAL_SIZE) + ' en tout.'); return; }
 					selected.push(f);
 					ajoutes.push(f);
+					if (aConvertir(f)) { etatDe(f).conv = { etat: 'cours' }; }
 				});
 				// Redéposées ensemble, les illustrations attendues reprennent
 				// l'ordre de leur numéro, quel que soit celui de la boîte de
@@ -5120,6 +5390,7 @@ class Notice_Archeomed_Pactols {
 				refreshFileInput();
 				refuses.textContent = refused.join(' ');
 				majConseilsDuTexte();
+				ajoutes.forEach(function (f) { if (etatDe(f).conv && etatDe(f).conv.etat === 'cours') { lancerLaConversion(f); } });
 				// La définition se lit dans l'en-tête, sans charger l'image.
 				ajoutes.forEach(function (f) {
 					lireLaDefinition(f).then(function (px) {
@@ -6365,6 +6636,12 @@ class Notice_Archeomed_Pactols {
 				if (!quill) {
 					e.preventDefault();
 					showJsError('Erreur technique' + NBSP + ': l’éditeur de texte ne s’est pas chargé. Rechargez la page.');
+					return;
+				}
+				if (selected.some(function (f) { var c = etatDe(f).conv; return c && c.etat === 'cours'; })) {
+					e.preventDefault();
+					refuses.textContent = 'La conversion d’un TIFF est en cours : patientez quelques secondes, puis envoyez de nouveau.';
+					refuses.scrollIntoView({ block: 'center' });
 					return;
 				}
 				normaliserRapport();
@@ -9122,6 +9399,9 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: upload error: ' . $upload_error );
 			$this->redirect_result( false, $this->raison_du_televersement( $upload_error ) );
 		}
+		// Les JPEG tirés des TIFF par le navigateur, quand le serveur n'a pas
+		// Imagick : ils se reçoivent ici, avec les figures, et ne refusent rien.
+		$conversions = $this->recevoir_les_conversions( $attachments );
 		$autorisations = $this->recevoir_les_autorisations( $upload_error );
 		if ( '' !== $upload_error ) {
 			$this->nettoyer( $attachments );
@@ -9188,6 +9468,7 @@ class Notice_Archeomed_Pactols {
 			// que le courriel joindra, et eux que le dossier Métopes
 			// trouvera même si le courriel ne part jamais.
 			$gardees = $this->archiver_les_illustrations( $id, $illustrations );
+			$conv_gardees = $this->archiver_les_conversions( $id, $conversions );
 			// Les autorisations suivent les figures dans le courriel, et
 			// se retrouvent sur la fiche de la notice.
 			$fichiers = array_merge( $gardees, $this->archiver_les_autorisations( $id, $autorisations ) );
@@ -9213,7 +9494,7 @@ class Notice_Archeomed_Pactols {
 			$apercus  = array();
 			$document = '';
 			try {
-				$apercus = $this->fabriquer_les_apercus( $gardees, $d );
+				$apercus = $this->fabriquer_les_apercus( $gardees, $d, $conv_gardees );
 				if ( ! empty( $apercus ) ) {
 					update_post_meta( $id, '_na_apercus', $apercus );
 				}
@@ -9993,7 +10274,7 @@ class Notice_Archeomed_Pactols {
 	 * pas à chaque envoi. La notice part alors avec ce qu'elle a.
 	 */
 	private function apercus_a_fabriquer( $id ) {
-		if ( ! ( class_exists( 'Imagick' ) || function_exists( 'imagecreatetruecolor' ) ) || get_post_meta( (int) $id, '_na_apercus_tente', true ) ) {
+		if ( ! ( Notice_Archeomed_Paquet::imagick_disponible() || function_exists( 'imagecreatetruecolor' ) ) || get_post_meta( (int) $id, '_na_apercus_tente', true ) ) {
 			return false;
 		}
 		$d = get_post_meta( (int) $id, '_na_donnees', true );
@@ -10038,7 +10319,7 @@ class Notice_Archeomed_Pactols {
 				$a_faire[ $i ] = ( empty( $apercus[ $i + 1 ]['apercu'] )
 					|| ! is_readable( $apercus[ $i + 1 ]['apercu'] ) ) ? $original : '';
 			}
-			$neufs = $this->fabriquer_les_apercus( $a_faire, $d );
+			$neufs = $this->fabriquer_les_apercus( $a_faire, $d, self::conversions_rangees( $id ) );
 			if ( ! empty( $neufs ) ) {
 				update_post_meta( $id, '_na_apercus', $neufs + $apercus );
 			}
@@ -10056,8 +10337,8 @@ class Notice_Archeomed_Pactols {
 		if ( $legeres > 0 ) {
 			$largeur = number_format_i18n( Notice_Archeomed_Paquet::LARGEUR_APERCU );
 			$avis   .= '<div style="background:#eef4f9;border:1px solid #72aee6;padding:12px 16px;margin:0 0 14px;">'
-				. esc_html( sprintf( _n( '%1$d illustration est jointe en version allégée (au plus %2$s pixels de large), pour la lecture.',
-					'%1$d illustrations sont jointes en version allégée (au plus %2$s pixels de large), pour la lecture.',
+				. esc_html( sprintf( _n( '%1$d illustration est jointe en version allégée (au plus %2$s pixels sur le plus grand côté), pour la lecture.',
+					'%1$d illustrations sont jointes en version allégée (au plus %2$s pixels sur le plus grand côté), pour la lecture.',
 					$legeres, 'notice-archeomed' ), $legeres, $largeur ) )
 				. ' Les originaux, en pleine définition, sont conservés sur le site — '
 				. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
@@ -10329,6 +10610,12 @@ class Notice_Archeomed_Pactols {
 			$this->apercus_de( $id, get_post_meta( $id, '_na_donnees', true ) ) );
 		$this->effacer_dans_le_depot( (array) get_post_meta( $id, '_na_illustrations', true ) );
 		$this->effacer_dans_le_depot( (array) get_post_meta( $id, '_na_autorisations', true ) );
+		// Les JPEG tirés des TIFF par le navigateur de l'auteur.
+		$conversions = array();
+		foreach ( self::conversions_rangees( $id ) as $fichiers ) {
+			$conversions = array_merge( $conversions, array_values( (array) $fichiers ) );
+		}
+		$this->effacer_dans_le_depot( $conversions );
 	}
 
 	/**
@@ -11076,9 +11363,9 @@ class Notice_Archeomed_Pactols {
 	 * avec ses seules légendes. Une figure manquante ne fait pas perdre une
 	 * notice.
 	 */
-	private function fabriquer_les_apercus( $illustrations, $d ) {
+	private function fabriquer_les_apercus( $illustrations, $d, $conversions = array() ) {
 		$dossier = $this->dossier_des_illustrations();
-		if ( '' === $dossier || ! ( class_exists( 'Imagick' ) || function_exists( 'imagecreatetruecolor' ) )
+		if ( '' === $dossier || ! ( Notice_Archeomed_Paquet::imagick_disponible() || function_exists( 'imagecreatetruecolor' ) )
 			|| empty( $d['illustrations'] ) ) {
 			return array();
 		}
@@ -11092,7 +11379,14 @@ class Notice_Archeomed_Pactols {
 				continue;
 			}
 			$cible  = $dossier . 'apercu-' . wp_generate_password( 10, false, false ) . '.jpg';
-			$mesure = $paquet->apercu_du_document( $fichiers[ $rang - 1 ], $cible );
+			$source = $fichiers[ $rang - 1 ];
+			// Un TIFF que le serveur ne sait pas lire : l'aperçu se tire de la
+			// basse définition que le navigateur de l'auteur a fabriquée.
+			if ( ! Notice_Archeomed_Paquet::imagick_disponible() && in_array( strtolower( pathinfo( $source, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff' ), true )
+				&& ! empty( $conversions[ $rang ]['br'] ) && is_readable( $conversions[ $rang ]['br'] ) ) {
+				$source = $conversions[ $rang ]['br'];
+			}
+			$mesure = $paquet->apercu_du_document( $source, $cible );
 			if ( is_array( $mesure ) ) {
 				$apercus[ $rang ] = $mesure;
 			} else {
@@ -11463,6 +11757,114 @@ class Notice_Archeomed_Pactols {
 			update_post_meta( $id, '_na_autorisations', $gardees );
 		}
 		return array_values( $gardees );
+	}
+
+	/**
+	 * Les JPEG qu'un navigateur a tirés des TIFF de l'auteur, par rang de
+	 * figure : « na_conv_hr_N » (la haute définition) et « na_conv_br_N » (la
+	 * basse). Ils n'existent que si le serveur n'a pas Imagick pour lire le
+	 * TIFF lui-même.
+	 *
+	 * Rien ici n'arrête le dépôt. Le navigateur a déjà tout vérifié, et une
+	 * conversion absente ou douteuse laisse simplement la figure sans version
+	 * allégée, comme avant : on l'écarte et on le dit au journal.
+	 *
+	 * Rend « rang => array( « hr » => fichier, « br » => fichier ) ».
+	 */
+	private function recevoir_les_conversions( $attachments ) {
+		$recues = array();
+		$dossier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
+		wp_mkdir_p( $dossier );
+		foreach ( array_values( (array) $attachments ) as $i => $original ) {
+			$rang = $i + 1;
+			if ( $rang > self::MAX_FILES || ! in_array( strtolower( pathinfo( (string) $original, PATHINFO_EXTENSION ) ), array( 'tif', 'tiff' ), true ) ) {
+				continue;
+			}
+			foreach ( array( 'hr', 'br' ) as $famille ) {
+				$cle = 'na_conv_' . $famille . '_' . $rang;
+				if ( empty( $_FILES[ $cle ]['tmp_name'] ) || ! is_string( $_FILES[ $cle ]['tmp_name'] )
+					|| UPLOAD_ERR_OK !== (int) $_FILES[ $cle ]['error'] || ! is_uploaded_file( $_FILES[ $cle ]['tmp_name'] ) ) {
+					continue;
+				}
+				if ( ! self::jpeg_converti_acceptable( $_FILES[ $cle ]['tmp_name'], $famille ) ) {
+					error_log( 'Notice Archeomed: conversion ' . $famille . ' de la figure ' . $rang . ' écartée (pas un JPEG acceptable).' );
+					continue;
+				}
+				$cible = trailingslashit( $dossier ) . 'notice-archeomed-conv-' . $famille . '-' . $rang . '-'
+					. wp_generate_password( 12, false, false ) . '.jpg';
+				if ( move_uploaded_file( $_FILES[ $cle ]['tmp_name'], $cible ) ) {
+					$recues[ $rang ][ $famille ] = $cible;
+				}
+			}
+		}
+		return $recues;
+	}
+
+	/**
+	 * Un fichier est-il bien le JPEG qu'on attend d'une conversion ?
+	 *
+	 * Reconnu par son contenu et non par son nom, lisible par GD (donc entier),
+	 * et de mesures raisonnables : la haute définition ne dépasse pas la
+	 * mesure d'une planche, la basse son plafond de poids et de côté, à
+	 * quelques pour cent près.
+	 */
+	public static function jpeg_converti_acceptable( $chemin, $famille ) {
+		if ( ! is_readable( $chemin ) ) {
+			return false;
+		}
+		$octets = (int) filesize( $chemin );
+		$mesure = @getimagesize( $chemin );
+		if ( ! is_array( $mesure ) || IMAGETYPE_JPEG !== $mesure[2] ) {
+			return false;
+		}
+		$cote = max( (int) $mesure[0], (int) $mesure[1] );
+		if ( 'hr' === $famille ) {
+			$limite_octets = 12 * MB_IN_BYTES;
+			$limite_cote   = 4000;
+		} else {
+			$limite_octets = (int) round( (int) Notice_Archeomed_Settings::get( 'br_poids' ) * 1024 * 1.5 );
+			$limite_cote   = (int) ceil( (int) Notice_Archeomed_Settings::get( 'br_largeur' ) * 1.05 );
+		}
+		if ( $octets < 200 || $octets > $limite_octets || $cote < 1 || $cote > $limite_cote ) {
+			return false;
+		}
+		// Lisible en entier : un JPEG tronqué ou forgé ne passe pas.
+		if ( function_exists( 'imagecreatefromjpeg' ) ) {
+			$image = @imagecreatefromjpeg( $chemin );
+			if ( ! $image ) {
+				return false;
+			}
+			imagedestroy( $image );
+		}
+		return true;
+	}
+
+	/**
+	 * Range les conversions à demeure, près des illustrations, et les retient
+	 * par le rang de leur figure.
+	 */
+	private function archiver_les_conversions( $id, $conversions ) {
+		$dossier = $this->dossier_des_illustrations();
+		$gardees = array();
+		foreach ( (array) $conversions as $rang => $fichiers ) {
+			foreach ( (array) $fichiers as $famille => $fichier ) {
+				if ( ! file_exists( $fichier ) ) {
+					continue;
+				}
+				$cible = '' === $dossier ? $fichier : $dossier . (int) $id . '-' . basename( $fichier );
+				$gardees[ (int) $rang ][ (string) $famille ] = ( $cible === $fichier || ! @rename( $fichier, $cible ) ) ? $fichier : $cible;
+			}
+		}
+		if ( $id && ! empty( $gardees ) ) {
+			update_post_meta( $id, '_na_conversions', $gardees );
+		}
+		return $gardees;
+	}
+
+	/** Les conversions gardées d'une notice : « rang => array( hr, br ) ». */
+	public static function conversions_rangees( $id ) {
+		$gardees = get_post_meta( (int) $id, '_na_conversions', true );
+		return is_array( $gardees ) ? $gardees : array();
 	}
 
 	/**

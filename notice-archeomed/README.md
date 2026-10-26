@@ -381,6 +381,35 @@ porte la haute définition, qui part à la mise en page. Largeur, résolution et
 qualité se règlent pour chacune ; les valeurs sont bornées, un « 0 » en
 largeur donnerait une image vide et un « 20000 » épuiserait le serveur.
 
+Par défaut, la basse définition fait **2 500 px au plus sur son grand côté**
+(hauteur ou largeur), à 150 dpi, et **un méga-octet environ** (1 000 Ko, à 10 %
+près) ; la qualité baisse par paliers jusqu'à ce que le fichier tienne. La
+haute définition d'une photographie tient dans la norme de la revue,
+**10 × 15 cm à 300 dpi** (1 181 × 1 772 px), sans jamais agrandir.
+
+### Les TIFF, quand le serveur n'a pas Imagick
+
+Sans Imagick, le serveur ne sait pas lire un TIFF. C'est alors le **navigateur
+de l'auteur** qui le lit (UTIF.js, dans `assets/utif/`, chargé seulement dans ce
+cas) et qui en tire deux JPEG, joints à l'envoi dans des champs cachés par rang
+de figure (`na_conv_hr_N`, `na_conv_br_N`) :
+
+- la **haute définition**, dans la boîte 10 × 15 cm à 300 dpi, tournée comme
+  l'image ; la **basse**, aux mesures réglées de la basse définition ;
+- la densité est inscrite dans l'en-tête JFIF du JPEG ;
+- le TIFF original part aussi, et reste dans `icono/originaux` ;
+- le serveur reconnaît chaque JPEG à son contenu et à ses mesures
+  (`jpeg_converti_acceptable()`), le range à demeure, et en tire le dossier
+  Métopes (`icono/hr`, `icono/br`), le Word, la relecture et l'aperçu du courriel.
+
+Ce qui ne passe pas est **refusé, et l'auteur enregistre lui-même la figure en
+JPEG** : un TIFF que le navigateur ne sait pas lire (compression rare, fichier
+abîmé), de plus de 36 millions de pixels, ou qui ferait dépasser la limite de
+taille une fois converti. Les **PDF sont refusés** de la même façon, le serveur
+ne sachant pas les lire. Un navigateur sans canvas ou sans `DataTransfer` refuse
+aussi le TIFF. Les profils colorimétriques ne sont pas gérés (un TIFF en CMYK
+donne des couleurs approximatives).
+
 `icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
 a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.
 

@@ -61,10 +61,11 @@ class Notice_Archeomed_Settings {
 		// voir à l'écran, pas s'imprimer. Le poids compte autant que la
 		// largeur — cent figures liées dans un fascicule, et le dossier
 		// devient intransportable.
-		'br_largeur'         => 1000,
-		'br_dpi'             => 96,
-		'br_poids'           => 1024,   // en kilo-octets
-		'br_tolerance'       => 15,     // en pour-cent, sous le plafond
+		// « br_largeur » est le côté le plus long, hauteur ou largeur.
+		'br_largeur'         => 2500,
+		'br_dpi'             => 150,
+		'br_poids'           => 1000,   // en kilo-octets
+		'br_tolerance'       => 10,     // en pour-cent, sous le plafond
 		// La haute définition part à la mise en page, et elle ne se règle pas
 		// d'une seule main : une photographie se satisfait de 300 dpi, un
 		// dessin au trait en réclame 1200, et le convertir en JPEG lui ôte
@@ -786,9 +787,9 @@ class Notice_Archeomed_Settings {
 		$ligne( 'ZipArchive', 'présente', $zip ? 'présente' : 'absente', $zip,
 			'Sans elle, la notice part en RTF au lieu du DOCX, et aucun paquet de numéro ne peut être assemblé.' );
 
-		$magick = extension_loaded( 'imagick' ) && class_exists( 'Imagick' );
+		$magick = Notice_Archeomed_Paquet::imagick_disponible();
 		$ligne( 'Imagick', 'présente', $magick ? 'présente' : 'absente', $magick,
-			'Seule à lire le TIFF, donc seule à fabriquer les basses définitions à partir des aperçus intégrés aux EPS.' );
+			'Seule à lire le TIFF et le PDF côté serveur. Sans elle, le TIFF est converti par le navigateur de l\'auteur et le PDF est refusé.' );
 
 		$gd = extension_loaded( 'gd' );
 		$ligne( 'GD', 'présente', $gd ? 'présente' : 'absente', $gd,
@@ -1407,7 +1408,7 @@ class Notice_Archeomed_Settings {
 			<tr>
 				<th scope="row">Basse définition (<code>icono/br</code>)</th>
 				<td>
-					<label>Largeur maximale
+					<label>Côté le plus long (hauteur ou largeur)
 						<input type="number" min="200" max="4000" step="10" style="width:7em"
 							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[br_largeur]"
 							value="<?php echo (int) self::get( 'br_largeur' ); ?>"> px</label>
@@ -1429,7 +1430,7 @@ class Notice_Archeomed_Settings {
 					<p class="description">
 						Elle n’est pas destinée à l’impression : elle sert à voir la figure
 						à sa place dans le document. Le poids compte donc autant que la
-						largeur — cent figures liées dans un fascicule, et le dossier
+						taille — cent figures liées dans un fascicule, et le dossier
 						devient intransportable.
 						<br>
 						<strong>La qualité ne se règle pas</strong> : le plugin part de la

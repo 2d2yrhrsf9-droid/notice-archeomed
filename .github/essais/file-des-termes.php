@@ -248,6 +248,95 @@ na_verifier( false !== strpos( $texte, 'introuvable sur le serveur' )
 	'le lisez-moi dit qu\'un fichier reçu manque, au lieu de « c\'est normal »', '' === $erreur ? null : $erreur );
 $paquet->nettoyer();
 
+WP_CLI::log( 'Les TIFF convertis par le navigateur' );
+// Sans Imagick, le navigateur de l'auteur envoie deux JPEG par TIFF : on les
+// reconnaît, on les range, et le dossier Métopes comme l'aperçu s'en servent.
+if ( ! Notice_Archeomed_Paquet::imagick_disponible() && function_exists( 'imagecreatetruecolor' ) ) {
+	$jpeg_de = function ( $l, $h, $nom ) {
+		$chemin = trailingslashit( get_temp_dir() ) . $nom;
+		$img = imagecreatetruecolor( $l, $h );
+		imagefilledrectangle( $img, 0, 0, $l - 1, $h - 1, imagecolorallocate( $img, 90, 120, 160 ) );
+		imagejpeg( $img, $chemin, 90 );
+		imagedestroy( $img );
+		return $chemin;
+	};
+	$hr_ok   = $jpeg_de( 1181, 1772, 'na-essai-conv-hr-ok.jpg' );
+	$hr_trop = $jpeg_de( 4200, 100, 'na-essai-conv-hr-trop.jpg' );
+	$br_ok   = $jpeg_de( 2400, 1600, 'na-essai-conv-br-ok.jpg' );
+	$br_trop = $jpeg_de( 3000, 100, 'na-essai-conv-br-trop.jpg' );
+	$png_nom = trailingslashit( get_temp_dir() ) . 'na-essai-conv.jpg';
+	$img = imagecreatetruecolor( 50, 50 );
+	imagepng( $img, $png_nom );
+	imagedestroy( $img );
+	$faux_nom = trailingslashit( get_temp_dir() ) . 'na-essai-conv-faux.jpg';
+	file_put_contents( $faux_nom, str_repeat( 'x', 5000 ) );
+	$accepte = array(
+		'hr'          => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $hr_ok, 'hr' ),
+		'br'          => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $br_ok, 'br' ),
+		'hr trop'     => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $hr_trop, 'hr' ),
+		'br trop'     => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $br_trop, 'br' ),
+		'png déguisé' => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $png_nom, 'hr' ),
+		'faux'        => Notice_Archeomed_Pactols::jpeg_converti_acceptable( $faux_nom, 'hr' ),
+	);
+	na_verifier( true === $accepte['hr'] && true === $accepte['br'] && false === $accepte['hr trop'] && false === $accepte['br trop']
+		&& false === $accepte['png déguisé'] && false === $accepte['faux'],
+		'un JPEG converti se reconnaît à son contenu et à ses mesures : la haute définition tient dans 4 000 px, la basse dans son côté réglé ; un PNG déguisé ou un faux ne passent pas', $accepte );
+
+	// Le rangement à demeure, par rang de figure.
+	$fiche_conv = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Conv' ) );
+	$tmp_hr = trailingslashit( get_temp_dir() ) . 'notice-archeomed-conv-hr-2-essai.jpg';
+	$tmp_br = trailingslashit( get_temp_dir() ) . 'notice-archeomed-conv-br-2-essai.jpg';
+	copy( $hr_ok, $tmp_hr );
+	copy( $br_ok, $tmp_br );
+	$rangees = na_appel( $plugin, 'archiver_les_conversions', array( $fiche_conv, array( 2 => array( 'hr' => $tmp_hr, 'br' => $tmp_br ) ) ) );
+	$gardees_conv = Notice_Archeomed_Pactols::conversions_rangees( $fiche_conv );
+	na_verifier( isset( $gardees_conv[2]['hr'], $gardees_conv[2]['br'] ) && file_exists( $gardees_conv[2]['hr'] ) && file_exists( $gardees_conv[2]['br'] )
+		&& array( 2 ) === array_keys( $gardees_conv ) && $rangees === $gardees_conv,
+		'les conversions se rangent à demeure et se retiennent par le rang de leur figure', $gardees_conv );
+
+	// Le dossier Métopes : la haute et la basse définition viennent de la conversion.
+	$faux_tif = trailingslashit( get_temp_dir() ) . 'na-essai-conv-original.tif';
+	file_put_contents( $faux_tif, "II*\0" . str_repeat( "\0", 64 ) );
+	$paquet_conv = new Notice_Archeomed_Paquet();
+	$erreur_conv = '';
+	$plan_conv = $paquet_conv->preparer( 'I. Constructions et habitats civils', array( array(
+		'id'            => $fiche_conv,
+		'd'             => array( 'commune' => 'Caen', 'lieu_dit' => 'Essai', 'annee' => '2026',
+			'illustrations' => array( array( 'rang' => 1, 'titre' => 'Plan' ) ) ),
+		'illustrations' => array( $faux_tif ),
+		'conversions'   => array( 1 => array( 'hr' => $hr_ok, 'br' => $br_ok ) ),
+	) ), $erreur_conv );
+	$atelier = new ReflectionProperty( $paquet_conv, 'atelier' );
+	$atelier->setAccessible( true );
+	$dossier_atelier = (string) $atelier->getValue( $paquet_conv );
+	$figure_conv = isset( $plan_conv[0][1] ) ? $plan_conv[0][1] : ( isset( $plan_conv[ key( $plan_conv ) ][1] ) ? $plan_conv[ key( $plan_conv ) ][1] : null );
+	$fichiers_hr = glob( $dossier_atelier . '/icono/hr/*.jpg' );
+	$fichiers_br = glob( $dossier_atelier . '/icono/br/*.jpg' );
+	$mesure_hr = ! empty( $fichiers_hr ) ? getimagesize( $fichiers_hr[0] ) : false;
+	$mesure_br = ! empty( $fichiers_br ) ? getimagesize( $fichiers_br[0] ) : false;
+	na_verifier( is_array( $figure_conv ) && ! empty( $figure_conv['fichier'] ) && $mesure_hr && 1181 === $mesure_hr[0] && 1772 === $mesure_hr[1]
+		&& $mesure_br && 2400 === $mesure_br[0] && 1600 === $mesure_br[1],
+		'sans Imagick, le dossier Métopes prend la haute et la basse définition du navigateur, et la figure est posée', array( $erreur_conv, $plan_conv, $fichiers_hr, $fichiers_br ) );
+	$paquet_conv->nettoyer();
+
+	// L'aperçu du courriel : tiré de la basse définition, pour un TIFF que le serveur ne lit pas.
+	$apercus_conv = na_appel( $plugin, 'fabriquer_les_apercus', array( array( $faux_tif ), array( 'illustrations' => array( array( 'rang' => 1 ) ) ),
+		array( 1 => array( 'br' => $br_ok ) ) ) );
+	$mesure_ap = ( isset( $apercus_conv[1]['apercu'] ) && file_exists( $apercus_conv[1]['apercu'] ) ) ? getimagesize( $apercus_conv[1]['apercu'] ) : false;
+	na_verifier( $mesure_ap && 1000 === $mesure_ap[0] && 667 === $mesure_ap[1] || ( $mesure_ap && 1000 === $mesure_ap[0] && 666 === $mesure_ap[1] ),
+		'l\'aperçu d\'un TIFF que le serveur ne lit pas se tire de sa basse définition convertie, à 1 000 px sur le grand côté', $apercus_conv );
+	if ( isset( $apercus_conv[1]['apercu'] ) ) { @unlink( $apercus_conv[1]['apercu'] ); }
+
+	// À la suppression de la notice, les conversions partent avec elle.
+	$plugin->effacer_les_illustrations( $fiche_conv );
+	na_verifier( ! file_exists( $gardees_conv[2]['hr'] ) && ! file_exists( $gardees_conv[2]['br'] ),
+		'les conversions sont effacées avec la notice' );
+	wp_delete_post( $fiche_conv, true );
+	foreach ( array( $hr_ok, $hr_trop, $br_ok, $br_trop, $png_nom, $faux_nom, $faux_tif ) as $f ) { @unlink( $f ); }
+} else {
+	WP_CLI::log( '  — Imagick présent : la conversion par le navigateur n\'a pas lieu d\'être éprouvée ici.' );
+}
+
 WP_CLI::log( 'Les instances, globales même sous WP-CLI' );
 na_verifier( isset( $GLOBALS['notice_archeomed_file'] )
 	&& $GLOBALS['notice_archeomed_file'] instanceof Notice_Archeomed_File,
