@@ -2454,6 +2454,7 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-originaux[open] > summary { margin-bottom: var(--na-e3); }
 			.na-form#na-form .na-lieu-etat { margin: var(--na-e2) 0 0; padding: var(--na-e2) var(--na-e3); line-height: 1.45; color: var(--na-avis);
 				background: var(--na-avis-fond); border-left: 3px solid var(--na-avis-bord); border-radius: 0 var(--na-r1) var(--na-r1) 0; }
+			.na-form#na-form .na-illus-ecoute > .na-illus-partie { margin-bottom: var(--na-e3); }
 			.na-form#na-form .na-illus-type { margin-bottom: var(--na-e4); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
 			.na-form#na-form .na-illus-ecoute > label { font-size: var(--na-t-m); color: var(--na-accent-fonce); }
@@ -4596,10 +4597,6 @@ class Notice_Archeomed_Pactols {
 				var etiquette = document.createElement('label');
 				etiquette.htmlFor = id;
 				etiquette.innerHTML = 'Nature de la figure <span class="na-requis" aria-hidden="true">*</span>';
-				var aide = document.createElement('p');
-				aide.className = 'na-help';
-				aide.id = id + '-aide';
-				aide.textContent = 'Elle adapte le conseil ci-dessous.';
 				var champ = document.createElement('select');
 				champ.id = id;
 				champ.name = 'illus_type[]';
@@ -4620,7 +4617,7 @@ class Notice_Archeomed_Pactols {
 				conseil.id = id + '-conseil';
 				function poser() { conseil.textContent = A11Y.aidesTypes[champ.value] || ''; conseil.hidden = !champ.value; }
 				poser();
-				champ.setAttribute('aria-describedby', aide.id + ' ' + conseil.id);
+				champ.setAttribute('aria-describedby', conseil.id);
 				champ.addEventListener('change', function () {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx].type = champ.value;
@@ -4628,7 +4625,6 @@ class Notice_Archeomed_Pactols {
 					marquerModifie();
 				});
 				bloc.appendChild(etiquette);
-				bloc.appendChild(aide);
 				bloc.appendChild(champ);
 				bloc.appendChild(conseil);
 				return { bloc: bloc, champ: champ };
@@ -4817,10 +4813,19 @@ class Notice_Archeomed_Pactols {
 					var titre = champIllustration(idx, 'titre', 'Titre', 0);
 					var legende = champIllustration(idx, 'legende', 'Légende', 2);
 					var credits = champIllustration(idx, 'credits', 'Crédits', 0);
-					var alt = champIllustration(idx, 'alt', 'Pour un public empêché de voir <span class="na-illus-terme">— le texte alternatif</span>', 4);
+					var alt = champIllustration(idx, 'alt', 'Texte alternatif', 4);
 					alt.bloc.className = 'na-illus-ecoute';
 					var nature = champType(idx);
+					// Un seul titre pour tout le bloc : la nature et le texte alternatif
+					// servent le même public, et se disaient chacun à leur façon.
+					var titreEcoute = document.createElement('p');
+					titreEcoute.className = 'na-illus-partie';
+					titreEcoute.id = 'na-illus-' + (idx + 1) + '-ecoute-titre';
+					titreEcoute.textContent = 'Nature de la figure et texte alternatif pour un public empêché de voir';
+					alt.bloc.setAttribute('role', 'group');
+					alt.bloc.setAttribute('aria-labelledby', titreEcoute.id);
 					alt.bloc.insertBefore(nature.bloc, alt.bloc.firstChild);
+					alt.bloc.insertBefore(titreEcoute, alt.bloc.firstChild);
 					champs.appendChild(publication);
 					champs.appendChild(titre.bloc);
 					champs.appendChild(legende.bloc);
@@ -4983,19 +4988,14 @@ class Notice_Archeomed_Pactols {
 				if ((vus.alt || vus.legende) && (trouve = COULEUR_SEULE.exec(alt + ' | ' + legende))) {
 					phrases.push(phraseA11y('couleur', { couleur: trouve[0] }));
 				}
-				// Comme au serveur : la nature choisie décide ; sans elle, les mots
-				// du titre, de la légende et du texte font foi.
+				// Comme au serveur : seules les figures qu'on ne comprend que par
+				// leurs données — un graphique, un tableau en image — demandent ces
+				// données en texte, à la suite du texte alternatif. Pour un plan,
+				// une carte ou une photographie, le texte alternatif suffit : on ne
+				// réclame pas une description de plus à qui a déjà rempli le champ.
 				var type = Object.prototype.hasOwnProperty.call(A11Y.types, m.type) ? m.type : '';
-				if ((vus.alt || vus.titre || vus.legende || vus.description || vus.type) && vide(m.description)) {
-					if (A11Y.avecDonnees.indexOf(type) !== -1) {
-						phrases.push(phraseA11y('donnees', { mot: A11Y.typesMots[type] }));
-					} else if (A11Y.aDecrire.indexOf(type) !== -1) {
-						phrases.push(phraseA11y('description', { mot: A11Y.typesMots[type] }));
-					} else if (type !== 'photo' && (trouve = MOTIFS_A11Y.complexe.exec(plierA11y(titre + ' ' + legende + ' ' + alt)))) {
-						var mot = trouve[1];
-						A11Y.complexes.forEach(function (c) { if (plierA11y(c) === trouve[1]) { mot = c; } });
-						phrases.push(phraseA11y('description', { mot: mot }));
-					}
+				if ((vus.alt || vus.type) && vide(m.description) && A11Y.avecDonnees.indexOf(type) !== -1) {
+					phrases.push(phraseA11y('donnees', { mot: A11Y.typesMots[type] }));
 				}
 				return phrases.map(function (p) { return NORMES.figure + ' ' + rang + NBSP + ': ' + p; });
 			}
@@ -9890,7 +9890,7 @@ class Notice_Archeomed_Pactols {
 	 * pas à chaque envoi. La notice part alors avec ce qu'elle a.
 	 */
 	private function apercus_a_fabriquer( $id ) {
-		if ( ! class_exists( 'Imagick' ) || get_post_meta( (int) $id, '_na_apercus_tente', true ) ) {
+		if ( ! ( class_exists( 'Imagick' ) || function_exists( 'imagecreatetruecolor' ) ) || get_post_meta( (int) $id, '_na_apercus_tente', true ) ) {
 			return false;
 		}
 		$d = get_post_meta( (int) $id, '_na_donnees', true );
@@ -10975,7 +10975,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function fabriquer_les_apercus( $illustrations, $d ) {
 		$dossier = $this->dossier_des_illustrations();
-		if ( '' === $dossier || ! class_exists( 'Imagick' )
+		if ( '' === $dossier || ! ( class_exists( 'Imagick' ) || function_exists( 'imagecreatetruecolor' ) )
 			|| empty( $d['illustrations'] ) ) {
 			return array();
 		}

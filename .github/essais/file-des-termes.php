@@ -365,7 +365,7 @@ na_verifier( $diagnostic_neutre, 'le diagnostic ne fabrique rien et ne touche pa
 na_verifier( false === $deja_tente, 'une notice déjà tentée ne relance pas la fabrication à chaque envoi' );
 
 WP_CLI::log( 'La version allégée d\'une vraie image' );
-if ( class_exists( 'Imagick' ) && function_exists( 'imagecreatetruecolor' ) ) {
+if ( function_exists( 'imagecreatetruecolor' ) ) {
 	$vraie = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-vraie.jpg';
 	$gd    = imagecreatetruecolor( 1600, 1200 );
 	imagefilledrectangle( $gd, 0, 0, 1599, 1199, imagecolorallocate( $gd, 120, 90, 60 ) );
@@ -379,9 +379,29 @@ if ( class_exists( 'Imagick' ) && function_exists( 'imagecreatetruecolor' ) ) {
 		@unlink( $faite );
 	}
 	na_verifier( is_array( $taille ) && Notice_Archeomed_Paquet::LARGEUR_APERCU === (int) $taille[0],
-		'une vraie image donne sa version allégée, à la largeur dite', $faites );
+		'une vraie image donne sa version allégée, à la largeur dite (par Imagick, ou à son défaut par GD)', $faites );
+	// Le repli : GD seul, quand Imagick échoue ou manque, pour un JPEG comme pour un PNG.
+	$paquet_gd = new Notice_Archeomed_Paquet();
+	$resultats_gd = array();
+	foreach ( array( 'jpg' => 'imagejpeg', 'png' => 'imagepng' ) as $ext => $ecrire ) {
+		$source_gd = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-gd.' . $ext;
+		$cible_gd  = trailingslashit( get_temp_dir() ) . 'notice-archeomed-essai-gd-cible.jpg';
+		$img       = imagecreatetruecolor( 2400, 1600 );
+		imagefilledrectangle( $img, 0, 0, 2399, 1599, imagecolorallocate( $img, 30, 90, 150 ) );
+		$ecrire( $img, $source_gd );
+		imagedestroy( $img );
+		$fait_gd = na_appel( $paquet_gd, 'reduire_par_gd', array( $source_gd, $cible_gd, 1000, 92, 150 ) );
+		$mesure_gd = $fait_gd ? getimagesize( $cible_gd ) : false;
+		$resultats_gd[ $ext ] = $mesure_gd ? $mesure_gd[0] . 'x' . $mesure_gd[1] . ' ' . round( filesize( $cible_gd ) / 1024 ) . ' Ko' : 'échec';
+		@unlink( $source_gd );
+		@unlink( $cible_gd );
+	}
+	na_verifier( 1 === preg_match( '/^1000x66[67] /', $resultats_gd['jpg'] ) && 1 === preg_match( '/^1000x66[67] /', $resultats_gd['png'] ),
+		'sans Imagick, GD réduit un JPEG et un PNG à la largeur dite : la figure ne disparaît pas du document', $resultats_gd );
+	na_verifier( false === na_appel( $paquet_gd, 'reduire_par_gd', array( '/inexistant.tif', '/tmp/x.jpg', 1000, 92, 150 ) ),
+		'GD ne lit pas ce qui n\'est pas un JPEG ou un PNG : la figure part alors sans aperçu, sans erreur' );
 } else {
-	WP_CLI::log( '  — Imagick absent : la fabrication n\'est pas éprouvée ici.' );
+	WP_CLI::log( '  — GD absent : la fabrication n\'est pas éprouvée ici.' );
 }
 
 WP_CLI::log( 'La note d\'un envoi partiel' );
@@ -1740,16 +1760,20 @@ na_verifier( array( 1 ) === array_values( array_unique( $fichiers ) )
 	&& array() === $avis_de( array( 'alt' => 'Vue aérienne du site, depuis le sud', 'fichier_depose' => 'vue.jpg' ) )
 	&& 1 === count( $avis_de( array( 'alt' => 'image1.jpg', 'titre' => 'image1.jpg' ) ) ),
 	'un nom de fichier — extension d\'image, nom d\'appareil, nom du fichier déposé — reçoit un avis, et lui seul', $fichiers );
-$recommandee = function ( $item ) use ( $avis_de ) {
-	$avis = preg_grep( '/description détaillée recommandée/u', $avis_de( array_merge( array( 'description' => '' ), $item ) ) );
-	return empty( $avis ) ? '' : (string) reset( $avis );
-};
-na_verifier( false !== strpos( $recommandee( array( 'titre' => 'Coupe stratigraphique du fossé', 'alt' => 'Couches de remblai sur le fond du fossé' ) ), "«\u{00A0}coupe\u{00A0}»" )
-	&& false !== strpos( $recommandee( array( 'legende' => 'Relevé de l’élévation nord.', 'alt' => 'Mur à trois assises' ) ), "«\u{00A0}relevé\u{00A0}»" )
-	&& false !== strpos( $recommandee( array( 'alt' => 'Histogrammes des datations' ) ), "«\u{00A0}histogramme\u{00A0}»" )
-	&& '' === $recommandee( array( 'titre' => 'Vue du foyer', 'alt' => 'Foyer contre la paroi nord' ) )
-	&& '' === $recommandee( array( 'titre' => 'Coupe stratigraphique', 'alt' => 'Couches', 'description' => 'Trois couches.' ) ),
-	'un plan, une coupe, un relevé, un graphique sans description détaillée : elle est recommandée ; décrite, rien' );
+// Un plan, une carte, une coupe : le texte alternatif suffit, on ne réclame pas
+// une description de plus à qui a rempli le champ.
+$figures_a_decrire = array(
+	array( 'titre' => 'Coupe stratigraphique du fossé', 'alt' => 'Couches de remblai sur le fond du fossé' ),
+	array( 'legende' => 'Relevé de l’élévation nord.', 'alt' => 'Mur à trois assises' ),
+	array( 'type' => 'plan', 'alt' => 'Deux bâtiments à l’ouest d’un enclos' ),
+	array( 'type' => 'carte', 'alt' => 'Les voies autour du château' ),
+	array( 'type' => 'planche', 'alt' => 'Dix tessons numérotés' ),
+);
+$reclames = array();
+foreach ( $figures_a_decrire as $figure ) {
+	$reclames = array_merge( $reclames, preg_grep( '/description détaillée/u', $avis_de( array_merge( array( 'description' => '' ), $figure ) ) ) );
+}
+na_verifier( array() === $reclames, 'un plan, une carte, une planche, une coupe dont le texte alternatif est rempli ne reçoivent aucun avis de description', $reclames );
 // La nature de la figure décide de ce qu'on demande.
 $donnees = function ( $item ) use ( $avis_de ) {
 	return count( preg_grep( '/ne se lit pas à l’écoute/u', $avis_de( array_merge( array( 'description' => '' ), $item ) ) ) );
@@ -1760,10 +1784,8 @@ na_verifier( 1 === $donnees( array( 'type' => 'graphique', 'alt' => 'Courbe des 
 	&& 0 === $donnees( array( 'type' => 'photo', 'alt' => 'Vue du foyer' ) )
 	&& 0 === $donnees( array( 'alt' => 'Courbe des effectifs' ) ),
 	'un graphique ou un tableau en image sans données en texte reçoit un avis ; décrit, une photographie ou sans nature, non' );
-na_verifier( 1 === count( preg_grep( '/description détaillée recommandée.*carte/u', $avis_de( array( 'description' => '', 'type' => 'carte', 'alt' => 'Les voies' ) ) ) )
-	&& array() === preg_grep( '/description détaillée recommandée/u', $avis_de( array( 'description' => '', 'type' => 'photo', 'titre' => 'Plan du château vu du ciel', 'alt' => 'Vue aérienne' ) ) )
-	&& 'graphique' === $C::type_de_figure( ' Graphique ' ) && '' === $C::type_de_figure( 'image' ) && '' === $C::type_de_figure( array( 'photo' ) ),
-	'une carte sans description est signalée ; une photographie n\'est pas prise pour un plan par son titre ; la nature inconnue se perd' );
+na_verifier( 'graphique' === $C::type_de_figure( ' Graphique ' ) && '' === $C::type_de_figure( 'image' ) && '' === $C::type_de_figure( array( 'photo' ) ),
+	'la nature de la figure se reconnaît, espaces et casse ôtés ; une valeur inconnue se perd' );
 $_POST = array( 'illus_titre' => array( 'Courbe', 'Vue' ), 'illus_alt' => array( 'Courbe', 'Vue' ), 'illus_type' => array( 'graphique', 'inconnue' ) );
 $_FILES = array( 'illustrations' => array( 'name' => array( 'a.jpg', 'b.jpg' ), 'error' => array( 0, 0 ) ) );
 $natures = na_appel( $plugin, 'collect_illustrations' );
@@ -1776,7 +1798,6 @@ $figures_a11y = array(
 	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => 'A', 'alt' => 'DSC_0042.JPG', 'description' => 'x' ) );
 $avis_tous = $C::figures( $figures_a11y );
 na_verifier( 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: le texte alternatif reprend la légende\x{00A0}; il ne la répète pas, il restitue l’information visuelle utile\\.$/u", $avis_tous ) )
-	&& 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: description détaillée recommandée \\(«\x{00A0}coupe\x{00A0}»\\)/u", $avis_tous ) )
 	&& 1 === count( preg_grep( "/^Fig\\. 2\x{00A0}: le texte alternatif «\x{00A0}DSC_0042\\.JPG\x{00A0}» est un nom de fichier/u", $avis_tous ) ),
 	'au serveur, chaque avis suit « Fig. N : », dans la phrase même que reçoit le navigateur', $avis_tous );
 $regles = $C::regles_d_accessibilite();
@@ -1785,7 +1806,7 @@ foreach ( $regles['motifs'] as $motif ) {
 	$motifs_js_sans_ucp = $motifs_js_sans_ucp && false === strpos( $motif, '(*' ) && false === strpos( $motif, '(?<' ) && false === strpos( $motif, '\\p' );
 }
 na_verifier( $regles['phrases'] === $C::phrases_d_accessibilite() && true === $regles['actif'] && 150 === $regles['conseille'] && 300 === $regles['max']
-	&& $motifs_js_sans_ucp && in_array( 'élévation', $regles['complexes'], true ),
+	&& $motifs_js_sans_ucp,
 	'le formulaire reçoit du serveur les phrases, les motifs (lisibles par le navigateur) et les seuils', array_keys( $regles ) );
 $reglages_a11y = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
 $poser_les_normes_a11y = function ( $normes ) use ( $reglages_a11y ) {
@@ -1807,7 +1828,7 @@ $long_150 = $C::accessibilite_de_la_figure( array( 'rang' => 1, 'alt' => str_rep
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_a11y );
 Notice_Archeomed_Normes::oublier();
 na_verifier( array() === $avis_eteints && false === $actif_eteint && isset( $sans_case[ Notice_Archeomed_Normes::CASES_VUES ]['avis'] )
-	&& 4 === count( $avis_d_avant ),
+	&& 3 === count( $avis_d_avant ),
 	'la case « accessibilité des figures » tait ces avis ; des avis enregistrés avant elle ne l\'éteignent pas', array( $avis_eteints, $avis_d_avant ) );
 na_verifier( 100 === $conseille_100 && 1 === count( preg_grep( '/fait 119\x{00A0}caractères, pour 100 au plus/u', $long_100 ) )
 	&& array() === $long_150 && 300 === $propres_a11y['alt_conseille'],
@@ -1903,7 +1924,7 @@ na_verifier( count( $regles_sigles['sigles'] ) >= 20 && isset( $regles_sigles['p
 WP_CLI::log( 'L\'accessibilité des illustrations sur la fiche' );
 $A = 'Notice_Archeomed_Accessibilite';
 $saisie_fiche = array_merge( $saisie_styles, array( 'reference' => 'ACCES1', 'illustrations' => array(
-	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => 'Plan des vestiges.', 'credits' => 'DAO A.', 'alt' => 'Plan des murs',
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => 'Plan des vestiges.', 'credits' => 'DAO A.', 'alt' => 'Plan des murs', 'type' => 'graphique',
 		'figure' => array( 'fichier' => 'icono/br/plan.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 ) ),
 	array( 'rang' => 2, 'titre' => 'Vue du fossé', 'legende' => '', 'credits' => '',
 		'figure' => array( 'fichier' => 'icono/br/vue.jpg', 'largeur' => 800, 'hauteur' => 600, 'dpi' => 300 ) ) ) ) );
@@ -1923,7 +1944,7 @@ $encart->poser_le_formulaire_des_figures();
 $rendu_encart = (string) ob_get_clean();
 na_verifier( false !== strpos( $rendu_encart, '<th scope="col">Figure</th><th scope="col">Légende</th><th scope="col">Crédits</th><th scope="col">Texte alternatif</th><th scope="col">Description détaillée</th><th scope="col">État</th>' )
 	&& false !== strpos( $rendu_encart, 'À compléter' ) && false !== strpos( $rendu_encart, 'Le Word porte le titre à sa place' )
-	&& false !== strpos( $rendu_encart, 'À vérifier' ) && false !== strpos( $rendu_encart, 'Description détaillée recommandée' )
+	&& false !== strpos( $rendu_encart, 'À vérifier' ) && false !== strpos( $rendu_encart, 'Figure de type graphique' )
 	&& 2 === substr_count( $rendu_encart, 'name="na_alt[' ) && 5 === substr_count( $rendu_encart, 'form="na-a11y-figures"' )
 	&& false !== strpos( $rendu_encart, '<form id="na-a11y-figures"' ) && false !== strpos( $rendu_encart, 'value="' . $A::ACTION_FIGURES . '"' )
 	&& false !== strpos( $rendu_encart, '>Fig. 2<' ),

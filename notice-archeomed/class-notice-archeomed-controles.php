@@ -52,15 +52,6 @@ class Notice_Archeomed_Controles {
 	const MOTS_SANS_CONTENU = array( 'image', 'figure', 'fig', 'photo', 'photographie', 'illustration', 'dessin', 'plan' );
 
 	/**
-	 * Les figures qui se comprennent mal sans les voir, et pour lesquelles la
-	 * description détaillée est recommandée. [HYPOTHÈSE] Liste de départ de
-	 * la rédaction, à ajuster : « coupe » est aussi un vase, « relevé » un
-	 * adjectif, « plan » un « premier plan » de photographie.
-	 */
-	const FIGURES_COMPLEXES = array( 'plan', 'carte', 'coupe', 'stratigraphie', 'profil', 'relevé', 'graphique', 'diagramme',
-		'histogramme', 'courbe', 'tableau', 'schéma', 'restitution', 'élévation' );
-
-	/**
 	 * La nature d'une figure, que l'auteur choisit : elle décide de ce qu'on
 	 * lui demande pour la rendre accessible. Une photographie se décrit en
 	 * une phrase ; un graphique ou un tableau en image se lisent par leurs
@@ -84,9 +75,6 @@ class Notice_Archeomed_Controles {
 
 	/** Celles qu'on ne comprend que par leurs données : un équivalent en texte est demandé. */
 	const TYPES_AVEC_DONNEES = array( 'graphique', 'tableau' );
-
-	/** Celles dont l'organisation se dit : la description détaillée est recommandée. */
-	const TYPES_A_DECRIRE = array( 'plan', 'carte', 'planche' );
 
 	/** Les extensions d'un nom de fichier d'image, celles du dépôt comprises. */
 	const EXTENSIONS_D_IMAGE = array( 'jpg', 'jpeg', 'jpe', 'png', 'tif', 'tiff', 'gif', 'bmp', 'webp', 'heic', 'heif', 'svg', 'pdf', 'psd', 'jp2', 'dng', 'cr2', 'nef', 'raw' );
@@ -454,7 +442,6 @@ class Notice_Archeomed_Controles {
 			'legende'     => "le texte alternatif reprend la légende\u{00A0}; il ne la répète pas, il restitue l’information visuelle utile.",
 			'debut'       => "le texte alternatif commence par «\u{00A0}{debut}\u{00A0}», que le lecteur d’écran annonce déjà.",
 			'couleur'     => "«\u{00A0}{couleur}\u{00A0}» — l’information ne doit pas reposer sur la seule couleur\u{00A0}; nommez aussi ce qu’elle désigne.",
-			'description' => "description détaillée recommandée («\u{00A0}{mot}\u{00A0}»)\u{00A0}; dites-y ce qu’un lecteur qui ne voit pas la figure doit en savoir — organisation, repères, données.",
 			'donnees'     => "figure de type {mot}\u{00A0}: son contenu ne se lit pas à l’écoute. Recopiez les données (valeurs, séries, lignes du tableau) dans la description détaillée, à la suite du texte alternatif.",
 			// Celle-ci ne suit pas « Fig. N : » : elle porte sur le texte.
 			'sigle'       => "Le sigle «\u{00A0}{sigle}\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}{developpement} ({sigle})\u{00A0}».",
@@ -479,7 +466,6 @@ class Notice_Archeomed_Controles {
 	 * qui n'a plus que des lettres sans accent, des chiffres et des espaces.
 	 */
 	public static function motifs_d_accessibilite() {
-		$complexes = array_map( array( __CLASS__, 'plier_pour_comparer' ), self::FIGURES_COMPLEXES );
 		return array(
 			'sansContenu' => '^(?:' . implode( '|', self::MOTS_SANS_CONTENU ) . ')s?(?: no?)?(?: ?[0-9]+[a-z]?)?$',
 			// Les noms que donnent les appareils et les scanners : DSC_0042,
@@ -487,7 +473,6 @@ class Notice_Archeomed_Controles {
 			'appareil'    => '^(?:dsc|dscn|dscf|img|pict|pxl|scan|p) ?[0-9]{3,}(?: [0-9a-z]+)*$',
 			'extension'   => '\.(?:' . implode( '|', self::EXTENSIONS_D_IMAGE ) . ')\s*$',
 			'numero'      => '\b(?:figures?|figs?|ills?|illustrations?) ?[0-9]+[a-z]?\b',
-			'complexe'    => '\b(' . implode( '|', $complexes ) . ')(?:s|x)?\b',
 		);
 	}
 
@@ -502,11 +487,9 @@ class Notice_Archeomed_Controles {
 			'max'        => self::ALT_MAX,
 			'phrases'    => self::phrases_d_accessibilite(),
 			'motifs'     => self::motifs_d_accessibilite(),
-			'complexes'  => self::FIGURES_COMPLEXES,
 			'types'      => self::TYPES_DE_FIGURE,
 			'typesMots'  => self::TYPES_MOTS,
 			'avecDonnees' => self::TYPES_AVEC_DONNEES,
-			'aDecrire'   => self::TYPES_A_DECRIRE,
 			'aidesTypes' => self::aides_par_type(),
 			'repriseMin' => self::REPRISE_MOTS_MIN,
 			'repriseDice' => self::REPRISE_DICE,
@@ -685,20 +668,14 @@ class Notice_Archeomed_Controles {
 		if ( preg_match( self::COULEUR_SEULE, $alt . "\n" . $legende, $couleur ) ) {
 			$avis[] = self::phrase( 'couleur', array( 'couleur' => $couleur[0] ) );
 		}
-		// Une nature choisie décide : les données d'un graphique ou d'un
-		// tableau, la description d'un plan, d'une carte ou d'une planche ;
-		// une photographie n'en demande pas. Sans nature, les mots du titre
-		// et de la légende font foi, comme avant.
+		// Seules les figures qu'on ne comprend que par leurs données — un
+		// graphique, un tableau en image — demandent ces données en texte, à la
+		// suite du texte alternatif. Pour un plan, une carte ou une photographie,
+		// le texte alternatif suffit : réclamer une description de plus à qui a
+		// déjà rempli le champ n'apprend rien et inquiète.
 		$type = self::type_de_figure( isset( $item['type'] ) ? $item['type'] : '' );
-		if ( '' === $description ) {
-			if ( in_array( $type, self::TYPES_AVEC_DONNEES, true ) ) {
-				$avis[] = self::phrase( 'donnees', array( 'mot' => self::TYPES_MOTS[ $type ] ) );
-			} elseif ( in_array( $type, self::TYPES_A_DECRIRE, true ) ) {
-				$avis[] = self::phrase( 'description', array( 'mot' => self::TYPES_MOTS[ $type ] ) );
-			} elseif ( 'photo' !== $type && preg_match( '/' . $motifs['complexe'] . '/',
-				self::plier_pour_comparer( $titre . ' ' . $legende . ' ' . $alt ), $mot ) ) {
-				$avis[] = self::phrase( 'description', array( 'mot' => self::mot_complexe( $mot[1] ) ) );
-			}
+		if ( '' === $description && in_array( $type, self::TYPES_AVEC_DONNEES, true ) ) {
+			$avis[] = self::phrase( 'donnees', array( 'mot' => self::TYPES_MOTS[ $type ] ) );
 		}
 		return $avis;
 	}
@@ -818,16 +795,6 @@ class Notice_Archeomed_Controles {
 		}
 		return $plie === self::plier( $fichier )
 			|| $plie === self::plier( (string) preg_replace( '/\.[A-Za-z0-9]{1,5}$/', '', $fichier ) );
-	}
-
-	/** Le mot de la liste des figures complexes dont ce mot plié vient. */
-	private static function mot_complexe( $plie ) {
-		foreach ( self::FIGURES_COMPLEXES as $mot ) {
-			if ( self::plier( $mot ) === $plie ) {
-				return $mot;
-			}
-		}
-		return $plie;
 	}
 
 	/**

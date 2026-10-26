@@ -636,7 +636,8 @@ rédaction se déplient sous l'aide (« Exemples ») :
 
 **La nature de la figure.** Un choix **obligatoire** — photographie, plan
 (relevé, dessin), carte, graphique ou diagramme, planche, tableau en image,
-autre — posé en tête du bloc « Pour un public empêché de voir »
+autre — posé en tête du bloc « Nature de la figure et texte alternatif pour un
+public empêché de voir »
 (`illus_type[]`, gardé avec la figure : brouillon, reprise, correction).
 Facultatif, il serait resté vide ; « Autre » sert à ce qui n'entre nulle part.
 L'oubli se signale comme celui du texte alternatif (sous le champ, dans le
@@ -647,10 +648,9 @@ en correction, demande de le choisir. Elle sert à trois choses :
   (`Notice_Archeomed_Controles::aides_par_type()`) ;
 - un **graphique** ou un **tableau en image** sans description détaillée reçoit
   l'avis « figure de type … : son contenu ne se lit pas à l'écoute. Recopiez
-  les données… » ; un **plan**, une **carte** ou une **planche** celui de la
-  description recommandée ; une **photographie** n'en reçoit aucun, et n'est
-  pas prise pour un plan à cause d'un mot du titre. Sans nature, les mots du
-  titre, de la légende et du texte font foi, comme avant ;
+  les données… ». Pour un plan, une carte, une planche ou une photographie, le
+  texte alternatif suffit : aucun avis ne réclame une description de plus à
+  qui a rempli le champ (elle reste possible, à la ligne) ;
 - elle figure dans le courriel de la rédaction, la page de relecture et la fiche
   (« Nature : Carte »), non dans le document Word : la chaîne Métopes ne la
   lit pas.
@@ -698,11 +698,8 @@ saisie et dit quelle figure décrire.
     « Illustration de » ;
   - lui ou la légende renvoie à une couleur seule (« en rouge », « zones
     vertes ») — liste des couleurs [HYPOTHÈSE] ;
-  - **description détaillée recommandée** : le titre, la légende ou le texte
-    alternatif parle de plan, carte, coupe, stratigraphie, profil, relevé,
-    graphique, diagramme, histogramme, courbe, tableau, schéma, restitution
-    ou élévation, et la description détaillée est vide. Liste [HYPOTHÈSE] à
-    ajuster : « coupe » est aussi un vase, « relevé » un adjectif.
+  - **données à recopier** : la figure est un graphique ou un tableau en image
+    (nature choisie) et la description détaillée est vide ;
 
   La case « l'accessibilité des figures » des avis du dépôt (Normes
   éditoriales) les tait tous. Un site dont les avis étaient déjà enregistrés

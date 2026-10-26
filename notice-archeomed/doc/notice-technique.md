@@ -331,7 +331,7 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 
 ### Prérequis
 
-- **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures).
+- **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures ; à son défaut, ou s'il échoue, GD réduit les JPEG et les PNG, mais ni les TIFF ni les PDF). Aucune limite de temps ni de mémoire n'est posée à Imagick : elles valent pour le processus entier, non pour une image.
 - **WordPress 5.6 au moins**, base MySQL ou MariaDB.
 - **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
 - **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.

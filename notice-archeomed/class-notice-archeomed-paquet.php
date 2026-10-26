@@ -43,7 +43,7 @@ class Notice_Archeomed_Paquet {
 	 */
 	const LARGEUR_APERCU = 1000;
 	/** Au-delà, une image se déclare trop grande pour qu'on tente de la lire : mémoire, temps. */
-	const MEGAPIXELS_MAX = 100;
+	const MEGAPIXELS_MAX = 250;
 	const POIDS_APERCU   = 150;
 
 	/**
@@ -515,30 +515,24 @@ class Notice_Archeomed_Paquet {
 	 */
 	private function reduire( $source, $cible, $largeur, $qualite, $dpi, $poids_max, $tolerance, $ecran = false ) {
 		if ( ! class_exists( 'Imagick' ) ) {
-			return false;
+			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max );
 		}
 		$plancher = ( self::SANS_PLAFOND === $poids_max )
 			? 0 : (int) round( $poids_max * ( 100 - $tolerance ) / 100 );
 		$image = null;
 		try {
 			// Un fichier d'inconnu ne doit pas pouvoir épuiser le serveur : on
-			// refuse ce qui se déclare gigantesque avant de le lire, et l'on
-			// borne la mémoire et le temps d'Imagick. Les PDF n'ont pas de
-			// dimension à lire d'avance : leur résolution est déjà plafonnée.
+			// refuse ce qui se déclare gigantesque avant de le lire. Les PDF
+			// n'ont pas de dimension à lire d'avance : leur résolution est déjà
+			// plafonnée. On ne pose pas de limite de temps ni de mémoire à
+			// Imagick : elles valent pour le processus entier, non pour une
+			// image, et un processus qui dure les épuise pour les suivantes.
 			$dimensions = @getimagesize( $source );
 			if ( is_array( $dimensions ) && (int) $dimensions[0] * (int) $dimensions[1] > self::MEGAPIXELS_MAX * 1000000 ) {
 				$this->erreurs[] = basename( $source ) . ' : image trop grande (plus de ' . self::MEGAPIXELS_MAX . ' millions de pixels), aperçu non fabriqué.';
 				return false;
 			}
 			$image = new Imagick();
-			foreach ( array( 'RESOURCETYPE_MEMORY' => 256, 'RESOURCETYPE_MAP' => 512 ) as $ressource => $mo ) {
-				if ( defined( 'Imagick::' . $ressource ) ) {
-					@$image->setResourceLimit( constant( 'Imagick::' . $ressource ), $mo * 1048576 );
-				}
-			}
-			if ( defined( 'Imagick::RESOURCETYPE_TIME' ) ) {
-				@$image->setResourceLimit( Imagick::RESOURCETYPE_TIME, 60 );
-			}
 			// Un PDF se dessine à la résolution qu'on lui donne avant de le
 			// lire : sans elle, Imagick le rend à 72 ppp, et un plan au trait
 			// devenait une image floue étiquetée 1 200. Plafonnée à 600 : une
@@ -623,6 +617,60 @@ class Notice_Archeomed_Paquet {
 			if ( $image instanceof Imagick ) {
 				$image->clear();
 			}
+			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
+			// Une figure absente du document vaut moins qu'une figure moins bien
+			// réduite : GD prend le relais pour un JPEG ou un PNG.
+			return $this->reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max );
+		}
+	}
+
+	/**
+	 * Le repli quand Imagick manque ou échoue : GD, pour un JPEG ou un PNG.
+	 * Un TIFF ou un PDF ne se lit pas ainsi ; la figure part alors sans
+	 * aperçu, comme avant.
+	 *
+	 * Rend vrai si la cible a été écrite.
+	 */
+	private function reduire_par_gd( $source, $cible, $largeur, $qualite, $poids_max ) {
+		$dimensions = @getimagesize( $source );
+		if ( ! function_exists( 'imagecreatetruecolor' ) || ! is_array( $dimensions )
+			|| (int) $dimensions[0] * (int) $dimensions[1] > self::MEGAPIXELS_MAX * 1000000 ) {
+			return false;
+		}
+		$lecteurs = array( IMAGETYPE_JPEG => 'imagecreatefromjpeg', IMAGETYPE_PNG => 'imagecreatefrompng' );
+		if ( ! isset( $lecteurs[ $dimensions[2] ] ) || ! function_exists( $lecteurs[ $dimensions[2] ] ) ) {
+			return false;
+		}
+		try {
+			$image = @call_user_func( $lecteurs[ $dimensions[2] ], $source );
+			if ( ! $image ) {
+				return false;
+			}
+			if ( $dimensions[0] > $largeur ) {
+				$reduite = imagescale( $image, (int) $largeur );
+				if ( $reduite ) {
+					imagedestroy( $image );
+					$image = $reduite;
+				}
+			}
+			// Un PNG transparent se pose sur du blanc : le JPEG n'a pas d'alpha.
+			$fond = imagecreatetruecolor( imagesx( $image ), imagesy( $image ) );
+			imagefill( $fond, 0, 0, imagecolorallocate( $fond, 255, 255, 255 ) );
+			imagecopy( $fond, $image, 0, 0, 0, 0, imagesx( $image ), imagesy( $image ) );
+			imagedestroy( $image );
+			$qualite = max( self::QUALITE_PLANCHER, (int) $qualite );
+			for ( $essai = 0; $essai < 10; $essai++ ) {
+				imagejpeg( $fond, $cible, $qualite );
+				clearstatcache( true, $cible );
+				if ( self::SANS_PLAFOND === $poids_max || filesize( $cible ) / 1024 <= $poids_max
+					|| $qualite <= self::QUALITE_PLANCHER ) {
+					break;
+				}
+				$qualite = max( self::QUALITE_PLANCHER, $qualite - self::QUALITE_PALIER );
+			}
+			imagedestroy( $fond );
+			return file_exists( $cible );
+		} catch ( Throwable $e ) {
 			$this->erreurs[] = basename( $source ) . ' : ' . $e->getMessage();
 			return false;
 		}

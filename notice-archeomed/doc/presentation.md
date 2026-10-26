@@ -68,7 +68,7 @@ Tout ce qui change d'une revue à l'autre ou d'une année à l'autre se règle s
 
 Le formulaire a été conçu en tenant compte du clavier et des lecteurs d'écran : chaque champ est étiqueté, les erreurs sont listées et reliées au champ concerné, la vérification anti-robot se manœuvre au clavier, et une adresse de courriel est donnée en tête de page pour qui préfère envoyer sa notice autrement. Il n'a pas encore fait l'objet d'un audit RGAA complet ni d'essais systématiques avec des utilisateurs de lecteurs d'écran. Un onglet de l'administration fait passer le formulaire publié à un outil de contrôle automatique libre et garde la trace de l'audit manuel de référence.
 
-Au-delà du formulaire, l'extension cherche à rendre les **notices publiées** plus accessibles : textes alternatifs obligatoires, descriptions détaillées pour les figures complexes, sigles développés, siècles que la synthèse vocale lit comme des nombres.
+Au-delà du formulaire, l'extension cherche à rendre les **notices publiées** plus accessibles : textes alternatifs obligatoires, données recopiées en texte pour les graphiques et les tableaux en image, sigles développés, siècles que la synthèse vocale lit comme des nombres.
 
 ## Ce que l'extension ne fait pas
 
