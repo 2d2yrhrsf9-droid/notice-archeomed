@@ -888,11 +888,20 @@ class Notice_Archeomed_Pactols {
 			// de s'en remettre à ce qui est en base.
 			// La même typographie que le document : la page montrait le texte
 			// tel qu'il avait été tapé, le Word du même dossier corrigé.
-			$h .= '<div class="texte">' . self::petites_capitales_du_html( self::siecles_du_html(
-				self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) ) ) . '</div>';
-			// La mention de responsabilité, que le document accroche au
-			// dernier paragraphe : la page l'omettait.
-			$h .= '<p class="meta">(' . esc_html( $this->responsables_inline( $d ) ) . ')</p>';
+			$texte_html = self::petites_capitales_du_html( self::siecles_du_html(
+				self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) ) );
+			// La mention de responsabilité, comme le document la pose : collée au
+			// point final du dernier paragraphe, dans la police du texte — ou, si
+			// la correspondance des styles lui donne son paragraphe, à part et
+			// sans parenthèses. Elle prenait un paragraphe de métadonnée, en
+			// police sans empattement et plus petite, détaché du texte.
+			$responsables = esc_html( $this->responsables_inline( $d ) );
+			if ( ! Notice_Archeomed_Styles::responsabilites_a_part() && preg_match( '#</p>\s*$#i', $texte_html ) ) {
+				$texte_html = preg_replace( '#</p>\s*$#i', ' (' . $responsables . ')</p>', $texte_html, 1 );
+			} else {
+				$texte_html .= '<p>' . ( Notice_Archeomed_Styles::responsabilites_a_part() ? $responsables : '(' . $responsables . ')' ) . '</p>';
+			}
+			$h .= '<div class="texte">' . $texte_html . '</div>';
 
 			foreach ( (array) ( isset( $d['illustrations'] ) ? $d['illustrations'] : array() ) as $item ) {
 				$h .= '<figure>';

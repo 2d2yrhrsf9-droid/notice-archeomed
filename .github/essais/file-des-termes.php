@@ -1723,6 +1723,10 @@ na_verifier( 1 === substr_count( $xml_alt2, '<w:pStyle w:val="TEIfigurealttext"/
 	$suite_alt2 );
 $relu_alt = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_alt ) ) );
 $courriel_alt = na_appel( $plugin, 'illustrations_block', array( $saisie_alt ) );
+$resp_relu = isset( $saisie_alt['resp_nom'] ) ? $saisie_alt['resp_nom'] : '';
+na_verifier( '' !== $resp_relu && 1 === preg_match( '#<div class="texte">.*\(Responsable[^<]*' . preg_quote( $resp_relu, '#' ) . '[^<]*\)</p></div>#us', $relu_alt )
+	&& false === strpos( $relu_alt, '<p class="meta">(Responsable' ),
+	'la page de relecture colle la mention de responsabilité au dernier paragraphe, dans la police du texte, comme le document', substr( $relu_alt, (int) strpos( $relu_alt, 'class="texte"' ), 400 ) );
 na_verifier( false !== strpos( $relu_alt, 'alt="Plan des murs &amp; du fossé" aria-describedby="description-1"' ) && false !== strpos( $relu_alt, 'alt="Vue">' )
 	&& false !== strpos( $relu_alt, '<div class="description" id="description-1">' ) && false !== strpos( $relu_alt, '<p>Le fossé longe le mur ouest.</p>' )
 	&& false !== strpos( $courriel_alt, "Texte alternatif\u{00A0}: Plan des murs &amp; du fossé" )
