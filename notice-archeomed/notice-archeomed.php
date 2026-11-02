@@ -1572,8 +1572,7 @@ class Notice_Archeomed_Pactols {
 	 * Ce que le formulaire doit savoir pour convertir un TIFF lui-même.
 	 *
 	 * « imagick » dit si le serveur lit le TIFF et le PDF : sinon, le navigateur
-	 * convertit le TIFF en deux JPEG (la haute et la basse définition) et le
-	 * PDF est refusé. Les mesures sont celles des réglages : la haute
+	 * convertit le TIFF et le PDF en deux JPEG (la haute et la basse définition). Les mesures sont celles des réglages : la haute
 	 * définition tient dans la norme des photographies (10 × 15 cm à 300 ppp,
 	 * sans agrandir), la basse dans son côté et son poids maximaux.
 	 */
@@ -4517,6 +4516,13 @@ class Notice_Archeomed_Pactols {
 					return b;
 				});
 			}
+			// L'échelle qui fait tenir une image dans la boîte de la haute définition
+			// (10 × 15 cm à 300 ppp par défaut), tournée comme elle.
+			function echelleDeLaBoiteHr(w, h) {
+				var grand = Math.round(Math.max(CONV.hr.largeurCm, CONV.hr.hauteurCm) * CONV.hr.dpi / 2.54);
+				var court = Math.round(Math.min(CONV.hr.largeurCm, CONV.hr.hauteurCm) * CONV.hr.dpi / 2.54);
+				return Math.min(grand / Math.max(w, h), court / Math.min(w, h));
+			}
 			function convertirLeTiff(f) {
 				var base = f.name.replace(/\.[^.]+$/, '');
 				return lireLeBuffer(f).then(function (buf) {
@@ -4535,9 +4541,7 @@ class Notice_Archeomed_Pactols {
 					plein.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
 					// La haute définition : dans la boîte 10 × 15 cm à 300 ppp, tournée comme l'image.
 					var dpiHr = CONV.hr.dpi;
-					var grand = Math.round(Math.max(CONV.hr.largeurCm, CONV.hr.hauteurCm) * dpiHr / 2.54);
-					var court = Math.round(Math.min(CONV.hr.largeurCm, CONV.hr.hauteurCm) * dpiHr / 2.54);
-					var echelleHr = Math.min(1, grand / Math.max(w, h), court / Math.min(w, h));
+					var echelleHr = Math.min(1, echelleDeLaBoiteHr(w, h));
 					var cHr = reduireLeCanvas(plein, Math.round(w * echelleHr), Math.round(h * echelleHr));
 					// La basse définition : le grand côté ne dépasse pas la mesure réglée.
 					var echelleBr = Math.min(1, CONV.br.cote / Math.max(w, h));
@@ -4553,9 +4557,8 @@ class Notice_Archeomed_Pactols {
 				});
 			}
 			// Un PDF : pdf.js, chargé à la demande, dessine la première page aux
-			// mesures de la basse définition. Le PDF d'origine, lui, tient lieu de
-			// haute définition : il garde ses vecteurs, et la mise en page le
-			// préfère à toute image.
+			// mesures des deux définitions, comme pour un TIFF. Le PDF d'origine
+			// reste dans « originaux ».
 			function chargerPdfJs() {
 				if (window.pdfjsLib) { return Promise.resolve(window.pdfjsLib); }
 				return new Promise(function (ok, ko) {
@@ -4579,20 +4582,32 @@ class Notice_Archeomed_Pactols {
 				}).then(function (pdf) {
 					return pdf.getPage(1).then(function (page) {
 						var v1 = page.getViewport({ scale: 1 });
-						var echelle = CONV.br.cote / Math.max(v1.width, v1.height);
-						var vue = page.getViewport({ scale: echelle });
-						var canvas = document.createElement('canvas');
-						canvas.width = Math.max(1, Math.round(vue.width));
-						canvas.height = Math.max(1, Math.round(vue.height));
-						if (canvas.width * canvas.height > CONV.pixelsMax) { throw new Error('grand'); }
-						return page.render({ canvasContext: canvas.getContext('2d'), viewport: vue, background: '#ffffff' }).promise.then(function () {
-							return jpegSousLePlafond(canvas, CONV.br.poidsKo * 1024, CONV.br.tolerance);
+						function dessiner(echelle) {
+							var vue = page.getViewport({ scale: echelle });
+							var canvas = document.createElement('canvas');
+							canvas.width = Math.max(1, Math.round(vue.width));
+							canvas.height = Math.max(1, Math.round(vue.height));
+							if (canvas.width * canvas.height > CONV.pixelsMax) { return Promise.reject(new Error('grand')); }
+							return page.render({ canvasContext: canvas.getContext('2d'), viewport: vue, background: '#ffffff' }).promise.then(function () { return canvas; });
+						}
+						// La haute définition : un JPEG dans la boîte 10 × 15 cm à 300 ppp, comme
+						// celle d'un TIFF — l'auteur passait ses PDF en JPEG pour la mise en
+						// page. Le PDF d'origine reste, lui, dans « originaux ».
+						return dessiner(echelleDeLaBoiteHr(v1.width, v1.height)).then(function (cHr) {
+							return enJpeg(cHr, CONV.hr.qualite / 100);
 						}).then(function (b) {
-							return etiqueterLeJpeg(b, CONV.br.dpi, base + '-br.jpg');
-						}).then(function (br) {
-							var pages = pdf.numPages;
-							try { pdf.destroy(); } catch (x) {}
-							return { hr: null, br: br, pages: pages };
+							return etiqueterLeJpeg(b, CONV.hr.dpi, base + '-hr.jpg');
+						}).then(function (hr) {
+							// La basse définition : le grand côté à la mesure réglée.
+							return dessiner(CONV.br.cote / Math.max(v1.width, v1.height)).then(function (cBr) {
+								return jpegSousLePlafond(cBr, CONV.br.poidsKo * 1024, CONV.br.tolerance);
+							}).then(function (b) {
+								return etiqueterLeJpeg(b, CONV.br.dpi, base + '-br.jpg');
+							}).then(function (br) {
+								var pages = pdf.numPages;
+								try { pdf.destroy(); } catch (x) {}
+								return { hr: hr, br: br, pages: pages };
+							});
 						});
 					});
 				});
@@ -11814,8 +11829,8 @@ class Notice_Archeomed_Pactols {
 	/**
 	 * Les JPEG qu'un navigateur a tirés des TIFF et des PDF de l'auteur, par rang
 	 * de figure : « na_conv_hr_N » (la haute définition) et « na_conv_br_N » (la
-	 * basse ; un PDF n'a que la basse, son original tenant lieu de haute). Ils
-	 * n'existent que si le serveur n'a pas Imagick pour lire le fichier lui-même.
+	 * basse, pour un TIFF comme pour un PDF). Ils n'existent que si le serveur
+	 * n'a pas Imagick pour lire le fichier lui-même.
 	 *
 	 * Rien ici n'arrête le dépôt. Le navigateur a déjà tout vérifié, et une
 	 * conversion absente ou douteuse laisse simplement la figure sans version

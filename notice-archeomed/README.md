@@ -400,11 +400,12 @@ joints à l'envoi dans des champs cachés par rang de figure (`na_conv_hr_N`,
   l'image ; la **basse**, aux mesures réglées de la basse définition ;
 - la densité est inscrite dans l'en-tête JFIF du JPEG ;
 - le TIFF original part aussi, et reste dans `icono/originaux` ;
-- **un PDF** ne donne que la basse définition, dessinée par pdf.js à partir de
-  sa **première page** (l'auteur est prévenu s'il en compte plusieurs, et
-  pdf.js tourne sans « eval », un PDF n'ayant pas à faire exécuter de code à la
-  bibliothèque) ; le **PDF d'origine tient lieu de haute définition** : il garde
-  ses vecteurs, et la mise en page le préfère à toute image ;
+- **un PDF** donne les deux mêmes JPEG, dessinés par pdf.js à partir de sa
+  **première page** (l'auteur est prévenu s'il en compte plusieurs, et pdf.js
+  tourne sans « eval », un PDF n'ayant pas à faire exécuter de code à la
+  bibliothèque) ; la haute définition tient dans la même boîte que celle d'un
+  TIFF, la page étant agrandie ou réduite pour y entrer. Le **PDF d'origine reste
+  dans `icono/originaux`** ;
 - le serveur reconnaît chaque JPEG à son contenu et à ses mesures
   (`jpeg_converti_acceptable()`), le range à demeure, et en tire le dossier
   Métopes (`icono/hr`, `icono/br`), le Word, la relecture et l'aperçu du courriel.

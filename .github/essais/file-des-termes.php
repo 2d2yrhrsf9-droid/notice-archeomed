@@ -319,8 +319,8 @@ if ( ! Notice_Archeomed_Paquet::imagick_disponible() && function_exists( 'imagec
 		'sans Imagick, le dossier Métopes prend la haute et la basse définition du navigateur, et la figure est posée', array( $erreur_conv, $plan_conv, $fichiers_hr, $fichiers_br ) );
 	$paquet_conv->nettoyer();
 
-	// Un PDF : la basse définition vient du navigateur, et le PDF d'origine tient
-	// lieu de haute définition (il garde ses vecteurs).
+	// Un PDF : la haute et la basse définition viennent du navigateur, en JPEG ;
+	// le PDF d'origine reste dans « originaux ».
 	$faux_pdf = trailingslashit( get_temp_dir() ) . 'na-essai-conv-original.pdf';
 	file_put_contents( $faux_pdf, "%PDF-1.4\n%%EOF\n" );
 	$paquet_pdf = new Notice_Archeomed_Paquet();
@@ -330,16 +330,18 @@ if ( ! Notice_Archeomed_Paquet::imagick_disponible() && function_exists( 'imagec
 		'd'             => array( 'commune' => 'Caen', 'lieu_dit' => 'Essai PDF', 'annee' => '2026',
 			'illustrations' => array( array( 'rang' => 1, 'titre' => 'Plan' ) ) ),
 		'illustrations' => array( $faux_pdf ),
-		'conversions'   => array( 1 => array( 'br' => $br_ok ) ),
+		'conversions'   => array( 1 => array( 'hr' => $hr_ok, 'br' => $br_ok ) ),
 	) ), $erreur_pdf );
 	$atelier_pdf = new ReflectionProperty( $paquet_pdf, 'atelier' );
 	$atelier_pdf->setAccessible( true );
 	$dossier_pdf = (string) $atelier_pdf->getValue( $paquet_pdf );
-	$hr_pdf = glob( $dossier_pdf . '/icono/hr/*.pdf' );
+	$hr_pdf = glob( $dossier_pdf . '/icono/hr/*.jpg' );
 	$br_pdf = glob( $dossier_pdf . '/icono/br/*.jpg' );
+	$pdf_en_hr = glob( $dossier_pdf . '/icono/hr/*.pdf' );
+	$mesure_hr_pdf = ! empty( $hr_pdf ) ? getimagesize( $hr_pdf[0] ) : false;
 	$mesure_br_pdf = ! empty( $br_pdf ) ? getimagesize( $br_pdf[0] ) : false;
-	na_verifier( ! empty( $hr_pdf ) && $mesure_br_pdf && 2400 === $mesure_br_pdf[0],
-		'un PDF sans Imagick : le PDF d\'origine tient lieu de haute définition, et la basse définition vient du navigateur', array( $erreur_pdf, $hr_pdf, $br_pdf ) );
+	na_verifier( $mesure_hr_pdf && 1181 === $mesure_hr_pdf[0] && empty( $pdf_en_hr ) && $mesure_br_pdf && 2400 === $mesure_br_pdf[0],
+		'un PDF sans Imagick : la haute et la basse définition viennent du navigateur, en JPEG, comme pour un TIFF', array( $erreur_pdf, $hr_pdf, $br_pdf, $pdf_en_hr ) );
 	$paquet_pdf->nettoyer();
 	$apercus_pdf = na_appel( $plugin, 'fabriquer_les_apercus', array( array( $faux_pdf ), array( 'illustrations' => array( array( 'rang' => 1 ) ) ),
 		array( 1 => array( 'br' => $br_ok ) ) ) );

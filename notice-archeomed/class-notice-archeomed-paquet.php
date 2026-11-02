@@ -826,7 +826,9 @@ class Notice_Archeomed_Paquet {
 		$converti = ! self::imagick_disponible() && ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ), true );
 		$conv_hr  = ( $converti && ! empty( $conversion['hr'] ) && is_readable( $conversion['hr'] ) ) ? $conversion['hr'] : '';
 		$conv_br  = ( $converti && ! empty( $conversion['br'] ) && is_readable( $conversion['br'] ) ) ? $conversion['br'] : '';
-		if ( $en_jpeg && '' !== $conv_hr ) {
+		// Un TIFF suit le réglage de sa famille ; un PDF, dont l'auteur voulait la
+		// haute définition en JPEG pour la mise en page, prend celle du navigateur.
+		if ( '' !== $conv_hr && ( $en_jpeg || 'pdf' === $ext ) ) {
 			$fait_hr = @copy( $conv_hr, $this->atelier . '/icono/hr/' . $nom_sans_ext . '.jpg' );
 		} elseif ( $en_jpeg ) {
 			$cible = $this->atelier . '/icono/hr/' . $nom_sans_ext . '.jpg';
