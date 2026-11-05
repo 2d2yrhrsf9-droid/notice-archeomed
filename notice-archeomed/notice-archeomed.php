@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.66
+ * Version: 3.67
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3007,10 +3007,10 @@ class Notice_Archeomed_Pactols {
 
 				<?php $originaux_remplis = '' !== $this->repris( 'originaux_lien' ) || '' !== $this->repris( 'originaux_jusqua' ); ?>
 				<details class="na-originaux" id="na-originaux-details"<?php echo $originaux_remplis ? ' open' : ''; ?>>
-					<summary>Un fichier est trop lourd pour ce formulaire&nbsp;?</summary>
+					<summary>Un fichier est trop lourd, ou d’un autre format (AI, EPS)&nbsp;?</summary>
 					<div class="na-champ">
 						<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
-						<p class="na-help" id="na-originaux-aide">Joignez ci-dessus des versions allégées, déposez les originaux sur un service de transfert (FileSender de RENATER, espace de votre établissement), puis collez ici le lien de téléchargement.</p>
+						<p class="na-help" id="na-originaux-aide">Joignez ci-dessus des versions allégées, déposez les originaux sur un service de transfert (FileSender de RENATER, espace de votre établissement), puis collez ici le lien de téléchargement. Pour un fichier AI ou EPS, enregistrez-le en PDF, joignez ce PDF ci-dessus et déposez l’original sur le service de transfert.</p>
 						<input type="text" inputmode="url" id="na-originaux" name="originaux_lien" autocomplete="off"
 							spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
 							value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">

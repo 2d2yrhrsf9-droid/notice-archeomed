@@ -802,7 +802,7 @@ class Notice_Archeomed_Settings {
 		// — Les formats qu'Imagick veut bien traiter —
 		if ( $magick ) {
 			foreach ( array(
-				'TIFF' => 'Les aperçus intégrés aux EPS sont des TIFF : c\'est par eux que passent les basses définitions.',
+				'TIFF' => 'Le format des scans et des photographies déposés par les auteurs.',
 				'JPEG' => 'Le format des illustrations livrées à la mise en page.',
 				'PNG'  => 'Fréquent pour les dessins au trait.',
 			) as $format => $pourquoi ) {
@@ -810,17 +810,17 @@ class Notice_Archeomed_Settings {
 				$ligne( 'Imagick : ' . $format, 'accepté',
 					! empty( $su ) ? 'accepté' : 'refusé', ! empty( $su ), $pourquoi );
 			}
-			// PDF et EPS passent par Ghostscript, que la politique
-			// d'ImageMagick désactive d'origine depuis « ImageTragick ». On le
-			// signale sans le réclamer : le plugin sait s'en passer.
+			// Le PDF passe par Ghostscript, que la politique d'ImageMagick
+			// désactive d'origine depuis « ImageTragick » : le format peut être
+			// déclaré sans que la lecture soit permise.
 			$ps = (array) Imagick::queryFormats( 'PDF' );
 			$lignes[] = array(
-				'quoi'     => 'Imagick : PDF et EPS',
+				'quoi'     => 'Imagick : PDF',
 				'requis'   => 'facultatif',
 				'constate' => ! empty( $ps ) ? 'accepté' : 'refusé',
 				'etat'     => 'note',
 				'ecart'    => '',
-				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. Le plugin s\'en passe : il tire la basse définition de l\'aperçu intégré à l\'EPS, et garde l\'original en haute définition.',
+				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. « Accepté » dit seulement que le format est connu : seul un dépôt de PDF montre s\'il se lit.',
 			);
 		}
 
@@ -1493,7 +1493,7 @@ class Notice_Archeomed_Settings {
 							name="<?php echo esc_attr( self::OPTION_NAME ); ?>[hr_trait_qualite]"
 							value="<?php echo (int) self::get( 'hr_trait_qualite' ); ?>"> %</label>
 					<p class="description">
-						Ce qui arrive en PDF, EPS ou AI — c’est le format déposé qui range
+						Ce qui arrive en PDF — c’est le format déposé qui range
 						l’illustration dans l’une ou l’autre famille. La revue demande
 						1200 dpi pour un trait, et <strong>le convertir en JPEG lui ôte
 						justement ce qu’on lui demande</strong> : décoché, l’original est

@@ -12,8 +12,8 @@
  * ne s'en aperçoit qu'au bout de la chaîne, quand l'image ne se pose pas et
  * que plus rien ne dit pourquoi.
  *
- * « Briollay, plan du palais de justice.EPS » devient donc
- * « Briollay_plan_du_palais_de_justice.eps ».
+ * « Briollay, plan du palais de justice.TIF » devient donc
+ * « Briollay_plan_du_palais_de_justice.tif ».
  *
  * La casse est gardée : elle ne gêne personne et « Briollay » se lit mieux
  * que « briollay ». L'extension, elle, passe en bas de casse — « .JPG » et

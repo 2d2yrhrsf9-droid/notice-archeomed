@@ -425,44 +425,6 @@ class Notice_Archeomed_Paquet {
 		return $total;
 	}
 
-	/**
-	 * L'aperçu d'un EPS binaire, lu dans son en-tête.
-	 *
-	 * Un EPS d'Illustrator n'est pas qu'un programme PostScript : le format
-	 * DOS EPS place en tête trente octets qui donnent la position d'un aperçu
-	 * TIFF. Il se lit avec un déplacement et une lecture — sans Ghostscript,
-	 * sans interpréteur, sans rien qu'on ne veuille mettre sur un serveur.
-	 *
-	 * C'est ce qui permet de fabriquer une basse définition d'un vectoriel
-	 * là où aucun outil ne saurait le rastériser. L'aperçu fait quelques
-	 * centaines de pixels : c'est trop peu pour imprimer, et c'est
-	 * exactement ce qu'on demande à une basse définition.
-	 *
-	 * Rend le contenu du TIFF, ou une chaîne vide.
-	 */
-	public static function apercu_eps( $chemin ) {
-		$h = @fopen( $chemin, 'rb' );
-		if ( ! $h ) {
-			return '';
-		}
-		$entete = fread( $h, 30 );
-		if ( false === $entete || strlen( $entete ) < 30
-			|| "\xC5\xD0\xD3\xC6" !== substr( $entete, 0, 4 ) ) {
-			fclose( $h );
-			return '';
-		}
-		// Petit-boutien : position à l'octet 20, longueur à l'octet 24.
-		$champs = unpack( 'Vposition/Vlongueur', substr( $entete, 20, 8 ) );
-		if ( empty( $champs['longueur'] ) ) {
-			fclose( $h );
-			return '';   // un EPS sans aperçu : il en existe, on n'insiste pas
-		}
-		fseek( $h, (int) $champs['position'] );
-		$tiff = fread( $h, (int) $champs['longueur'] );
-		fclose( $h );
-		return is_string( $tiff ) ? $tiff : '';
-	}
-
 	/** Imagick est-elle là, et sait-elle lire ce format ? */
 	private static function imagick_sait( $format ) {
 		if ( ! self::imagick_disponible() ) {
@@ -766,24 +728,8 @@ class Notice_Archeomed_Paquet {
 	 * quand même, sans cette figure.
 	 */
 	public function apercu_du_document( $source, $cible ) {
-		$provisoire = '';
-		$ext        = strtolower( pathinfo( (string) $source, PATHINFO_EXTENSION ) );
-		// Un vectoriel ne se rastérise pas ici : on prend l'aperçu que le
-		// fichier porte en lui, comme pour la basse définition du dossier.
-		if ( 'eps' === $ext ) {
-			$apercu = self::apercu_eps( $source );
-			if ( '' === $apercu ) {
-				return null;
-			}
-			$provisoire = wp_tempnam( 'na-apercu' );
-			file_put_contents( $provisoire, $apercu );
-			$source = $provisoire;
-		}
 		$fait = $this->reduire( $source, $cible, self::LARGEUR_APERCU,
 			self::QUALITE_HAUTE, 96, self::POIDS_APERCU, 10, true );
-		if ( '' !== $provisoire ) {
-			@unlink( $provisoire );
-		}
 		if ( ! $fait ) {
 			return null;
 		}
@@ -848,26 +794,11 @@ class Notice_Archeomed_Paquet {
 		}
 
 		// — La basse définition —
-		$source_br  = $source;
-		$provisoire = '';
-		// Un vectoriel ne se rastérise pas ici : on prend l'aperçu que le
-		// fichier porte en lui.
-		if ( 'eps' === $ext ) {
-			$apercu = self::apercu_eps( $source );
-			if ( '' !== $apercu ) {
-				$provisoire = wp_tempnam( 'na-apercu' );
-				file_put_contents( $provisoire, $apercu );
-				$source_br = $provisoire;
-			}
-		}
 		$cible_br = $this->atelier . '/icono/br/' . $nom_sans_ext . '.jpg';
 		$dpi_br   = (int) $reglage( 'br_dpi' );
-		$fait_br  = ( '' !== $conv_br ) ? @copy( $conv_br, $cible_br ) : $this->reduire( $source_br, $cible_br,
+		$fait_br  = ( '' !== $conv_br ) ? @copy( $conv_br, $cible_br ) : $this->reduire( $source, $cible_br,
 			(int) $reglage( 'br_largeur' ), self::QUALITE_HAUTE,
 			$dpi_br, (int) $reglage( 'br_poids' ), (int) $reglage( 'br_tolerance' ), true );
-		if ( '' !== $provisoire ) {
-			@unlink( $provisoire );
-		}
 		if ( ! $fait_br ) {
 			$this->journal[] = $nom_sans_ext . '.' . $ext
 				. ' : pas de basse définition (Imagick absente, et le fichier n’a pas été converti dans le navigateur de l’auteur, ou son format est illisible). Le document ne posera pas cette figure.';

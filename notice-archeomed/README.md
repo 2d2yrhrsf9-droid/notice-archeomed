@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.66
+# Formulaire des notices d’archéologie médiévale — version 3.67
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -334,7 +334,7 @@ Pas d'accent, pas d'espace, le souligné pour seul séparateur. C'est la règle
 de la chaîne éditoriale de la revue, suivie à la lettre : un dossier passé
 d'un outil à l'autre doit garder ses noms.
 
-« Briollay_49_ Palaisjustice.EPS » devient « Briollay_49_Palaisjustice.eps ».
+« Briollay_49_ Palaisjustice.TIF » devient « Briollay_49_Palaisjustice.tif ».
 La casse est gardée, l'extension passe en bas de casse.
 
 Le nom se bâtit sur un modèle réglable, dans **Réglages ▸ Iconographie** :
