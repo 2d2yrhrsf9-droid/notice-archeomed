@@ -29,6 +29,9 @@ class Notice_Archeomed_Settings {
 	// se remarque avant d'être un annuaire.
 	const MAX_DESTINATAIRES = 10;
 
+	/** Le disque que l'hébergeur donne au site, en octets : 2 Go, non extensibles. */
+	const PLAFOND_DISQUE = 2 * GB_IN_BYTES;
+
 	/**
 	 * Valeurs par défaut, reprises de la version précédente du plugin.
 	 */
@@ -756,6 +759,58 @@ class Notice_Archeomed_Settings {
 	}
 
 	/**
+	 * Ce que pèsent les téléversements du site et, dedans, le dossier des notices.
+	 *
+	 * L'hébergeur plafonne le disque du site entier, sans le rendre
+	 * extensible : la place prise se compte avant qu'elle manque. Le parcours
+	 * d'un dossier est long sur un gros site : on le garde un quart d'heure,
+	 * on l'arrête après quelques secondes, et l'on dit alors que le chiffre est
+	 * un minimum.
+	 *
+	 * Rend « notices » et « site » en octets, « fichiers » (ceux des notices)
+	 * et « complet », faux si le parcours a été interrompu.
+	 */
+	public static function mesurer_le_disque() {
+		$gardee = get_transient( 'na_disque' );
+		if ( is_array( $gardee ) && isset( $gardee['site'], $gardee['notices'], $gardee['fichiers'], $gardee['complet'] ) ) {
+			return $gardee;
+		}
+		$mesure = array( 'notices' => 0, 'site' => 0, 'fichiers' => 0, 'complet' => true );
+		$depot  = wp_upload_dir();
+		$base   = empty( $depot['error'] ) ? (string) $depot['basedir'] : '';
+		$reel   = '' !== $base ? realpath( $base ) : false;
+		if ( false !== $reel && is_dir( $reel ) ) {
+			$notices = $reel . DIRECTORY_SEPARATOR . 'notice-archeomed' . DIRECTORY_SEPARATOR;
+			$fin     = microtime( true ) + 5;
+			try {
+				$parcours = new RecursiveIteratorIterator(
+					new RecursiveDirectoryIterator( $reel, FilesystemIterator::SKIP_DOTS )
+				);
+				foreach ( $parcours as $element ) {
+					if ( microtime( true ) > $fin ) {
+						$mesure['complet'] = false;
+						break;
+					}
+					if ( ! $element->isFile() || $element->isLink() ) {
+						continue;
+					}
+					$poids = (int) $element->getSize();
+					$mesure['site'] += $poids;
+					if ( 0 === strpos( $element->getPathname(), $notices ) ) {
+						$mesure['notices'] += $poids;
+						$mesure['fichiers']++;
+					}
+				}
+			} catch ( Exception $e ) {
+				// Un dossier illisible : on rend ce qu'on a compté, et l'on dit que c'est partiel.
+				$mesure['complet'] = false;
+			}
+		}
+		set_transient( 'na_disque', $mesure, 15 * MINUTE_IN_SECONDS );
+		return $mesure;
+	}
+
+	/**
 	 * Ce dont le plugin a besoin, et ce que l'hébergement lui donne.
 	 *
 	 * On bâtissait au pari : personne ne savait si Imagick était là, ni quelle
@@ -866,6 +921,31 @@ class Notice_Archeomed_Settings {
 		$ligne( 'max_file_uploads', '3', $fichiers ? (string) $fichiers : 'inconnu',
 			$fichiers >= 3,
 			'Une notice porte jusqu\'à trois illustrations.' );
+
+		// — Le disque —
+		$disque  = self::mesurer_le_disque();
+		$plafond = (int) apply_filters( 'notice_archeomed_plafond_disque', self::PLAFOND_DISQUE );
+		$au_moins = $disque['complet'] ? '' : 'au moins ';
+		$lignes[] = array(
+			'quoi'     => 'Disque : dossier des notices',
+			'requis'   => 'à surveiller',
+			'constate' => $au_moins . size_format( $disque['notices'] ) . ', ' . (int) $disque['fichiers'] . ' fichier' . ( 1 === (int) $disque['fichiers'] ? '' : 's' ),
+			'etat'     => 'note',
+			'ecart'    => '',
+			'pourquoi' => 'Les illustrations déposées et les originaux gardés. Une notice pèse de quelques Mo à vingt Mo ; une campagne de 300 notices en demande, selon une estimation, de 1 à 2,5 Go.',
+		);
+		if ( $plafond > 0 ) {
+			$part  = $disque['site'] / $plafond;
+			$etat  = $part >= 0.85 ? 'manque' : ( $part >= 0.6 ? 'note' : 'ok' );
+			$lignes[] = array(
+				'quoi'     => 'Disque : téléversements du site',
+				'requis'   => 'moins de 60 % de ' . size_format( $plafond ),
+				'constate' => $au_moins . size_format( $disque['site'] ) . ' (' . (int) round( 100 * $part ) . ' %)',
+				'etat'     => $etat,
+				'ecart'    => 'manque' === $etat ? size_format( max( 0, $plafond - $disque['site'] ) ) . ' libres' : '',
+				'pourquoi' => 'Le plafond de l\'hébergeur vaut pour tout le site, fichiers de WordPress compris, et ne s\'étend pas. Mesure faite sur les téléversements, comptés toutes les quinze minutes : le reste du site s\'y ajoute.',
+			);
+		}
 
 		// — Le planificateur —
 		$cron_coupe = defined( 'DISABLE_WP_CRON' ) && constant( 'DISABLE_WP_CRON' );

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.67
+ * Version: 3.68
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -2797,7 +2797,7 @@ class Notice_Archeomed_Pactols {
 
 				<div class="na-champ">
 					<label for="na-organisme-1">Organisme qui gère l’opération <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-organisme-aide">Par exemple&nbsp;: Inrap, service archéologique départemental, université, CNRS, opérateur privé. Les autres partenaires scientifiques se citent dans le texte.</p>
+					<p class="na-help" id="na-organisme-aide">Par exemple&nbsp;: Inrap, service archéologique départemental, université, CNRS, opérateur privé…</p>
 					<?php
 					$organismes_repris = $this->repris_liste( 'organisme' );
 					for ( $rang = 0; $rang < self::MAX_ORGANISMES; $rang++ ) :
@@ -2927,7 +2927,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique&nbsp;; dans la barre de mise en forme, les flèches passent d’un bouton à l’autre. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -2938,8 +2938,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Classement et mots-clés</h2>
 				<div class="na-champ">
 					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-rubrique-aide">La rubrique où paraîtra la notice.</p>
-					<select id="na-rubrique" name="rubrique_principale" required aria-describedby="na-rubrique-aide"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
+					<select id="na-rubrique" name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
 				</div>
 				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
 				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>

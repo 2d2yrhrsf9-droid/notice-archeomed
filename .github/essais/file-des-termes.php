@@ -2493,6 +2493,35 @@ na_verifier( $docs_ok && isset( Notice_Archeomed_Settings::onglets()['documentat
 	&& false !== strpos( $rendu_onglet_doc, 'aria-current="page">Présentation' ) && false !== strpos( $rendu_onglet_doc, '<div class="na-doc"><h2' ),
 	'les deux documents se rendent sans marque restée en clair, sans adresse ni rattachement, et l\'onglet les propose', $docs_vus );
 
+WP_CLI::log( 'Le disque' );
+delete_transient( 'na_disque' );
+$depot_essai = wp_upload_dir();
+$dossier_essai = trailingslashit( $depot_essai['basedir'] ) . 'notice-archeomed';
+wp_mkdir_p( $dossier_essai );
+file_put_contents( $dossier_essai . '/essai-disque.bin', str_repeat( 'x', 3000 ) );
+$mesure_disque = Notice_Archeomed_Settings::mesurer_le_disque();
+na_verifier( $mesure_disque['complet'] && $mesure_disque['notices'] >= 3000 && $mesure_disque['site'] >= $mesure_disque['notices'] && $mesure_disque['fichiers'] >= 1,
+	'le disque compte les fichiers du dossier des notices, comprises dans les téléversements du site' );
+$etat_disque = array();
+foreach ( Notice_Archeomed_Settings::etat_du_serveur() as $l_disque ) {
+	$etat_disque[ $l_disque['quoi'] ] = $l_disque;
+}
+na_verifier( isset( $etat_disque['Disque : dossier des notices'], $etat_disque['Disque : téléversements du site'] )
+	&& 'ok' === $etat_disque['Disque : téléversements du site']['etat'],
+	'le tableau de l\'hébergement porte les deux lignes du disque, et un site presque vide n\'est pas en alerte' );
+add_filter( 'notice_archeomed_plafond_disque', function () { return 1000; } );
+$plein = Notice_Archeomed_Settings::etat_du_serveur();
+$plein_etat = '';
+foreach ( $plein as $l_disque ) {
+	if ( 'Disque : téléversements du site' === $l_disque['quoi'] ) {
+		$plein_etat = $l_disque['etat'];
+	}
+}
+na_verifier( 'manque' === $plein_etat, 'au-delà de 85 % du plafond, le disque est signalé comme manquant' );
+remove_all_filters( 'notice_archeomed_plafond_disque' );
+@unlink( $dossier_essai . '/essai-disque.bin' );
+delete_transient( 'na_disque' );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),
