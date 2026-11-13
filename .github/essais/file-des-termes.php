@@ -2125,12 +2125,19 @@ wp_set_current_user( (int) $abonne );
 $sans_droit = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => wp_create_nonce( $A::ACTION_FIGURES . '_' . $fiche_a11y ), 'na_alt' => array( 1 => 'Pirate' ) ) );
 wp_set_current_user( $admin_a11y );
 $intacte = get_post_meta( $fiche_a11y, '_na_donnees', true );
-$vers_fiche = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche,
+// La fiche porte la version de la notice qu'elle a montrée.
+$version_fiche = (string) $GLOBALS['notice_archeomed_file']->version_de( $fiche_a11y );
+$vers_fiche = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche, 'na_version' => $version_fiche,
 	'na_alt' => wp_slash( array( 1 => " Deux murs parallèles, <b>orientés</b>\n nord-sud ", 2 => 'L. <5 m ; fossé en V' . str_repeat( ' x', 200 ), 9 => 'Figure absente' ) ),
 	'na_description' => wp_slash( array( 1 => "Le mur ouest.\n\n\nLe mur est.", 2 => '' ) ) ) );
 $corrigee = get_post_meta( $fiche_a11y, '_na_donnees', true );
 $historique = get_post_meta( $fiche_a11y, $A::HISTORIQUE, false );
-$vers_rien = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche, 'na_alt' => array( 1 => 'Deux murs parallèles, orientés nord-sud' ) ) );
+$vers_rien = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche, 'na_version' => (string) $GLOBALS['notice_archeomed_file']->version_de( $fiche_a11y ),
+	'na_alt' => array( 1 => 'Deux murs parallèles, orientés nord-sud' ) ) );
+// Une fiche ouverte avant cet enregistrement porte encore l'ancienne version.
+$vers_devancee = $jouer_la_fiche( array( 'post' => $fiche_a11y, '_wpnonce' => $nonce_fiche, 'na_version' => $version_fiche,
+	'na_alt' => array( 1 => 'Valeur d\'une fiche restée ouverte' ) ) );
+$apres_devancee = get_post_meta( $fiche_a11y, '_na_donnees', true );
 $_POST = $_REQUEST = array();
 remove_filter( 'wp_redirect', $sortie_fiche );
 remove_filter( 'wp_die_handler', $mourir_fiche );
@@ -2152,6 +2159,9 @@ na_verifier( 3 === count( $historique ) && 'Plan des murs' === $historique[0]['a
 	&& '' === $historique[2]['avant'] && 2 === $historique[2]['figure'] && false !== strpos( $vers_fiche, 'na_figures=3' ) && false !== strpos( $vers_fiche, 'na_figures_coupe=1' )
 	&& false !== strpos( $vers_fiche, '#na_accessibilite' ) && false !== strpos( $vers_rien, 'na_figures=0' ),
 	'chaque valeur remplacée reste dans l\'historique (date, utilisateur, figure, champ, avant, après) ; un texte inchangé n\'y entre pas', array( $historique, $vers_fiche ) );
+na_verifier( false !== strpos( $vers_devancee, 'na_figures=conflit' ) && $apres_devancee === $corrigee
+	&& 3 === count( get_post_meta( $fiche_a11y, $A::HISTORIQUE, false ) ),
+	'une fiche ouverte avant le dernier enregistrement ne l\'écrase pas : elle dit le conflit et n\'écrit rien', $vers_devancee );
 $doc_fiche = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
 // La saisie telle que le Word la reçoit ; l'image, que le site d'essai n'a
 // pas, est posée comme le dossier la poserait.

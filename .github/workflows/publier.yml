@@ -354,10 +354,19 @@ jobs:
             wp eval-file "$GITHUB_WORKSPACE/.github/essais/corrections-verification.php"
 
       - name: Vingt-cinq corrections à la même seconde, cinq disputées
+        # Un refus se lit dans les annotations, ses raisons avec lui : le
+        # journal complet de l'étape n'est lisible qu'une fois connecté.
         run: |
-          set -o pipefail
-          php .github/essais/corrections.php http://127.0.0.1:8080 /tmp/liens.txt 5 | tee /tmp/corrections.log
-          echo "::notice::$(head -1 /tmp/corrections.log)"
+          if php .github/essais/corrections.php http://127.0.0.1:8080 /tmp/liens.txt 5 > /tmp/corrections.log 2>&1; then
+            cat /tmp/corrections.log
+            echo "::notice::$(head -1 /tmp/corrections.log)"
+          else
+            cat /tmp/corrections.log
+            sort /tmp/corrections.log | uniq -c | sort -rn | head -6 | python3 -c 'import sys; [print("::error::" + l.strip()[:900]) for l in sys.stdin if l.strip()]'
+            grep -h "Notice Archeomed" /tmp/wp/wp-content/debug.log 2>/dev/null | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn | head -4 \
+              | python3 -c 'import sys; [print("::error::journal : " + l.strip()[:900]) for l in sys.stdin if l.strip()]'
+            exit 1
+          fi
 
       - name: Le planificateur renvoie les notices corrigées
         working-directory: /tmp/wp
