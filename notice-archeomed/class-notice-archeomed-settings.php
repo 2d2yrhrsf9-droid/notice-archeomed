@@ -986,6 +986,7 @@ class Notice_Archeomed_Settings {
 			'github'    => 'maj',
 			'maj'       => 'maj',
 			'pactols'   => 'diagnostic',
+			'sdrive'    => 'diagnostic',
 		);
 		if ( ! isset( $onglets[ $quoi ] ) ) {
 			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
@@ -1013,6 +1014,8 @@ class Notice_Archeomed_Settings {
 			$resultat = $this->test_github();
 		} elseif ( 'pactols' === $quoi ) {
 			$resultat = $this->test_pactols();
+		} elseif ( 'sdrive' === $quoi ) {
+			$resultat = $this->test_sdrive();
 		} else {
 			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
 				$notice_archeomed_maj->oublier();
@@ -2340,6 +2343,128 @@ class Notice_Archeomed_Settings {
 		</table>
 		<?php
 		self::fermer_les_reglages();
+		?>
+
+		<h2>Sortie vers sDrive</h2>
+		<p style="max-width:46em">Cet essai dit si le serveur peut joindre le
+		sDrive du CNRS, où les illustrations pourraient être rangées pour
+		libérer le disque. Il ne change rien aux notices. Sans identifiants, il
+		regarde seulement si sdrive.cnrs.fr répond&nbsp;; avec eux, il lit le
+		dossier, y écrit un petit fichier d’essai et l’efface aussitôt.</p>
+		<p class="description" style="max-width:46em">Les identifiants se
+		déclarent dans wp-config.php, jamais dans ces réglages&nbsp;:
+		<code>NA_SDRIVE_WEBDAV</code> (l’adresse WebDAV que sDrive affiche dans
+		Fichiers, Paramètres des fichiers), <code>NA_SDRIVE_IDENTIFIANT</code>,
+		<code>NA_SDRIVE_MOT_DE_PASSE</code> (un mot de passe d’application,
+		jamais celui de Janus) et <code>NA_SDRIVE_DOSSIER</code>
+		(le chemin du dossier, par exemple «&nbsp;Archéologie médiévale/Notices&nbsp;»).</p>
+		<?php self::ouvrir_un_essai(); ?>
+			<button type="submit" class="button" name="na_quoi" value="sdrive">Tester l’accès à sDrive</button>
+		</form>
+		<?php
+		if ( 'sdrive' === $essai['quoi'] ) {
+			self::resultat( $essai['resultat'] );
+		}
+	}
+
+	/**
+	 * Le serveur joint-il sDrive, et peut-il écrire dans le dossier ?
+	 *
+	 * D'abord la page d'état, publique : elle dit si le proxy de
+	 * l'hébergement laisse sortir vers sdrive.cnrs.fr, comme il refuse
+	 * Cloudflare. Puis, si wp-config.php porte des identifiants, la lecture
+	 * du dossier, l'écriture d'un fichier d'essai et son effacement — les
+	 * trois gestes dont un rangement des figures aurait besoin.
+	 */
+	private function test_sdrive() {
+		$reponse = wp_remote_get( 'https://sdrive.cnrs.fr/status.php', array( 'timeout' => 10 ) );
+		if ( is_wp_error( $reponse ) ) {
+			$message = $reponse->get_error_message();
+			$proxy   = false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' );
+			return array(
+				'ok'      => false,
+				'message' => 'sDrive n’est pas joignable depuis ce serveur — ' . $message . '.'
+					. ( $proxy ? ' C’est le proxy de l’hébergement qui refuse la sortie, comme pour Cloudflare : il faut demander l’ouverture de sdrive.cnrs.fr.' : '' ),
+			);
+		}
+		$etat = json_decode( wp_remote_retrieve_body( $reponse ), true );
+		if ( 200 !== (int) wp_remote_retrieve_response_code( $reponse ) || ! is_array( $etat ) || empty( $etat['installed'] ) ) {
+			return array(
+				'ok'      => false,
+				'message' => 'sdrive.cnrs.fr répond, mais pas comme un Nextcloud (code HTTP '
+					. (int) wp_remote_retrieve_response_code( $reponse ) . ').',
+			);
+		}
+		$version = isset( $etat['versionstring'] ) ? (string) $etat['versionstring'] : '';
+		if ( ! empty( $etat['maintenance'] ) ) {
+			return array( 'ok' => false, 'message' => 'sDrive est joignable, mais en maintenance : refaites l’essai plus tard.' );
+		}
+		$constantes = array( 'NA_SDRIVE_WEBDAV', 'NA_SDRIVE_IDENTIFIANT', 'NA_SDRIVE_MOT_DE_PASSE', 'NA_SDRIVE_DOSSIER' );
+		$absentes   = array_values( array_filter( $constantes, function ( $c ) {
+			return ! defined( $c ) || '' === trim( (string) constant( $c ) );
+		} ) );
+		$joint = 'sDrive est joignable depuis ce serveur (Nextcloud ' . $version . ').';
+		if ( ! empty( $absentes ) ) {
+			return array(
+				'ok'      => true,
+				'message' => $joint . ' Pour essayer l’écriture, déclarez dans wp-config.php : ' . implode( ', ', $absentes ) . '.',
+			);
+		}
+
+		// Le chemin du dossier, segment par segment : espaces et accents
+		// doivent passer dans l'adresse.
+		$dossier = trailingslashit( (string) NA_SDRIVE_WEBDAV )
+			. implode( '/', array_map( 'rawurlencode', array_filter( explode( '/', (string) NA_SDRIVE_DOSSIER ), 'strlen' ) ) ) . '/';
+		$auth    = array( 'Authorization' => 'Basic ' . base64_encode( NA_SDRIVE_IDENTIFIANT . ':' . NA_SDRIVE_MOT_DE_PASSE ) );
+		$requete = function ( $methode, $url, $corps = null, $entetes = array() ) use ( $auth ) {
+			return wp_remote_request( $url, array(
+				'method'  => $methode,
+				'timeout' => 20,
+				'headers' => $auth + $entetes,
+				'body'    => $corps,
+			) );
+		};
+		$code = function ( $r ) {
+			return is_wp_error( $r ) ? 0 : (int) wp_remote_retrieve_response_code( $r );
+		};
+
+		$lu = $requete( 'PROPFIND', $dossier, null, array( 'Depth' => '0' ) );
+		if ( 207 !== $code( $lu ) ) {
+			$pourquoi = array(
+				0   => is_wp_error( $lu ) ? $lu->get_error_message() : 'pas de réponse',
+				401 => 'identifiant ou mot de passe d’application refusé',
+				403 => 'accès refusé',
+				404 => 'dossier introuvable — vérifiez NA_SDRIVE_DOSSIER, et l’adresse WebDAV',
+			);
+			$c = $code( $lu );
+			return array(
+				'ok'      => false,
+				'message' => $joint . ' Mais le dossier ne se lit pas (code ' . $c . ' : '
+					. ( isset( $pourquoi[ $c ] ) ? $pourquoi[ $c ] : 'réponse inattendue' ) . ').',
+			);
+		}
+		$essai  = $dossier . 'essai-notice-archeomed-' . gmdate( 'Ymd-His' ) . '.txt';
+		$ecrit  = $requete( 'PUT', $essai, 'Essai d’écriture du formulaire des notices, ' . gmdate( 'c' ) . ". Ce fichier s'efface de lui-même.\n",
+			array( 'Content-Type' => 'text/plain; charset=utf-8' ) );
+		if ( ! in_array( $code( $ecrit ), array( 201, 204 ), true ) ) {
+			return array(
+				'ok'      => false,
+				'message' => $joint . ' Le dossier se lit, mais l’écriture est refusée (code ' . $code( $ecrit )
+					. ') : le partage est peut-être en lecture seule.',
+			);
+		}
+		$efface = $requete( 'DELETE', $essai );
+		if ( 204 !== $code( $efface ) ) {
+			return array(
+				'ok'      => false,
+				'message' => $joint . ' Le dossier se lit et s’écrit, mais le fichier d’essai n’a pas pu être effacé (code '
+					. $code( $efface ) . ') : supprimez-le à la main dans sDrive.',
+			);
+		}
+		return array(
+			'ok'      => true,
+			'message' => $joint . ' Le dossier se lit, s’écrit et s’efface : les figures pourront y être rangées.',
+		);
 	}
 
 	/**

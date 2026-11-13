@@ -228,6 +228,15 @@ class Notice_Archeomed_Accessibilite {
 		exit;
 	}
 
+	/** L'instance de la file d'attente, celle que le plugin a créée au départ. */
+	private static function file() {
+		global $notice_archeomed_file;
+		if ( ! ( $notice_archeomed_file instanceof Notice_Archeomed_File ) ) {
+			$notice_archeomed_file = new Notice_Archeomed_File();
+		}
+		return $notice_archeomed_file;
+	}
+
 	/**
 	 * Les figures d'une saisie, par leur rang : seules celles qui en sont
 	 * — un tableau numéroté. Une saisie ancienne aux illustrations en texte
@@ -313,13 +322,27 @@ class Notice_Archeomed_Accessibilite {
 				isset( $_POST['na_alt'] ) && is_array( $_POST['na_alt'] ) ? wp_unslash( $_POST['na_alt'] ) : array(),
 				isset( $_POST['na_description'] ) && is_array( $_POST['na_description'] ) ? wp_unslash( $_POST['na_description'] ) : array(),
 				get_current_user_id() );
-			foreach ( $entrees as $entree ) {
-				add_post_meta( $id, self::HISTORIQUE, wp_slash( $entree ) );
+			// La notice a pu être corrigée en place depuis que la fiche s'est
+			// ouverte : écrire ici, ce serait remettre ses anciennes figures.
+			// Elle a pu aussi l'être pendant : sa version avance avant
+			// qu'elle récrive, et la fiche ouverte entre-temps porte déjà
+			// la nouvelle.
+			$lue         = isset( $_POST['na_version'] ) && is_string( $_POST['na_version'] ) ? absint( $_POST['na_version'] ) : 0;
+			$en_chantier = (int) get_post_meta( $id, '_na_preparation', true ) > time() - Notice_Archeomed_File::ABANDON;
+			if ( ! empty( $entrees ) && ( $lue < 1 || $en_chantier || ! self::file()->changer_de_version( $id, $lue ) ) ) {
+				$issue = 'conflit';
+			} else {
+				foreach ( $entrees as $entree ) {
+					add_post_meta( $id, self::HISTORIQUE, wp_slash( $entree ) );
+				}
+				if ( ! empty( $entrees ) ) {
+					update_post_meta( $id, '_na_donnees', wp_slash( $donnees ) );
+					$qui = wp_get_current_user();
+					self::file()->noter_la_version( $id, $lue + 1, $qui->exists() ? $qui->display_name : '',
+						array( 'les textes d’accessibilité' ) );
+				}
+				$issue = (string) count( $entrees );
 			}
-			if ( ! empty( $entrees ) ) {
-				update_post_meta( $id, '_na_donnees', wp_slash( $donnees ) );
-			}
-			$issue = (string) count( $entrees );
 		}
 		wp_safe_redirect( add_query_arg( array( 'post' => $id, 'action' => 'edit', 'na_figures' => $issue, 'na_figures_coupe' => $coupe ? 1 : 0 ),
 			admin_url( 'post.php' ) ) . '#na_accessibilite' );
@@ -360,6 +383,30 @@ class Notice_Archeomed_Accessibilite {
 		$issue   = isset( $_GET['na_figures'] ) ? sanitize_key( wp_unslash( $_GET['na_figures'] ) ) : '';
 		if ( 'illisible' === $issue ) {
 			echo '<div class="notice notice-error inline"><p>' . esc_html__( 'Rien n’a été enregistré : la saisie de cette notice ne porte pas de figures lisibles.', 'notice-archeomed' ) . '</p></div>';
+		} elseif ( 'conflit' === $issue ) {
+			// Qui a corrigé, quand et quoi : sans cela, il fallait chercher dans
+			// toute la notice ce qui avait bougé.
+			$histoire = get_post_meta( $id, '_na_versions', true );
+			$derniere = is_array( $histoire ) && ! empty( $histoire ) ? end( $histoire ) : array();
+			$precis   = array();
+			if ( (int) get_post_meta( $id, '_na_preparation', true ) > time() - Notice_Archeomed_File::ABANDON ) {
+				$precis[] = 'une correction est en cours d’enregistrement';
+			} else {
+				$quand = isset( $derniere['le'] ) ? Notice_Archeomed_File::date_lisible( $derniere['le'] ) : '';
+				if ( '' !== $quand ) {
+					$precis[] = 'le ' . $quand;
+				}
+				if ( ! empty( $derniere['par'] ) ) {
+					$precis[] = 'par ' . $derniere['par'];
+				}
+				$champs = isset( $derniere['champs'] ) ? array_filter( array_map( 'strval', (array) $derniere['champs'] ) ) : array();
+				if ( ! empty( $champs ) ) {
+					$precis[] = implode( ', ', $champs );
+				}
+			}
+			echo '<div class="notice notice-error inline"><p>' . esc_html( "Rien n’a été enregistré\u{00A0}: la notice a été corrigée entre-temps"
+				. ( ! empty( $precis ) ? ' (' . implode( "\u{00A0}; ", $precis ) . ')' : '' )
+				. ". Voici ses figures telles qu’elles sont maintenant\u{00A0}; reprenez vos textes sur celles-ci." ) . '</p></div>';
 		} elseif ( preg_match( '/^\d+$/', $issue ) ) {
 			$n = (int) $issue;
 			echo '<div class="notice notice-success inline"><p>' . esc_html( 0 === $n
@@ -452,9 +499,14 @@ class Notice_Archeomed_Accessibilite {
 			return;
 		}
 		$id = (int) $this->formulaire_des_figures;
+		// Une fiche ouverte pendant une correction en place montre les
+		// anciennes figures sous la version nouvelle : elle ne porte alors
+		// aucune version, et son enregistrement se refuse.
+		$en_chantier = (int) get_post_meta( $id, '_na_preparation', true ) > time() - Notice_Archeomed_File::ABANDON;
 		echo '<form id="na-a11y-figures" method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
 			. '<input type="hidden" name="action" value="' . esc_attr( self::ACTION_FIGURES ) . '">'
 			. '<input type="hidden" name="post" value="' . $id . '">'
+			. '<input type="hidden" name="na_version" value="' . ( $en_chantier ? 0 : (int) self::file()->version_de( $id ) ) . '">'
 			. '<input type="hidden" name="_wpnonce" value="' . esc_attr( wp_create_nonce( self::ACTION_FIGURES . '_' . $id ) ) . '">'
 			. '</form>';
 	}

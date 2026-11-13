@@ -159,7 +159,10 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `_na_donnees` | la saisie complète, tableau sérialisé (voir ci-dessous) |
 | `_na_notice` | le HTML de la notice, tel que le courriel l'a porté |
 | `_na_reference` | la référence du dépôt (six caractères) |
-| `_na_remplace` | la référence que ce dépôt corrige, s'il en corrige une |
+| `_na_remplace` | la référence que ce dépôt corrige, s'il en corrige une (liens de correction d'avant la 3.69) |
+| `_na_version` | le numéro de version de la notice ; une correction ne passe que par une écriture conditionnelle qui l'avance d'un (`changer_de_version()`) |
+| `_na_versions` | l'histoire des vingt dernières corrections : `version`, `le`, `par`, `champs` |
+| `_na_corrigee` | les points changés par une correction de l'auteur, à signaler à la rédaction (`[CORRIGÉE]` dans l'objet) ; effacée une fois le courriel parti |
 | `_na_etat`, `_na_prise`, `_na_essais`, `_na_erreur`, `_na_note`, `_na_envoyee_le` | la file |
 | `_na_preparation` | marque posée pendant la préparation du dépôt |
 | `_na_fichiers` | les fichiers à joindre (chemins) |
@@ -321,7 +324,7 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 - **Hébergement derrière un proxy** : Turnstile (Cloudflare) et la lecture de Pactols demandent une sortie HTTPS ; à défaut, protection locale et `pactols_serveur` = `non`.
 - **Limites de PHP** : `upload_max_filesize` et `post_max_size` bornent les fichiers ; une requête plus lourde que `post_max_size` arrive vide, ce que `refuser_l_envoi_trop_lourd()` détecte et dit à l'auteur.
 - **Planificateur** : sans WP-Cron ni tâche système, rien ne part en différé.
-- **Concurrence** : éprouvée à chaque envoi sur `main` par le travail `charger` de l'intégration continue : un WordPress sur MariaDB, servi par huit processus PHP, reçoit vingt-cinq dépôts de deux figures à la même seconde, puis quatre passages du planificateur se disputent les notices ; il doit rester vingt-cinq notices, chacune sa référence, toutes expédiées une seule fois (`.github/essais/charge.php` et `charge-verification.php`). Ce n'est pas une mesure de charge de la production : les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées, et la vérification anti-robot est suspendue pour l'essai.
+- **Concurrence** : éprouvée à chaque envoi sur `main` par le travail `charger` de l'intégration continue : un WordPress sur MariaDB, servi par huit processus PHP, reçoit vingt-cinq dépôts de deux figures à la même seconde, puis quatre passages du planificateur se disputent les notices ; il doit rester vingt-cinq notices, chacune sa référence, toutes expédiées une seule fois (`.github/essais/charge.php` et `charge-verification.php`). Puis les vingt-cinq sont corrigées par leur lien à la même seconde, cinq d'entre elles deux fois depuis deux pages ouvertes sur la même version : une seule des deux doit passer, et chaque notice être récrite en place, une version de plus, et repartir une seule fois (`corrections.php` et `corrections-verification.php`). Ce n'est pas une mesure de charge de la production : les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées, et la vérification anti-robot est suspendue pour l'essai.
 - **Évolutions de Métopes** : remplacer le gabarit, lancer `verifier-les-styles`, ajuster la correspondance dans l'onglet Styles Métopes plutôt que le code.
 - **Courriel** : le serveur de la revue refuse au-delà d'une dizaine de méga-octets ; l'essai de poids de l'onglet Courriel mesure la limite réelle.
 
@@ -336,7 +339,7 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 - **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
 - **Disque** : les illustrations et leurs originaux restent sur le site, de quelques Mo à vingt Mo par notice. Une campagne de 300 notices demande, selon une estimation, de 1 à 2,5 Go. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes.
 - **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.
-- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, non depuis le serveur.
+- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers `sdrive.cnrs.fr` si les illustrations doivent y être rangées : l'essai de l'onglet Diagnostic dit si le proxy de l'hébergement laisse passer.
 
 ### Réglages posés dans `wp-config.php`
 
@@ -345,6 +348,7 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 | `NA_TURNSTILE_SECRET` | clé secrète Turnstile |
 | `NA_PROTECTION` | `aucune` suspend la vérification, **sur un site déclaré `local` ou `development` seulement** |
 | `NA_PROXYS` | relais de confiance (adresses ou blocs CIDR, séparés par des virgules), derrière lesquels l'adresse du visiteur se lit dans `X-Forwarded-For` ; sans elle, `REMOTE_ADDR` seul |
+| `NA_SDRIVE_WEBDAV`, `NA_SDRIVE_IDENTIFIANT`, `NA_SDRIVE_MOT_DE_PASSE`, `NA_SDRIVE_DOSSIER` | l'accès WebDAV à sDrive (mot de passe d'application, jamais celui de Janus), pour l'essai « Tester l'accès à sDrive » de l'onglet Diagnostic ; rien d'autre ne s'en sert encore |
 | `NA_SUPPRIMER_LES_NOTICES` | à `true` avant de supprimer l'extension : efface aussi les notices et leurs fichiers (sinon ils restent) |
 
 Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vérification quand Cloudflare est injoignable ; par défaut elle laisse passer, pour ne pas perdre de notice derrière un proxy qui le bloque.

@@ -227,6 +227,13 @@ jobs:
   # part : un bouchon les note. Au bout, il doit y avoir vingt-cinq notices,
   # chacune sa référence, toutes expédiées une seule fois.
   #
+  # Puis les auteurs relisent : chaque notice est corrigée par son lien, les
+  # vingt-cinq ensemble, et cinq le sont deux fois à la même seconde depuis
+  # deux pages ouvertes sur la même version. Une seule de ces deux-là doit
+  # passer ; chaque notice doit être récrite en place — même référence, une
+  # version de plus, une figure gardée, une remplacée, une ajoutée — et
+  # repartir une seule fois vers la rédaction, marquée corrigée.
+  #
   # La protection anti-robot est suspendue (NA_PROTECTION, site déclaré
   # « development ») : c'est ce que le plugin n'admet que sur un site d'essai.
   charger:
@@ -339,6 +346,41 @@ jobs:
           set -o pipefail
           NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php" | tee /tmp/verification.log
           echo "::notice::$(tr '\n' ' ' < /tmp/verification.log)"
+
+      - name: Les notices telles qu'elles sont avant correction
+        working-directory: /tmp/wp
+        run: |
+          NA_ETAPE=avant NA_INSTANTANE=/tmp/avant.json NA_LIENS=/tmp/liens.txt \
+            wp eval-file "$GITHUB_WORKSPACE/.github/essais/corrections-verification.php"
+
+      - name: Vingt-cinq corrections à la même seconde, cinq disputées
+        run: |
+          set -o pipefail
+          php .github/essais/corrections.php http://127.0.0.1:8080 /tmp/liens.txt 5 | tee /tmp/corrections.log
+          echo "::notice::$(head -1 /tmp/corrections.log)"
+
+      - name: Le planificateur renvoie les notices corrigées
+        working-directory: /tmp/wp
+        run: |
+          set -u
+          for tour in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            for k in 1 2 3 4; do
+              ( wp cron event run --due-now; wp cron event run na_relancer_les_notices ) > /tmp/cron-c-$tour-$k.log 2>&1 &
+            done
+            wait
+            RESTE=$(wp eval 'echo count( get_posts( array( "post_type" => "na_notice", "post_status" => "any", "posts_per_page" => -1, "fields" => "ids", "meta_query" => array( array( "key" => "_na_etat", "value" => array( "en_attente", "en_cours" ), "compare" => "IN" ) ) ) ) );')
+            echo "tour $tour : $RESTE notices corrigées encore en route"
+            [ "$RESTE" = "0" ] && break
+            sleep 5
+          done
+
+      - name: Chaque notice récrite en place, une seule fois
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          NA_ETAPE=apres NA_INSTANTANE=/tmp/avant.json NA_COURRIELS=/tmp/courriels.log \
+            wp eval-file "$GITHUB_WORKSPACE/.github/essais/corrections-verification.php" | tee /tmp/corrections-verification.log
+          echo "::notice::$(head -1 /tmp/corrections-verification.log)"
 
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()

@@ -108,6 +108,7 @@ class Notice_Archeomed_File {
 		add_action( 'admin_post_na_expedier_maintenant', array( $this, 'expedier_maintenant' ) );
 		add_action( 'admin_post_na_reessayer', array( $this, 'reessayer' ) );
 		add_action( 'admin_post_na_diagnostic', array( $this, 'diagnostiquer' ) );
+		add_action( 'admin_post_na_corriger', array( $this, 'corriger' ) );
 	}
 
 	/** Ce que la version en cours attend d'avoir écrit dans chaque notice. */
@@ -275,25 +276,18 @@ class Notice_Archeomed_File {
 	 * coûtent plus une notice.
 	 */
 	public function deposer( $donnees, $notice_html, $fichiers, $document, $reference ) {
-		// Le titre de la liste porte le lieu-dit : trois « Argentan (Orne) —
-		// 2025 » ne se distinguaient pas. Les notices déjà reçues gardent le
-		// leur.
-		$plugin = $this->plugin();
-		$titre  = ( null !== $plugin ) ? $plugin->titre_de_liste( $donnees )
-			: trim( $donnees['commune'] . ' (' . $donnees['departement'] . ') — ' . $donnees['annee'] );
-		$id    = wp_insert_post(
+		$id = wp_insert_post(
 			array(
 				'post_type'   => self::CPT,
 				'post_status' => 'private',
-				'post_title'  => '' !== $titre ? $titre : __( 'Notice sans commune', 'notice-archeomed' ),
+				'post_title'  => $this->titre_de( $donnees ),
 			),
 			true
 		);
 		if ( is_wp_error( $id ) || ! $id ) {
 			return 0;
 		}
-		update_post_meta( $id, '_na_donnees', wp_slash( $donnees ) );
-		update_post_meta( $id, '_na_notice', wp_slash( $notice_html ) );
+		$this->recopier( $id, $donnees, $notice_html );
 		update_post_meta( $id, '_na_fichiers', $fichiers );
 		// Le document stylé, suivi à part : c'est celui qui repart aux auteurs.
 		update_post_meta( $id, '_na_document', $document );
@@ -303,17 +297,9 @@ class Notice_Archeomed_File {
 		// fiche dit laquelle.
 		update_post_meta( $id, '_na_remplace',
 			isset( $donnees['remplace'] ) ? (string) $donnees['remplace'] : '' );
-		// Ce sur quoi la liste trie et filtre. Recopié à part plutôt que lu
-		// dans le tableau des données : une requête d'administration ne sait
-		// pas fouiller un tableau sérialisé.
-		update_post_meta( $id, '_na_rubrique',
-			isset( $donnees['rubrique_principale'] ) ? $donnees['rubrique_principale'] : '' );
-		update_post_meta( $id, '_na_responsable',
-			trim( ( isset( $donnees['resp_prenom'] ) ? $donnees['resp_prenom'] : '' )
-				. ' ' . ( isset( $donnees['resp_nom'] ) ? $donnees['resp_nom'] : '' ) ) );
-		update_post_meta( $id, '_na_courriel',
-			isset( $donnees['resp_email'] ) ? $donnees['resp_email'] : '' );
-		$this->poser_le_classement( $id, $donnees );
+		// La première version : chaque correction en place la fait avancer
+		// d'un cran, et une page ouverte sur une version dépassée le sait.
+		update_post_meta( $id, '_na_version', '1' );
 		// La requête qui dépose prépare encore la notice — fichiers rangés,
 		// versions allégées, Word — et ôtera cette marque. Posée avant
 		// l'état, elle ne laisse aucun instant où une relance verrait la
@@ -332,6 +318,116 @@ class Notice_Archeomed_File {
 	}
 
 	/**
+	 * Le titre de la liste. Il porte le lieu-dit : trois « Argentan (Orne) —
+	 * 2025 » ne se distinguaient pas.
+	 */
+	private function titre_de( $donnees ) {
+		$plugin = $this->plugin();
+		$titre  = ( null !== $plugin ) ? $plugin->titre_de_liste( $donnees )
+			: trim( $donnees['commune'] . ' (' . $donnees['departement'] . ') — ' . $donnees['annee'] );
+		return '' !== $titre ? $titre : __( 'Notice sans commune', 'notice-archeomed' );
+	}
+
+	/**
+	 * La saisie, la notice mise en forme, et ce que la liste en recopie pour
+	 * trier et filtrer — à part, parce qu'une requête d'administration ne
+	 * sait pas fouiller un tableau sérialisé.
+	 */
+	private function recopier( $id, $donnees, $notice_html ) {
+		update_post_meta( $id, '_na_donnees', wp_slash( $donnees ) );
+		update_post_meta( $id, '_na_notice', wp_slash( $notice_html ) );
+		update_post_meta( $id, '_na_rubrique',
+			isset( $donnees['rubrique_principale'] ) ? $donnees['rubrique_principale'] : '' );
+		update_post_meta( $id, '_na_responsable',
+			trim( ( isset( $donnees['resp_prenom'] ) ? $donnees['resp_prenom'] : '' )
+				. ' ' . ( isset( $donnees['resp_nom'] ) ? $donnees['resp_nom'] : '' ) ) );
+		update_post_meta( $id, '_na_courriel',
+			isset( $donnees['resp_email'] ) ? $donnees['resp_email'] : '' );
+		$this->poser_le_classement( $id, $donnees );
+	}
+
+	/**
+	 * Récrit une notice corrigée en place : même fiche, même référence.
+	 *
+	 * Une correction produisait un second dépôt, que la rédaction devait
+	 * rapprocher du premier et dont elle supprimait l'ancien à la main. La
+	 * notice se corrige maintenant elle-même ; les fichiers, le document et
+	 * l'envoi restent l'affaire de l'appelant.
+	 */
+	public function mettre_a_jour( $id, $donnees, $notice_html ) {
+		$id = (int) $id;
+		wp_update_post( array( 'ID' => $id, 'post_title' => $this->titre_de( $donnees ) ) );
+		$this->recopier( $id, $donnees, $notice_html );
+	}
+
+	/**
+	 * La version d'une notice. Celles d'avant les corrections en place n'en
+	 * portent pas : elles commencent à la première.
+	 */
+	public function version_de( $id ) {
+		$id = (int) $id;
+		add_post_meta( $id, '_na_version', '1', true );
+		wp_cache_delete( $id, 'post_meta' );
+		return max( 1, (int) get_post_meta( $id, '_na_version', true ) );
+	}
+
+	/**
+	 * Fait passer une notice de la version lue à la suivante, ou dit qu'une
+	 * autre correction l'a fait entre-temps.
+	 *
+	 * La rédaction et l'auteur peuvent corriger la même notice à la même
+	 * heure : le second enregistrement écrasait le premier sans que personne
+	 * le sache. Comme pour la prise d'un envoi, c'est une seule écriture
+	 * conditionnelle — la base ne change la ligne que si elle porte encore la
+	 * version que la page avait lue, et un seul des deux la trouve ainsi.
+	 */
+	public function changer_de_version( $id, $lue ) {
+		global $wpdb;
+		$id  = (int) $id;
+		$lue = max( 1, (int) $lue );
+		$this->version_de( $id );
+		$pris = $wpdb->query( $wpdb->prepare(
+			"UPDATE {$wpdb->postmeta} SET meta_value = %s WHERE post_id = %d AND meta_key = '_na_version' AND meta_value = %s",
+			(string) ( $lue + 1 ), $id, (string) $lue ) );
+		wp_cache_delete( $id, 'post_meta' );
+		// Deux lignes, si deux premières lectures se sont croisées : elles
+		// changent ensemble, et la correction a bien eu lieu.
+		return (int) $pris > 0;
+	}
+
+	/**
+	 * Défait un changement de version qui n'a pas pu aller jusqu'à
+	 * l'écriture : la page qui avait lu la version la retrouve, et peut
+	 * renvoyer. Conditionnelle elle aussi : si une autre correction est
+	 * passée depuis, on ne recule pas.
+	 */
+	public function rendre_la_version( $id, $lue ) {
+		global $wpdb;
+		$id  = (int) $id;
+		$lue = max( 1, (int) $lue );
+		$wpdb->query( $wpdb->prepare(
+			"UPDATE {$wpdb->postmeta} SET meta_value = %s WHERE post_id = %d AND meta_key = '_na_version' AND meta_value = %s",
+			(string) $lue, $id, (string) ( $lue + 1 ) ) );
+		wp_cache_delete( $id, 'post_meta' );
+	}
+
+	/**
+	 * Garde trace d'une correction : quand, par qui, ce qui a changé. Les
+	 * vingt dernières suffisent à dire l'histoire d'une notice.
+	 */
+	public function noter_la_version( $id, $version, $par, $champs ) {
+		$histoire   = get_post_meta( (int) $id, '_na_versions', true );
+		$histoire   = is_array( $histoire ) ? $histoire : array();
+		$histoire[] = array(
+			'version' => (int) $version,
+			'le'      => current_time( 'mysql' ),
+			'par'     => (string) $par,
+			'champs'  => array_values( array_map( 'strval', (array) $champs ) ),
+		);
+		update_post_meta( (int) $id, '_na_versions', array_slice( $histoire, -20 ) );
+	}
+
+	/**
 	 * Demande l'expédition dès que possible.
 	 *
 	 * Le planificateur de WordPress se déclenche à la requête suivante : sur
@@ -341,6 +437,21 @@ class Notice_Archeomed_File {
 		if ( ! wp_next_scheduled( self::HOOK_UNE, array( (int) $id ) ) ) {
 			wp_schedule_single_event( time(), self::HOOK_UNE, array( (int) $id ) );
 		}
+	}
+
+	/**
+	 * Remet dans la file une notice que son auteur vient de corriger : partie
+	 * ou en échec, elle repart vers la rédaction avec ses corrections.
+	 *
+	 * L'appelant a vérifié qu'aucun passage n'est en train de l'envoyer.
+	 */
+	public function remettre_en_file( $id ) {
+		$id = (int) $id;
+		update_post_meta( $id, '_na_essais', 0 );
+		update_post_meta( $id, '_na_etat', 'en_attente' );
+		delete_post_meta( $id, '_na_erreur' );
+		delete_post_meta( $id, '_na_pas_avant' );
+		$this->programmer( $id );
 	}
 
 	/**
@@ -486,6 +597,45 @@ class Notice_Archeomed_File {
 		set_transient( 'na_diagnostic_' . $id, $lignes, 300 );
 		wp_safe_redirect( add_query_arg( 'na_diagnostic', '1', get_edit_post_link( $id, '' ) ) );
 		exit;
+	}
+
+	/**
+	 * Ouvre le formulaire public, rempli de la saisie de la notice, pour que
+	 * la rédaction la corrige comme l'auteur l'aurait fait : un mot-clé de
+	 * plus, un autre de moins, une période mal choisie.
+	 *
+	 * Rien ne se corrigeait sur le site : il fallait écrire à l'auteur, ou
+	 * retoucher le Word à la main, et la saisie gardée — d'où se refont le
+	 * document, les fascicules et les dossiers Métopes — restait fausse.
+	 */
+	public function corriger() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
+		check_admin_referer( 'na_corriger_' . $id );
+		if ( ! $id || self::CPT !== get_post_type( $id ) || 'private' !== get_post_status( $id ) ) {
+			wp_die( esc_html__( 'Notice inconnue.', 'notice-archeomed' ) );
+		}
+		$plugin = $this->plugin();
+		if ( null === $plugin || ! $this->a_un_document( $id ) ) {
+			wp_die( esc_html__( 'Cette notice ne garde pas sa saisie : elle ne peut pas se rouvrir dans le formulaire.', 'notice-archeomed' ) );
+		}
+		$adresse = $plugin->ouvrir_la_correction( $id );
+		if ( '' === $adresse ) {
+			wp_die( esc_html__( 'Aucune page publiée ne porte le formulaire : publiez-en une avec le shortcode, puis recommencez.', 'notice-archeomed' ) );
+		}
+		wp_safe_redirect( $adresse );
+		exit;
+	}
+
+	/** L'adresse qui ouvre une notice dans le formulaire, pour la corriger. */
+	private function url_de_correction( $id ) {
+		return wp_nonce_url(
+			add_query_arg( array( 'action' => 'na_corriger', 'post' => (int) $id ),
+				admin_url( 'admin-post.php' ) ),
+			'na_corriger_' . (int) $id
+		);
 	}
 
 	/**
@@ -765,7 +915,8 @@ class Notice_Archeomed_File {
 				. ' <a href="' . esc_url( $chercher ) . '">'
 				. esc_html__( 'Retrouver la notice corrigée', 'notice-archeomed' ) . '</a></p></div>';
 		}
-		$reference = strtoupper( trim( (string) get_post_meta( $id, '_na_reference', true ) ) );
+		$reference    = strtoupper( trim( (string) get_post_meta( $id, '_na_reference', true ) ) );
+		$correctrices = array();
 		if ( '' !== $reference ) {
 			$correctrices = get_posts( array(
 				'post_type'      => self::CPT,
@@ -780,6 +931,15 @@ class Notice_Archeomed_File {
 					. ' <a href="' . esc_url( get_edit_post_link( (int) $correctrices[0], '' ) ) . '">'
 					. esc_html__( 'Ouvrir la correction', 'notice-archeomed' ) . '</a></p></div>';
 			}
+		}
+		// Une notice qu'un second dépôt remplace se corrige dans celui-ci :
+		// retoucher l'ancienne n'atteindrait ni les fascicules ni les dossiers.
+		if ( empty( $correctrices ) && $this->a_un_document( $id ) ) {
+			echo '<p><a class="button" href="' . esc_url( $this->url_de_correction( $id ) ) . '">'
+				. esc_html__( 'Corriger dans le formulaire', 'notice-archeomed' ) . '</a></p>'
+				. '<p class="description">'
+				. esc_html__( 'Le formulaire s’ouvre rempli de la saisie. L’enregistrement met à jour cette notice, sous la même référence, et refait le document Word ; personne n’est prévenu par courriel.', 'notice-archeomed' )
+				. '</p>';
 		}
 	}
 
@@ -804,6 +964,7 @@ class Notice_Archeomed_File {
 				. $valeur . '</td></tr>';
 		}
 		echo '</tbody></table>';
+		$this->afficher_les_corrections( $id );
 
 		// Le téléchargement est le bouton principal d'une notice partie, en
 		// tête de fiche ; ici, il n'est que secondaire, pour relire une
@@ -827,6 +988,29 @@ class Notice_Archeomed_File {
 				. esc_url( get_delete_post_link( $id ) ) . '">'
 				. esc_html__( 'Mettre cette notice à la corbeille', 'notice-archeomed' ) . '</a></p>';
 		}
+	}
+
+	/**
+	 * Les corrections faites en place, la plus récente d'abord : qui, quand,
+	 * et sur quoi. Sans elles, une notice changée depuis son dépôt ne le
+	 * disait nulle part.
+	 */
+	private function afficher_les_corrections( $id ) {
+		$histoire = get_post_meta( $id, '_na_versions', true );
+		if ( ! is_array( $histoire ) || empty( $histoire ) ) {
+			return;
+		}
+		echo '<h3 style="margin:14px 0 6px;font-size:1em">'
+			. esc_html__( 'Corrections', 'notice-archeomed' ) . '</h3><ul style="margin:0">';
+		foreach ( array_reverse( $histoire ) as $v ) {
+			$champs = isset( $v['champs'] ) ? array_filter( (array) $v['champs'] ) : array();
+			echo '<li>' . esc_html( self::date_lisible( isset( $v['le'] ) ? $v['le'] : '', true ) )
+				. ' — ' . esc_html( isset( $v['par'] ) && '' !== $v['par'] ? $v['par'] : __( 'l’auteur', 'notice-archeomed' ) )
+				. '<br><span class="description">' . esc_html( empty( $champs )
+					? __( 'Rien de changé dans la saisie.', 'notice-archeomed' )
+					: implode( ', ', $champs ) ) . '</span></li>';
+		}
+		echo '</ul>';
 	}
 
 	/**
@@ -2355,6 +2539,9 @@ class Notice_Archeomed_File {
 			$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
 			$this->dire_l_issue( $id, sanitize_key( wp_unslash( $_GET['na_relancee'] ) ) );
 		}
+		if ( 'post' === $ecran->base && isset( $_GET['na_corrigee'] ) ) {
+			self::avis( 'success', __( 'La correction est enregistrée : la notice, sa fiche et son document Word sont à jour. Personne n’a été prévenu par courriel.', 'notice-archeomed' ) );
+		}
 		if ( 'post' === $ecran->base && isset( $_GET['na_diagnostic'] ) ) {
 			self::avis( 'info', __( 'Le diagnostic est fait : ses résultats sont dans l’encart « Dépannage », plus bas.', 'notice-archeomed' ) );
 		}
@@ -2419,7 +2606,7 @@ class Notice_Archeomed_File {
 	 */
 	public function arguments_a_effacer( $arguments ) {
 		return array_merge( (array) $arguments,
-			array( 'na_relancee', 'na_diagnostic', 'na_parties', 'na_restent', 'na_refus', 'na_essai', 'na_figures', 'na_figures_coupe' ) );
+			array( 'na_relancee', 'na_diagnostic', 'na_corrigee', 'na_parties', 'na_restent', 'na_refus', 'na_essai', 'na_figures', 'na_figures_coupe' ) );
 	}
 
 	/**
