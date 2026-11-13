@@ -24,6 +24,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-sdrive.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php';

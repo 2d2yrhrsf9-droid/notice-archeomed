@@ -3,7 +3,8 @@
  * Suppression de l'extension depuis l'administration de WordPress.
  *
  * Les réglages disparaissent toujours, secrets compris : le mot de passe du
- * relais de courriel, le jeton GitHub et la clé Turnstile n'ont rien à faire
+ * relais de courriel, le jeton GitHub, la clé Turnstile et l'accès à sDrive
+ * n'ont rien à faire
  * dans une base dont l'extension est partie.
  *
  * Les notices et leurs fichiers, eux, sont le travail de la revue : ils
@@ -16,8 +17,18 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
+// La liaison à sDrive se révoque chez sDrive avant de s'oublier ici : sans
+// quoi un mot de passe d'application resterait valide, que plus rien ne
+// sait retirer.
+require_once __DIR__ . '/class-notice-archeomed-sdrive.php';
+$sdrive = Notice_Archeomed_Sdrive::liaison();
+if ( ! empty( $sdrive['compte'] ) ) {
+	Notice_Archeomed_Sdrive::delier();
+}
+
 foreach ( array(
 	'notice_archeomed_options',
+	Notice_Archeomed_Sdrive::OPTION,
 	'notice_archeomed_accessibilite',
 	'notice_archeomed_candidats',
 	'na_etat_des_donnees',

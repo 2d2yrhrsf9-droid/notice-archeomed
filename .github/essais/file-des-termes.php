@@ -1230,6 +1230,150 @@ remove_filter( 'pre_http_request', $refuse_proxy, 10 );
 na_verifier( false === $essai_pactols['ok'] && false !== strpos( $essai_pactols['message'], 'proxy' ),
 	'l\'essai dit que le proxy refuse Pactols', $essai_pactols );
 
+WP_CLI::log( 'La liaison à sDrive' );
+// Un sDrive simulé, qui répond comme le vrai : la demande, son relevé
+// avant puis après l'autorisation, la révocation, et le dossier en WebDAV.
+$S        = 'Notice_Archeomed_Sdrive';
+$sd_mot   = 'mot-d-application';
+$sd_vus   = array();
+$sd_etat  = array( 'autorise' => false, 'ailleurs' => false, 'proxy' => false );
+$sd_auth  = 'Basic ' . base64_encode( '862404:' . $sd_mot );
+$sd_simul = function ( $pre, $args, $url ) use ( &$sd_vus, &$sd_etat, $sd_auth, $sd_mot ) {
+	if ( 0 !== strpos( $url, 'https://sdrive.cnrs.fr/' ) ) {
+		return $pre;
+	}
+	$methode  = isset( $args['method'] ) ? strtoupper( $args['method'] ) : 'GET';
+	$sd_vus[] = $methode . ' ' . $url;
+	$rep      = function ( $code, $corps = '' ) {
+		return array( 'headers' => array(), 'body' => $corps, 'response' => array( 'code' => $code, 'message' => '' ),
+			'cookies' => array(), 'filename' => null );
+	};
+	$chemin = (string) wp_parse_url( $url, PHP_URL_PATH );
+	if ( $sd_etat['proxy'] ) {
+		return new WP_Error( 'http_request_failed', 'cURL error 56: Received HTTP code 403 from proxy after CONNECT' );
+	}
+	if ( '/status.php' === $chemin ) {
+		return $rep( 200, wp_json_encode( array( 'installed' => true, 'maintenance' => false, 'versionstring' => '33.0.10 Enterprise' ) ) );
+	}
+	if ( '/index.php/login/v2' === $chemin && 'POST' === $methode ) {
+		return $rep( 200, wp_json_encode( array(
+			'poll'  => array( 'token' => 'jeton-de-releve',
+				'endpoint' => $sd_etat['ailleurs'] ? 'https://ailleurs.example/login/v2/poll' : 'https://sdrive.cnrs.fr/login/v2/poll' ),
+			'login' => 'https://sdrive.cnrs.fr/login/v2/flow/demande',
+		) ) );
+	}
+	if ( '/login/v2/poll' === $chemin && 'POST' === $methode ) {
+		$jeton = isset( $args['body']['token'] ) ? $args['body']['token'] : '';
+		return ( $sd_etat['autorise'] && 'jeton-de-releve' === $jeton )
+			? $rep( 200, wp_json_encode( array( 'server' => 'https://sdrive.cnrs.fr', 'loginName' => '862404', 'appPassword' => $sd_mot ) ) )
+			: $rep( 404 );
+	}
+	$authentifie = isset( $args['headers']['Authorization'] ) && $sd_auth === $args['headers']['Authorization'];
+	if ( '/ocs/v2.php/core/apppassword' === $chemin && 'DELETE' === $methode ) {
+		return $rep( $authentifie && isset( $args['headers']['OCS-APIRequest'] ) ? 200 : 401 );
+	}
+	if ( 0 === strpos( $chemin, '/remote.php/dav/files/862404/Arch%C3%A9ologie%20m%C3%A9di%C3%A9vale/Notices/' ) ) {
+		if ( ! $authentifie ) {
+			return $rep( 401 );
+		}
+		$codes = array( 'PROPFIND' => 207, 'PUT' => 201, 'DELETE' => 204 );
+		return $rep( isset( $codes[ $methode ] ) ? $codes[ $methode ] : 405 );
+	}
+	return $rep( 404 );
+};
+add_filter( 'pre_http_request', $sd_simul, 10, 3 );
+delete_option( $S::OPTION );
+$sd_rendu = function () {
+	ob_start();
+	na_appel( 'Notice_Archeomed_Settings', 'liaison_sdrive' );
+	return ob_get_clean();
+};
+
+$sd_essai = na_appel( $pages_reglages, 'test_sdrive' );
+na_verifier( true === $sd_essai['ok'] && false !== strpos( $sd_essai['message'], 'reliez le site' )
+	&& false !== strpos( $sd_rendu(), 'Relier le site à sDrive' ),
+	'sans liaison, l\'essai dit sDrive joignable et invite à relier le site, sans parler de wp-config.php', $sd_essai );
+
+$sd_fin = $S::finir_la_liaison();
+na_verifier( false === $sd_fin['ok'] && false !== strpos( $sd_fin['message'], 'Aucune demande' ),
+	'terminer une liaison jamais demandée le dit', $sd_fin );
+
+$sd_etat['ailleurs'] = true;
+$sd_dem              = $S::demander_la_liaison();
+$sd_etat['ailleurs'] = false;
+na_verifier( false === $sd_dem['ok'] && null === $S::demande_en_cours(),
+	'une demande dont le relevé mènerait hors de sDrive est refusée : le jeton n\'y part pas', $sd_dem );
+
+$sd_dem = $S::demander_la_liaison();
+$sd_en  = $S::demande_en_cours();
+na_verifier( true === $sd_dem['ok'] && is_array( $sd_en ) && 'https://sdrive.cnrs.fr/login/v2/flow/demande' === $sd_en['login']
+	&& false !== strpos( $sd_rendu(), 'Terminer la liaison' ) && false !== strpos( $sd_rendu(), 'login/v2/flow/demande' ),
+	'la demande ouverte, la page donne le lien où autoriser et le bouton qui termine', $sd_en );
+
+$sd_fin = $S::finir_la_liaison();
+na_verifier( false === $sd_fin['ok'] && false !== strpos( $sd_fin['message'], 'pas encore reçu' ) && null !== $S::demande_en_cours(),
+	'avant l\'autorisation, terminer le dit et garde la demande', $sd_fin );
+
+$sd_etat['autorise'] = true;
+$sd_fin              = $S::finir_la_liaison();
+$sd_lien             = $S::liaison();
+$sd_acces            = $S::acces();
+na_verifier( true === $sd_fin['ok'] && null === $S::demande_en_cours() && '862404' === $sd_lien['compte']
+	&& false === strpos( serialize( get_option( $S::OPTION ) ), $sd_mot )
+	&& is_array( $sd_acces ) && $sd_mot === $sd_acces['mot_de_passe']
+	&& 'https://sdrive.cnrs.fr/remote.php/dav/files/862404/' === $sd_acces['webdav'],
+	'l\'autorisation donnée, le site est relié : le mot de passe est scellé dans la base, et se descelle pour parler à sDrive',
+	array( $sd_fin, $sd_lien ) );
+na_verifier( false !== strpos( $sd_rendu(), 'Délier le site' ) && false !== strpos( $sd_rendu(), '862404' ),
+	'relié, la page nomme le compte et offre de délier' );
+
+$sd_essai = na_appel( $pages_reglages, 'test_sdrive' );
+na_verifier( false === $sd_essai['ok'] && false !== strpos( $sd_essai['message'], 'aucun dossier' ),
+	'relié sans dossier, l\'essai refuse d\'écrire à la racine du compte', $sd_essai );
+
+$S::enregistrer_le_dossier( ' /Archéologie médiévale/ ./Notices/ ' );
+$sd_lien = $S::liaison();
+na_verifier( 'Archéologie médiévale/Notices' === $sd_lien['dossier'] && '862404' === $sd_lien['compte'],
+	'le dossier se range sans barres ni segments vides, et la liaison reste', $sd_lien );
+
+$sd_vus   = array();
+$sd_essai = na_appel( $pages_reglages, 'test_sdrive' );
+$sd_gestes = implode( ' ', array_map( function ( $v ) {
+	return strtok( $v, ' ' );
+}, $sd_vus ) );
+na_verifier( true === $sd_essai['ok'] && false !== strpos( $sd_essai['message'], 's’efface' )
+	&& 'GET PROPFIND PUT DELETE' === $sd_gestes,
+	'relié, avec un dossier : l\'essai lit, écrit, puis efface son fichier, accents du chemin compris', array( $sd_essai, $sd_vus ) );
+
+// Les clés de wp-config.php changées : le sceau ne s'ouvre plus.
+$sd_garde          = $S::liaison();
+$sd_faux           = $sd_garde;
+$sd_faux['scelle'] = base64_encode( str_repeat( 'x', 60 ) );
+update_option( $S::OPTION, $sd_faux, false );
+$sd_essai = na_appel( $pages_reglages, 'test_sdrive' );
+na_verifier( $S::liaison_illisible() && null === $S::acces() && false !== strpos( $sd_essai['message'], 'ne se lit plus' ),
+	'une liaison dont le sceau ne s\'ouvre plus le dit, et n\'envoie rien à sDrive', $sd_essai );
+update_option( $S::OPTION, $sd_garde, false );
+
+$sd_vus = array();
+$sd_del = $S::delier();
+$sd_lien = $S::liaison();
+na_verifier( true === $sd_del['ok'] && array( 'DELETE https://sdrive.cnrs.fr/ocs/v2.php/core/apppassword' ) === $sd_vus
+	&& empty( $sd_lien['compte'] ) && 'Archéologie médiévale/Notices' === $sd_lien['dossier'] && null === $S::acces(),
+	'délier révoque le mot de passe chez sDrive, l\'oublie ici et garde le dossier', array( $sd_del, $sd_vus, $sd_lien ) );
+
+$sd_etat['proxy'] = true;
+$sd_essai         = na_appel( $pages_reglages, 'test_sdrive' );
+$sd_dem           = $S::demander_la_liaison();
+$sd_etat['proxy'] = false;
+na_verifier( false === $sd_essai['ok'] && false !== strpos( $sd_essai['message'], 'proxy' )
+	&& false === $sd_dem['ok'] && false !== strpos( $sd_dem['message'], 'proxy' ),
+	'un proxy qui refuse sDrive se nomme, à l\'essai comme à la liaison', array( $sd_essai, $sd_dem ) );
+
+remove_filter( 'pre_http_request', $sd_simul, 10 );
+delete_option( $S::OPTION );
+$S::oublier_la_demande();
+
 WP_CLI::log( 'Le dépôt, en envoi différé puis immédiat' );
 // La requête de l'auteur se joue entière : la redirection finale, qui
 // sortirait du script, est interceptée et rendue.

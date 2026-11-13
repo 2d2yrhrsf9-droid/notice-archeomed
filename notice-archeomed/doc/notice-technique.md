@@ -339,7 +339,7 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 - **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
 - **Disque** : les illustrations et leurs originaux restent sur le site, de quelques Mo à vingt Mo par notice. Une campagne de 300 notices demande, selon une estimation, de 1 à 2,5 Go. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes.
 - **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.
-- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers l'hôte de `NA_SDRIVE_WEBDAV` si les illustrations doivent y être rangées : l'essai de l'onglet Diagnostic dit si le proxy de l'hébergement laisse passer.
+- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers sDrive si les illustrations doivent y être rangées : l'essai de l'onglet Diagnostic dit si le proxy de l'hébergement laisse passer. Le site s'y relie depuis le même onglet, sans mot de passe tapé : l'administrateur autorise le site dans sDrive, qui lui rend un mot de passe d'application révocable, scellé dans la base avec les clés de `wp-config.php`.
 
 ### Réglages posés dans `wp-config.php`
 
@@ -348,7 +348,7 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 | `NA_TURNSTILE_SECRET` | clé secrète Turnstile |
 | `NA_PROTECTION` | `aucune` suspend la vérification, **sur un site déclaré `local` ou `development` seulement** |
 | `NA_PROXYS` | relais de confiance (adresses ou blocs CIDR, séparés par des virgules), derrière lesquels l'adresse du visiteur se lit dans `X-Forwarded-For` ; sans elle, `REMOTE_ADDR` seul |
-| `NA_SDRIVE_WEBDAV`, `NA_SDRIVE_IDENTIFIANT`, `NA_SDRIVE_MOT_DE_PASSE`, `NA_SDRIVE_DOSSIER` | l'accès WebDAV à sDrive (mot de passe d'application, jamais celui de Janus), pour l'essai « Tester l'accès à sDrive » de l'onglet Diagnostic ; rien d'autre ne s'en sert encore |
+| `NA_SDRIVE_WEBDAV`, `NA_SDRIVE_IDENTIFIANT`, `NA_SDRIVE_MOT_DE_PASSE`, `NA_SDRIVE_DOSSIER` | l'accès WebDAV à sDrive (mot de passe d'application, jamais celui de Janus), toutes quatre ou aucune ; elles priment sur la liaison faite dans l'onglet Diagnostic, inutile quand elles manquent |
 | `NA_SUPPRIMER_LES_NOTICES` | à `true` avant de supprimer l'extension : efface aussi les notices et leurs fichiers (sinon ils restent) |
 
 Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vérification quand Cloudflare est injoignable ; par défaut elle laisse passer, pour ne pas perdre de notice derrière un proxy qui le bloque.

@@ -15,11 +15,14 @@
 name: Publier une release
 
 # Chaque envoi sur main passe l'analyse et le site d'essai : on sait qu'une
-# version est bonne avant de l'étiqueter. Seule une étiquette publie.
+# version est bonne avant de l'étiqueter. Seule une étiquette publie. Une
+# branche « essai/… » passe les mêmes épreuves sans toucher à main : le poste
+# qui prépare n'a pas PHP, c'est le seul endroit où le code s'exécute.
 on:
   push:
     branches:
       - main
+      - 'essai/**'
     tags:
       - 'v*'
 

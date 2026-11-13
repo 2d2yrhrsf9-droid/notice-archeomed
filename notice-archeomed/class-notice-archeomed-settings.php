@@ -987,6 +987,14 @@ class Notice_Archeomed_Settings {
 			'maj'       => 'maj',
 			'pactols'   => 'diagnostic',
 			'sdrive'    => 'diagnostic',
+			// La liaison à sDrive passe par ici comme un essai : un geste,
+			// un résultat lu une fois, une page qu'on recharge sans rien
+			// refaire.
+			'sdrive_relier'  => 'diagnostic',
+			'sdrive_finir'   => 'diagnostic',
+			'sdrive_abandon' => 'diagnostic',
+			'sdrive_delier'  => 'diagnostic',
+			'sdrive_dossier' => 'diagnostic',
 		);
 		if ( ! isset( $onglets[ $quoi ] ) ) {
 			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
@@ -1016,6 +1024,17 @@ class Notice_Archeomed_Settings {
 			$resultat = $this->test_pactols();
 		} elseif ( 'sdrive' === $quoi ) {
 			$resultat = $this->test_sdrive();
+		} elseif ( 'sdrive_relier' === $quoi ) {
+			$resultat = Notice_Archeomed_Sdrive::demander_la_liaison();
+		} elseif ( 'sdrive_finir' === $quoi ) {
+			$resultat = Notice_Archeomed_Sdrive::finir_la_liaison();
+		} elseif ( 'sdrive_abandon' === $quoi ) {
+			$resultat = Notice_Archeomed_Sdrive::oublier_la_demande();
+		} elseif ( 'sdrive_delier' === $quoi ) {
+			$resultat = Notice_Archeomed_Sdrive::delier();
+		} elseif ( 'sdrive_dossier' === $quoi ) {
+			$resultat = Notice_Archeomed_Sdrive::enregistrer_le_dossier(
+				isset( $_POST['na_sdrive_dossier'] ) ? sanitize_text_field( wp_unslash( $_POST['na_sdrive_dossier'] ) ) : '' );
 		} else {
 			if ( $notice_archeomed_maj instanceof Notice_Archeomed_MiseAJour ) {
 				$notice_archeomed_maj->oublier();
@@ -2348,23 +2367,90 @@ class Notice_Archeomed_Settings {
 		<h2>Sortie vers sDrive</h2>
 		<p style="max-width:46em">Cet essai dit si le serveur peut joindre le
 		sDrive du CNRS, où les illustrations pourraient être rangées pour
-		libérer le disque. Il ne change rien aux notices. Sans identifiants, il
-		regarde seulement si sdrive.cnrs.fr répond&nbsp;; avec eux, il lit le
-		dossier, y écrit un petit fichier d’essai et l’efface aussitôt.</p>
-		<p class="description" style="max-width:46em">Les identifiants se
-		déclarent dans wp-config.php, jamais dans ces réglages&nbsp;:
-		<code>NA_SDRIVE_WEBDAV</code> (l’adresse WebDAV que sDrive affiche dans
-		Fichiers, Paramètres des fichiers), <code>NA_SDRIVE_IDENTIFIANT</code>,
-		<code>NA_SDRIVE_MOT_DE_PASSE</code> (un mot de passe d’application,
-		jamais celui de Janus) et <code>NA_SDRIVE_DOSSIER</code>
-		(le chemin du dossier, par exemple «&nbsp;Archéologie médiévale/Notices&nbsp;»).</p>
-		<?php self::ouvrir_un_essai(); ?>
+		libérer le disque. Il ne change rien aux notices. Tant que le site
+		n’est pas relié, il regarde seulement si sdrive.cnrs.fr répond&nbsp;;
+		relié, il lit le dossier, y écrit un petit fichier d’essai et l’efface
+		aussitôt.</p>
+		<?php
+		if ( 0 === strpos( $essai['quoi'], 'sdrive' ) ) {
+			self::resultat( $essai['resultat'] );
+		}
+		self::liaison_sdrive();
+		self::ouvrir_un_essai();
+		?>
 			<button type="submit" class="button" name="na_quoi" value="sdrive">Tester l’accès à sDrive</button>
 		</form>
 		<?php
-		if ( 'sdrive' === $essai['quoi'] ) {
-			self::resultat( $essai['resultat'] );
+	}
+
+	/**
+	 * La liaison à sDrive : relier, terminer, délier, et le dossier.
+	 *
+	 * wp-config.php n'est pas à la main de la revue, et un mot de passe tapé
+	 * dans une page de réglages se recopie, se confond avec celui de Janus et
+	 * finit dans un courriel. Le site demande donc lui-même son accès, et
+	 * l'administrateur ne fait que l'autoriser dans sDrive.
+	 */
+	private static function liaison_sdrive() {
+		if ( Notice_Archeomed_Sdrive::par_constantes() ) {
+			echo '<p class="description" style="max-width:46em">L’accès est déclaré dans wp-config.php '
+				. '(constantes <code>NA_SDRIVE_*</code>)&nbsp;: il prime, et la liaison ne se règle pas ici.</p>';
+			return;
 		}
+		$lien    = Notice_Archeomed_Sdrive::liaison();
+		$demande = Notice_Archeomed_Sdrive::demande_en_cours();
+		if ( ! empty( $lien['compte'] ) ) {
+			?>
+			<p>Le site est relié au compte sDrive <strong><?php echo esc_html( $lien['compte'] ); ?></strong>
+			<?php echo empty( $lien['le'] ) ? '' : 'depuis le ' . esc_html( wp_date( 'j F Y, H:i', (int) $lien['le'] ) ); ?>.</p>
+			<?php if ( Notice_Archeomed_Sdrive::liaison_illisible() ) : ?>
+				<div class="notice inline notice-error"><p>Son mot de passe ne se lit plus&nbsp;: les clés de
+				wp-config.php ont changé depuis. Déliez, puis reliez le site.</p></div>
+			<?php endif; ?>
+			<?php self::ouvrir_un_essai(); ?>
+				<button type="submit" class="button" name="na_quoi" value="sdrive_delier"
+					onclick="return confirm('Délier le site ? Son mot de passe d’application sera révoqué chez sDrive.');">Délier le site</button>
+			</form>
+			<?php
+		} elseif ( $demande ) {
+			?>
+			<ol style="max-width:46em">
+				<li><a href="<?php echo esc_url( $demande['login'] ); ?>" target="_blank" rel="noopener noreferrer">Ouvrir
+				sDrive et autoriser ce site</a>&nbsp;: connectez-vous par Janus avec le compte qui
+				voit le dossier des figures, puis accordez l’accès.</li>
+				<li>Revenez ici, et terminez la liaison. La demande vaut vingt minutes.</li>
+			</ol>
+			<?php self::ouvrir_un_essai(); ?>
+				<button type="submit" class="button button-primary" name="na_quoi" value="sdrive_finir">Terminer la liaison</button>
+				<button type="submit" class="button" name="na_quoi" value="sdrive_abandon">Abandonner</button>
+			</form>
+			<?php
+		} else {
+			?>
+			<p class="description" style="max-width:46em">Le site se relie à un compte sDrive
+			sans qu’aucun mot de passe soit tapé ici&nbsp;: sDrive ouvre une page où vous
+			vous connectez par Janus et autorisez le site. Il lui donne alors un mot de
+			passe d’application, à lui seul, qui se révoque d’un bouton ici, ou dans
+			sDrive, Paramètres personnels, Sécurité.</p>
+			<?php self::ouvrir_un_essai(); ?>
+				<button type="submit" class="button" name="na_quoi" value="sdrive_relier">Relier le site à sDrive</button>
+			</form>
+			<?php
+		}
+		self::ouvrir_un_essai();
+		?>
+			<p>
+				<label for="na_sdrive_dossier">Dossier des figures</label><br>
+				<input type="text" class="regular-text" id="na_sdrive_dossier" name="na_sdrive_dossier"
+					value="<?php echo esc_attr( isset( $lien['dossier'] ) ? $lien['dossier'] : '' ); ?>"
+					placeholder="Archéologie médiévale/Notices">
+				<button type="submit" class="button" name="na_quoi" value="sdrive_dossier">Enregistrer le dossier</button>
+			</p>
+			<p class="description" style="max-width:46em">Le chemin depuis la racine du compte, tel que
+			sDrive l’affiche. Un dossier partagé par quelqu’un d’autre paraît à la racine, sous le
+			nom qu’il porte chez vous.</p>
+		</form>
+		<?php
 	}
 
 	/**
@@ -2372,20 +2458,14 @@ class Notice_Archeomed_Settings {
 	 *
 	 * D'abord la page d'état, publique : elle dit si le proxy de
 	 * l'hébergement laisse sortir vers sdrive.cnrs.fr, comme il refuse
-	 * Cloudflare. Puis, si wp-config.php porte des identifiants, la lecture
-	 * du dossier, l'écriture d'un fichier d'essai et son effacement — les
-	 * trois gestes dont un rangement des figures aurait besoin.
+	 * Cloudflare. Puis, si le site est relié, la lecture du dossier,
+	 * l'écriture d'un fichier d'essai et son effacement — les trois gestes
+	 * dont un rangement des figures aurait besoin.
 	 */
 	private function test_sdrive() {
-		$reponse = wp_remote_get( 'https://sdrive.cnrs.fr/status.php', array( 'timeout' => 10 ) );
+		$reponse = wp_remote_get( Notice_Archeomed_Sdrive::ADRESSE . '/status.php', array( 'timeout' => 10 ) );
 		if ( is_wp_error( $reponse ) ) {
-			$message = $reponse->get_error_message();
-			$proxy   = false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' );
-			return array(
-				'ok'      => false,
-				'message' => 'sDrive n’est pas joignable depuis ce serveur — ' . $message . '.'
-					. ( $proxy ? ' C’est le proxy de l’hébergement qui refuse la sortie, comme pour Cloudflare : il faut demander l’ouverture de sdrive.cnrs.fr.' : '' ),
-			);
+			return Notice_Archeomed_Sdrive::injoignable( $reponse );
 		}
 		$etat = json_decode( wp_remote_retrieve_body( $reponse ), true );
 		if ( 200 !== (int) wp_remote_retrieve_response_code( $reponse ) || ! is_array( $etat ) || empty( $etat['installed'] ) ) {
@@ -2399,23 +2479,31 @@ class Notice_Archeomed_Settings {
 		if ( ! empty( $etat['maintenance'] ) ) {
 			return array( 'ok' => false, 'message' => 'sDrive est joignable, mais en maintenance : refaites l’essai plus tard.' );
 		}
-		$constantes = array( 'NA_SDRIVE_WEBDAV', 'NA_SDRIVE_IDENTIFIANT', 'NA_SDRIVE_MOT_DE_PASSE', 'NA_SDRIVE_DOSSIER' );
-		$absentes   = array_values( array_filter( $constantes, function ( $c ) {
-			return ! defined( $c ) || '' === trim( (string) constant( $c ) );
-		} ) );
 		$joint = 'sDrive est joignable depuis ce serveur (Nextcloud ' . $version . ').';
-		if ( ! empty( $absentes ) ) {
+		$acces = Notice_Archeomed_Sdrive::acces();
+		if ( null === $acces ) {
 			return array(
 				'ok'      => true,
-				'message' => $joint . ' Pour essayer l’écriture, déclarez dans wp-config.php : ' . implode( ', ', $absentes ) . '.',
+				'message' => $joint . ( Notice_Archeomed_Sdrive::liaison_illisible()
+					? ' Mais la liaison enregistrée ne se lit plus — les clés de wp-config.php ont changé : déliez, puis reliez le site.'
+					: ' Pour essayer l’écriture, reliez le site à sDrive ci-dessous.' ),
+			);
+		}
+		// La racine du compte n'est pas un dossier de figures : y écrire
+		// mêlerait les notices aux fichiers personnels de qui a relié.
+		$segments = array_filter( explode( '/', $acces['dossier'] ), 'strlen' );
+		if ( empty( $segments ) ) {
+			return array(
+				'ok'      => false,
+				'message' => $joint . ' Le site est relié au compte ' . $acces['compte'] . ', mais aucun dossier n’est indiqué : '
+					. 'nommez ci-dessous le dossier partagé où ranger les figures.',
 			);
 		}
 
 		// Le chemin du dossier, segment par segment : espaces et accents
 		// doivent passer dans l'adresse.
-		$dossier = trailingslashit( (string) NA_SDRIVE_WEBDAV )
-			. implode( '/', array_map( 'rawurlencode', array_filter( explode( '/', (string) NA_SDRIVE_DOSSIER ), 'strlen' ) ) ) . '/';
-		$auth    = array( 'Authorization' => 'Basic ' . base64_encode( NA_SDRIVE_IDENTIFIANT . ':' . NA_SDRIVE_MOT_DE_PASSE ) );
+		$dossier = trailingslashit( $acces['webdav'] ) . implode( '/', array_map( 'rawurlencode', $segments ) ) . '/';
+		$auth    = array( 'Authorization' => 'Basic ' . base64_encode( $acces['compte'] . ':' . $acces['mot_de_passe'] ) );
 		$requete = function ( $methode, $url, $corps = null, $entetes = array() ) use ( $auth ) {
 			return wp_remote_request( $url, array(
 				'method'  => $methode,
@@ -2434,7 +2522,7 @@ class Notice_Archeomed_Settings {
 				0   => is_wp_error( $lu ) ? $lu->get_error_message() : 'pas de réponse',
 				401 => 'identifiant ou mot de passe d’application refusé',
 				403 => 'accès refusé',
-				404 => 'dossier introuvable — vérifiez NA_SDRIVE_DOSSIER, et l’adresse WebDAV',
+				404 => 'dossier introuvable — vérifiez son chemin depuis la racine du compte',
 			);
 			$c = $code( $lu );
 			return array(
