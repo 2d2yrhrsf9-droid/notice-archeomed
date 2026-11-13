@@ -13062,6 +13062,18 @@ class Notice_Archeomed_Pactols {
 	private function corriger_en_place( $contexte, $d ) {
 		$id        = (int) $contexte['id'];
 		$redaction = $contexte['par_la_redaction'] > 0;
+		// Une page ouverte sur une version dépassée ne se juge pas sur la
+		// notice d'aujourd'hui : ses figures ne sont plus celles qu'elle
+		// montrait, et elle était refusée pour « trop de fichiers » quand la
+		// correction passée avant elle en avait ajouté un. La version se relit
+		// donc d'abord ; l'écriture conditionnelle, plus bas, tranche encore
+		// entre deux corrections parties ensemble.
+		$lue = (int) $contexte['version'];
+		if ( $lue < 1 || $this->file()->version_de( $id ) !== $lue ) {
+			$this->conflit = true;
+			error_log( 'Notice Archeomed: correction de la notice ' . $id . ' refusée, version ' . $lue . ' dépassée.' );
+			$this->redirect_result( false, 'conflit' );
+		}
 		$avant     = self::figures_lisibles( get_post_meta( $id, '_na_donnees', true ) );
 		$avant     = is_array( $avant ) ? $avant : array();
 		$gardees   = $this->figures_gardees_de( $id, $avant );
@@ -13167,8 +13179,7 @@ class Notice_Archeomed_Pactols {
 		}
 
 		// ── La version : une seule correction passe ────────────────────────
-		$lue = (int) $contexte['version'];
-		if ( $lue < 1 || ! $this->file()->changer_de_version( $id, $lue ) ) {
+		if ( ! $this->file()->changer_de_version( $id, $lue ) ) {
 			$this->conflit = true;
 			$this->nettoyer( $recus );
 			error_log( 'Notice Archeomed: correction de la notice ' . $id . ' refusée, version ' . $lue . ' dépassée.' );
