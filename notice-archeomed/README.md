@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.68
+# Formulaire des notices d’archéologie médiévale — version 3.69
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -928,17 +928,48 @@ La reprise vit une heure après un refus.
 
 C'est en recevant sa copie qu'on voit ce qu'on n'a pas vu en saisissant. La
 copie porte donc un lien qui rouvre le formulaire rempli de la même saisie ;
-il vit un mois. Les illustrations sont à redéposer — même raison qu'au-dessus.
-Leurs textes attendent leur fichier, et passent d'une correction à la
-suivante même quand l'une d'elles n'a redéposé aucune figure.
+il vit un mois.
 
-Une correction qui porte moins de figures, ou moins d'autorisations de
+**La correction s'écrit dans la notice reçue.** Elle garde sa référence et sa
+fiche ; il n'y a plus deux dépôts dont l'un est à supprimer. Les figures déjà
+déposées reviennent dans le formulaire, chacune avec ses textes : on la garde,
+on la remplace par un nouveau fichier, ou on la retire. Les autorisations de
+reproduction de même. « Remplacer » sans fichier choisi est refusé, au
+navigateur comme au serveur. De nouvelles figures s'ajoutent à la suite. La
+rédaction reçoit de nouveau la notice, l'objet du courriel ouvert par
+`[CORRIGÉE]`, avec la même référence.
+
+**La rédaction corrige par le même formulaire.** La fiche porte un lien
+« Corriger dans le formulaire » qui rouvre le formulaire rempli : on ajoute un mot-clé, on
+reprend une légende, et le Word se refait de lui-même. Ce lien ne vaut que
+deux heures, et que pour l'administratrice qui l'a ouvert ; il n'y a ni
+vérification anti-robot, ni quota, ni courriel à l'auteur.
+
+**Deux corrections de la même notice ne s'écrasent pas.** Chaque notice porte
+un numéro de version, que la page lit en s'ouvrant. Une correction ne passe
+que si la notice porte encore ce numéro, et l'avance d'un : de deux pages
+ouvertes sur la même version, la seconde est refusée. Son auteur lit quand la
+notice a changé, par qui (« la rédaction », pour un auteur) et sur quels
+points ; le formulaire garde sa saisie, et il renvoie après relecture. La
+fiche garde l'histoire des vingt dernières corrections.
+
+**Un lien qui n'est plus valable ne dépose rien.** Expiré, ou la notice
+retirée entre-temps : le formulaire reprend la saisie pour qu'on puisse la
+copier, mais n'a plus de bouton d'envoi.
+
+### Les liens d'avant la version 3.69
+
+Une notice inscrite avant porte un lien qui dépose une notice neuve. Il
+fonctionne toujours ainsi pendant son mois : les illustrations sont à
+redéposer, et leurs textes attendent leur fichier.
+
+Une telle correction qui porte moins de figures, ou moins d'autorisations de
 reproduction, que la notice qu'elle remplace le dit à la rédaction, dans le
 Word (« à supprimer ») et en tête du courriel : les fichiers restent dans la
 fiche de la notice remplacée, à ne pas supprimer avant de les avoir repris.
 
-Le dépôt corrigé est une notice neuve : rien ne la distinguerait de la
-première, et la rédaction garderait les deux. Trois marques l'en empêchent :
+Rien ne distinguerait ce dépôt neuf du premier, et la rédaction garderait les
+deux. Trois marques l'en empêchent :
 
 - l'objet du courriel porte `[CORRECTION de XXXXXX]` ;
 - le corps du courriel s'ouvre sur un bandeau rouge nommant le dépôt à
