@@ -553,6 +553,43 @@ jobs:
             if ( $echecs ) { exit( 1 ); }
             echo "Le sélecteur et le diagnostic passent.\n";'
 
+      - name: Ce qui empêche de ranger se dit, le rangement se force, le courriel mène à la correction
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $echecs = array();
+            if ( "" !== Notice_Archeomed_Rangement::ce_qui_bloque() ) { $echecs[] = "un blocage sans raison : " . Notice_Archeomed_Rangement::ce_qui_bloque(); }
+            $sans = function ( $o ) { $o = (array) $o; $o["numero"] = ""; return $o; };
+            add_filter( "option_notice_archeomed_options", $sans );
+            $b = Notice_Archeomed_Rangement::ce_qui_bloque();
+            if ( "aucun numéro n’est réglé" !== $b ) { $echecs[] = "sans numéro : « " . $b . " »"; }
+            $ids = get_posts( array( "post_type" => "na_notice", "post_status" => "private", "posts_per_page" => 1, "fields" => "ids" ) );
+            $id  = (int) $ids[0];
+            update_post_meta( $id, "_na_sdrive_apres", time() + 3600 );
+            $admin = get_users( array( "role" => "administrator", "number" => 1, "fields" => "ID" ) );
+            wp_set_current_user( (int) $admin[0] );
+            ob_start(); Notice_Archeomed_Rangement::signaler_le_blocage(); $bandeau = ob_get_clean();
+            if ( false === strpos( $bandeau, "aucun numéro n’est réglé" ) ) { $echecs[] = "pas de bandeau : " . $bandeau; }
+            $r = Notice_Archeomed_Rangement::ranger_maintenant();
+            if ( ! empty( $r["ok"] ) || false === strpos( $r["message"], "Rien ne peut se ranger" ) ) { $echecs[] = "forcer sans numéro : " . wp_json_encode( $r ); }
+            remove_filter( "option_notice_archeomed_options", $sans );
+            $m = new ReflectionMethod( "Notice_Archeomed_Settings", "etat_sdrive" );
+            $m->setAccessible( true );
+            ob_start(); $m->invoke( null ); $page = ob_get_clean();
+            if ( false === strpos( $page, "sdrive_ranger" ) ) { $echecs[] = "pas de bouton « Ranger maintenant »"; }
+            $r = Notice_Archeomed_Rangement::ranger_maintenant();
+            if ( empty( $r["message"] ) || false !== strpos( $r["message"], "Rien ne peut se ranger" ) ) { $echecs[] = "forcer : " . wp_json_encode( $r ); }
+            if ( (int) get_post_meta( $id, "_na_sdrive_apres", true ) > time() + 120 ) { $echecs[] = "la notice reportée n’est pas redevenue due"; }
+            echo "Ranger maintenant : ", $r["message"], "\n";
+            $p = $GLOBALS["notice_archeomed_plugin"];
+            $c = new ReflectionMethod( $p, "correction_pour_la_redaction" );
+            $c->setAccessible( true );
+            $lien = $c->invoke( $p, $id );
+            if ( false === strpos( $lien, "na_corriger=1" ) || false === strpos( $lien, "post=" . $id ) ) { $echecs[] = "le lien de correction du courriel : " . $lien; }
+            foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
+            if ( $echecs ) { exit( 1 ); }
+            echo "Blocage dit, rangement forcé, lien de correction posé.\n";'
+
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
         working-directory: /tmp/wp

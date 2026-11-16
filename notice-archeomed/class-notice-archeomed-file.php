@@ -109,6 +109,7 @@ class Notice_Archeomed_File {
 		add_action( 'admin_post_na_reessayer', array( $this, 'reessayer' ) );
 		add_action( 'admin_post_na_diagnostic', array( $this, 'diagnostiquer' ) );
 		add_action( 'admin_post_na_corriger', array( $this, 'corriger' ) );
+		add_action( 'load-post.php', array( $this, 'corriger_depuis_le_courriel' ) );
 	}
 
 	/** Ce que la version en cours attend d'avoir écrit dans chaque notice. */
@@ -614,6 +615,38 @@ class Notice_Archeomed_File {
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
 		check_admin_referer( 'na_corriger_' . $id );
+		$this->ouvrir_dans_le_formulaire( $id );
+	}
+
+	/**
+	 * Le lien du courriel à la rédaction : la fiche, qui ouvre aussitôt le
+	 * formulaire de correction.
+	 *
+	 * Le bouton de la fiche porte un jeton de session, mort au bout d'un
+	 * jour ; recopié dans un courriel, il aurait expiré quand on revient à
+	 * la notice des semaines plus tard. Ce lien-ci ne meurt pas : la
+	 * connexion le garde, WordPress y renvoie après l'identification. Il se
+	 * passe de jeton parce qu'il ne change rien — il ouvre un formulaire ;
+	 * l'enregistrement, lui, a ses propres contrôles.
+	 */
+	public static function lien_pour_corriger( $id ) {
+		return admin_url( 'post.php?post=' . (int) $id . '&action=edit&na_corriger=1' );
+	}
+
+	/** Au chargement de la fiche, si l'adresse vient du courriel. */
+	public function corriger_depuis_le_courriel() {
+		if ( empty( $_GET['na_corriger'] ) || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
+		if ( ! $id || self::CPT !== get_post_type( $id ) ) {
+			return;
+		}
+		$this->ouvrir_dans_le_formulaire( $id );
+	}
+
+	/** Mène au formulaire public, rempli de la saisie de la notice. */
+	private function ouvrir_dans_le_formulaire( $id ) {
 		if ( ! $id || self::CPT !== get_post_type( $id ) || 'private' !== get_post_status( $id ) ) {
 			wp_die( esc_html__( 'Notice inconnue.', 'notice-archeomed' ) );
 		}

@@ -11203,8 +11203,11 @@ class Notice_Archeomed_Pactols {
 				strlen( $notice ), $restees, $legeres );
 		}
 		$corps = $notice;
+		if ( $id ) {
+			$corps = $this->correction_pour_la_redaction( $id ) . $corps;
+		}
 		if ( ! empty( $legeres ) || ! empty( $restees ) ) {
-			$corps = $this->avis_des_illustrations( count( $legeres ), $restees, $id ) . $notice;
+			$corps = $this->avis_des_illustrations( count( $legeres ), $restees, $id ) . $corps;
 		}
 		// Une correction qui ne reprend pas toutes les figures de la notice
 		// qu'elle remplace : la rédaction doit savoir, avant de supprimer
@@ -11943,12 +11946,26 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Le lien qui rouvre la notice dans le formulaire, pour la rédaction :
+	 * un mot-clé à ajouter, une phrase à reprendre, et le Word se refait.
+	 *
+	 * Il n'était que sur la fiche, d'où l'on ne savait pas qu'il existait.
+	 */
+	private function correction_pour_la_redaction( $id ) {
+		return '<div style="background:#f6f7f7;border:1px solid #c3c4c7;padding:12px 16px;margin:0 0 14px;">'
+			. '<a href="' . esc_url( Notice_Archeomed_File::lien_pour_corriger( $id ) ) . '">Corriger cette notice dans le formulaire</a>'
+			. ' — texte, mots-clés, métadonnées. La notice garde sa référence et son document Word est refait ;'
+			. ' personne n’est prévenu. Le lien reste valable, il demande seulement d’être connecté au site.</div>';
+	}
+
+	/**
 	 * L'encadré qui ouvre le courriel de la rédaction : ce qui est joint, en
 	 * quelle définition, et où sont les originaux.
 	 */
 	private function avis_des_illustrations( $legeres, $restees, $id ) {
-		$lien = admin_url( 'post.php?post=' . (int) $id . '&action=edit' );
-		$avis = '';
+		$lien   = admin_url( 'post.php?post=' . (int) $id . '&action=edit' );
+		$avis   = '';
+		$bloque = Notice_Archeomed_Rangement::ce_qui_bloque();
 		if ( $legeres > 0 ) {
 			$largeur = number_format_i18n( Notice_Archeomed_Paquet::LARGEUR_APERCU );
 			$avis   .= '<div style="background:#eef4f9;border:1px solid #72aee6;padding:12px 16px;margin:0 0 14px;">'
@@ -11960,9 +11977,15 @@ class Notice_Archeomed_Pactols {
 					? ' Les originaux, en pleine définition, sont rangés sur sDrive dans « '
 						. esc_html( Notice_Archeomed_Rangement::dossier_de( $id ) ) . ' » ; ils se téléchargent aussi depuis la '
 						. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a>.</div>'
-					: ' Les originaux, en pleine définition, sont conservés sur le site — '
-						. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
-						. 'dossier Métopes de la rubrique.</div>' );
+					: ( '' !== $bloque
+						// Relié, mais rien ne se range : le dire, plutôt que
+						// laisser chercher les fichiers sur sDrive.
+						? ' Les originaux, en pleine définition, sont conservés sur le site — '
+							. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — mais ne sont pas encore rangés sur sDrive : '
+							. esc_html( $bloque ) . '. Ils s’y rangeront dès que ce sera réglé.</div>'
+						: ' Les originaux, en pleine définition, sont conservés sur le site — '
+							. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
+							. 'dossier Métopes de la rubrique.</div>' ) );
 		}
 		if ( ! empty( $restees ) ) {
 			$avis .= $this->avis_des_pieces_restees( $restees, $id );

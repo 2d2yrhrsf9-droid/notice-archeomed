@@ -58,6 +58,57 @@ class Notice_Archeomed_Rangement {
 		add_action( self::HOOK, array( __CLASS__, 'en_tache' ), 10, 0 );
 		// Au passage de la relance, toutes les cinq minutes, après la file.
 		add_action( Notice_Archeomed_File::HOOK_RELANCE, array( __CLASS__, 'reveiller' ), 21, 0 );
+		add_action( 'admin_notices', array( __CLASS__, 'signaler_le_blocage' ) );
+	}
+
+	/**
+	 * Ce qui empêche de ranger, en quelques mots ; vide quand rien ne
+	 * manque, ou quand le site n'a jamais été relié à sDrive.
+	 *
+	 * Au premier essai réel, aucun dossier n'était enregistré : le
+	 * rangement attendait sans rien dire, le courriel parlait des originaux
+	 * « conservés sur le site », et l'on cherchait les fichiers sur sDrive.
+	 */
+	public static function ce_qui_bloque() {
+		if ( self::peut_ranger() ) {
+			return '';
+		}
+		$lien = Notice_Archeomed_Sdrive::liaison();
+		if ( ! Notice_Archeomed_Sdrive::par_constantes() && empty( $lien['compte'] ) ) {
+			return '';
+		}
+		if ( ! Notice_Archeomed_Sdrive::par_constantes() && Notice_Archeomed_Sdrive::liaison_illisible() ) {
+			return 'le mot de passe de la liaison ne se lit plus : il faut relier de nouveau le site à sDrive';
+		}
+		if ( ! Notice_Archeomed_Sdrive::pret() ) {
+			return 'aucun dossier sDrive n’est choisi';
+		}
+		return 'aucun numéro n’est réglé';
+	}
+
+	/**
+	 * Un bandeau, sur toutes les pages de l'administration, tant que des
+	 * notices attendent un rangement que rien ne permet.
+	 */
+	public static function signaler_le_blocage() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$bloque = self::ce_qui_bloque();
+		if ( '' === $bloque ) {
+			return;
+		}
+		$attente = self::en_attente();
+		if ( 0 === $attente ) {
+			return;
+		}
+		echo '<div class="notice notice-warning"><p>'
+			. esc_html( sprintf( _n( '%s notice attend d’être rangée sur sDrive, mais rien ne se range : %s.',
+				'%s notices attendent d’être rangées sur sDrive, mais rien ne se range : %s.', $attente, 'notice-archeomed' ),
+				number_format_i18n( $attente ), $bloque ) )
+			. ' ' . esc_html__( 'Leurs fichiers restent sur le site en attendant.', 'notice-archeomed' )
+			. ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'aucun numéro n’est réglé' === $bloque ? 'numero' : 'diagnostic' ) ) . '">'
+			. esc_html( 'aucun numéro n’est réglé' === $bloque ? 'Régler le numéro' : 'Ouvrir la liaison à sDrive (onglet Hébergement)' ) . '</a></p></div>';
 	}
 
 	/** À la désactivation, la tâche s'efface ; l'attente reste dans les notices. */
@@ -282,6 +333,63 @@ class Notice_Archeomed_Rangement {
 		if ( $prochain > 0 ) {
 			wp_schedule_single_event( max( $prochain, time() + MINUTE_IN_SECONDS ), self::HOOK );
 		}
+	}
+
+	/**
+	 * Le bouton « Ranger maintenant » : sans attendre la relance, qui ne
+	 * passe qu'aux visites du site.
+	 *
+	 * Les notices en attente redeviennent dues, celles qu'on avait laissées
+	 * après leurs essais reprennent, et un passage se fait aussitôt, sous le
+	 * verrou de la tâche : un passage lancé par une visite n'est pas doublé.
+	 */
+	public static function ranger_maintenant() {
+		if ( ! self::peut_ranger() ) {
+			$bloque = self::ce_qui_bloque();
+			return array( 'ok' => false, 'message' => 'Rien ne peut se ranger : '
+				. ( '' !== $bloque ? $bloque : 'le site n’est pas relié à sDrive' ) . '.' );
+		}
+		$maintenant = time();
+		$laissees   = get_posts( array(
+			'post_type'        => Notice_Archeomed_File::CPT,
+			'post_status'      => 'any',
+			'fields'           => 'ids',
+			'posts_per_page'   => -1,
+			'no_found_rows'    => true,
+			'suppress_filters' => true,
+			'meta_query'       => array(
+				array( 'key' => '_na_sdrive_essais', 'compare' => 'EXISTS' ),
+				array( 'key' => '_na_sdrive_apres', 'compare' => 'NOT EXISTS' ),
+			),
+		) );
+		foreach ( (array) $laissees as $id ) {
+			delete_post_meta( (int) $id, '_na_sdrive_essais' );
+			update_post_meta( (int) $id, '_na_sdrive_apres', $maintenant );
+		}
+		foreach ( self::dues( 0, -1 ) as $id ) {
+			if ( (int) get_post_meta( $id, '_na_sdrive_apres', true ) > $maintenant ) {
+				update_post_meta( $id, '_na_sdrive_apres', $maintenant );
+			}
+		}
+		if ( 0 === self::en_attente() ) {
+			return array( 'ok' => true, 'message' => 'Aucune notice n’attend d’être rangée.' );
+		}
+		$avant = get_option( self::ETAT );
+		self::en_tache();
+		$etat = get_option( self::ETAT );
+		if ( $etat === $avant || ! is_array( $etat ) ) {
+			return array( 'ok' => false, 'message' => 'Un passage est déjà en cours, lancé par une visite du site : rechargez cette page dans une minute.' );
+		}
+		$rangees = (int) $etat['rangees'];
+		$reste   = self::en_attente();
+		$raison  = ( 'ok' !== $etat['raison'] ) ? (string) $etat['raison'] : '';
+		$message = sprintf( _n( '%s notice rangée sur sDrive.', '%s notices rangées sur sDrive.', $rangees, 'notice-archeomed' ),
+			number_format_i18n( $rangees ) );
+		if ( $reste > 0 ) {
+			$message .= ' ' . sprintf( _n( '%s attend encore', '%s attendent encore', $reste, 'notice-archeomed' ), number_format_i18n( $reste ) )
+				. ( '' !== $raison ? ' — ' . $raison . '.' : ' : le passage suivant les prendra dans une minute.' );
+		}
+		return array( 'ok' => 0 === $reste || $rangees > 0, 'message' => $message );
 	}
 
 	/** La notice n'a plus rien à ranger. */

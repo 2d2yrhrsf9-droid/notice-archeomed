@@ -995,6 +995,7 @@ class Notice_Archeomed_Settings {
 			'sdrive_abandon' => 'diagnostic',
 			'sdrive_delier'  => 'diagnostic',
 			'sdrive_dossier' => 'diagnostic',
+			'sdrive_ranger'  => 'diagnostic',
 		);
 		if ( ! isset( $onglets[ $quoi ] ) ) {
 			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
@@ -1032,6 +1033,8 @@ class Notice_Archeomed_Settings {
 			$resultat = Notice_Archeomed_Sdrive::oublier_la_demande();
 		} elseif ( 'sdrive_delier' === $quoi ) {
 			$resultat = Notice_Archeomed_Sdrive::delier();
+		} elseif ( 'sdrive_ranger' === $quoi ) {
+			$resultat = Notice_Archeomed_Rangement::ranger_maintenant();
 		} elseif ( 'sdrive_dossier' === $quoi ) {
 			$resultat = Notice_Archeomed_Sdrive::enregistrer_le_dossier(
 				isset( $_POST['na_sdrive_dossier'] ) ? sanitize_text_field( wp_unslash( $_POST['na_sdrive_dossier'] ) ) : '' );
@@ -2461,6 +2464,10 @@ class Notice_Archeomed_Settings {
 			echo esc_html( 0 === $attente
 				? 'Aucune notice n’attend d’être rangée.'
 				: sprintf( _n( '%s notice attend d’être rangée.', '%s notices attendent d’être rangées.', $attente, 'notice-archeomed' ), number_format_i18n( $attente ) ) );
+			$bloque = Notice_Archeomed_Rangement::ce_qui_bloque();
+			if ( $attente > 0 && '' !== $bloque ) {
+				echo ' <span class="na-etat na-etat--echec">' . esc_html( 'Rien ne se range : ' . $bloque . '.' ) . '</span>';
+			}
 			if ( is_array( $etat ) && ! empty( $etat['le'] ) ) {
 				echo ' ' . esc_html( 'Dernier passage le ' . $quand( $etat['le'] ) . ' : '
 					. sprintf( _n( '%s notice rangée', '%s notices rangées', (int) $etat['rangees'], 'notice-archeomed' ), number_format_i18n( (int) $etat['rangees'] ) )
@@ -2474,6 +2481,16 @@ class Notice_Archeomed_Settings {
 			<?php endforeach; ?>
 		</ul>
 		<?php
+		// La relance ne passe qu'aux visites du site : un soir sans visite,
+		// une notice attendait sans qu'on puisse rien y faire.
+		if ( Notice_Archeomed_Rangement::peut_ranger() ) {
+			self::ouvrir_un_essai();
+			?>
+				<button type="submit" class="button" name="na_quoi" value="sdrive_ranger">Ranger maintenant</button>
+				<span class="description">Range tout de suite les notices en attente, et reprend celles qu’on avait laissées après leurs essais.</span>
+			</form>
+			<?php
+		}
 	}
 
 	/**
@@ -2594,6 +2611,16 @@ class Notice_Archeomed_Settings {
 				</ul>
 			<?php endif; ?>
 			<?php if ( '' !== $chemin && ! is_string( $lu ) ) : ?>
+				<?php
+				$lien_actuel = Notice_Archeomed_Sdrive::liaison();
+				$enregistre  = isset( $lien_actuel['dossier'] ) ? trim( (string) $lien_actuel['dossier'], '/' ) : '';
+				?>
+				<?php if ( $enregistre !== $chemin ) : ?>
+					<p class="na-etat na-etat--attente">Ce dossier n’est pas encore choisi&nbsp;: rien n’est
+					retenu tant que vous n’avez pas cliqué sur «&nbsp;Choisir&nbsp;».</p>
+				<?php else : ?>
+					<p class="na-etat na-etat--ok">C’est le dossier enregistré.</p>
+				<?php endif; ?>
 				<?php self::ouvrir_un_essai(); ?>
 					<input type="hidden" name="na_sdrive_dossier" value="<?php echo esc_attr( $chemin ); ?>">
 					<button type="submit" class="button button-primary" name="na_quoi" value="sdrive_dossier">Choisir «&nbsp;<?php echo esc_html( $chemin ); ?>&nbsp;»</button>
