@@ -159,28 +159,41 @@ class Notice_Archeomed_Rangement {
 	/**
 	 * Prend le verrou par une écriture qui ne réussit qu'une fois : deux
 	 * passages lancés ensemble par deux visites ne rangent pas la même
-	 * notice. Un verrou périmé se reprend de la même façon.
+	 * notice. Un verrou périmé se reprend de la même façon. L'export du
+	 * numéro a le sien, sous un autre nom.
 	 */
-	private static function prendre_le_verrou() {
+	public static function prendre_le_verrou( $nom = self::VERROU ) {
 		global $wpdb;
 		$maintenant = time();
 		$pris = $wpdb->query( $wpdb->prepare(
 			"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
-			self::VERROU, (string) $maintenant ) );
+			$nom, (string) $maintenant ) );
 		if ( 1 !== (int) $pris ) {
 			$pris = $wpdb->query( $wpdb->prepare(
 				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND CAST(option_value AS UNSIGNED) < %d",
-				(string) $maintenant, self::VERROU, $maintenant - self::PERIME ) );
+				(string) $maintenant, $nom, $maintenant - self::PERIME ) );
 		}
 		return 1 === (int) $pris ? $maintenant : 0;
 	}
 
 	/** Rend le verrou, s'il est encore le nôtre. */
-	private static function rendre_le_verrou( $jeton ) {
+	public static function rendre_le_verrou( $jeton, $nom = self::VERROU ) {
 		global $wpdb;
 		$wpdb->query( $wpdb->prepare(
 			"DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
-			self::VERROU, (string) $jeton ) );
+			$nom, (string) $jeton ) );
+	}
+
+	/**
+	 * L'heure où le passage doit avoir fini, comptée depuis le début de la
+	 * requête et non depuis le sien : le planificateur peut lancer le
+	 * rangement et l'export l'un après l'autre dans la même requête, et deux
+	 * budgets comptés chacun de son départ dépasseraient ensemble les
+	 * 120 secondes de l'hébergement.
+	 */
+	public static function echeance() {
+		$debut = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : microtime( true );
+		return min( $debut, microtime( true ) ) + self::BUDGET;
 	}
 
 	/** Ce que le passage dit au diagnostic. */
@@ -202,7 +215,7 @@ class Notice_Archeomed_Rangement {
 			// Un autre passage range ; il réservera le suivant.
 			return;
 		}
-		$echeance = microtime( true ) + self::BUDGET;
+		$echeance = self::echeance();
 		// Le filet : une requête coupée en route ne réserverait rien.
 		self::assurer( time() + 5 * MINUTE_IN_SECONDS );
 		$interrompu = false;

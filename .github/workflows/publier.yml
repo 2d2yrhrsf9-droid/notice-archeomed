@@ -425,6 +425,49 @@ jobs:
           NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement-2.log
           echo "::notice::$(head -1 /tmp/rangement-2.log)"
 
+      - name: Deux rubriques à exporter, et une figure envoyée à part déposée à la main
+        working-directory: /tmp/wp
+        run: |
+          set -e
+          # Cinq notices passent dans une seconde rubrique : l'export doit
+          # tenir deux rubriques côte à côte dans le même numéro.
+          wp eval '$r = "IV. Sépultures et nécropoles"; foreach ( array_slice( get_posts( array( "post_type" => "na_notice", "post_status" => "private", "posts_per_page" => -1, "fields" => "ids", "orderby" => "ID", "order" => "DESC" ) ), 0, 5 ) as $id ) { update_post_meta( $id, "_na_rubrique", $r ); $d = get_post_meta( $id, "_na_donnees", true ); $d["rubrique_principale"] = $r; update_post_meta( $id, "_na_donnees", $d ); }'
+          # Le secrétariat dépose l'original d'une figure envoyée à part, sous « Fig_N ».
+          CIBLE=$(wp eval 'foreach ( get_posts( array( "post_type" => "na_notice", "post_status" => "private", "posts_per_page" => -1, "fields" => "ids", "orderby" => "ID", "order" => "ASC" ) ) as $id ) { $d = get_post_meta( $id, "_na_donnees", true ); foreach ( (array) $d["illustrations"] as $item ) { if ( null !== Notice_Archeomed_Pactols::figure_a_part( $item ) ) { echo Notice_Archeomed_Rangement::dossier_de( $id ), "/Fig_", (int) $item["rang"], ".jpg"; return; } } }')
+          [ -n "$CIBLE" ] || { echo "::error::aucune figure envoyée à part"; exit 1; }
+          MODELE=$(find "/tmp/sdrive/Revue AM/AM99/originaux" -name 'Fig_*.jpg' | head -1)
+          cp "$MODELE" "/tmp/sdrive/Revue AM/$CIBLE"
+          echo "::notice::déposé à la main : $CIBLE"
+          wp eval 'foreach ( array( "I. Constructions et habitats civils – Environnement rural et urbain", "IV. Sépultures et nécropoles" ) as $r ) { echo $r, " : ", Notice_Archeomed_Export::demander( $r ), "\n"; }'
+
+      - name: Trois passages de l'export se disputent les rubriques
+        working-directory: /tmp/wp
+        run: bash "$GITHUB_WORKSPACE/.github/essais/exporter" premier
+
+      - name: Chaque image appelée est dans le numéro, rien d'orphelin
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' NA_EMPREINTES=/tmp/export-empreintes.json wp eval-file "$GITHUB_WORKSPACE/.github/essais/export-verification.php" | tee /tmp/export.log
+          echo "::notice::$(head -1 /tmp/export.log)"
+
+      - name: Une rubrique réexportée remplace ce qu'elle avait écrit, et rien d'autre
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          sleep 1
+          wp eval 'echo Notice_Archeomed_Export::demander( "IV. Sépultures et nécropoles" ), "\n";'
+          bash "$GITHUB_WORKSPACE/.github/essais/exporter" second
+          NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' NA_EMPREINTES=/tmp/export-empreintes.json NA_REEXPORT='IV. Sépultures et nécropoles' wp eval-file "$GITHUB_WORKSPACE/.github/essais/export-verification.php" | tee /tmp/export-2.log
+          echo "::notice::$(head -1 /tmp/export-2.log)"
+
+      - name: L'export n'a pas touché aux originaux
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement-3.log
+          echo "::notice::$(head -1 /tmp/rangement-3.log)"
+
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
         working-directory: /tmp/wp
@@ -439,6 +482,8 @@ jobs:
           echo "— rangement sur sDrive :"
           wp option get na_sdrive_etat --format=json || true
           tail -n 8 /tmp/sdrive.log 2>/dev/null || true
+          echo "— export sur sDrive :"
+          wp eval '$t = Notice_Archeomed_Export::travail(); if ( $t ) { unset( $t["figures"], $t["paquet"], $t["mesures"] ); } echo "en cours : ", wp_json_encode( $t ), "\nattente : ", wp_json_encode( Notice_Archeomed_Export::attente() ), "\n"; foreach ( Notice_Archeomed_Export::manifestes() as $n => $rs ) { foreach ( $rs as $r => $m ) { echo $n, " / ", $r, " : ", isset( $m["issue"] ) ? $m["issue"] : "?", " ", isset( $m["texte"] ) ? $m["texte"] : "", " — ", count( (array) $m["fichiers"] ), " fichiers\n"; } }' || true
           echo "— journal de WordPress :"
           tail -n 40 /tmp/wp/wp-content/debug.log 2>/dev/null || true
           ) 2>&1 | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:600]) for l in sys.stdin if l.strip()]'

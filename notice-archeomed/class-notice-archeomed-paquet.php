@@ -79,6 +79,9 @@ class Notice_Archeomed_Paquet {
 	// annonçait qu'il n'y avait rien d'anormal, et sautait tout le reste.
 	private $notes = array();
 	private $atelier    = '';
+	// L'atelier garde-t-il les fichiers tels que reçus ? L'archive, selon le
+	// réglage ; l'export sur sDrive, jamais.
+	private $avec_originaux = false;
 	private $nom_paquet = '';
 	private $rubrique   = '';
 	private $rang       = 0;
@@ -158,33 +161,84 @@ class Notice_Archeomed_Paquet {
 			$erreur = "L'extension ZipArchive est absente de cet hébergement : le paquet ne peut pas être assemblé.";
 			return array();
 		}
+		if ( ! $this->commencer( $rubrique, $erreur, (bool) (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) ) {
+			return array();
+		}
+		$plan = array();
+		foreach ( $this->planifier( $notices, 'file_exists', false ) as $figure ) {
+			if ( ! isset( $plan[ $figure['notice'] ] ) ) {
+				$plan[ $figure['notice'] ] = array();
+			}
+			$plan[ $figure['notice'] ][ $figure['n'] ] = $this->poser_une_illustration(
+				$figure['source'], $figure['nom'], $figure['conversions'] );
+		}
+		// Une notice sans figure posée garde sa place dans le plan.
+		foreach ( array_keys( (array) $notices ) as $rang_notice ) {
+			if ( ! isset( $plan[ $rang_notice ] ) ) {
+				$plan[ $rang_notice ] = array();
+			}
+		}
+		return $plan;
+	}
+
+	/**
+	 * Nomme le paquet d'une rubrique et ouvre son atelier.
+	 *
+	 * « $originaux » dit si l'atelier garde aussi les fichiers tels que reçus :
+	 * l'archive les porte quand on le règle, l'export sur sDrive jamais — ils
+	 * y sont déjà, sous « originaux/ ».
+	 */
+	public function commencer( $rubrique, &$erreur, $originaux = false ) {
+		$erreur         = '';
 		$this->rubrique = $rubrique;
 		$this->rang     = self::rang_de_rubrique( $rubrique );
 		$numero         = Notice_Archeomed_Settings::get( 'numero' );
-		$modele         = Notice_Archeomed_Settings::get( 'nom_modele' );
 
 		$this->nom_paquet = Notice_Archeomed_Nommage::assainir(
 			( '' !== $numero ? $numero . '_' : '' ) . $this->rang . '_'
 			. preg_replace( '/^[IVX]+\.\s*/u', '', $rubrique ), 'paquet' );
+		$this->avec_originaux = (bool) $originaux;
+		return $this->atelier_neuf( $erreur );
+	}
 
-		// L'atelier : un dossier de travail où les fichiers se posent avant
-		// d'être emballés. Il faut qu'ils existent pour de bon avant que le
-		// document soit écrit — c'est en les mesurant qu'on sait à quelle
-		// taille poser chaque figure.
+	/**
+	 * Un atelier vide, à la place du précédent : un dossier de travail où
+	 * les fichiers se posent avant d'être emballés ou envoyés. Il faut qu'ils
+	 * existent pour de bon avant que le document soit écrit — c'est en les
+	 * mesurant qu'on sait à quelle taille poser chaque figure.
+	 */
+	public function atelier_neuf( &$erreur ) {
+		$erreur = '';
+		$this->nettoyer();
 		$this->atelier = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/'
 			. 'atelier-' . wp_generate_password( 10, false, false );
 		foreach ( array( 'style', 'XML', 'icono/hr', 'icono/br' ) as $d ) {
 			wp_mkdir_p( $this->atelier . '/' . $d );
 		}
-		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
+		if ( $this->avec_originaux ) {
 			wp_mkdir_p( $this->atelier . '/icono/originaux' );
 		}
 		if ( ! is_dir( $this->atelier ) ) {
 			$erreur = "Le dossier de travail n'a pas pu être créé.";
-			return array();
+			$this->atelier = '';
+			return false;
 		}
+		return true;
+	}
 
-		$plan = array();
+	/**
+	 * Les figures à poser, dans l'ordre, chacune avec son nom dans le
+	 * dossier ; ce qui manque se dit dans le lisez-moi.
+	 *
+	 * « $existe » dit si un fichier se trouve : sur le serveur pour
+	 * l'archive, sur le serveur ou sur sDrive pour l'export. Une figure
+	 * envoyée à part est écartée avec sa ligne « à reprendre », sauf quand
+	 * « $a_part » demande de la garder : l'export cherche alors son original.
+	 */
+	public function planifier( $notices, $existe, $a_part ) {
+		$numero  = Notice_Archeomed_Settings::get( 'numero' );
+		$modele  = Notice_Archeomed_Settings::get( 'nom_modele' );
+		$figures = array();
 		foreach ( (array) $notices as $rang_notice => $notice ) {
 			$d = isset( $notice['d'] ) ? $notice['d'] : array();
 			if ( empty( $d ) ) {
@@ -203,8 +257,7 @@ class Notice_Archeomed_Paquet {
 					. ' : ' . count( $fichiers ) . ' fichier(s) pour ' . $legendes
 					. ' légende(s). Les figures sont appariées par leur rang — vérifiez qu\'elles se correspondent.';
 			}
-			$figures    = array();
-			$n          = 0;
+			$n = 0;
 			foreach ( $fichiers as $source ) {
 				// Le rang du fichier, qu'il soit là ou non : un fichier perdu
 				// ne décale pas les suivants, qui garderaient sinon le nom et
@@ -214,11 +267,12 @@ class Notice_Archeomed_Paquet {
 				// témoin : rien à réduire. Elle garde son rang, le document
 				// pose à sa place le cadre rouge, et le lisez-moi la donne à
 				// reprendre avec de quoi la retrouver.
-				if ( class_exists( 'Notice_Archeomed_Pactols' ) && Notice_Archeomed_Pactols::est_a_part( $source ) ) {
+				$envoyee_a_part = class_exists( 'Notice_Archeomed_Pactols' ) && Notice_Archeomed_Pactols::est_a_part( $source );
+				if ( $envoyee_a_part && ! $a_part ) {
 					$this->journal[] = $this->figure_a_reprendre( $d, $n );
 					continue;
 				}
-				if ( ! file_exists( $source ) ) {
+				if ( ! $envoyee_a_part && ! call_user_func( $existe, $source, $notice ) ) {
 					// Un fichier reçu puis perdu — effacé du serveur, purgé —
 					// s'écartait sans un mot : le lisez-moi disait alors qu'il
 					// n'y avait « aucune illustration, et c'est normal ».
@@ -226,7 +280,9 @@ class Notice_Archeomed_Paquet {
 						. ' : fichier reçu mais introuvable sur le serveur ; la figure ' . $n . ' manque au dossier.';
 					continue;
 				}
-				++$this->comptes['illustrations'];
+				if ( ! $envoyee_a_part ) {
+					++$this->comptes['illustrations'];
+				}
 				$nom = $this->nom_unique( Notice_Archeomed_Nommage::construire(
 					$modele,
 					array(
@@ -238,13 +294,107 @@ class Notice_Archeomed_Paquet {
 						'n'        => $n,
 					)
 				) );
-				$conversions = isset( $notice['conversions'][ $n ] ) && is_array( $notice['conversions'][ $n ] )
-					? $notice['conversions'][ $n ] : array();
-				$figures[ $n ] = $this->poser_une_illustration( $source, $nom, $conversions );
+				$figures[] = array(
+					'notice'      => $rang_notice,
+					'id'          => isset( $notice['id'] ) ? (int) $notice['id'] : 0,
+					'n'           => $n,
+					'source'      => (string) $source,
+					'nom'         => $nom,
+					'conversions' => isset( $notice['conversions'][ $n ] ) && is_array( $notice['conversions'][ $n ] )
+						? $notice['conversions'][ $n ] : array(),
+					'a_part'      => $envoyee_a_part ? self::a_part_de( $d, $n ) : null,
+					'reprendre'   => $envoyee_a_part ? $this->figure_a_reprendre( $d, $n ) : '',
+				);
 			}
-			$plan[ $rang_notice ] = $figures;
 		}
-		return $plan;
+		return $figures;
+	}
+
+	/** Ce que l'auteur a dit d'une figure envoyée à part : fichier, lien, date. */
+	private static function a_part_de( $d, $n ) {
+		foreach ( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() as $item ) {
+			if ( isset( $item['rang'] ) && (int) $item['rang'] === (int) $n ) {
+				$a_part = Notice_Archeomed_Pactols::figure_a_part( $item );
+				return is_array( $a_part ) ? $a_part : array();
+			}
+		}
+		return array();
+	}
+
+	/**
+	 * Pose une figure dans l'atelier : ses deux définitions, et la mesure de
+	 * la basse, ou null si elle n'a pas pu être faite — le journal dit
+	 * pourquoi.
+	 */
+	public function poser_une_figure( $source, $nom_sans_ext, $conversions = array() ) {
+		return $this->poser_une_illustration( $source, $nom_sans_ext, (array) $conversions );
+	}
+
+	/** Une ligne de plus parmi ce qui n'a pas pu être fait. */
+	public function signaler( $ligne ) {
+		$this->journal[] = (string) $ligne;
+	}
+
+	/** Une figure de plus au compte : un original envoyé à part, retrouvé. */
+	public function compter_une_illustration() {
+		++$this->comptes['illustrations'];
+	}
+
+	/**
+	 * Réserve des noms déjà pris ailleurs dans le même dossier : l'export
+	 * range toutes les rubriques d'un numéro sous les mêmes « icono/hr » et
+	 * « XML/indexation », où un nom repris écraserait la figure d'une autre.
+	 */
+	public function reserver( $figures, $indexations ) {
+		foreach ( (array) $figures as $nom ) {
+			$this->noms_pris[ strtolower( (string) $nom ) ] = true;
+		}
+		foreach ( (array) $indexations as $nom ) {
+			$this->noms_indexation[ strtolower( (string) $nom ) ] = true;
+		}
+	}
+
+	public function atelier() {
+		return $this->atelier;
+	}
+
+	public function nom_paquet() {
+		return $this->nom_paquet;
+	}
+
+	/** Combien d'avis le lisez-moi porte : ce qui n'a pas pu être fait. */
+	public function avis() {
+		return count( $this->journal ) + count( $this->erreurs );
+	}
+
+	/**
+	 * Ce que le paquet sait de lui-même, pour reprendre l'export au passage
+	 * suivant de la tâche. L'atelier n'en est pas : chaque passage ouvre le
+	 * sien.
+	 */
+	public function etat() {
+		return array(
+			'erreurs'         => $this->erreurs,
+			'journal'         => $this->journal,
+			'noms_pris'       => $this->noms_pris,
+			'noms_indexation' => $this->noms_indexation,
+			'notes'           => $this->notes,
+			'nom_paquet'      => $this->nom_paquet,
+			'rubrique'        => $this->rubrique,
+			'rang'            => $this->rang,
+			'comptes'         => $this->comptes,
+		);
+	}
+
+	/** Un paquet tel que « etat » l'a laissé, sans atelier. */
+	public static function reprendre( $etat ) {
+		$paquet = new self();
+		foreach ( (array) $etat as $clef => $valeur ) {
+			if ( property_exists( $paquet, $clef ) && 'atelier' !== $clef ) {
+				$paquet->$clef = $valeur;
+			}
+		}
+		return $paquet;
 	}
 
 	/**
@@ -379,27 +529,54 @@ class Notice_Archeomed_Paquet {
 
 	/**
 	 * Ce que le paquet contient, et ce qu'il n'a pas pu faire.
+	 *
+	 * L'export sur sDrive range toutes les rubriques d'un numéro dans un même
+	 * dossier : son lisez-moi le dit, et nomme les fichiers de la rubrique.
 	 */
-	private function lisez_moi() {
+	private function lisez_moi( $export = false ) {
 		$lignes = array(
 			'Paquet de la rubrique : ' . $this->rubrique,
-			'Assemblé le ' . date_i18n( 'j F Y à H:i' ),
+			( $export ? 'Exporté' : 'Assemblé' ) . ' le ' . date_i18n( 'j F Y à H:i' ),
 			'',
 			(int) $this->comptes['notices'] . ' notice(s), '
 				. (int) $this->comptes['illustrations'] . ' illustration(s).',
 			'',
-			'style/           le document Word de la rubrique, aux styles Métopes',
-			'XML/             vide : c\'est la chaîne qui le remplira',
-			'XML/indexation/  les blocs d\'index Pactols, un fichier par notice.',
-			'                 Chaque « zone » nomme le style du paragraphe où',
-			'                 son contenu se colle. Les concepts viennent des',
-			'                 identifiants choisis au dépôt : rien n\'a été deviné.',
-			'icono/hr/        la haute définition, pour la mise en page',
-			'icono/br/        la basse définition, appelée en lien par le document',
-			'relecture.html   la rubrique à lire dans un navigateur, figures comprises',
 		);
-		if ( (int) Notice_Archeomed_Settings::get( 'garder_originaux' ) ) {
-			$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
+		if ( $export ) {
+			$lignes = array_merge( $lignes, array(
+				'Les rubriques du numéro partagent ce dossier ; celle-ci y a :',
+				'',
+				'style/' . $this->nom_paquet . '.docx',
+				'                 le document Word de la rubrique, aux styles Métopes',
+				'XML/indexation/  les blocs d\'index Pactols, un fichier par notice.',
+				'                 Chaque « zone » nomme le style du paragraphe où',
+				'                 son contenu se colle. Les concepts viennent des',
+				'                 identifiants choisis au dépôt : rien n\'a été deviné.',
+				'icono/hr/        la haute définition, pour la mise en page',
+				'icono/br/        la basse définition, appelée en lien par le document',
+				'relecture_' . $this->nom_paquet . '.html',
+				'                 la rubrique à lire dans un navigateur, figures comprises',
+				'',
+				'Un nouvel export de la rubrique remplace ces fichiers, et eux seuls.',
+				'originaux/       les fichiers tels que les auteurs les ont envoyés,',
+				'                 version par version : l\'export n\'y touche jamais.',
+				'                 Les autres dossiers (indd/, le reste de XML/) non plus.',
+			) );
+		} else {
+			$lignes = array_merge( $lignes, array(
+				'style/           le document Word de la rubrique, aux styles Métopes',
+				'XML/             vide : c\'est la chaîne qui le remplira',
+				'XML/indexation/  les blocs d\'index Pactols, un fichier par notice.',
+				'                 Chaque « zone » nomme le style du paragraphe où',
+				'                 son contenu se colle. Les concepts viennent des',
+				'                 identifiants choisis au dépôt : rien n\'a été deviné.',
+				'icono/hr/        la haute définition, pour la mise en page',
+				'icono/br/        la basse définition, appelée en lien par le document',
+				'relecture.html   la rubrique à lire dans un navigateur, figures comprises',
+			) );
+			if ( $this->avec_originaux ) {
+				$lignes[] = 'icono/originaux/ les fichiers tels que les auteurs les ont envoyés';
+			}
 		}
 		$lignes[] = '';
 		$ennuis = array_merge( $this->journal, $this->erreurs );
@@ -408,7 +585,8 @@ class Notice_Archeomed_Paquet {
 			// aucune se lit comme une réussite : on cherche alors pourquoi le
 			// dossier est vide, au lieu de savoir qu'il n'y avait rien.
 			$lignes[] = ( 0 === (int) $this->comptes['illustrations'] )
-				? 'Aucune illustration dans cette rubrique : les dossiers icono sont donc vides, et c’est normal.'
+				? ( $export ? 'Aucune illustration dans cette rubrique, et c’est normal.'
+					: 'Aucune illustration dans cette rubrique : les dossiers icono sont donc vides, et c’est normal.' )
 				: 'Toutes les illustrations ont été traitées.';
 		} else {
 			// Zéro illustration posée n'est « normal » que s'il n'y avait rien
@@ -433,6 +611,11 @@ class Notice_Archeomed_Paquet {
 			}
 		}
 		return implode( "\r\n", $lignes );
+	}
+
+	/** Le lisez-moi de l'export sur sDrive. */
+	public function lisez_moi_de_l_export() {
+		return $this->lisez_moi( true );
 	}
 
 	/**
@@ -791,7 +974,7 @@ class Notice_Archeomed_Paquet {
 			return Notice_Archeomed_Settings::get( $clef );
 		};
 
-		if ( (int) $reglage( 'garder_originaux' ) ) {
+		if ( $this->avec_originaux ) {
 			@copy( $source, $this->atelier . '/icono/originaux/' . $nom_sans_ext . '.' . $ext );
 		}
 

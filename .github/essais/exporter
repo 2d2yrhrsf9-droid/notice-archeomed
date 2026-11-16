@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# L'export sur sDrive, trois passages à la fois, jusqu'à ce qu'aucune
+# rubrique n'attende : un seul doit exporter, les autres trouver le verrou
+# pris. Un pas manqué est montré, puis son délai levé : l'essai ne doit pas
+# attendre deux minutes, et la vérification dira si le résultat tient.
+# Usage, depuis le répertoire de WordPress : exporter <nom du tour>
+set -u
+tour_nom="${1:-export}"
+for tour in $(seq 1 30); do
+  for k in 1 2 3; do
+    wp eval 'Notice_Archeomed_Export::en_tache();' > "/tmp/exporter-$tour_nom-$tour-$k.log" 2>&1 &
+  done
+  wait
+  ETAT=$(wp eval '$t = Notice_Archeomed_Export::travail(); echo null === $t ? "aucun" : $t["rubrique"] . " — " . $t["etape"] . " " . ( isset( $t["suivante"] ) ? (int) $t["suivante"] : 0 ) . "/" . ( isset( $t["figures"] ) ? count( $t["figures"] ) : 0 ) . ( empty( $t["raison"] ) ? "" : " — essai " . (int) $t["essais"] . " : " . $t["raison"] );')
+  ATTENTE=$(wp eval 'echo count( Notice_Archeomed_Export::attente() );')
+  echo "tour $tour : en cours : $ETAT ; en attente : $ATTENTE"
+  case "$ETAT" in
+    *" — essai "*)
+      echo "::warning::export, pas manqué : $ETAT"
+      wp eval '$t = get_option( Notice_Archeomed_Export::TRAVAIL ); if ( is_array( $t ) ) { unset( $t["apres"] ); update_option( Notice_Archeomed_Export::TRAVAIL, $t, false ); }'
+      ;;
+  esac
+  if [ "$(wp eval 'echo Notice_Archeomed_Export::en_cours() ? 1 : 0;')" = "0" ]; then
+    exit 0
+  fi
+done
+echo "::error::export inachevé : $ETAT ; $ATTENTE rubriques en attente"
+cat /tmp/exporter-"$tour_nom"-*.log | sort | uniq -c | sort -rn | head -5 | sed 's/^/::error::/'
+tail -n 5 /tmp/sdrive.log 2>/dev/null | sed 's/^/::error::faux sDrive : /'
+exit 1

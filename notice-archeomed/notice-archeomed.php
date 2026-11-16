@@ -26,6 +26,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-sdrive.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rangement.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-export.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php';
@@ -320,6 +321,8 @@ class Notice_Archeomed_Pactols {
 		add_action( 'admin_post_na_document', array( $this, 'telecharger_le_document' ) );
 		add_action( 'admin_post_na_fascicule', array( $this, 'telecharger_le_fascicule' ) );
 		add_action( 'admin_post_na_paquet', array( $this, 'telecharger_le_paquet' ) );
+		add_action( 'admin_post_na_export', array( $this, 'demander_l_export' ) );
+		add_action( 'wp_ajax_na_export_etat', array( $this, 'etat_des_exports' ) );
 		add_action( 'admin_post_na_illustration', array( $this, 'telecharger_une_illustration' ) );
 		add_action( 'before_delete_post', array( $this, 'effacer_les_illustrations' ) );
 	}
@@ -674,31 +677,22 @@ class Notice_Archeomed_Pactols {
 		register_shutdown_function( function () use ( &$temporaires ) {
 			Notice_Archeomed_Rangement::effacer_les_temporaires( $temporaires );
 		} );
-		foreach ( $ids as $id ) {
-			$d = $this->saisie_de( $id, false );
-			if ( null === $d ) {
-				continue;
-			}
-			// Tels qu'enregistrés, sans écarter ceux qui manquent : c'est au
-			// paquet de dire qu'un fichier reçu n'est plus là.
-			$illustrations = self::illustrations_rangees( $id );
+		$notices = $this->notices_a_assembler( $ids );
+		foreach ( $notices as $rang_notice => $notice ) {
+			$illustrations = $notice['illustrations'];
 			foreach ( $illustrations as $i => $chemin ) {
-				$lu = Notice_Archeomed_Rangement::rapatrier( $id, $chemin, $temporaires );
+				$lu = Notice_Archeomed_Rangement::rapatrier( $notice['id'], $chemin, $temporaires );
 				$illustrations[ $i ] = '' !== $lu ? $lu : $chemin;
 			}
-			$conversions = self::conversions_rangees( $id );
+			$conversions = $notice['conversions'];
 			foreach ( $conversions as $rang => $familles ) {
 				foreach ( (array) $familles as $famille => $chemin ) {
-					$lu = Notice_Archeomed_Rangement::rapatrier( $id, $chemin, $temporaires );
+					$lu = Notice_Archeomed_Rangement::rapatrier( $notice['id'], $chemin, $temporaires );
 					$conversions[ $rang ][ $famille ] = '' !== $lu ? $lu : $chemin;
 				}
 			}
-			$notices[] = array(
-				'id'            => $id,
-				'd'             => $d,
-				'illustrations' => $illustrations,
-				'conversions'   => $conversions,
-			);
+			$notices[ $rang_notice ]['illustrations'] = $illustrations;
+			$notices[ $rang_notice ]['conversions']   = $conversions;
 		}
 
 		$paquet = new Notice_Archeomed_Paquet();
@@ -708,6 +702,103 @@ class Notice_Archeomed_Pactols {
 			wp_die( esc_html( $erreur ) );
 		}
 
+		$assemble = $this->assembler_la_rubrique( $rubrique, $notices, $plan, $paquet, $erreur );
+		if ( null === $assemble ) {
+			$paquet->nettoyer();
+			wp_die( esc_html( $erreur ) );
+		}
+		$document = $assemble['document'];
+
+		$archive = $paquet->emballer( $document, $assemble['relecture'], $erreur );
+		@unlink( $document );
+		$paquet->nettoyer();
+		if ( '' === $archive ) {
+			wp_die( esc_html( '' !== $erreur ? $erreur : "Le paquet n'a pas pu être assemblé." ) );
+		}
+		$this->rendre_le_fichier( $archive, basename( $archive ) );
+	}
+
+	/**
+	 * Inscrit une rubrique à l'export sur sDrive, puis revient à la liste
+	 * des notices, qui dit où en est l'export.
+	 */
+	public function demander_l_export() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_export' );
+		$rubrique = isset( $_GET['rubrique'] )
+			? self::rubrique_actuelle( sanitize_text_field( wp_unslash( $_GET['rubrique'] ) ) ) : '';
+		if ( ! in_array( $rubrique, $this->rubriques, true ) ) {
+			wp_die( esc_html__( 'Rubrique inconnue.', 'notice-archeomed' ) );
+		}
+		if ( empty( $this->ids_de_la_rubrique( $rubrique ) ) ) {
+			wp_die( esc_html__( 'Aucune notice dans cette rubrique.', 'notice-archeomed' ) );
+		}
+		$message = Notice_Archeomed_Export::demander( $rubrique );
+		set_transient( 'na_export_message_' . get_current_user_id(), $message, 5 * MINUTE_IN_SECONDS );
+		wp_safe_redirect( add_query_arg( 'post_type', Notice_Archeomed_File::CPT, admin_url( 'edit.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Où en est l'export de chaque rubrique, pour la liste des notices qui
+	 * le demande tant qu'un export est en route. Chaque demande est aussi
+	 * une visite : c'est elle qui fait passer la tâche.
+	 */
+	public function etat_des_exports() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( null, 403 );
+		}
+		check_ajax_referer( 'na_export_etat' );
+		$etats = array();
+		foreach ( $this->rubriques as $rubrique ) {
+			$etats[ $rubrique ] = Notice_Archeomed_Export::etat_de( $rubrique );
+		}
+		wp_send_json_success( array( 'etats' => $etats, 'en_cours' => Notice_Archeomed_Export::en_cours() ) );
+	}
+
+	/** Les notices qu'une rubrique porte au fascicule. */
+	public function ids_de_la_rubrique( $rubrique ) {
+		return $this->file()->notices_de_la_rubrique( $rubrique );
+	}
+
+	/**
+	 * Les notices d'une rubrique telles que le dossier les assemble : la
+	 * saisie, et les chemins de leurs fichiers tels qu'enregistrés, sans
+	 * écarter ceux qui manquent — c'est au paquet de dire qu'un fichier reçu
+	 * n'est plus là. Un fichier rangé sur sDrive garde son chemin d'ici :
+	 * à l'appelant de le rapatrier.
+	 */
+	public function notices_a_assembler( $ids ) {
+		$notices = array();
+		foreach ( (array) $ids as $id ) {
+			$d = $this->saisie_de( $id, false );
+			if ( null === $d ) {
+				continue;
+			}
+			$notices[] = array(
+				'id'            => (int) $id,
+				'd'             => $d,
+				'illustrations' => self::illustrations_rangees( $id ),
+				'conversions'   => self::conversions_rangees( $id ),
+			);
+		}
+		return $notices;
+	}
+
+	/**
+	 * Le document et la page de relecture d'une rubrique, une fois ses
+	 * figures posées, et ses blocs d'index dans l'atelier du paquet.
+	 *
+	 * L'archive et l'export sur sDrive passent par ici : une seule façon
+	 * d'assembler une rubrique, et non deux qui divergeraient. « $plan »
+	 * donne, par notice et par rang, la mesure de la basse définition.
+	 *
+	 * Rend { document, relecture }, ou null avec l'erreur.
+	 */
+	public function assembler_la_rubrique( $rubrique, $notices, $plan, $paquet, &$erreur ) {
+		$erreur = '';
 		// Chaque figure reçoit le chemin et la mesure de sa basse définition.
 		$donnees = array();
 		foreach ( $notices as $rang_notice => $notice ) {
@@ -785,18 +876,12 @@ class Notice_Archeomed_Pactols {
 
 		$document = $this->fabriquer_le_fascicule( $rubrique, $donnees, $erreur );
 		if ( '' === $document ) {
-			$paquet->nettoyer();
-			wp_die( esc_html( $erreur ) );
+			return null;
 		}
-
-		$archive = $paquet->emballer( $document,
-			$this->page_de_relecture( $rubrique, $donnees ), $erreur );
-		@unlink( $document );
-		$paquet->nettoyer();
-		if ( '' === $archive ) {
-			wp_die( esc_html( '' !== $erreur ? $erreur : "Le paquet n'a pas pu être assemblé." ) );
-		}
-		$this->rendre_le_fichier( $archive, basename( $archive ) );
+		return array(
+			'document'  => $document,
+			'relecture' => $this->page_de_relecture( $rubrique, $donnees ),
+		);
 	}
 
 	/**
@@ -11010,8 +11095,9 @@ class Notice_Archeomed_Pactols {
 		// La tâche des termes se remet en route au passage de la relance, toutes
 		// les cinq minutes, et non à chaque page d'administration.
 		add_action( Notice_Archeomed_File::HOOK_RELANCE, array( $this, 'reveiller_la_file' ), 20, 0 );
-		// Le rangement sur sDrive, après l'envoi.
+		// Le rangement sur sDrive, après l'envoi ; l'export du numéro, à la demande.
 		Notice_Archeomed_Rangement::brancher();
+		Notice_Archeomed_Export::brancher();
 	}
 
 	/**
@@ -12681,6 +12767,7 @@ class Notice_Archeomed_Pactols {
 		wp_unschedule_hook( self::HOOK_TERMES );
 		wp_unschedule_hook( self::HOOK_APERCUS );
 		Notice_Archeomed_Rangement::desactiver();
+		Notice_Archeomed_Export::desactiver();
 	}
 
 	/**

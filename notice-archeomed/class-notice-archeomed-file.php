@@ -1418,6 +1418,7 @@ class Notice_Archeomed_File {
 			return $vues;
 		}
 		$comptes = $this->comptes_par_rubrique();
+		$export  = Notice_Archeomed_Export::peut_exporter();
 		$lignes  = '';
 		foreach ( $rubriques as $rubrique ) {
 			$n = isset( $comptes[ $rubrique ] ) ? (int) $comptes[ $rubrique ] : 0;
@@ -1431,8 +1432,17 @@ class Notice_Archeomed_File {
 				// d'édition XML créée par le Pôle document numérique et
 				// l'infrastructure Métopes de l'université de Caen Normandie,
 				// https://www.metopes.fr).
-				. '<td>' . $this->lien_de_rubrique( 'na_paquet', $rubrique,
-					__( 'Dossier Métopes (zip)', 'notice-archeomed' ) ) . '</td></tr>';
+				. '<td>' . ( $export
+					? $this->export_de_rubrique( $rubrique )
+					: $this->lien_de_rubrique( 'na_paquet', $rubrique,
+						__( 'Dossier Métopes (zip)', 'notice-archeomed' ) ) ) . '</td></tr>';
+		}
+		// sDrive relié et un numéro réglé, le dossier Métopes ne se télécharge
+		// plus : il s'écrit dans le dossier du numéro, par la tâche. L'archive
+		// reste pour un site qui n'a pas sDrive.
+		$message = $export ? (string) get_transient( 'na_export_message_' . get_current_user_id() ) : '';
+		if ( '' !== $message ) {
+			delete_transient( 'na_export_message_' . get_current_user_id() );
 		}
 		// Le bloc passe en tête des vues, sur sa propre ligne. WordPress écrit
 		// les vues comme une ligne de texte — « Tous | Privées » — et ajoute
@@ -1448,7 +1458,9 @@ class Notice_Archeomed_File {
 			. 'table.na-dossiers>tbody>tr>th,table.na-dossiers>tbody>tr>td{vertical-align:middle;padding-top:6px;padding-bottom:6px}'
 			. 'table.na-dossiers>tbody>tr>th{font-weight:400}'
 			. '.na-dossiers .na-dossiers-nombre{text-align:right;font-variant-numeric:tabular-nums;width:5em}'
-			. '.na-dossiers a.na-telechargement{display:inline-block;padding:4px 0}'
+			. '.na-dossiers a.na-telechargement,.na-dossiers a.na-export{display:inline-block;padding:4px 0}'
+			. '.na-dossiers .na-export-etat{display:block;color:#50575e;font-size:12px}'
+			. '.na-dossiers .na-export-etat[data-etat="echec"]{color:#b32d2e}'
 			. '.na-dossiers-mot{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}'
 			// Sur un téléphone, chaque rubrique devient un petit bloc : son nom,
 			// puis le compte et les deux liens. Un tableau à quatre colonnes y
@@ -1462,7 +1474,7 @@ class Notice_Archeomed_File {
 			. 'table.na-dossiers>tbody>tr>th{display:block;padding:10px 10px 0;font-weight:600}'
 			. 'table.na-dossiers>tbody>tr>td{display:inline-block;width:auto;padding:4px 10px 10px}'
 			. 'table.na-dossiers .na-dossiers-mot{position:static;width:auto;height:auto;overflow:visible;clip:auto}'
-			. 'table.na-dossiers a.na-telechargement{min-height:24px;padding:6px 0}}</style>'
+			. 'table.na-dossiers a.na-telechargement,table.na-dossiers a.na-export{min-height:24px;padding:6px 0}}</style>'
 			. '<div class="na-dossiers-cadre">'
 			. '<table class="widefat striped na-dossiers">'
 			. '<caption class="screen-reader-text">' . esc_html__( 'Fascicules et dossiers Métopes, par rubrique', 'notice-archeomed' ) . '</caption>'
@@ -1471,11 +1483,37 @@ class Notice_Archeomed_File {
 			. '<th scope="col">' . esc_html__( 'Pour relire', 'notice-archeomed' ) . '</th>'
 			. '<th scope="col">' . esc_html__( 'Pour la mise en page', 'notice-archeomed' ) . '</th></tr></thead>'
 			. '<tbody>' . $lignes . '</tbody></table></div>'
-			. '<p class="description">' . esc_html__( 'Le dossier Métopes réunit le document, les illustrations en haute et basse définition, et l’arborescence icono.', 'notice-archeomed' ) . '</p>'
+			. '<p class="description">' . ( $export
+				? esc_html( sprintf(
+					/* translators: %s : le dossier du numéro sur sDrive. */
+					__( 'L’export écrit le document, les illustrations en haute et basse définition et les blocs d’index dans « %s » sur sDrive, à côté des originaux. Un nouvel export d’une rubrique remplace ce que le précédent avait écrit, et rien d’autre.', 'notice-archeomed' ),
+					Notice_Archeomed_Export::numero() ) )
+				: esc_html__( 'Le dossier Métopes réunit le document, les illustrations en haute et basse définition, et l’arborescence icono.', 'notice-archeomed' ) ) . '</p>'
 			// Où s'annonce l'attente, hors du lien : un lien marqué « occupé »
 			// fait taire ce qu'il contient, pas ce qui est à côté.
-			. '<p class="na-attente" role="status" aria-live="polite"></p>';
+			. '<p class="na-attente" role="status" aria-live="polite">' . esc_html( $message ) . '</p>';
 		return array( 'na_dossiers' => $bloc ) + $vues;
+	}
+
+	/**
+	 * Le lien d'export d'une rubrique, et où en est son dernier export. Il ne
+	 * se marque pas « occupé » comme un téléchargement : la demande revient
+	 * aussitôt, et c'est l'état, sous le lien, qui dit la suite.
+	 */
+	private function export_de_rubrique( $rubrique ) {
+		$url  = wp_nonce_url(
+			add_query_arg(
+				array( 'action' => 'na_export', 'rubrique' => rawurlencode( $rubrique ) ),
+				admin_url( 'admin-post.php' )
+			),
+			'na_export'
+		);
+		$etat = Notice_Archeomed_Export::etat_de( $rubrique );
+		return '<a class="na-export" href="' . esc_url( $url ) . '">'
+			. esc_html__( 'Exporter sur sDrive', 'notice-archeomed' )
+			. '<span class="screen-reader-text"> — ' . esc_html( $rubrique ) . '</span></a>'
+			. '<span class="na-export-etat" data-rubrique="' . esc_attr( $rubrique ) . '" data-etat="' . esc_attr( $etat['etat'] ) . '">'
+			. esc_html( $etat['texte'] ) . '</span>';
 	}
 
 	/**
@@ -2399,6 +2437,37 @@ class Notice_Archeomed_File {
 			var bloc = document.querySelector('li.na_dossiers');
 			if (!bloc) { return; }
 			var etat = bloc.querySelector('.na-attente');
+			// L'export sur sDrive se poursuit sans la page : on relit son état
+			// tant qu'il est en route. Chaque relecture est une visite, et
+			// c'est aussi elle qui fait passer la tâche.
+			var etats = bloc.querySelectorAll('.na-export-etat');
+			var enRoute = function () {
+				return Array.prototype.some.call(etats, function (e) {
+					var v = e.getAttribute('data-etat');
+					return v === 'cours' || v === 'attente';
+				});
+			};
+			var relire = function () {
+				var corps = new window.FormData();
+				corps.append('action', 'na_export_etat');
+				corps.append('_ajax_nonce', <?php echo wp_json_encode( wp_create_nonce( 'na_export_etat' ) ); ?>);
+				window.fetch(window.ajaxurl, { method: 'POST', body: corps, credentials: 'same-origin' })
+					.then(function (r) { return r.json(); })
+					.then(function (r) {
+						if (!r || !r.success) { return; }
+						Array.prototype.forEach.call(etats, function (e) {
+							var lu = r.data.etats[e.getAttribute('data-rubrique')];
+							if (!lu) { return; }
+							e.setAttribute('data-etat', lu.etat);
+							if (e.textContent !== lu.texte) { e.textContent = lu.texte; }
+						});
+						if (r.data.en_cours) { window.setTimeout(relire, 20000); }
+					})
+					.catch(function () { window.setTimeout(relire, 60000); });
+			};
+			if (etats.length && enRoute() && window.fetch && window.ajaxurl) {
+				window.setTimeout(relire, 5000);
+			}
 			var texte = <?php echo wp_json_encode( __( 'Préparation… une à trois minutes. Le téléchargement démarrera seul ; ne cliquez qu’une fois.', 'notice-archeomed' ) ); ?>;
 			bloc.addEventListener('click', function (e) {
 				var lien = e.target.closest('a.na-telechargement');
