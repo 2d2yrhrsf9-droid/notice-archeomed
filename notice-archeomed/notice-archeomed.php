@@ -3327,7 +3327,7 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<div class="na-champ">
 						<label for="na-departement">Département ou région <span class="na-requis" aria-hidden="true">*</span></label>
-						<p class="na-help" id="na-departement-aide">Le plus souvent le département, rempli automatiquement (ex.&nbsp;Calvados). Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&nbsp;Autres lieux&nbsp;» (section&nbsp;4).</p>
+						<p class="na-help" id="na-departement-aide">Le plus souvent le département, rempli automatiquement (ex.&nbsp;Calvados). Ce peut être une ou plusieurs régions&nbsp;: Champagne, Alsace, Lorraine. Vérifiez-le. Une région nommée ici n’est pas indexée&nbsp;: ajoutez-la aussi dans «&nbsp;Autres lieux&nbsp;» (section&nbsp;5).</p>
 						<input type="text" id="na-departement" name="departement" required
 							aria-describedby="na-departement-aide na-departement-auto"
 							value="<?php echo esc_attr( $this->repris( 'departement' ) ); ?>">

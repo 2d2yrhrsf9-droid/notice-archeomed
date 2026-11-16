@@ -436,8 +436,60 @@ class Notice_Archeomed_Rangement {
 		if ( '' === $numero ) {
 			return '';
 		}
-		return Notice_Archeomed_Nommage::assainir( $numero, 'numero' ) . '/originaux/'
-			. Notice_Archeomed_Nommage::assainir( '' !== $reference ? $reference : 'notice-' . (int) $id, 'notice-' . (int) $id );
+		$base = Notice_Archeomed_Nommage::assainir( $numero, 'numero' ) . '/originaux/';
+		// Une correction déposée à part rejoint le dossier de la notice
+		// qu'elle remplace : ses originaux sont les mêmes, à une figure près.
+		$remplace = strtoupper( trim( (string) get_post_meta( (int) $id, '_na_remplace', true ) ) );
+		if ( '' !== $remplace ) {
+			$premieres = get_posts( array(
+				'post_type'        => Notice_Archeomed_File::CPT,
+				'post_status'      => 'any',
+				'fields'           => 'ids',
+				'posts_per_page'   => 1,
+				'no_found_rows'    => true,
+				'suppress_filters' => true,
+				'meta_query'       => array( array( 'key' => '_na_reference', 'value' => $remplace ) ),
+			) );
+			$sien = empty( $premieres ) ? '' : (string) get_post_meta( (int) $premieres[0], '_na_sdrive_dossier', true );
+			if ( '' !== $sien ) {
+				update_post_meta( (int) $id, '_na_sdrive_dossier', $sien );
+				return $sien;
+			}
+		}
+		// Le nom de la commune, que la rédaction reconnaît d'un coup d'œil ;
+		// la référence tirée au sort ne disait rien. Deux notices de la même
+		// commune se numérotent : « Caen », « Caen_2 ».
+		$d       = get_post_meta( (int) $id, '_na_donnees', true );
+		$commune = is_array( $d ) && isset( $d['commune'] ) && is_string( $d['commune'] ) ? $d['commune'] : '';
+		$nom     = Notice_Archeomed_Nommage::assainir( $commune, '' );
+		if ( '' !== $nom ) {
+			for ( $n = 1; $n <= 99; $n++ ) {
+				$chemin = $base . ( 1 === $n ? $nom : $nom . '_' . $n );
+				if ( self::reserver_le_nom( $chemin, (int) $id ) ) {
+					update_post_meta( (int) $id, '_na_sdrive_dossier', $chemin );
+					return $chemin;
+				}
+			}
+		}
+		return $base . Notice_Archeomed_Nommage::assainir( '' !== $reference ? $reference : 'notice-' . (int) $id, 'notice-' . (int) $id );
+	}
+
+	/**
+	 * Retient un nom de dossier pour une notice, par une écriture qui ne
+	 * réussit qu'une fois : deux notices de Caen expédiées au même instant,
+	 * par deux passages de la file, n'ont pas toutes deux « Caen ».
+	 */
+	private static function reserver_le_nom( $chemin, $id ) {
+		global $wpdb;
+		$cle  = 'na_dossier_' . md5( $chemin );
+		$pris = $wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+			$cle, (string) $id ) );
+		if ( 1 === (int) $pris ) {
+			return true;
+		}
+		return (string) $id === (string) $wpdb->get_var( $wpdb->prepare(
+			"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $cle ) );
 	}
 
 	/** Ce que la notice sait de ses fichiers rangés : chemin du serveur ⇒ copie. */

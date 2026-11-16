@@ -586,6 +586,16 @@ jobs:
             $c->setAccessible( true );
             $lien = $c->invoke( $p, $id );
             if ( false === strpos( $lien, "na_corriger=1" ) || false === strpos( $lien, "post=" . $id ) ) { $echecs[] = "le lien de correction du courriel : " . $lien; }
+            $deux = array();
+            foreach ( array( 1, 2 ) as $i ) {
+              $n = wp_insert_post( array( "post_type" => "na_notice", "post_status" => "private", "post_title" => "Homonyme " . $i ) );
+              update_post_meta( $n, "_na_donnees", array( "commune" => "Saint-Lô" ) );
+              $deux[] = $n;
+            }
+            $noms = array_map( array( "Notice_Archeomed_Rangement", "dossier_de" ), $deux );
+            if ( ! preg_match( "#/originaux/Saint_Lo$#", $noms[0] ) || ! preg_match( "#/originaux/Saint_Lo_2$#", $noms[1] )
+              || Notice_Archeomed_Rangement::dossier_de( $deux[0] ) !== $noms[0] ) { $echecs[] = "les dossiers par commune : " . wp_json_encode( $noms ); }
+            foreach ( $deux as $n ) { wp_delete_post( $n, true ); }
             foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
             if ( $echecs ) { exit( 1 ); }
             echo "Blocage dit, rangement forcé, lien de correction posé.\n";'

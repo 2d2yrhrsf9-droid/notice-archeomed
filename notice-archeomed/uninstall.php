@@ -44,9 +44,10 @@ foreach ( array(
 // horaires, dossiers en préparation, diagnostics.
 global $wpdb;
 $wpdb->query( $wpdb->prepare(
-	"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+	"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
 	$wpdb->esc_like( '_transient_na_' ) . '%',
-	$wpdb->esc_like( '_transient_timeout_na_' ) . '%'
+	$wpdb->esc_like( '_transient_timeout_na_' ) . '%',
+	$wpdb->esc_like( 'na_dossier_' ) . '%'
 ) );
 
 if ( defined( 'NA_SUPPRIMER_LES_NOTICES' ) && NA_SUPPRIMER_LES_NOTICES ) {
