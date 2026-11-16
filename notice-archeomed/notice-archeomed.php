@@ -6114,7 +6114,9 @@ class Notice_Archeomed_Pactols {
 						return;
 					}
 					var avant = null;
-					selected.forEach(function (f) { if (f.aPart) { avant = f.meta; } });
+					// Le dernier lien donné, non la dernière carte : une carte
+					// encore vide ne doit pas effacer ce qu'on reprendrait.
+					selected.forEach(function (f) { if (f.aPart && f.meta.lien) { avant = f.meta; } });
 					selected.push(figureAPart({ lien: avant && avant.lien ? avant.lien : '', jusqua: avant && avant.jusqua ? avant.jusqua : '' }));
 					rattacher();
 					refreshFileInput();

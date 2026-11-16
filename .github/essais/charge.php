@@ -5,7 +5,8 @@
  *
  * Usage : php charge.php <adresse du site> <nombre de notices>
  *
- * Chaque dépôt porte deux figures (un JPEG de plusieurs centaines de Ko, et un TIFF avec les deux JPEG que le navigateur en aurait tirés), un
+ * Chaque dépôt porte deux figures (un JPEG de plusieurs centaines de Ko, et un TIFF avec les deux JPEG que le navigateur en aurait tirés) — une
+ * notice sur deux, une troisième envoyée à part —, un
  * texte de quatre cents mots et une adresse de responsable qui lui est propre.
  * Le script lit la page du formulaire comme le ferait un navigateur — jeton,
  * heure d'affichage, rubrique et nature offertes —, attend les trois secondes
@@ -123,6 +124,22 @@ for ( $i = 1; $i <= $n; $i++ ) {
 		$champs[ 'illus_credits[' . ( $f - 1 ) . ']' ] = '© Essai ' . $i . ', Inrap';
 		$champs[ 'illus_type[' . ( $f - 1 ) . ']' ]    = 1 === $f ? 'photo' : 'plan';
 		$champs[ 'illus_alt[' . ( $f - 1 ) . ']' ]     = 1 === $f ? 'Mur en moellons vu du nord' : 'Deux bâtiments à l’ouest d’un enclos fossoyé';
+	}
+	// Une notice sur deux porte une troisième figure, envoyée à part : pas de
+	// fichier, un lien, et la carte garde son rang, comme le formulaire les
+	// poste — une source, un lien, une date et un nom par carte.
+	if ( 0 === $i % 2 ) {
+		foreach ( array( 0, 1, 2 ) as $place ) {
+			$champs[ 'illus_source[' . $place . ']' ]    = 2 === $place ? 'a_part' : 'fichier';
+			$champs[ 'illus_lien[' . $place . ']' ]      = 2 === $place ? 'https://filesender.renater.fr/?s=download&token=essai-' . $i : '';
+			$champs[ 'illus_jusqua[' . $place . ']' ]    = 2 === $place ? gmdate( 'Y-m-d', time() + 20 * 86400 ) : '';
+			$champs[ 'illus_nom_envoi[' . $place . ']' ] = 2 === $place ? 'coupe-' . $i . '.tif' : '';
+		}
+		$champs['illus_titre[2]']   = 'Coupe de l’opération ' . $i;
+		$champs['illus_legende[2]'] = '';
+		$champs['illus_credits[2]'] = '© Essai ' . $i . ', Inrap';
+		$champs['illus_type[2]']    = 'plan';
+		$champs['illus_alt[2]']     = 'Coupe du fossé, comblement en trois couches';
 	}
 	$champs['na_conv_hr_2'] = new CURLFile( $dossier . '/conv-hr.jpg', 'image/jpeg', 'figure-' . $i . '-2-hr.jpg' );
 	$champs['na_conv_br_2'] = new CURLFile( $dossier . '/conv-br.jpg', 'image/jpeg', 'figure-' . $i . '-2-br.jpg' );

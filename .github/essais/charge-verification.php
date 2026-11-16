@@ -59,11 +59,43 @@ if ( ! empty( $sans_apercu ) ) {
 	$echecs[] = count( $sans_apercu ) . ' notices n’ont pas d’aperçu pour leur TIFF.';
 }
 
+// Une notice sur deux porte une figure envoyée à part, en troisième : un
+// fichier témoin tient son rang, et la figure garde son lien.
+$a_part_attendues = intdiv( $attendu, 2 );
+$a_part_vues      = 0;
+$a_part_fautives  = array();
+foreach ( $ids as $id ) {
+	$d_charge = get_post_meta( $id, '_na_donnees', true );
+	if ( ! is_array( $d_charge ) || ! preg_match( '/(\d+)$/', isset( $d_charge['lieu_dit'] ) ? (string) $d_charge['lieu_dit'] : '', $m_lieu ) || 0 !== (int) $m_lieu[1] % 2 ) {
+		continue;
+	}
+	$fichiers_charge = get_post_meta( $id, '_na_illustrations', true );
+	$a_part_charge   = isset( $d_charge['illustrations'][2] ) ? Notice_Archeomed_Pactols::figure_a_part( $d_charge['illustrations'][2] ) : null;
+	if ( is_array( $fichiers_charge ) && 3 === count( $fichiers_charge )
+		&& Notice_Archeomed_Pactols::est_a_part( $fichiers_charge[2] ) && is_file( $fichiers_charge[2] )
+		&& ! Notice_Archeomed_Pactols::est_a_part( $fichiers_charge[1] )
+		&& null !== $a_part_charge && false !== strpos( (string) $a_part_charge['lien'], 'essai-' . $m_lieu[1] ) ) {
+		++$a_part_vues;
+	} else {
+		$a_part_fautives[] = $id;
+	}
+}
+echo 'Figures envoyées à part : ', $a_part_vues, ' sur ', $a_part_attendues, "\n";
+if ( $a_part_vues !== $a_part_attendues || ! empty( $a_part_fautives ) ) {
+	$echecs[] = 'Figures envoyées à part mal rangées : ' . $a_part_vues . ' sur ' . $a_part_attendues . ' (notices ' . implode( ',', $a_part_fautives ) . ').';
+}
+
 $lignes   = is_file( $journal ) ? file( $journal, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) : array();
 $rediges  = array();
 $doubles  = array();
 foreach ( $lignes as $ligne ) {
 	list( $vers, $sujet ) = array_pad( explode( "\t", $ligne, 2 ), 2, '' );
+	// L'alerte des liens à télécharger part en plus de la notice : elle se
+	// compte à part.
+	if ( 0 === strpos( $sujet, 'ATTENTION' ) ) {
+		$alertes = isset( $alertes ) ? $alertes + 1 : 1;
+		continue;
+	}
 	if ( false !== strpos( $vers, 'redaction@example.org' ) && preg_match( '/réf\. ([A-Z0-9]{6})/u', $sujet, $m ) ) {
 		$rediges[ $m[1] ] = isset( $rediges[ $m[1] ] ) ? $rediges[ $m[1] ] + 1 : 1;
 	}
@@ -76,6 +108,11 @@ foreach ( $rediges as $ref => $fois ) {
 echo 'Courriels : ', count( $lignes ), ' — notices distinctes adressées à la rédaction : ', count( $rediges ), "\n";
 if ( count( $rediges ) !== $attendu ) {
 	$echecs[] = count( $rediges ) . ' notices ont atteint la rédaction pour ' . $attendu . ' dépôts.';
+}
+$alertes = isset( $alertes ) ? $alertes : 0;
+echo 'Alertes des liens à télécharger : ', $alertes, "\n";
+if ( $alertes !== $a_part_attendues ) {
+	$echecs[] = $alertes . ' alertes de liens à télécharger pour ' . $a_part_attendues . ' notices qui en portent un.';
 }
 if ( ! empty( $doubles ) ) {
 	$echecs[] = 'Courriels en double à la rédaction : ' . implode( ', ', $doubles );
