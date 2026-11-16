@@ -89,6 +89,7 @@ class Notice_Archeomed_Rangement {
 		update_post_meta( $id, '_na_sdrive_apres', time() );
 		delete_post_meta( $id, '_na_sdrive_essais' );
 		delete_post_meta( $id, '_na_sdrive_raison' );
+		delete_post_meta( $id, '_na_sdrive_entame' );
 		if ( self::peut_ranger() ) {
 			self::assurer( time() );
 		}
@@ -236,7 +237,19 @@ class Notice_Archeomed_Rangement {
 					$interrompu = true;
 					break;
 				}
+				if ( get_post_meta( $id, '_na_sdrive_entame', true ) ) {
+					// Le passage précédent est mort sur cette notice sans rien
+					// noter : le serveur l'a coupé. L'essai compte, sans quoi
+					// une notice trop lourde reviendrait en tête à chaque
+					// passage et retiendrait les suivantes.
+					delete_post_meta( $id, '_na_sdrive_entame' );
+					$raison = 'le passage précédent a été coupé par le serveur pendant le rangement';
+					self::compter_un_essai( $id, $raison );
+					continue;
+				}
+				update_post_meta( $id, '_na_sdrive_entame', time() );
 				$issue = self::ranger( $id, $echeance, $raison );
+				delete_post_meta( $id, '_na_sdrive_entame' );
 				if ( 'rangee' === $issue ) {
 					++$rangees;
 					self::sortir( $id );
@@ -276,6 +289,7 @@ class Notice_Archeomed_Rangement {
 		delete_post_meta( $id, '_na_sdrive_apres' );
 		delete_post_meta( $id, '_na_sdrive_essais' );
 		delete_post_meta( $id, '_na_sdrive_raison' );
+		delete_post_meta( $id, '_na_sdrive_entame' );
 	}
 
 	/**

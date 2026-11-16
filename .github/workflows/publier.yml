@@ -468,6 +468,28 @@ jobs:
           NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement-3.log
           echo "::notice::$(head -1 /tmp/rangement-3.log)"
 
+      - name: Un passage coupé par le serveur compte comme un essai manqué
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $t = array(
+              "rubrique" => "I. Habitats", "numero" => Notice_Archeomed_Export::numero(), "etape" => "debut",
+              "essais" => 0, "raison" => "", "commence" => time() - 200, "entame" => time() - 200,
+            );
+            update_option( Notice_Archeomed_Export::TRAVAIL, $t, false );
+            Notice_Archeomed_Export::en_tache();
+            wp_cache_delete( Notice_Archeomed_Export::TRAVAIL, "options" );
+            $apres = get_option( Notice_Archeomed_Export::TRAVAIL );
+            delete_option( Notice_Archeomed_Export::TRAVAIL );
+            wp_clear_scheduled_hook( Notice_Archeomed_Export::HOOK );
+            if ( ! is_array( $apres ) || 1 !== (int) $apres["essais"] || isset( $apres["entame"] )
+              || false === strpos( $apres["raison"], "coupé" ) || empty( $apres["apres"] ) ) {
+              echo "::error::Le pas coupé n’est pas compté : ", wp_json_encode( $apres ), "\n";
+              exit( 1 );
+            }
+            echo "Le pas coupé compte : ", $apres["raison"], "\n";
+          '
+
       - name: Le sélecteur lit les dossiers du compte, le diagnostic dit où en sont rangement et export
         working-directory: /tmp/wp
         run: |

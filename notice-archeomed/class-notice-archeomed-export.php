@@ -287,7 +287,19 @@ class Notice_Archeomed_Export {
 				}
 			}
 			$raison = '';
-			$issue  = self::un_pas( $travail, $echeance, $temporaires, $paquet, $raison );
+			if ( ! empty( $travail['entame'] ) ) {
+				// Le passage précédent est mort pendant ce pas sans rien
+				// noter : le serveur l'a coupé, faute de temps ou de mémoire.
+				// Le pas compte comme manqué, sans quoi une figure trop
+				// lourde reviendrait sans fin et bloquerait la file.
+				$issue  = 'manque';
+				$raison = 'le passage précédent a été coupé par le serveur pendant ce pas';
+			} else {
+				$travail['entame'] = time();
+				update_option( self::TRAVAIL, $travail, false );
+				$issue = self::un_pas( $travail, $echeance, $temporaires, $paquet, $raison );
+			}
+			unset( $travail['entame'] );
 			Notice_Archeomed_Rangement::effacer_les_temporaires( $temporaires );
 			$temporaires = array();
 			if ( $paquet instanceof Notice_Archeomed_Paquet ) {
