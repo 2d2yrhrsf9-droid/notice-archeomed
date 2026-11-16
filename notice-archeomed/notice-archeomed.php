@@ -2948,6 +2948,7 @@ class Notice_Archeomed_Pactols {
 			/* L'anneau de focus déborde de 5 px : sans cet écart, il mordait le libellé au-dessus. */
 			.na-form#na-form .na-illus-champs .na-illus-type > label { display: block; margin: 0 0 var(--na-e2); }
 			.na-form#na-form .na-illus-type select { margin-top: 0; }
+			.na-form#na-form .na-illus-impression { margin: 0 0 var(--na-e3); font-size: var(--na-t-s); }
 			.na-form#na-form .na-illus-sans-apercu { margin: 0 0 var(--na-e3); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
 				color: var(--na-sourd); background: var(--na-fond); border: 1px dashed var(--na-filet); border-radius: var(--na-r1); }
 			.na-form#na-form .na-illus-type select { max-width: 22rem; }
@@ -5943,6 +5944,13 @@ class Notice_Archeomed_Pactols {
 						etat.statutEl = sans;
 						groupe.appendChild(sans);
 					}
+					var impression = null;
+					if (!f.aPart) {
+						impression = document.createElement('p');
+						impression.className = 'na-illus-impression';
+						impression.hidden = true;
+						groupe.appendChild(impression);
+					}
 					var champs = document.createElement('div');
 					champs.className = 'na-illus-champs';
 					// Deux parties : ce qui s'imprime avec la figure, puis, encadré,
@@ -5997,7 +6005,9 @@ class Notice_Archeomed_Pactols {
 					});
 					li.appendChild(groupe);
 					fileList.appendChild(li);
-					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ, type: nature.champ };
+					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ, type: nature.champ, impression: impression };
+					// La nature change la densité qui compte : la taille se refait.
+					nature.champ.addEventListener('change', function () { majFigure(idx); });
 					majFigure(idx);
 				});
 				// Les cartes viennent d'être refaites : une erreur de texte
@@ -6262,6 +6272,11 @@ class Notice_Archeomed_Pactols {
 				var c = cartes[idx], f = selected[idx];
 				if (!c || !f) { return; }
 				var e = etatDe(f), m = illusMeta[idx] || {}, rang = decalage() + idx + 1, liste = [];
+				if (c.impression) {
+					var taille = e.px ? tailleDImpression(e.px, m.type) : '';
+					c.impression.textContent = taille;
+					c.impression.hidden = !taille;
+				}
 				if (e.px) {
 					var avis = avisDeDefinition(rang, e.px);
 					if (avis) { liste.push(avis); }
@@ -6464,6 +6479,22 @@ class Notice_Archeomed_Pactols {
 					+ cm(l) + NBSP + '×' + NBSP + cm(h) + NBSP + 'cm à ' + entier(NORME.ppp) + NBSP + 'ppp — sous la norme de '
 					+ entier(NORME.largeurCm) + NBSP + '×' + NBSP + entier(NORME.hauteurCm) + NBSP
 					+ 'cm. Vérifier que la taille d’impression convient.';
+			}
+
+			// La taille à laquelle la figure peut s'imprimer, dite sur chaque
+			// carte et non seulement quand elle manque : l'auteur juge mieux
+			// d'un « 25 × 17 cm » que d'un nombre de pixels. Un plan, une carte,
+			// un graphique ou un tableau se comptent à la densité du trait.
+			var TYPES_AU_TRAIT = ['plan', 'carte', 'graphique', 'tableau'];
+			function tailleDImpression(px, type) {
+				var ppp = TYPES_AU_TRAIT.indexOf(type) !== -1 && NORME.traitPpp ? NORME.traitPpp : NORME.ppp;
+				if (!px || !ppp) { return ''; }
+				function cm(p) {
+					var v = p / ppp * 2.54;
+					return v < 1 ? decimal1(v) : entier(Math.round(v));
+				}
+				return 'Imprimable jusqu’à ' + cm(px.largeur) + NBSP + '×' + NBSP + cm(px.hauteur) + NBSP + 'cm environ, à '
+					+ entier(ppp) + NBSP + 'ppp (' + entier(px.largeur) + NBSP + '×' + NBSP + entier(px.hauteur) + NBSP + 'pixels).';
 			}
 
 			// ── Les champs des figures ─────────────────────────────────────
