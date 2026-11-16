@@ -318,6 +318,8 @@ jobs:
 
       - name: Servir WordPress par huit processus PHP, et le faux sDrive
         run: |
+          # Le dossier choisi existe : sur sDrive, le sélecteur n'en propose pas d'autre.
+          mkdir -p '/tmp/sdrive/Revue AM'
           PHP_CLI_SERVER_WORKERS=4 php -S 127.0.0.1:8081 "$GITHUB_WORKSPACE/.github/essais/faux-sdrive.php" > /tmp/faux-sdrive.log 2>&1 &
           cd /tmp/wp
           PHP_CLI_SERVER_WORKERS=8 php -S 127.0.0.1:8080 > /tmp/serveur.log 2>&1 &
