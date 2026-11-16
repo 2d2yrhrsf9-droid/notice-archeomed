@@ -25,6 +25,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-sdrive.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rangement.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-file.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-thesaurus.php';
@@ -667,18 +668,36 @@ class Notice_Archeomed_Pactols {
 		// deviner les proportions, ou à écrire le document deux fois.
 		$erreur  = '';
 		$notices = array();
+		// Les fichiers rangés sur sDrive et effacés d'ici reviennent le temps
+		// de l'assemblage, puis s'effacent quoi qu'il arrive.
+		$temporaires = array();
+		register_shutdown_function( function () use ( &$temporaires ) {
+			Notice_Archeomed_Rangement::effacer_les_temporaires( $temporaires );
+		} );
 		foreach ( $ids as $id ) {
 			$d = $this->saisie_de( $id, false );
 			if ( null === $d ) {
 				continue;
 			}
+			// Tels qu'enregistrés, sans écarter ceux qui manquent : c'est au
+			// paquet de dire qu'un fichier reçu n'est plus là.
+			$illustrations = self::illustrations_rangees( $id );
+			foreach ( $illustrations as $i => $chemin ) {
+				$lu = Notice_Archeomed_Rangement::rapatrier( $id, $chemin, $temporaires );
+				$illustrations[ $i ] = '' !== $lu ? $lu : $chemin;
+			}
+			$conversions = self::conversions_rangees( $id );
+			foreach ( $conversions as $rang => $familles ) {
+				foreach ( (array) $familles as $famille => $chemin ) {
+					$lu = Notice_Archeomed_Rangement::rapatrier( $id, $chemin, $temporaires );
+					$conversions[ $rang ][ $famille ] = '' !== $lu ? $lu : $chemin;
+				}
+			}
 			$notices[] = array(
 				'id'            => $id,
 				'd'             => $d,
-				// Tels qu'enregistrés, sans écarter ceux qui manquent : c'est au
-				// paquet de dire qu'un fichier reçu n'est plus là.
-				'illustrations' => self::illustrations_rangees( $id ),
-				'conversions'   => self::conversions_rangees( $id ),
+				'illustrations' => $illustrations,
+				'conversions'   => $conversions,
 			);
 		}
 
@@ -1730,7 +1749,7 @@ class Notice_Archeomed_Pactols {
 				'type'         => $texte( 'type' ),
 				'nom'          => '' !== $texte( 'fichier_depose' ) ? $texte( 'fichier_depose' )
 					: ( '' !== $fichier ? preg_replace( '/^\d+-notice-archeomed-(garde-)?/', '', basename( $fichier ) ) : '' ),
-				'a_fichier'    => '' !== $fichier && file_exists( $fichier ),
+				'a_fichier'    => Notice_Archeomed_Rangement::present( $id, $fichier ),
 				'autorisation' => ! empty( $autorisations[ $k ] ) || ! empty( $item['autorisation'] ),
 				// Envoyée à part : le formulaire redonne son lien à corriger.
 				'a_part'       => self::figure_a_part( $item ),
@@ -9629,6 +9648,14 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Le Word d'une notice, refait d'après sa saisie pour être rangé sur
+	 * sDrive ; son chemin, ou une chaîne vide. Le rangement l'efface ensuite.
+	 */
+	public function document_a_ranger( $id ) {
+		return $this->refaire_le_document( (int) $id );
+	}
+
+	/**
 	 * Construit le fichier RTF stylé Métopes correspondant à la notice.
 	 * Renvoie le chemin du fichier créé, ou une chaîne vide en cas d'échec
 	 * (l'envoi du courriel se poursuit alors sans la pièce jointe).
@@ -10983,6 +11010,8 @@ class Notice_Archeomed_Pactols {
 		// La tâche des termes se remet en route au passage de la relance, toutes
 		// les cinq minutes, et non à chaque page d'administration.
 		add_action( Notice_Archeomed_File::HOOK_RELANCE, array( $this, 'reveiller_la_file' ), 20, 0 );
+		// Le rangement sur sDrive, après l'envoi.
+		Notice_Archeomed_Rangement::brancher();
 	}
 
 	/**
@@ -11828,9 +11857,14 @@ class Notice_Archeomed_Pactols {
 				. esc_html( sprintf( _n( '%1$d illustration est jointe en version allégée (au plus %2$s pixels sur le plus grand côté), pour la lecture.',
 					'%1$d illustrations sont jointes en version allégée (au plus %2$s pixels sur le plus grand côté), pour la lecture.',
 					$legeres, 'notice-archeomed' ), $legeres, $largeur ) )
-				. ' Les originaux, en pleine définition, sont conservés sur le site — '
-				. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
-				. 'dossier Métopes de la rubrique.</div>';
+				. ( Notice_Archeomed_Rangement::peut_ranger()
+					// Rangés sur sDrive après l'envoi : la fiche les sert encore.
+					? ' Les originaux, en pleine définition, sont rangés sur sDrive dans « '
+						. esc_html( Notice_Archeomed_Rangement::dossier_de( $id ) ) . ' » ; ils se téléchargent aussi depuis la '
+						. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a>.</div>'
+					: ' Les originaux, en pleine définition, sont conservés sur le site — '
+						. '<a href="' . esc_url( $lien ) . '">fiche de la notice</a> — et figurent dans le '
+						. 'dossier Métopes de la rubrique.</div>' );
 		}
 		if ( ! empty( $restees ) ) {
 			$avis .= $this->avis_des_pieces_restees( $restees, $id );
@@ -12007,6 +12041,9 @@ class Notice_Archeomed_Pactols {
 				@unlink( $document );
 				delete_post_meta( $id, '_na_document' );
 			}
+			// Ses fichiers peuvent partir sur sDrive : la rédaction a ce
+			// qu'il lui faut, et le serveur garde les aperçus.
+			Notice_Archeomed_Rangement::programmer( $id );
 			return 'partie';
 		}
 		$this->file()->compter_un_essai( $id, $pourquoi );
@@ -12066,15 +12103,30 @@ class Notice_Archeomed_Pactols {
 		$dossier = $this->dossier_des_illustrations();
 		// Le chemin vient de la base, mais on ne sert que depuis le dossier
 		// prévu : une valeur trafiquée ne doit pas ouvrir le reste du disque.
-		if ( '' === $dossier || 0 !== strpos( $chemin, $dossier ) || ! is_file( $chemin ) ) {
+		if ( '' === $dossier || ! is_string( $chemin ) || 0 !== strpos( $chemin, $dossier ) ) {
 			wp_die( esc_html__( 'Illustration introuvable.', 'notice-archeomed' ) );
 		}
-		$type = wp_check_filetype( $chemin );
+		// Rangée sur sDrive et effacée d'ici : on la rapatrie le temps de la
+		// servir, sous le nom qu'elle a là-bas.
+		$nom         = basename( $chemin );
+		$temporaires = array();
+		if ( ! is_file( $chemin ) ) {
+			$copie  = Notice_Archeomed_Rangement::copie_de( $id, $chemin );
+			$chemin = Notice_Archeomed_Rangement::rapatrier( $id, $chemin, $temporaires );
+			if ( '' === $chemin ) {
+				wp_die( esc_html( null !== $copie
+					? __( 'L’illustration est rangée sur sDrive, qui ne la rend pas pour l’instant. Réessayez plus tard, ou ouvrez-la dans sDrive.', 'notice-archeomed' )
+					: __( 'Illustration introuvable.', 'notice-archeomed' ) ) );
+			}
+			$nom = basename( $copie['distant'] );
+		}
+		$type = wp_check_filetype( $nom );
 		nocache_headers();
 		header( 'Content-Type: ' . ( $type['type'] ? $type['type'] : 'application/octet-stream' ) );
-		header( 'Content-Disposition: attachment; filename="' . rawurlencode( basename( $chemin ) ) . '"' );
+		header( 'Content-Disposition: attachment; filename="' . rawurlencode( $nom ) . '"' );
 		header( 'Content-Length: ' . filesize( $chemin ) );
 		readfile( $chemin );
+		Notice_Archeomed_Rangement::effacer_les_temporaires( $temporaires );
 		exit;
 	}
 
@@ -12628,6 +12680,7 @@ class Notice_Archeomed_Pactols {
 	public static function desactiver() {
 		wp_unschedule_hook( self::HOOK_TERMES );
 		wp_unschedule_hook( self::HOOK_APERCUS );
+		Notice_Archeomed_Rangement::desactiver();
 	}
 
 	/**
@@ -13848,8 +13901,11 @@ class Notice_Archeomed_Pactols {
 			} elseif ( null !== self::figure_a_part( $ancien ) ) {
 				$ancien['a_part'] = $this->a_part_de_la_garde( $k, $ancien['a_part'] );
 			}
+			// Gardée, une figure garde son original, sur le serveur ou rangé
+			// sur sDrive : la table de la notice le retrouve d'une version à
+			// l'autre.
 			$fichier = '' !== $p['remplacant'] ? $p['remplacant']
-				: ( isset( $originaux[ $k - 1 ] ) && file_exists( $originaux[ $k - 1 ] ) ? $originaux[ $k - 1 ] : '' );
+				: ( isset( $originaux[ $k - 1 ] ) && Notice_Archeomed_Rangement::present( $id, $originaux[ $k - 1 ] ) ? $originaux[ $k - 1 ] : '' );
 			if ( '' !== $p['auto'] ) {
 				$auto = $p['auto'];
 			} elseif ( $p['retirer_auto'] ) {

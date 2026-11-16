@@ -33,6 +33,8 @@ foreach ( array(
 	'notice_archeomed_candidats',
 	'na_etat_des_donnees',
 	'na_essais_de_poids',
+	'na_sdrive_etat',
+	'na_sdrive_verrou',
 ) as $option ) {
 	delete_option( $option );
 }

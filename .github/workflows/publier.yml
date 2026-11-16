@@ -290,6 +290,11 @@ jobs:
           wp config set WP_DEBUG_DISPLAY false --raw
           wp config set WP_ENVIRONMENT_TYPE development
           wp config set NA_PROTECTION aucune
+          # Un faux sDrive, servi plus bas : le rangement des figures s'y essaie.
+          wp config set NA_SDRIVE_WEBDAV http://127.0.0.1:8081/remote.php/dav/files/essai/
+          wp config set NA_SDRIVE_IDENTIFIANT essai
+          wp config set NA_SDRIVE_MOT_DE_PASSE essai
+          wp config set NA_SDRIVE_DOSSIER 'Revue AM'
           wp core install --url=http://127.0.0.1:8080 --title=Essai \
             --admin_user=essai --admin_password=essai-jetable \
             --admin_email=essai@example.org --skip-email
@@ -306,16 +311,18 @@ jobs:
           PHP
           wp plugin activate notice-archeomed
           wp option update notice_archeomed_options \
-            '{"destinataires":[{"email":"redaction@example.org","notices":1,"recap":0}],"pactols_serveur":"non","mode_envoi":"differe"}' --format=json
+            '{"destinataires":[{"email":"redaction@example.org","notices":1,"recap":0}],"pactols_serveur":"non","mode_envoi":"differe","numero":"AM99"}' --format=json
           ID=$(wp post create --post_type=page --post_status=publish \
             --post_title=Formulaire --post_content='[notice_archeomed_pactols]' --porcelain)
           echo "NA_PAGE_ID=$ID" >> "$GITHUB_ENV"
 
-      - name: Servir WordPress par huit processus PHP
+      - name: Servir WordPress par huit processus PHP, et le faux sDrive
         run: |
+          PHP_CLI_SERVER_WORKERS=4 php -S 127.0.0.1:8081 "$GITHUB_WORKSPACE/.github/essais/faux-sdrive.php" > /tmp/faux-sdrive.log 2>&1 &
           cd /tmp/wp
           PHP_CLI_SERVER_WORKERS=8 php -S 127.0.0.1:8080 > /tmp/serveur.log 2>&1 &
           sleep 3
+          wp eval 'echo "sDrive : " . ( "" === Notice_Archeomed_Sdrive::joignable() ? "joignable" : Notice_Archeomed_Sdrive::joignable() ) . "\n";'
           curl -fsS "http://127.0.0.1:8080/?page_id=$NA_PAGE_ID" -o /tmp/page.html
           grep -q 'id="na-form"' /tmp/page.html
 
@@ -349,6 +356,17 @@ jobs:
           set -o pipefail
           NA_N=25 NA_COURRIELS=/tmp/courriels.log wp eval-file "$GITHUB_WORKSPACE/.github/essais/charge-verification.php" | tee /tmp/verification.log
           echo "::notice::$(tr '\n' ' ' < /tmp/verification.log)"
+
+      - name: Trois passages du rangement sur sDrive se disputent les notices
+        working-directory: /tmp/wp
+        run: bash "$GITHUB_WORKSPACE/.github/essais/ranger" premier
+
+      - name: Tout est sur sDrive, le serveur ne garde que les aperçus
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement.log
+          echo "::notice::$(head -1 /tmp/rangement.log)"
 
       - name: Les notices telles qu'elles sont avant correction
         working-directory: /tmp/wp
@@ -394,6 +412,17 @@ jobs:
             wp eval-file "$GITHUB_WORKSPACE/.github/essais/corrections-verification.php" | tee /tmp/corrections-verification.log
           echo "::notice::$(head -1 /tmp/corrections-verification.log)"
 
+      - name: Les versions corrigées rejoignent sDrive
+        working-directory: /tmp/wp
+        run: bash "$GITHUB_WORKSPACE/.github/essais/ranger" second
+
+      - name: La figure gardée reste rangée, la version 2 s'ajoute à la première
+        working-directory: /tmp/wp
+        run: |
+          set -o pipefail
+          NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement-2.log
+          echo "::notice::$(head -1 /tmp/rangement-2.log)"
+
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
         working-directory: /tmp/wp
@@ -405,6 +434,9 @@ jobs:
           wp cron event list --format=table | head -40 || true
           echo "— premier passage du planificateur :"
           head -c 1200 /tmp/cron-1-1.log | tr '\n' ' ' || true
+          echo "— rangement sur sDrive :"
+          wp option get na_sdrive_etat --format=json || true
+          tail -n 8 /tmp/sdrive.log 2>/dev/null || true
           echo "— journal de WordPress :"
           tail -n 40 /tmp/wp/wp-content/debug.log 2>/dev/null || true
           ) 2>&1 | python3 -c 'import sys; [print("::error::" + l.rstrip("\n")[:600]) for l in sys.stdin if l.strip()]'
@@ -412,7 +444,7 @@ jobs:
       - name: Aucune erreur fatale
         if: always()
         run: |
-          for f in /tmp/serveur.log /tmp/wp/wp-content/debug.log; do
+          for f in /tmp/serveur.log /tmp/faux-sdrive.log /tmp/wp/wp-content/debug.log; do
             [ -f "$f" ] || continue
             if grep -qE "PHP (Fatal|Parse) error|Allowed memory size" "$f"; then
               echo "::error::Erreur fatale dans $f"

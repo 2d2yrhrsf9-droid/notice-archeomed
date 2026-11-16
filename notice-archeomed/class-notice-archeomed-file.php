@@ -1111,9 +1111,12 @@ class Notice_Archeomed_File {
 		}
 
 		$poids = 0;
+		// Ce qui est rangé sur sDrive, effacé du serveur : la notice sait où.
+		$ailleurs = 0;
 		echo '<ul style="margin:0">';
 		foreach ( $gardees as $rang => $chemin ) {
-			if ( ! file_exists( $chemin ) ) {
+			$copie = file_exists( $chemin ) ? null : Notice_Archeomed_Rangement::copie_de( $post->ID, $chemin );
+			if ( ! file_exists( $chemin ) && null === $copie ) {
 				echo '<li>' . esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . ' — <em>'
 					. esc_html__( 'fichier introuvable sur le serveur', 'notice-archeomed' ) . '</em></li>';
 				continue;
@@ -1131,10 +1134,15 @@ class Notice_Archeomed_File {
 					. ( ! empty( $a_part['jusqua'] ) ? ' <span class="description">' . esc_html( sprintf(
 						/* translators: %s : date d'expiration du lien. */
 						__( '(valable jusqu’au %s)', 'notice-archeomed' ), Notice_Archeomed_Pactols::date_en_lettres( $a_part['jusqua'] ) ) ) . '</span>' : '' )
-					. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids ) . '</li>';
+					. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids, $ailleurs ) . '</li>';
 				continue;
 			}
-			$poids += (int) filesize( $chemin );
+			$taille = null !== $copie ? (int) $copie['taille'] : (int) filesize( $chemin );
+			if ( null !== $copie ) {
+				$ailleurs += $taille;
+			} else {
+				$poids += $taille;
+			}
 			$url = wp_nonce_url(
 				add_query_arg(
 					array( 'action' => 'na_illustration', 'post' => (int) $post->ID,
@@ -1151,9 +1159,9 @@ class Notice_Archeomed_File {
 				. esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) ) . '</a>'
 				. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
 				. ' <span class="description">('
-				. esc_html( size_format( filesize( $chemin ) ) ) . ')</span>'
+				. esc_html( size_format( $taille ) . ( null !== $copie ? ', sur sDrive' : '' ) ) . ')</span>'
 				. ( '' !== $nature ? ' <span class="description">— ' . esc_html( Notice_Archeomed_Controles::TYPES_DE_FIGURE[ $nature ] ) . '</span>' : '' )
-				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids )
+				. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids, $ailleurs )
 				// Le texte alternatif, que les notices d'avant ce champ n'ont
 				// pas : leur titre en tient lieu.
 				. '<br><span class="description">' . esc_html( '' !== $alt
@@ -1163,23 +1171,43 @@ class Notice_Archeomed_File {
 					. nl2br( esc_html( $description ) ) . '</span>' : '' ) . '</li>';
 		}
 		echo '</ul>';
-		echo '<p class="description">' . esc_html( sprintf(
-			/* translators: %s : poids total, déjà mis en forme. */
-			__( '%s sur le serveur. Supprimer la notice les efface aussi.', 'notice-archeomed' ),
-			size_format( $poids ) ) ) . '</p>';
+		if ( $poids > 0 || 0 === $ailleurs ) {
+			echo '<p class="description">' . esc_html( sprintf(
+				/* translators: %s : poids total, déjà mis en forme. */
+				__( '%s sur le serveur. Supprimer la notice les efface aussi.', 'notice-archeomed' ),
+				size_format( $poids ) ) ) . '</p>';
+		}
+		if ( $ailleurs > 0 ) {
+			echo '<p class="description">' . esc_html( sprintf(
+				/* translators: 1 : poids, déjà mis en forme ; 2 : dossier sur sDrive. */
+				__( '%1$s rangés sur sDrive, dans « %2$s », avec le Word de chaque version. Supprimer la notice ne les y efface pas.', 'notice-archeomed' ),
+				size_format( $ailleurs ), (string) get_post_meta( $post->ID, '_na_sdrive_dossier', true ) ) ) . '</p>';
+		}
+		// Un rangement qui échoue laisse les fichiers ici ; on dit pourquoi.
+		$refus = (string) get_post_meta( $post->ID, '_na_sdrive_raison', true );
+		if ( '' !== $refus ) {
+			echo '<p class="description">' . esc_html( sprintf(
+				/* translators: %s : raison donnée par sDrive. */
+				__( 'Rangement sur sDrive pas encore fait : %s. Les fichiers restent sur le serveur.', 'notice-archeomed' ), $refus ) ) . '</p>';
+		}
 	}
 
 	/**
 	 * Le lien vers l'autorisation de reproduction d'une figure, s'il y en a
 	 * une. Son poids s'ajoute à celui des illustrations.
 	 */
-	private function lien_de_l_autorisation( $id, $figure, &$poids ) {
+	private function lien_de_l_autorisation( $id, $figure, &$poids, &$ailleurs ) {
 		$autorisations = (array) get_post_meta( $id, '_na_autorisations', true );
 		if ( empty( $autorisations[ $figure ] ) || ! is_string( $autorisations[ $figure ] )
-			|| ! file_exists( $autorisations[ $figure ] ) ) {
+			|| ! Notice_Archeomed_Rangement::present( $id, $autorisations[ $figure ] ) ) {
 			return '';
 		}
-		$poids += (int) filesize( $autorisations[ $figure ] );
+		if ( file_exists( $autorisations[ $figure ] ) ) {
+			$poids += (int) filesize( $autorisations[ $figure ] );
+		} else {
+			$copie     = Notice_Archeomed_Rangement::copie_de( $id, $autorisations[ $figure ] );
+			$ailleurs += (int) $copie['taille'];
+		}
 		$url = wp_nonce_url(
 			add_query_arg(
 				array( 'action' => 'na_illustration', 'post' => (int) $id,

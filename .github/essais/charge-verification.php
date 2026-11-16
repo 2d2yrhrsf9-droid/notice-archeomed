@@ -37,13 +37,18 @@ if ( array( 'envoyee' => $attendu ) !== $etats ) {
 	$echecs[] = 'Toutes les notices ne sont pas « envoyee » : ' . wp_json_encode( $etats );
 }
 
+// Un fichier rangé sur sDrive peut avoir quitté le serveur : il compte.
+$garde = function ( $id, $chemin ) {
+	return Notice_Archeomed_Rangement::present( $id, $chemin );
+};
+
 // Le TIFF de la figure 2, que le serveur de l'essai ne sait pas lire : chaque
 // notice doit avoir gardé les deux JPEG du navigateur, et en avoir tiré l'aperçu.
 $sans_conversion = array();
 $sans_apercu     = array();
 foreach ( $ids as $id ) {
 	$conv = get_post_meta( $id, '_na_conversions', true );
-	if ( ! is_array( $conv ) || empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] ) || ! is_file( $conv[2]['hr'] ) || ! is_file( $conv[2]['br'] ) ) {
+	if ( ! is_array( $conv ) || empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] ) || ! $garde( $id, $conv[2]['hr'] ) || ! $garde( $id, $conv[2]['br'] ) ) {
 		$sans_conversion[] = $id;
 	}
 	$apercus = get_post_meta( $id, '_na_apercus', true );

@@ -11,7 +11,8 @@
  * Après : la correction doit avoir récrit chaque notice, non en avoir fait
  * une autre. Même nombre de notices, même référence, une version de plus
  * exactement — les corrections disputées n'en ont fait passer qu'une —,
- * le lieu-dit corrigé, la figure 1 gardée telle quelle, la figure 2
+ * le lieu-dit corrigé, la figure 1 gardée telle quelle — sur le serveur ou
+ * rangée sur sDrive —, la figure 2
  * remplacée et ses anciens fichiers effacés, la figure 3 ajoutée — ou
  * gardée avec son lien quand elle était envoyée à part —, toutes avec leur
  * aperçu sauf celle-là ; la notice repartie une seule fois vers la rédaction,
@@ -124,7 +125,7 @@ foreach ( $notes as $id => $avant ) {
 		}
 	}
 	foreach ( $fichiers as $i => $chemin ) {
-		if ( ! is_file( $chemin ) ) {
+		if ( ! Notice_Archeomed_Rangement::present( $id, $chemin ) ) {
 			$fautes( $id, 'le fichier de la figure ' . ( $i + 1 ) . ' manque.' );
 		}
 		if ( ! Notice_Archeomed_Pactols::est_a_part( $chemin ) && ( empty( $apercus[ $i + 1 ] ) || ! is_file( $apercus[ $i + 1 ] ) ) ) {
@@ -140,7 +141,8 @@ foreach ( $notes as $id => $avant ) {
 	if ( 'tif' !== strtolower( pathinfo( $fichiers[1], PATHINFO_EXTENSION ) ) || $fichiers[1] === $avant['illustrations'][1] ) {
 		$fautes( $id, 'la figure 2 n’a pas été remplacée.' );
 	}
-	if ( empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] ) || ! is_file( $conv[2]['hr'] ) || ! is_file( $conv[2]['br'] ) ) {
+	if ( empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] )
+		|| ! Notice_Archeomed_Rangement::present( $id, $conv[2]['hr'] ) || ! Notice_Archeomed_Rangement::present( $id, $conv[2]['br'] ) ) {
 		$fautes( $id, 'le TIFF de remplacement n’a pas gardé ses JPEG convertis.' );
 	}
 	// La figure 3 envoyée à part est restée telle quelle : même témoin, même
@@ -156,7 +158,8 @@ foreach ( $notes as $id => $avant ) {
 	} elseif ( 0 !== strpos( (string) $items[2]['titre'], 'Figure ajoutée' ) ) {
 		$fautes( $id, 'la figure ajoutée n’est pas la troisième (« ' . $items[2]['titre'] . ' »).' );
 	}
-	// Ce que la notice ne désigne plus a quitté le serveur.
+	// Ce que la notice ne désigne plus a quitté le serveur. Sa copie sur
+	// sDrive reste : les versions s'y gardent.
 	$anciens = array( $avant['illustrations'][1] );
 	foreach ( array( 'hr', 'br' ) as $famille ) {
 		if ( ! empty( $avant['conversions'][2][ $famille ] ) ) {

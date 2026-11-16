@@ -203,6 +203,191 @@ class Notice_Archeomed_Sdrive {
 			: 'Dossier enregistré : « ' . $propre . ' ».' );
 	}
 
+	/**
+	 * Le site peut-il ranger ? Relié, et un dossier choisi : la racine du
+	 * compte mêlerait les notices aux fichiers personnels de qui a relié.
+	 */
+	public static function pret() {
+		$acces = self::acces();
+		return null !== $acces && '' !== trim( $acces['dossier'], "/ \t" );
+	}
+
+	/**
+	 * L'adresse d'un chemin pris sous le dossier choisi, segment par segment :
+	 * espaces et accents doivent passer dans l'adresse.
+	 */
+	private static function adresse( $acces, $relatif ) {
+		$segments = array_merge(
+			array_filter( explode( '/', (string) $acces['dossier'] ), 'strlen' ),
+			array_filter( explode( '/', (string) $relatif ), 'strlen' ) );
+		return trailingslashit( $acces['webdav'] ) . implode( '/', array_map( 'rawurlencode', $segments ) );
+	}
+
+	/**
+	 * Une requête WebDAV sous le dossier choisi. Rend le code HTTP — zéro
+	 * quand rien n'a répondu — et la réponse, pour qui veut la lire.
+	 */
+	private static function requete( $methode, $relatif, $options = array() ) {
+		if ( ! self::pret() ) {
+			return array( 0, new WP_Error( 'na_sdrive', 'sDrive n’est pas relié, ou aucun dossier n’est choisi.' ) );
+		}
+		$acces   = self::acces();
+		$entetes = isset( $options['headers'] ) ? (array) $options['headers'] : array();
+		$options = array_merge( array( 'timeout' => 30 ), $options, array( 'method' => $methode ) );
+		$options['headers'] = array( 'Authorization' => 'Basic ' . base64_encode( $acces['compte'] . ':' . $acces['mot_de_passe'] ) ) + $entetes;
+		$reponse = wp_remote_request( self::adresse( $acces, $relatif ), $options );
+		return array( is_wp_error( $reponse ) ? 0 : (int) wp_remote_retrieve_response_code( $reponse ), $reponse );
+	}
+
+	/**
+	 * Le dossier choisi répond-il ? Une raison, vide s'il répond : un sDrive
+	 * en panne ou une liaison révoquée ne sont la faute d'aucune notice.
+	 */
+	public static function joignable() {
+		list( $code, $reponse ) = self::requete( 'PROPFIND', '', array( 'headers' => array( 'Depth' => '0' ) ) );
+		return 207 === $code ? '' : self::pourquoi( $code, $reponse );
+	}
+
+	/** Ce qu'une requête refusée laisse dire : le code, ou l'erreur du transport. */
+	private static function pourquoi( $code, $reponse ) {
+		return is_wp_error( $reponse ) ? $reponse->get_error_message() : 'code HTTP ' . (int) $code;
+	}
+
+	/**
+	 * Crée un dossier et ceux qui le précèdent. Un dossier qui existe déjà
+	 * répond 405 : ce n'est pas un refus.
+	 */
+	public static function creer_le_dossier( $relatif ) {
+		list( $code ) = self::requete( 'PROPFIND', $relatif, array( 'headers' => array( 'Depth' => '0' ) ) );
+		if ( 207 === $code ) {
+			return '';
+		}
+		$chemin = '';
+		foreach ( array_filter( explode( '/', (string) $relatif ), 'strlen' ) as $segment ) {
+			$chemin .= ( '' === $chemin ? '' : '/' ) . $segment;
+			list( $code, $reponse ) = self::requete( 'MKCOL', $chemin );
+			if ( ! in_array( $code, array( 201, 405 ), true ) ) {
+				return 'le dossier « ' . $chemin . ' » ne se crée pas (' . self::pourquoi( $code, $reponse ) . ')';
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Dépose un fichier, puis relit sa taille chez sDrive : un dépôt n'est
+	 * acquis que vérifié, et c'est sur cette vérification qu'on effacera la
+	 * copie du serveur. Rend une raison, vide si tout va bien.
+	 */
+	public static function deposer( $local, $relatif ) {
+		if ( ! is_readable( $local ) ) {
+			return 'fichier introuvable sur le serveur';
+		}
+		$taille = (int) filesize( $local );
+		$corps  = file_get_contents( $local );
+		if ( false === $corps || strlen( $corps ) !== $taille ) {
+			return 'fichier illisible sur le serveur';
+		}
+		list( $code, $reponse ) = self::requete( 'PUT', $relatif, array(
+			'timeout' => 90,
+			'body'    => $corps,
+			'headers' => array( 'Content-Type' => 'application/octet-stream', 'OC-Checksum' => 'SHA1:' . sha1( $corps ) ),
+		) );
+		unset( $corps );
+		if ( ! in_array( $code, array( 200, 201, 204 ), true ) ) {
+			return 'dépôt refusé (' . self::pourquoi( $code, $reponse ) . ')';
+		}
+		$lue = self::taille( $relatif );
+		return $lue === $taille ? '' : 'dépôt incomplet : ' . $lue . ' octets chez sDrive pour ' . $taille . ' ici';
+	}
+
+	/** Écrit un petit fichier de texte, celui des figures à déposer. */
+	public static function ecrire( $texte, $relatif ) {
+		list( $code, $reponse ) = self::requete( 'PUT', $relatif, array(
+			'body'    => (string) $texte,
+			'headers' => array( 'Content-Type' => 'text/plain; charset=utf-8' ),
+		) );
+		return in_array( $code, array( 200, 201, 204 ), true ) ? '' : 'écriture refusée (' . self::pourquoi( $code, $reponse ) . ')';
+	}
+
+	/** La taille d'un fichier chez sDrive ; -1 s'il n'y est pas. */
+	public static function taille( $relatif ) {
+		list( $code, $reponse ) = self::requete( 'PROPFIND', $relatif, array(
+			'headers' => array( 'Depth' => '0', 'Content-Type' => 'application/xml; charset=utf-8' ),
+			'body'    => '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getcontentlength/></d:prop></d:propfind>',
+		) );
+		if ( 207 !== $code || ! preg_match( '#<(?:[a-z0-9]+:)?getcontentlength>\s*(\d+)\s*</#i', wp_remote_retrieve_body( $reponse ), $m ) ) {
+			return -1;
+		}
+		return (int) $m[1];
+	}
+
+	/**
+	 * Ce que contient un dossier : chaque entrée avec son nom, sa nature et
+	 * sa taille. Null s'il ne se lit pas ; vide s'il n'existe pas.
+	 */
+	public static function lister( $relatif ) {
+		list( $code, $reponse ) = self::requete( 'PROPFIND', untrailingslashit( (string) $relatif ) . '/', array(
+			'headers' => array( 'Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8' ),
+			'body'    => '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/></d:prop></d:propfind>',
+		) );
+		if ( 404 === $code ) {
+			return array();
+		}
+		if ( 207 !== $code ) {
+			return null;
+		}
+		$entrees = array();
+		$blocs   = preg_split( '#<(?:[a-z0-9]+:)?response[\s>]#i', wp_remote_retrieve_body( $reponse ) );
+		array_shift( $blocs );
+		// La première réponse est le dossier lui-même.
+		array_shift( $blocs );
+		foreach ( $blocs as $bloc ) {
+			if ( ! preg_match( '#<(?:[a-z0-9]+:)?href>([^<]+)</#i', $bloc, $h ) ) {
+				continue;
+			}
+			$nom = rawurldecode( basename( untrailingslashit( html_entity_decode( $h[1], ENT_QUOTES | ENT_XML1, 'UTF-8' ) ) ) );
+			$taille = preg_match( '#<(?:[a-z0-9]+:)?getcontentlength>\s*(\d+)\s*</#i', $bloc, $t ) ? (int) $t[1] : 0;
+			$entrees[] = array(
+				'nom'     => $nom,
+				'dossier' => (bool) preg_match( '#<(?:[a-z0-9]+:)?collection\s*/?>#i', $bloc ),
+				'taille'  => $taille,
+			);
+		}
+		return $entrees;
+	}
+
+	/**
+	 * Rapatrie un fichier de sDrive dans un fichier du serveur, sans le
+	 * tenir en mémoire. Rend une raison, vide si tout va bien.
+	 */
+	public static function telecharger( $relatif, $local ) {
+		list( $code, $reponse ) = self::requete( 'GET', $relatif, array(
+			'timeout'  => 90,
+			'stream'   => true,
+			'filename' => $local,
+		) );
+		if ( 200 !== $code ) {
+			@unlink( $local );
+			return 'lecture refusée (' . self::pourquoi( $code, $reponse ) . ')';
+		}
+		clearstatcache( true, $local );
+		$annonce = (int) wp_remote_retrieve_header( $reponse, 'content-length' );
+		if ( ! is_file( $local ) || ( $annonce > 0 && (int) filesize( $local ) !== $annonce ) ) {
+			@unlink( $local );
+			return 'lecture incomplète';
+		}
+		return '';
+	}
+
+	/**
+	 * Efface chez sDrive : le fichier part dans la corbeille du compte, d'où
+	 * il se restaure trente jours. Un fichier absent n'est pas un refus.
+	 */
+	public static function effacer( $relatif ) {
+		list( $code, $reponse ) = self::requete( 'DELETE', $relatif );
+		return in_array( $code, array( 204, 404 ), true ) ? '' : 'effacement refusé (' . self::pourquoi( $code, $reponse ) . ')';
+	}
+
 	/** Révoque chez sDrive le mot de passe de la liaison ; faux si rien n'est confirmé. */
 	private static function revoquer() {
 		$lien = self::liaison();
