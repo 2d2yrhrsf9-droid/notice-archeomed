@@ -210,6 +210,14 @@ class Notice_Archeomed_Paquet {
 				// ne décale pas les suivants, qui garderaient sinon le nom et
 				// la légende de la figure d'avant.
 				++$n;
+				// Une figure envoyée à part n'a sur le site qu'un fichier
+				// témoin : rien à réduire. Elle garde son rang, le document
+				// pose à sa place le cadre rouge, et le lisez-moi la donne à
+				// reprendre avec de quoi la retrouver.
+				if ( class_exists( 'Notice_Archeomed_Pactols' ) && Notice_Archeomed_Pactols::est_a_part( $source ) ) {
+					$this->journal[] = $this->figure_a_reprendre( $d, $n );
+					continue;
+				}
 				if ( ! file_exists( $source ) ) {
 					// Un fichier reçu puis perdu — effacé du serveur, purgé —
 					// s'écartait sans un mot : le lisez-moi disait alors qu'il
@@ -237,6 +245,31 @@ class Notice_Archeomed_Paquet {
 			$plan[ $rang_notice ] = $figures;
 		}
 		return $plan;
+	}
+
+	/**
+	 * La ligne du lisez-moi d'une figure envoyée à part : la notice, le
+	 * numéro de la figure, le fichier dans l'envoi et le lien.
+	 */
+	private function figure_a_reprendre( $d, $n ) {
+		$a_part = null;
+		foreach ( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() as $item ) {
+			if ( isset( $item['rang'] ) && (int) $item['rang'] === (int) $n ) {
+				$a_part = Notice_Archeomed_Pactols::figure_a_part( $item );
+				break;
+			}
+		}
+		$ligne = ( isset( $d['commune'] ) ? $d['commune'] : 'Notice' )
+			. ( ! empty( $d['reference'] ) ? ' (réf. ' . $d['reference'] . ')' : '' )
+			. ' : ' . Notice_Archeomed_Normes::numero_de_figure( $n )
+			. ' envoyée à part par l’auteur, à reprendre d’après l’original';
+		if ( ! empty( $a_part['fichier'] ) ) {
+			$ligne .= ' (« ' . $a_part['fichier'] . ' »)';
+		}
+		if ( ! empty( $a_part['lien'] ) ) {
+			$ligne .= ' — ' . $a_part['lien'];
+		}
+		return $ligne . '.';
 	}
 
 	/**

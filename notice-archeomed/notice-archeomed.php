@@ -295,6 +295,11 @@ class Notice_Archeomed_Pactols {
 	);
 	/** Les scripts du formulaire, mis de côté pour le pied de page. */
 	private $scripts_du_pied = array();
+	/**
+	 * Les figures envoyées à part de ce dépôt, par leur place dans la liste
+	 * des figures (0 pour la première) : lien, date, nom du fichier.
+	 */
+	private $figures_a_part = array();
 
 	public function __construct() {
 		add_shortcode( 'notice_archeomed_pactols', array( $this, 'afficher_le_formulaire' ) );
@@ -928,6 +933,12 @@ class Notice_Archeomed_Pactols {
 					$h .= '<img src="' . esc_attr( $item['figure']['fichier'] ) . '" alt="'
 						. esc_attr( Notice_Archeomed_Controles::texte_alternatif( $item ) ) . '"'
 						. ( empty( $description ) ? '' : ' aria-describedby="' . esc_attr( $id_description ) . '"' ) . '>';
+				} elseif ( null !== self::figure_a_part( $item ) ) {
+					$a_part = self::figure_a_part( $item );
+					$h     .= '<p class="absente">Figure envoyée à part par l’auteur, à reprendre d’après l’original'
+						. ( ! empty( $a_part['fichier'] ) ? ' (« ' . esc_html( $a_part['fichier'] ) . ' »)' : '' )
+						. ( ! empty( $a_part['lien'] ) ? ' : <a href="' . esc_url( $a_part['lien'] ) . '">' . esc_html( $a_part['lien'] ) . '</a>' : '' )
+						. '.</p>';
 				} else {
 					$h .= '<p class="absente">Pas de basse définition pour cette figure.</p>';
 				}
@@ -1296,7 +1307,8 @@ class Notice_Archeomed_Pactols {
 				array_map( 'strval', array_slice( wp_unslash( $_POST['nature'] ), 0, 30 ) ) );
 		}
 		foreach ( array( 'commune', 'commune_ark', 'organisme',
-			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type' ) as $champ ) {
+			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type',
+			'illus_source', 'illus_lien', 'illus_jusqua', 'illus_nom_envoi' ) as $champ ) {
 			if ( isset( $_POST[ $champ ] ) && is_array( $_POST[ $champ ] ) ) {
 				// Au plus dix éléments, de 5 000 caractères : un formulaire
 				// n'en porte jamais autant.
@@ -1370,7 +1382,8 @@ class Notice_Archeomed_Pactols {
 		if ( ! is_array( $avant ) || empty( $avant['illus_titre'] ) || ! is_array( $avant['illus_titre'] ) ) {
 			return $garde;
 		}
-		$champs = array( 'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type', 'illus_nom', 'illus_autorisation' );
+		$champs = array( 'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type', 'illus_nom', 'illus_autorisation',
+			'illus_source', 'illus_lien', 'illus_jusqua', 'illus_nom_envoi' );
 		$postes = isset( $garde['illus_titre'] ) ? count( $garde['illus_titre'] ) : 0;
 		$noms   = isset( $garde['illus_nom'] ) ? array_filter( array_map( 'strval', (array) $garde['illus_nom'] ) ) : array();
 		foreach ( $champs as $champ ) {
@@ -1719,6 +1732,8 @@ class Notice_Archeomed_Pactols {
 					: ( '' !== $fichier ? preg_replace( '/^\d+-notice-archeomed-(garde-)?/', '', basename( $fichier ) ) : '' ),
 				'a_fichier'    => '' !== $fichier && file_exists( $fichier ),
 				'autorisation' => ! empty( $autorisations[ $k ] ) || ! empty( $item['autorisation'] ),
+				// Envoyée à part : le formulaire redonne son lien à corriger.
+				'a_part'       => self::figure_a_part( $item ),
 			);
 		}
 		return $gardees;
@@ -1818,6 +1833,30 @@ class Notice_Archeomed_Pactols {
 		}
 		$garde['gardees'] = $gardees;
 		return $garde;
+	}
+
+	/**
+	 * Le lien, la date et le nom du fichier d'une figure gardée envoyée à
+	 * part, tels que le formulaire les renvoie : un lien éteint se remplace
+	 * sans retirer la figure. Un champ absent garde ce que la notice disait.
+	 */
+	private function a_part_de_la_garde( $k, $a_part ) {
+		$a_part = is_array( $a_part ) ? $a_part : array();
+		$a_part = array_merge( array( 'lien' => '', 'jusqua' => '', 'fichier' => '' ), $a_part );
+		$lien   = $this->garde_postee( 'lien', $k );
+		if ( null !== $lien ) {
+			$a_part['lien'] = esc_url_raw( $this->limit_string( trim( $lien ), 500 ), array( 'http', 'https' ) );
+		}
+		$date = $this->garde_postee( 'jusqua', $k );
+		if ( null !== $date ) {
+			$date             = trim( $date );
+			$a_part['jusqua'] = self::date_valide( $date ) ? $date : '';
+		}
+		$nom = $this->garde_postee( 'nom_envoi', $k );
+		if ( null !== $nom ) {
+			$a_part['fichier'] = sanitize_text_field( $this->limit_string( trim( $nom ), 255 ) );
+		}
+		return $a_part;
 	}
 
 	/**
@@ -2242,14 +2281,20 @@ class Notice_Archeomed_Pactols {
 			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
 			// Les champs d'une figure ne sont dans la page qu'une fois son
 			// fichier choisi : le lien y mène quand il existe.
+			'illus_lien_1'        => array( 'na-illus-1-lien', 'Collez le lien de téléchargement de la figure 1, envoyée à part' ),
+			'illus_jusqua_1'      => array( 'na-illus-1-jusqua', 'Indiquez jusqu’à quelle date le lien de la figure 1 reste valable (aujourd’hui ou plus tard)' ),
 			'illus_titre_1'       => array( 'na-illus-1-titre', 'Donnez un titre à la figure 1' ),
 			'illus_credits_1'     => array( 'na-illus-1-credits', 'Indiquez les crédits de la figure 1, son auteur et le détenteur des droits' ),
 			'illus_type_1'        => array( 'na-illus-1-type', 'Choisissez la nature de la figure 1' ),
 			'illus_alt_1'         => array( 'na-illus-1-alt', 'Décrivez en quelques mots ce que montre la figure 1, pour un public empêché de voir' ),
+			'illus_lien_2'        => array( 'na-illus-2-lien', 'Collez le lien de téléchargement de la figure 2, envoyée à part' ),
+			'illus_jusqua_2'      => array( 'na-illus-2-jusqua', 'Indiquez jusqu’à quelle date le lien de la figure 2 reste valable (aujourd’hui ou plus tard)' ),
 			'illus_titre_2'       => array( 'na-illus-2-titre', 'Donnez un titre à la figure 2' ),
 			'illus_credits_2'     => array( 'na-illus-2-credits', 'Indiquez les crédits de la figure 2, son auteur et le détenteur des droits' ),
 			'illus_type_2'        => array( 'na-illus-2-type', 'Choisissez la nature de la figure 2' ),
 			'illus_alt_2'         => array( 'na-illus-2-alt', 'Décrivez en quelques mots ce que montre la figure 2, pour un public empêché de voir' ),
+			'illus_lien_3'        => array( 'na-illus-3-lien', 'Collez le lien de téléchargement de la figure 3, envoyée à part' ),
+			'illus_jusqua_3'      => array( 'na-illus-3-jusqua', 'Indiquez jusqu’à quelle date le lien de la figure 3 reste valable (aujourd’hui ou plus tard)' ),
 			'illus_titre_3'       => array( 'na-illus-3-titre', 'Donnez un titre à la figure 3' ),
 			'illus_credits_3'     => array( 'na-illus-3-credits', 'Indiquez les crédits de la figure 3, son auteur et le détenteur des droits' ),
 			'illus_type_3'        => array( 'na-illus-3-type', 'Choisissez la nature de la figure 3' ),
@@ -2264,12 +2309,14 @@ class Notice_Archeomed_Pactols {
 		$gardees = array();
 		for ( $k = 1; $k <= self::MAX_FILES; $k++ ) {
 			$gardees[ 'garde_fichier_' . $k ] = array( 'na-garde-' . $k . '-fichier', 'Choisissez le nouveau fichier de la figure déjà déposée ' . $k . ", ou cochez «\u{00A0}La garder\u{00A0}»" );
+			$gardees[ 'garde_lien_' . $k ]    = array( 'na-garde-' . $k . '-lien', 'Collez le lien de téléchargement de la figure déjà déposée ' . $k . ', envoyée à part' );
+			$gardees[ 'garde_jusqua_' . $k ]  = array( 'na-garde-' . $k . '-jusqua', 'Indiquez jusqu’à quelle date le lien de la figure déjà déposée ' . $k . ' reste valable' );
 			$gardees[ 'garde_titre_' . $k ]   = array( 'na-garde-' . $k . '-titre', 'Donnez un titre à la figure déjà déposée ' . $k );
 			$gardees[ 'garde_credits_' . $k ] = array( 'na-garde-' . $k . '-credits', 'Indiquez les crédits de la figure déjà déposée ' . $k . ', son auteur et le détenteur des droits' );
 			$gardees[ 'garde_type_' . $k ]    = array( 'na-garde-' . $k . '-type', 'Choisissez la nature de la figure déjà déposée ' . $k );
 			$gardees[ 'garde_alt_' . $k ]     = array( 'na-garde-' . $k . '-alt', 'Décrivez en quelques mots ce que montre la figure déjà déposée ' . $k . ', pour un public empêché de voir' );
 		}
-		$avant = array_search( 'illus_titre_1', array_keys( $table ), true );
+		$avant = array_search( 'illus_lien_1', array_keys( $table ), true );
 		return array_slice( $table, 0, $avant, true ) + $gardees + array_slice( $table, $avant, null, true );
 	}
 
@@ -2911,6 +2958,8 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-illus-champs label { margin: 0; font-size: var(--na-t-s); }
 			.na-form#na-form .na-illus-champs .na-help { margin: 0 0 var(--na-e1); }
 			.na-form#na-form .na-illus-champs .na-compteur { margin: var(--na-e1) 0 0; }
+			/* La figure envoyée à part n'a pas de vignette : un filet tient sa place. */
+			.na-form#na-form .na-illus-a-part { border-left: 3px solid var(--na-accent); padding-left: var(--na-e3); }
 			.na-form#na-form .na-exemples { max-width: var(--na-mesure); margin: 0 0 var(--na-e1); font-size: var(--na-t-s); line-height: 1.5; color: var(--na-sourd); }
 			.na-form#na-form .na-exemples summary { cursor: pointer; font-weight: 600; color: var(--na-encre); }
 			.na-form#na-form .na-exemples p { margin: var(--na-e1) 0 0; }
@@ -3415,8 +3464,9 @@ class Notice_Archeomed_Pactols {
 						?>
 					<li class="na-illus-carte na-garde<?php echo $retiree ? ' na-garde-retiree' : ''; ?>" id="<?php echo esc_attr( $base ); ?>" data-k="<?php echo esc_attr( $k ); ?>">
 						<fieldset class="na-illus">
-							<legend><span class="na-garde-numero">Figure <?php echo (int) $n + 1; ?></span> <span class="na-illus-fichier">— <?php echo esc_html( '' !== $texte( 'nom' ) ? $texte( 'nom' ) : 'fichier sans nom' ); ?> (déjà déposée)</span></legend>
-							<?php if ( empty( $g['a_fichier'] ) ) : ?>
+							<?php $a_part = ! empty( $g['a_part'] ) && is_array( $g['a_part'] ) ? array_merge( array( 'lien' => '', 'jusqua' => '', 'fichier' => '' ), $g['a_part'] ) : null; ?>
+							<legend><span class="na-garde-numero">Figure <?php echo (int) $n + 1; ?></span> <span class="na-illus-fichier">— <?php echo null !== $a_part ? 'envoyée à part' : esc_html( '' !== $texte( 'nom' ) ? $texte( 'nom' ) : 'fichier sans nom' ); ?> (déjà déposée)</span></legend>
+							<?php if ( empty( $g['a_fichier'] ) && null === $a_part ) : ?>
 								<p class="na-help na-garde-absente">Le fichier de cette figure n’est plus sur le serveur&nbsp;: remplacez-le, ou retirez la figure.</p>
 							<?php endif; ?>
 							<div class="na-garde-actions" role="radiogroup" aria-label="Que faire de cette figure">
@@ -3432,6 +3482,28 @@ class Notice_Archeomed_Pactols {
 								<p class="na-help" id="<?php echo esc_attr( $base . '-fichier-aide' ); ?>">En JPEG, TIFF ou PDF. Les textes ci-dessous restent ceux de la figure&nbsp;: corrigez-les s’il le faut.</p>
 								<input type="file" id="<?php echo esc_attr( $base . '-fichier' ); ?>" name="garde_fichier_<?php echo esc_attr( $k ); ?>" accept=".jpg,.jpeg,.tiff,.tif,.pdf" aria-describedby="<?php echo esc_attr( $base . '-fichier-aide' ); ?>">
 							</div>
+							<?php if ( null !== $a_part ) : ?>
+							<?php
+							// Le lien d'un envoi s'éteint : l'auteur le renouvelle ici
+							// sans retirer la figure. Pas de date minimale : la rédaction
+							// a pu télécharger l'original avant l'échéance passée.
+							?>
+							<div class="na-illus-champs na-illus-a-part na-garde-a-part" id="<?php echo esc_attr( $base . '-a-part' ); ?>">
+								<p class="na-illus-partie">Le fichier envoyé à part</p>
+								<div>
+									<label for="<?php echo esc_attr( $base . '-lien' ); ?>">Lien de téléchargement <span class="na-requis" aria-hidden="true">*</span></label>
+									<input type="text" inputmode="url" id="<?php echo esc_attr( $base . '-lien' ); ?>" name="garde_lien[<?php echo esc_attr( $k ); ?>]" autocomplete="off" spellcheck="false" autocapitalize="off" value="<?php echo esc_attr( $a_part['lien'] ); ?>">
+								</div>
+								<div>
+									<label for="<?php echo esc_attr( $base . '-jusqua' ); ?>">Lien valable jusqu’au <span class="na-requis" aria-hidden="true">*</span></label>
+									<input type="date" id="<?php echo esc_attr( $base . '-jusqua' ); ?>" name="garde_jusqua[<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( $a_part['jusqua'] ); ?>">
+								</div>
+								<div>
+									<label for="<?php echo esc_attr( $base . '-nom-envoi' ); ?>">Nom du fichier dans l’envoi <span class="na-facultatif">(facultatif)</span></label>
+									<input type="text" id="<?php echo esc_attr( $base . '-nom-envoi' ); ?>" name="garde_nom_envoi[<?php echo esc_attr( $k ); ?>]" autocomplete="off" spellcheck="false" value="<?php echo esc_attr( $a_part['fichier'] ); ?>">
+								</div>
+							</div>
+							<?php endif; ?>
 							<div class="na-illus-champs na-garde-champs">
 								<p class="na-illus-partie">Pour la publication</p>
 								<div>
@@ -3486,12 +3558,25 @@ class Notice_Archeomed_Pactols {
 				<ul class="na-filelist" id="na-filelist"></ul>
 				<button type="button" class="na-ajout na-ajout-figure" id="na-ajout-figure" aria-describedby="na-illus-aide" hidden><span aria-hidden="true">+</span> Ajouter une figure</button>
 
-				<?php $originaux_remplis = '' !== $this->repris( 'originaux_lien' ) || '' !== $this->repris( 'originaux_jusqua' ); ?>
-				<details class="na-originaux" id="na-originaux-details"<?php echo $originaux_remplis ? ' open' : ''; ?>>
+				<?php
+				$originaux_remplis = '' !== $this->repris( 'originaux_lien' ) || '' !== $this->repris( 'originaux_jusqua' );
+				// Une figure envoyée à part revenue d'un refus : le bloc s'ouvre,
+				// pour qu'on en voie le bouton.
+				$a_part_repris = isset( $reprise['illus_source'] ) && in_array( 'a_part', (array) $reprise['illus_source'], true );
+				?>
+				<details class="na-originaux" id="na-originaux-details"<?php echo ( $originaux_remplis || $a_part_repris ) ? ' open' : ''; ?>>
 					<summary>Un fichier est trop lourd, ou d’un autre format (AI, EPS)&nbsp;?</summary>
+					<p class="na-help" id="na-a-part-aide">Déposez l’original sur un service de transfert (FileSender de RENATER, espace de votre établissement), puis ajoutez une figure envoyée à part&nbsp;: vous y collerez le lien de téléchargement et remplirez ses textes comme pour les autres figures. Elle compte parmi les trois. Un fichier AI ou EPS peut aussi s’enregistrer en PDF et se joindre ci-dessus.</p>
+					<button type="button" class="na-ajout na-ajout-figure" id="na-ajout-a-part" aria-describedby="na-a-part-aide"><span aria-hidden="true">+</span> Ajouter une figure envoyée à part</button>
+					<?php
+					// Le lien unique d'avant les figures envoyées à part : il ne
+					// reparaît que pour une notice qui en portait un, afin que sa
+					// correction ne le perde pas.
+					if ( $originaux_remplis ) :
+						?>
 					<div class="na-champ">
 						<label for="na-originaux">Lien vers les originaux <span class="na-facultatif">(facultatif)</span></label>
-						<p class="na-help" id="na-originaux-aide">Joignez ci-dessus des versions allégées, déposez les originaux sur un service de transfert (FileSender de RENATER, espace de votre établissement), puis collez ici le lien de téléchargement. Pour un fichier AI ou EPS, enregistrez-le en PDF, joignez ce PDF ci-dessus et déposez l’original sur le service de transfert.</p>
+						<p class="na-help" id="na-originaux-aide">Le lien donné lors du dépôt précédent, pour l’ensemble des originaux. Videz-le si chaque figure a désormais le sien.</p>
 						<input type="text" inputmode="url" id="na-originaux" name="originaux_lien" autocomplete="off"
 							spellcheck="false" autocapitalize="off" aria-describedby="na-originaux-aide"
 							value="<?php echo esc_attr( $this->repris( 'originaux_lien' ) ); ?>">
@@ -3503,6 +3588,7 @@ class Notice_Archeomed_Pactols {
 							min="<?php echo esc_attr( wp_date( 'Y-m-d' ) ); ?>"
 							value="<?php echo esc_attr( $this->repris( 'originaux_jusqua' ) ); ?>">
 					</div>
+					<?php endif; ?>
 				</details>
 			</section>
 
@@ -4904,7 +4990,9 @@ class Notice_Archeomed_Pactols {
 			function refreshFileInput() {
 				try {
 					var dt = new DataTransfer();
-					selected.forEach(function (f) { dt.items.add(f); });
+					// Une figure envoyée à part n'a pas de fichier : elle a sa
+					// carte, non sa place dans le champ.
+					selected.forEach(function (f) { if (!f.aPart) { dt.items.add(f); } });
 					fileInput.files = dt.files;
 				} catch (e) {}
 				poserLesConversions();
@@ -5196,6 +5284,7 @@ class Notice_Archeomed_Pactols {
 					fichier: document.getElementById(base + '-fichier'),
 					auto: document.getElementById(base + '-autorisation'),
 					remplacement: document.getElementById(base + '-remplacement'),
+					aPart: document.getElementById(base + '-a-part'),
 					champs: li.querySelector('.na-garde-champs'),
 					numero: li.querySelector('.na-garde-numero')
 				};
@@ -5231,6 +5320,7 @@ class Notice_Archeomed_Pactols {
 					var a = actionDe(g);
 					g.li.classList.toggle('na-garde-retiree', a === 'retirer');
 					g.remplacement.hidden = a !== 'remplacer';
+					if (g.aPart) { g.aPart.hidden = a !== 'garder'; }
 					g.champs.hidden = a === 'retirer';
 					g.numero.textContent = a === 'retirer' ? 'Figure retirée' : 'Figure ' + (++n);
 					poserLaConversionGardee(g);
@@ -5312,6 +5402,20 @@ class Notice_Archeomed_Pactols {
 				[].forEach.call(g.champs.querySelectorAll('input[type="text"], textarea, select'), function (c) {
 					c.addEventListener(c.tagName === 'SELECT' ? 'change' : 'input', marquerModifie);
 				});
+				if (g.aPart) {
+					[].forEach.call(g.aPart.querySelectorAll('input'), function (c) {
+						c.addEventListener(c.type === 'date' ? 'change' : 'input', function () {
+							marquerModifie();
+							if (typeof reverifier === 'function') { reverifier('garde_lien_' + g.k); reverifier('garde_jusqua_' + g.k); }
+						});
+						if (c.id === 'na-garde-' + g.k + '-lien') {
+							c.addEventListener('blur', function () {
+								normaliserUneAdresse(c);
+								if (typeof reverifier === 'function') { reverifier('garde_lien_' + g.k); }
+							});
+						}
+					});
+				}
 			});
 			majGardees();
 			// Ce que l'auteur a écrit sur chaque illustration, gardé à part des
@@ -5345,10 +5449,44 @@ class Notice_Archeomed_Pactols {
 						'autoAvant' => ! empty( $reprise['illus_autorisation'][ $i ] ),
 						'numero'  => $i + 1,
 					);
+					// La figure envoyée à part revient comme une carte : elle
+					// n'a pas de fichier à attendre.
+					if ( isset( $reprise['illus_source'][ $i ] ) && 'a_part' === $reprise['illus_source'][ $i ] ) {
+						$j = count( $garde_illus ) - 1;
+						$garde_illus[ $j ]['aPart']    = true;
+						$garde_illus[ $j ]['nom']      = '';
+						$garde_illus[ $j ]['lien']     = isset( $reprise['illus_lien'][ $i ] ) ? (string) $reprise['illus_lien'][ $i ] : '';
+						$garde_illus[ $j ]['jusqua']   = isset( $reprise['illus_jusqua'][ $i ] ) ? (string) $reprise['illus_jusqua'][ $i ] : '';
+						$garde_illus[ $j ]['nomEnvoi'] = isset( $reprise['illus_nom_envoi'][ $i ] ) ? (string) $reprise['illus_nom_envoi'][ $i ] : '';
+					}
 				}
 				echo wp_json_encode( $garde_illus, JSON_HEX_TAG | JSON_HEX_AMP );
-			?>.filter(function (m) { return m && (m.nom || aDuTexte(m)); });
+			?>.filter(function (m) { return m && (m.aPart || m.nom || aDuTexte(m)); });
 			function aDuTexte(m) { return !!m && !(vide(m.titre) && vide(m.legende) && vide(m.credits) && vide(m.alt) && vide(m.description)); }
+			// Une figure envoyée à part : une carte sans fichier, qui tient sa
+			// place parmi les autres — même numéro, mêmes textes, même rang dans
+			// le maximum de trois — et porte le lien où la rédaction ira la
+			// chercher. Ses textes voyagent avec elle.
+			function figureAPart(m) {
+				m = m || {};
+				m.aPart = true;
+				m.nom = '';
+				return { aPart: true, name: '', size: 0, type: '', meta: m };
+			}
+			function nomDeCarte(f) { return f.aPart ? 'envoyée à part' : f.name; }
+			// Revenues d'un refus ou d'un brouillon, les figures envoyées à part
+			// reprennent leur carte aussitôt, dans l'ordre de leur numéro : elles
+			// n'ont pas de fichier à attendre.
+			function reprendreLesFiguresAPart(liste) {
+				var reste = [];
+				liste.filter(function (m) { return m && m.aPart; })
+					.sort(function (a, b) { return (a.numero || 99) - (b.numero || 99); })
+					.forEach(function (m) {
+						if (decalage() + selected.length < MAX_FILES) { selected.push(figureAPart(m)); }
+					});
+				liste.forEach(function (m) { if (m && !m.aPart) { reste.push(m); } });
+				return reste;
+			}
 			// L'autorisation choisie pour une figure retirée la suit dans
 			// l'attente, hors du brouillon : un champ de fichier ne se
 			// photographie pas.
@@ -5364,11 +5502,21 @@ class Notice_Archeomed_Pactols {
 				var neuf = [];
 				selected.forEach(function (f, i) {
 					var j = -1, k;
-					for (k = 0; k < libres.length && j === -1; k++) {
-						if (libres[k] && libres[k].nom === f.name) { j = k; }
+					// Une figure envoyée à part porte ses textes avec elle : un
+					// fichier sans nom ne doit pas les lui prendre.
+					if (f.aPart) {
+						j = libres.indexOf(f.meta);
+						if (j !== -1) { libres.splice(j, 1); }
+						if (!f.meta.numero) { f.meta.numero = decalage() + i + 1; }
+						if (aUneAutorisation(f.meta.auto) && !illusAuto[i]) { illusAuto[i] = f.meta.auto; }
+						neuf[i] = f.meta;
+						return;
 					}
 					for (k = 0; k < libres.length && j === -1; k++) {
-						if (libres[k] && !libres[k].nom && aDuTexte(libres[k])) { j = k; }
+						if (libres[k] && !libres[k].aPart && libres[k].nom === f.name) { j = k; }
+					}
+					for (k = 0; k < libres.length && j === -1; k++) {
+						if (libres[k] && !libres[k].aPart && !libres[k].nom && aDuTexte(libres[k])) { j = k; }
 					}
 					var m = j === -1 ? {} : libres.splice(j, 1)[0];
 					m.nom = f.name;
@@ -5376,7 +5524,7 @@ class Notice_Archeomed_Pactols {
 					if (aUneAutorisation(m.auto) && !illusAuto[i]) { illusAuto[i] = m.auto; }
 					neuf[i] = m;
 				});
-				orphelins = libres.filter(function (m) { return m && (m.nom || aDuTexte(m)); });
+				orphelins = libres.filter(function (m) { return m && !m.aPart && (m.nom || aDuTexte(m)); });
 				illusMeta = neuf;
 				dessinerLAttente();
 			}
@@ -5646,6 +5794,7 @@ class Notice_Archeomed_Pactols {
 				fileList.innerHTML = '';
 				cartes = [];
 				selected.forEach(function (f, idx) {
+					if (f.aPart) { illusMeta[idx] = f.meta; }
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx].nom = f.name;
 					if (!illusMeta[idx].numero) { illusMeta[idx].numero = decalage() + idx + 1; }
@@ -5658,7 +5807,7 @@ class Notice_Archeomed_Pactols {
 					leg.textContent = 'Figure ' + num + ' ';
 					var nom = document.createElement('span');
 					nom.className = 'na-illus-fichier';
-					nom.textContent = '— ' + f.name + ' (' + mo(f.size) + ')';
+					nom.textContent = f.aPart ? '— envoyée à part' : '— ' + f.name + ' (' + mo(f.size) + ')';
 					leg.appendChild(nom);
 					function boutonDeCarte(classe, mot, action) {
 						var b = document.createElement('button');
@@ -5667,7 +5816,7 @@ class Notice_Archeomed_Pactols {
 						b.textContent = mot;
 						var sr = document.createElement('span');
 						sr.className = 'na-sr';
-						sr.textContent = ' la figure ' + num + ' (' + f.name + ')';
+						sr.textContent = ' la figure ' + num + ' (' + nomDeCarte(f) + ')';
 						b.appendChild(sr);
 						b.addEventListener('click', action);
 						return b;
@@ -5679,8 +5828,9 @@ class Notice_Archeomed_Pactols {
 						// Ce qui était écrit sur la figure attend son fichier, comme
 						// à une reprise : rajouté, il le retrouve. Titre, légende,
 						// crédits et autorisation se perdaient, et la figure
-						// revenait vide.
-						if (parti && (aDuTexte(parti) || aUneAutorisation(auto))) {
+						// revenait vide. Une figure envoyée à part n'a pas de
+						// fichier à attendre : elle part avec ses textes.
+						if (!f.aPart && parti && (aDuTexte(parti) || aUneAutorisation(auto))) {
 							if (aUneAutorisation(auto)) { attacherLAutorisation(parti, auto); }
 							orphelins.push(parti);
 							dessinerLAttente();
@@ -5729,7 +5879,7 @@ class Notice_Archeomed_Pactols {
 							try {
 								e.dataTransfer.effectAllowed = 'move';
 								e.dataTransfer.setData(FIGURE_GLISSEE, String(idx));
-								e.dataTransfer.setData('text/plain', f.name);
+								e.dataTransfer.setData('text/plain', nomDeCarte(f));
 								if (e.dataTransfer.setDragImage) { e.dataTransfer.setDragImage(groupe, 24, 24); }
 							} catch (x) {}
 						});
@@ -5761,7 +5911,10 @@ class Notice_Archeomed_Pactols {
 					// Une vignette, pour qu'on sache de quelle image on écrit la
 					// légende : « Figure 1 », c'est ce que le texte cite. Un TIFF ne
 					// s'affiche pas dans un navigateur ; il garde son seul nom.
-					if (/^image\/(jpeg|png)$/.test(f.type) && window.URL && URL.createObjectURL) {
+					if (f.aPart) {
+						groupe.appendChild(champsDeLEnvoi(f, idx));
+					}
+					else if (/^image\/(jpeg|png)$/.test(f.type) && window.URL && URL.createObjectURL) {
 						if (!etat.vignette) { etat.vignette = URL.createObjectURL(f); }
 						var im = document.createElement('img');
 						im.src = etat.vignette;
@@ -5826,6 +5979,13 @@ class Notice_Archeomed_Pactols {
 					conseils.hidden = true;
 					groupe.appendChild(champs);
 					groupe.appendChild(conseils);
+					// Chaque carte dit d'où vient sa figure ; les listes du lien,
+					// de la date et du nom restent ainsi alignées sur les cartes,
+					// vides pour un fichier joint.
+					groupe.appendChild(champCache('illus_source[]', f.aPart ? 'a_part' : 'fichier'));
+					if (!f.aPart) {
+						['illus_lien[]', 'illus_jusqua[]', 'illus_nom_envoi[]'].forEach(function (n) { groupe.appendChild(champCache(n, '')); });
+					}
 					// L'avis « rien n'est dit » paraissait dès le choix du fichier,
 					// avant qu'on ait pu écrire un mot : il attend qu'on ait quitté
 					// la carte.
@@ -5852,8 +6012,87 @@ class Notice_Archeomed_Pactols {
 				}
 				// Pour la figure suivante, on n'a plus à remonter jusqu'à la zone
 				// de dépôt : le même sélecteur, qui ajoute sans rien remplacer.
-				ajoutFigure.hidden = !(selected.length > 0 && decalage() + selected.length < MAX_FILES);
+				ajoutFigure.hidden = !(selected.some(function (f) { return !f.aPart; }) && decalage() + selected.length < MAX_FILES);
+				if (ajoutAPart) { ajoutAPart.hidden = decalage() + selected.length >= MAX_FILES; }
 				majNumeros();
+			}
+			function champCache(nom, valeur) {
+				var c = document.createElement('input');
+				c.type = 'hidden';
+				c.name = nom;
+				c.value = valeur;
+				return c;
+			}
+			function aujourdhuiISO() {
+				var j = new Date();
+				return j.getFullYear() + '-' + ('0' + (j.getMonth() + 1)).slice(-2) + '-' + ('0' + j.getDate()).slice(-2);
+			}
+			// Le lien de l'envoi, la date où il s'éteint, le nom du fichier
+			// dedans : de quoi télécharger l'original, à la place de l'aperçu.
+			function champsDeLEnvoi(f, idx) {
+				var m = f.meta, bloc = document.createElement('div');
+				bloc.className = 'na-illus-champs na-illus-a-part';
+				var partie = document.createElement('p');
+				partie.className = 'na-illus-partie';
+				partie.textContent = 'Le fichier envoyé à part';
+				bloc.appendChild(partie);
+				var dit = document.createElement('p');
+				dit.className = 'na-help';
+				dit.textContent = 'Pas de fichier ici' + NBSP + ': la rédaction téléchargera l’original par ce lien, avant la date indiquée. '
+					+ 'Il n’y a pas d’aperçu' + NBSP + ': la figure sera placée d’après l’original.';
+				bloc.appendChild(dit);
+				[
+					['lien', 'lien', 'Lien de téléchargement', true, 'Le lien que le service de transfert vous a donné, par exemple https://filesender.renater.fr/…'],
+					['jusqua', 'jusqua', 'Lien valable jusqu’au', true, 'La date à laquelle le service effacera le fichier' + NBSP + ': la rédaction le télécharge avant.'],
+					['nom-envoi', 'nomEnvoi', 'Nom du fichier dans l’envoi', false, 'Si l’envoi contient plusieurs fichiers' + NBSP + ': celui de cette figure.']
+				].forEach(function (d) {
+					var id = 'na-illus-' + (idx + 1) + '-' + d[0];
+					var div = document.createElement('div');
+					var etiquette = document.createElement('label');
+					etiquette.htmlFor = id;
+					etiquette.innerHTML = d[2] + (d[3] ? ' <span class="na-requis" aria-hidden="true">*</span>' : ' <span class="na-facultatif">(facultatif)</span>');
+					var aide = document.createElement('p');
+					aide.className = 'na-help';
+					aide.id = id + '-aide';
+					aide.textContent = d[4];
+					var champ = document.createElement('input');
+					champ.id = id;
+					champ.name = { lien: 'illus_lien[]', jusqua: 'illus_jusqua[]', nomEnvoi: 'illus_nom_envoi[]' }[d[1]];
+					if (d[1] === 'jusqua') {
+						champ.type = 'date';
+						champ.min = aujourdhuiISO();
+					} else {
+						champ.type = 'text';
+						champ.setAttribute('autocomplete', 'off');
+						champ.setAttribute('spellcheck', 'false');
+						champ.setAttribute('autocapitalize', 'off');
+						if (d[1] === 'lien') { champ.setAttribute('inputmode', 'url'); }
+					}
+					if (d[3]) { champ.required = true; }
+					champ.value = typeof m[d[1]] === 'string' ? m[d[1]] : '';
+					champ.setAttribute('aria-describedby', aide.id);
+					champ.addEventListener(d[1] === 'jusqua' ? 'change' : 'input', function () {
+						m[d[1]] = champ.value;
+						marquerModifie();
+						if (typeof reverifier === 'function' && d[1] !== 'nomEnvoi') { reverifier('illus_' + d[1] + '_' + (idx + 1)); }
+					});
+					// Un lien copié sans « https:// » : on l'ajoute, comme pour
+					// le lien du rapport.
+					if (d[1] === 'lien') {
+						champ.addEventListener('blur', function () {
+							normaliserUneAdresse(champ);
+							if (m.lien !== champ.value) {
+								m.lien = champ.value;
+								if (typeof reverifier === 'function') { reverifier('illus_lien_' + (idx + 1)); }
+							}
+						});
+					}
+					div.appendChild(etiquette);
+					div.appendChild(aide);
+					div.appendChild(champ);
+					bloc.appendChild(div);
+				});
+				return bloc;
 			}
 			// La carte qu'on glisse ; le même rang voyage aussi dans les données
 			// du glisser, que certains navigateurs livrent après « dragend ».
@@ -5864,6 +6103,30 @@ class Notice_Archeomed_Pactols {
 			}
 			var ajoutFigure = document.getElementById('na-ajout-figure');
 			ajoutFigure.addEventListener('click', function () { fileInput.click(); });
+			// Un fichier trop lourd : la figure est envoyée à part, et sa carte
+			// prend place dans la liste. La suivante reprend le lien et la date
+			// de la précédente — d'ordinaire, un seul envoi les porte toutes.
+			var ajoutAPart = document.getElementById('na-ajout-a-part');
+			if (ajoutAPart) {
+				ajoutAPart.addEventListener('click', function () {
+					if (decalage() + selected.length >= MAX_FILES) {
+						refuses.textContent = 'Trois figures au plus en tout' + NBSP + ': retirez une figure avant d’en ajouter une.';
+						return;
+					}
+					var avant = null;
+					selected.forEach(function (f) { if (f.aPart) { avant = f.meta; } });
+					selected.push(figureAPart({ lien: avant && avant.lien ? avant.lien : '', jusqua: avant && avant.jusqua ? avant.jusqua : '' }));
+					rattacher();
+					refreshFileInput();
+					refuses.textContent = '';
+					marquerModifie();
+					majConseilsDuTexte();
+					var rang = selected.length;
+					annoncer('Figure ' + (decalage() + rang) + ' ajoutée, envoyée à part' + NBSP + ': donnez son lien et ses textes.');
+					var cible = el('na-illus-' + rang + (avant && avant.lien ? '-nom-envoi' : '-lien'));
+					if (cible) { cible.focus(); }
+				});
+			}
 			// Le fichier, ses textes et son autorisation changent de place
 			// ensemble : les trois listes restent alignées, et le champ de
 			// fichiers suit le même ordre que les champs « illus_*[] ».
@@ -5896,7 +6159,7 @@ class Notice_Archeomed_Pactols {
 				selected.forEach(function (f, i) {
 					var m = illusMeta[i];
 					if (m && m.numero && m.numero !== decalage() + i + 1) {
-						changes.push(f.name + ', qui était la fig.' + NBSP + m.numero + ', est maintenant la fig.' + NBSP + (decalage() + i + 1));
+						changes.push((f.aPart ? 'La figure envoyée à part' : f.name) + ', qui était la fig.' + NBSP + m.numero + ', est maintenant la fig.' + NBSP + (decalage() + i + 1));
 					}
 				});
 				montrerConseils(zoneNumeros, changes.length ? [{
@@ -6038,7 +6301,7 @@ class Notice_Archeomed_Pactols {
 				// obligatoires, que la vérification de l'envoi signale.
 				var ecoute = separerEcoute(m.alt);
 				var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description, type: m.type };
-				avisDAccessibilite(lu, rang, e.vus, f.name).forEach(function (phrase) { liste.push(phrase); });
+				avisDAccessibilite(lu, rang, e.vus, f.aPart ? (m.nomEnvoi || '') : f.name).forEach(function (phrase) { liste.push(phrase); });
 				montrerConseils(c.zone, liste, [c.titre, c.alt, c.description, c.legende, c.credits, c.type]);
 			}
 			fileInput.addEventListener('change', function () {
@@ -6079,6 +6342,24 @@ class Notice_Archeomed_Pactols {
 					selected = selected.slice(0, selected.length - ajoutes.length).concat(ranges);
 					ajoutes = ranges;
 				}
+				// Une figure envoyée à part a repris sa carte dès le retour ; le
+				// fichier redéposé qui la précédait reprend sa place devant elle,
+				// et les numéros que le texte cite tiennent.
+				if (selected.some(function (f) { return f.aPart; })) {
+					ajoutes.forEach(function (f) {
+						var n = 0, k, de = selected.indexOf(f), vers = -1;
+						for (k = 0; k < orphelins.length && !n; k++) {
+							if (orphelins[k] && orphelins[k].nom === f.name) { n = orphelins[k].numero || 0; }
+						}
+						for (k = 0; n && k < de && vers === -1; k++) {
+							if (selected[k].aPart && selected[k].meta.numero > n) { vers = k; }
+						}
+						if (vers === -1) { return; }
+						while (illusAuto.length < selected.length) { illusAuto.push(undefined); }
+						selected.splice(vers, 0, selected.splice(de, 1)[0]);
+						illusAuto.splice(vers, 0, illusAuto.splice(de, 1)[0]);
+					});
+				}
 				rattacher();
 				refreshFileInput();
 				refuses.textContent = refused.join(' ');
@@ -6096,6 +6377,8 @@ class Notice_Archeomed_Pactols {
 			});
 			['dragenter', 'dragover'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.add('na-survol'); }); });
 			['dragleave', 'drop'].forEach(function (t) { zone.addEventListener(t, function () { zone.classList.remove('na-survol'); }); });
+			orphelins = reprendreLesFiguresAPart(orphelins);
+			if (selected.length) { rattacher(); refreshFileInput(); }
 			dessinerLAttente();
 
 			// ── La définition des images ───────────────────────────────────
@@ -6892,6 +7175,21 @@ class Notice_Archeomed_Pactols {
 				var c = el('na-illus-' + rang + '-' + clef);
 				return !c || rang > selected.length || !vide(c.value);
 			}
+			// Le lien et la date d'une figure envoyée à part : sans eux, la
+			// rédaction ne saurait où ni jusqu'à quand la télécharger.
+			function lienValable(v) { return /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(String(v || '').trim()); }
+			function envoiDeFigureDonne(rang, clef) {
+				var f = selected[rang - 1], c = el('na-illus-' + rang + '-' + clef);
+				if (!f || !f.aPart || !c) { return true; }
+				return clef === 'lien' ? lienValable(c.value)
+					: /^\d{4}-\d{2}-\d{2}$/.test(c.value) && c.value >= aujourdhuiISO();
+			}
+			for (var rangEnvoi = 1; rangEnvoi <= MAX_FILES; rangEnvoi++) {
+				(function (rang) {
+					CONTROLES['illus_lien_' + rang] = function () { return envoiDeFigureDonne(rang, 'lien'); };
+					CONTROLES['illus_jusqua_' + rang] = function () { return envoiDeFigureDonne(rang, 'jusqua'); };
+				}(rangEnvoi));
+			}
 			// Les figures déjà déposées : mêmes champs obligatoires, sauf pour
 			// celle qu'on retire.
 			gardees.forEach(function (g) {
@@ -6905,6 +7203,16 @@ class Notice_Archeomed_Pactols {
 						return !c || actionDe(g) === 'retirer' || !vide(c.value);
 					};
 				});
+				// Gardée telle quelle, la figure envoyée à part garde son lien
+				// et sa date ; remplacée par un fichier, elle n'en a plus besoin.
+				CONTROLES['garde_lien_' + g.k] = function () {
+					var c = el('na-garde-' + g.k + '-lien');
+					return !c || actionDe(g) !== 'garder' || lienValable(c.value);
+				};
+				CONTROLES['garde_jusqua_' + g.k] = function () {
+					var c = el('na-garde-' + g.k + '-jusqua');
+					return !c || actionDe(g) !== 'garder' || /^\d{4}-\d{2}-\d{2}$/.test(c.value);
+				};
 			});
 			function cibleDe(cle) {
 				if (cle === 'nature') { return el('na-nature'); }
@@ -6927,10 +7235,10 @@ class Notice_Archeomed_Pactols {
 				if (cle === 'resp_email' && resultat === 'forme') { return CHAMPS.email_forme[1]; }
 				// La figure se nomme aussi par son fichier : le numéro suit
 				// l'ordre, qu'on a pu changer.
-				var rang = /^illus_(?:titre|credits|alt|type)_(\d)$/.exec(cle);
+				var rang = /^illus_(?:titre|credits|alt|type|lien|jusqua)_(\d)$/.exec(cle);
 				if (rang && selected[rang[1] - 1]) {
 					// Après des figures déjà déposées, le numéro est celui de la page.
-					return CHAMPS[cle][1].replace(/figure \d/, 'figure ' + (decalage() + Number(rang[1]))) + ' (' + selected[rang[1] - 1].name + ')';
+					return CHAMPS[cle][1].replace(/figure \d/, 'figure ' + (decalage() + Number(rang[1]))) + ' (' + nomDeCarte(selected[rang[1] - 1]) + ')';
 				}
 				return CHAMPS[cle][1];
 			}
@@ -7077,7 +7385,7 @@ class Notice_Archeomed_Pactols {
 				selected.forEach(function (f, idx) {
 					var m = illusMeta[idx] || {}, ecoute = separerEcoute(m.alt);
 					var lu = { titre: m.titre, legende: m.legende, credits: m.credits, alt: ecoute.alt, description: ecoute.description, type: m.type };
-					avisDAccessibilite(lu, decalage() + idx + 1, tous, f.name, AVIS_BLOQUANTS_A11Y).forEach(function (t) {
+					avisDAccessibilite(lu, decalage() + idx + 1, tous, f.aPart ? (m.nomEnvoi || '') : f.name, AVIS_BLOQUANTS_A11Y).forEach(function (t) {
 						liste.push({ message: t, id: 'na-illus-' + (idx + 1) + '-alt' });
 					});
 				});
@@ -7229,9 +7537,9 @@ class Notice_Archeomed_Pactols {
 				// Les textes des figures attendent leur fichier : ils s'y
 				// rattacheront par son nom, dans quelque ordre qu'on les redépose.
 				if (Array.isArray(b.illus)) {
-					orphelins = orphelins.concat(b.illus.filter(function (m) { return m && (m.nom || aDuTexte(m)); }));
+					orphelins = orphelins.concat(reprendreLesFiguresAPart(b.illus.filter(function (m) { return m && (m.aPart || m.nom || aDuTexte(m)); })));
 					rattacher();
-					renderFileList();
+					refreshFileInput();
 				}
 				categories.forEach(function (c) { c.relire(); });
 				suivreLaMatiere();
@@ -8166,6 +8474,11 @@ class Notice_Archeomed_Pactols {
 				&& is_string( $_FILES['illustrations']['name'][ $i ] ) && UPLOAD_ERR_NO_FILE !== (int) $_FILES['illustrations']['error'][ $i ] ) {
 				$item['fichier_depose'] = sanitize_text_field( $_FILES['illustrations']['name'][ $i ] );
 			}
+			// La figure envoyée à part : son lien, sa date d'expiration et le
+			// nom du fichier dans l'envoi la suivent partout.
+			if ( isset( $this->figures_a_part[ $i ] ) ) {
+				$item['a_part'] = $this->figures_a_part[ $i ];
+			}
 			// L'autorisation de reproduction jointe à cette figure, s'il y en a
 			// une : le document le signale à la rédaction.
 			$item['autorisation'] = isset( $_FILES['illus_autorisation']['error'][ $i ] )
@@ -8407,18 +8720,132 @@ class Notice_Archeomed_Pactols {
 		return $rendu;
 	}
 
-	/** Le nombre de fichiers réellement joints au formulaire. */
+	/**
+	 * Le nombre de figures réellement déposées : les fichiers joints au
+	 * formulaire, et les figures envoyées à part.
+	 */
 	private function fichiers_deposes() {
+		$n = count( $this->figures_a_part );
 		if ( empty( $_FILES['illustrations']['error'] ) || ! is_array( $_FILES['illustrations']['error'] ) ) {
-			return 0;
+			return $n;
 		}
-		$n = 0;
 		foreach ( $_FILES['illustrations']['error'] as $erreur ) {
 			if ( UPLOAD_ERR_NO_FILE !== (int) $erreur ) {
 				$n++;
 			}
 		}
 		return $n;
+	}
+
+	/**
+	 * Range les figures envoyées à part parmi les fichiers déposés.
+	 *
+	 * Une figure trop lourde pour le formulaire part par un service de
+	 * transfert : sa carte n'a pas de fichier. Le champ « illustrations[] »
+	 * ne porte que les fichiers, quand tout le reste — légendes,
+	 * autorisations, conversions, le Word, le courriel, le paquet — tient
+	 * que la figure de rang N a le N-ième fichier. On insère donc, à la
+	 * place de chaque figure à part, une entrée vide : le rang ne bouge pas,
+	 * et la réception y pose un fichier témoin.
+	 *
+	 * « illus_source[] » dit, carte par carte, « fichier » ou « a_part ». Un
+	 * formulaire d'avant ce champ ne l'envoie pas : rien ne change.
+	 */
+	private function ranger_les_figures_a_part() {
+		$this->figures_a_part = array();
+		if ( ! isset( $_POST['illus_source'] ) || ! is_array( $_POST['illus_source'] ) ) {
+			return;
+		}
+		$sources = array_slice( array_values( wp_unslash( $_POST['illus_source'] ) ), 0, self::MAX_FILES + 1 );
+		if ( ! in_array( 'a_part', $sources, true ) ) {
+			return;
+		}
+		$liens   = isset( $_POST['illus_lien'] ) && is_array( $_POST['illus_lien'] ) ? array_values( wp_unslash( $_POST['illus_lien'] ) ) : array();
+		$dates   = isset( $_POST['illus_jusqua'] ) && is_array( $_POST['illus_jusqua'] ) ? array_values( wp_unslash( $_POST['illus_jusqua'] ) ) : array();
+		$noms    = isset( $_POST['illus_nom_envoi'] ) && is_array( $_POST['illus_nom_envoi'] ) ? array_values( wp_unslash( $_POST['illus_nom_envoi'] ) ) : array();
+		$champs  = array( 'name', 'type', 'tmp_name', 'error', 'size' );
+		$fichiers = isset( $_FILES['illustrations'] ) && is_array( $_FILES['illustrations'] ) ? $_FILES['illustrations'] : array();
+		// Posté sans les crochets, le champ n'est pas un tableau : la
+		// réception le refusera, on n'y touche pas.
+		if ( isset( $fichiers['name'] ) && ! is_array( $fichiers['name'] ) ) {
+			return;
+		}
+		$reels = array();
+		foreach ( isset( $fichiers['error'] ) ? (array) $fichiers['error'] : array() as $i => $erreur ) {
+			if ( UPLOAD_ERR_NO_FILE !== (int) $erreur ) {
+				$reels[] = $i;
+			}
+		}
+		$vide    = array( 'name' => '', 'type' => '', 'tmp_name' => '', 'error' => UPLOAD_ERR_NO_FILE, 'size' => 0 );
+		$range   = array_fill_keys( $champs, array() );
+		$ajouter = function ( $i ) use ( &$range, $champs, $fichiers, $vide ) {
+			foreach ( $champs as $champ ) {
+				$range[ $champ ][] = null === $i ? $vide[ $champ ]
+					: ( isset( $fichiers[ $champ ][ $i ] ) ? $fichiers[ $champ ][ $i ] : $vide[ $champ ] );
+			}
+		};
+		$suivant = 0;
+		foreach ( $sources as $place => $source ) {
+			if ( 'a_part' === $source ) {
+				$texte = function ( $liste, $max ) use ( $place ) {
+					return isset( $liste[ $place ] ) && is_string( $liste[ $place ] )
+						? $this->limit_string( trim( $liste[ $place ] ), $max ) : '';
+				};
+				$lien  = esc_url_raw( $texte( $liens, 500 ), array( 'http', 'https' ) );
+				$date  = $texte( $dates, 10 );
+				$this->figures_a_part[ $place ] = array(
+					'lien'    => $lien,
+					'jusqua'  => self::date_valide( $date ) ? $date : '',
+					'fichier' => sanitize_text_field( $texte( $noms, 255 ) ),
+				);
+				$ajouter( null );
+				continue;
+			}
+			$ajouter( isset( $reels[ $suivant ] ) ? $reels[ $suivant ] : null );
+			++$suivant;
+		}
+		// Plus de fichiers que de cartes : ils suivent, et la réception
+		// jugera du nombre.
+		for ( ; isset( $reels[ $suivant ] ); ++$suivant ) {
+			$ajouter( $reels[ $suivant ] );
+		}
+		$_FILES['illustrations'] = $range;
+	}
+
+	/**
+	 * Le fichier témoin d'une figure envoyée à part : il tient sa place
+	 * parmi les fichiers de la notice. On le reconnaît à son nom, qu'il
+	 * garde de la réception au dépôt (« notice-archeomed-a-part-… »,
+	 * « notice-archeomed-garde-a-part-… », « 12-notice-archeomed-garde-a-part-… »).
+	 */
+	public static function est_a_part( $chemin ) {
+		return is_string( $chemin ) && (bool) preg_match( '/-a-part-[A-Za-z0-9]{8,}\.txt$/', basename( $chemin ) );
+	}
+
+	/** Ce que dit le fichier témoin, pour qui l'ouvrirait. */
+	private static function texte_du_temoin( $a_part ) {
+		$lignes = array(
+			'Figure envoyée à part par l’auteur, faute de pouvoir passer par le formulaire.',
+			'Ce fichier ne tient que sa place : l’original est à télécharger, puis à ranger avec la notice.',
+		);
+		if ( ! empty( $a_part['lien'] ) ) {
+			$lignes[] = 'Lien : ' . $a_part['lien'];
+		}
+		if ( ! empty( $a_part['jusqua'] ) ) {
+			$lignes[] = 'Valable jusqu’au : ' . self::date_en_lettres( $a_part['jusqua'] );
+		}
+		if ( ! empty( $a_part['fichier'] ) ) {
+			$lignes[] = 'Nom du fichier dans l’envoi : ' . $a_part['fichier'];
+		}
+		return implode( "\n", $lignes ) . "\n";
+	}
+
+	/**
+	 * La figure envoyée à part d'une ligne de figure, si c'en est une : son
+	 * lien, sa date et le nom du fichier, ou null.
+	 */
+	public static function figure_a_part( $item ) {
+		return is_array( $item ) && ! empty( $item['a_part'] ) && is_array( $item['a_part'] ) ? $item['a_part'] : null;
 	}
 
 	/**
@@ -8480,6 +8907,17 @@ class Notice_Archeomed_Pactols {
 						$manquants[] = 'garde_' . $clef . '_' . $k;
 					}
 				}
+				// Gardée telle quelle, une figure envoyée à part garde aussi
+				// l'obligation d'un lien et d'une date.
+				if ( ! empty( $figure['a_part'] ) && 'remplacer' !== $action ) {
+					$a_part = $this->a_part_de_la_garde( $k, $figure['a_part'] );
+					if ( '' === $a_part['lien'] ) {
+						$manquants[] = 'garde_lien_' . $k;
+					}
+					if ( '' === $a_part['jusqua'] ) {
+						$manquants[] = 'garde_jusqua_' . $k;
+					}
+				}
 			}
 		}
 		// Le titre, les crédits, la nature et le texte alternatif de chaque
@@ -8501,6 +8939,17 @@ class Notice_Archeomed_Pactols {
 					$manquants[] = 'illus_' . $clef . '_' . $rang;
 				}
 			}
+			// Une figure envoyée à part sans son lien, ou sans la date où il
+			// s'éteint : la rédaction ne pourrait pas la télécharger.
+			$a_part = self::figure_a_part( $item );
+			if ( null !== $a_part ) {
+				if ( empty( $a_part['lien'] ) ) {
+					$manquants[] = 'illus_lien_' . $rang;
+				}
+				if ( empty( $a_part['jusqua'] ) ) {
+					$manquants[] = 'illus_jusqua_' . $rang;
+				}
+			}
 		}
 		// Un lien vers les originaux sans sa date d'expiration : la
 		// rédaction ne saurait pas jusqu'à quand le télécharger.
@@ -8517,7 +8966,7 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/** « 2026-10-24 » devient « 24 octobre 2026 », dans la langue du site. */
-	private static function date_en_lettres( $date ) {
+	public static function date_en_lettres( $date ) {
 		if ( ! self::date_valide( $date ) ) {
 			return (string) $date;
 		}
@@ -8546,12 +8995,18 @@ class Notice_Archeomed_Pactols {
 	 * il est consigné, et le lien reste dans la notice et le Word.
 	 */
 	private function alerter_pour_les_originaux( $d, $destinataires, $entetes, $titre, $reference ) {
-		if ( empty( $d['originaux_lien'] ) || empty( $destinataires ) ) {
+		$transferts = self::transferts_de( $d );
+		if ( empty( $transferts ) || empty( $destinataires ) ) {
 			return;
 		}
-		$date   = isset( $d['originaux_jusqua'] ) ? (string) $d['originaux_jusqua'] : '';
-		$quand  = '';
-		$phrase = 'avant que le service de transfert ne les efface';
+		// L'objet dit la plus proche des dates : c'est elle qui presse.
+		$date = '';
+		foreach ( $transferts as $t ) {
+			if ( '' !== $t['jusqua'] && ( '' === $date || $t['jusqua'] < $date ) ) {
+				$date = $t['jusqua'];
+			}
+		}
+		$quand = '';
 		if ( self::date_valide( $date ) ) {
 			$jours  = self::jours_avant( $date );
 			$lettre = self::date_en_lettres( $date );
@@ -8564,24 +9019,73 @@ class Notice_Archeomed_Pactols {
 			} else {
 				$quand = ' — LIEN PEUT-ÊTRE EXPIRÉ DEPUIS LE ' . $lettre;
 			}
-			$quand  = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $quand, 'UTF-8' ) : strtoupper( $quand );
-			$phrase = 'avant le ' . $lettre . ', date à laquelle le service de transfert les efface';
+			$quand = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $quand, 'UTF-8' ) : strtoupper( $quand );
 		}
-		$objet = str_replace( array( "\r", "\n" ), ' ', 'ATTENTION — LIEN À TÉLÉCHARGER' . $quand . ' — ' . $titre
+		$pluriel = count( $transferts ) > 1;
+		$objet   = str_replace( array( "\r", "\n" ), ' ', 'ATTENTION — ' . ( $pluriel ? 'LIENS' : 'LIEN' ) . ' À TÉLÉCHARGER' . $quand . ' — ' . $titre
 			. ( '' !== $reference ? ' — réf. ' . $reference : '' ) );
+		$liste = '';
+		foreach ( $transferts as $t ) {
+			$liste .= '<li style="margin:0 0 8px;">'
+				. ( ! empty( $t['figures'] ) ? esc_html( implode( ', ', $t['figures'] ) ) . ' : ' : '' )
+				. '<a href="' . esc_url( $t['lien'] ) . '">' . esc_html( $t['lien'] ) . '</a>'
+				. esc_html( '' !== $t['jusqua']
+					? ' — avant le ' . self::date_en_lettres( $t['jusqua'] ) . ', date à laquelle le service de transfert les efface'
+					: ' — avant que le service de transfert ne les efface' )
+				. '</li>';
+		}
 		$corps = '<html lang="fr"><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;">'
 			. '<div style="background:#fcefed;border:2px solid #b3261e;padding:14px 18px;margin:0 0 18px;">'
 			. '<p style="margin:0 0 8px;font-size:17px;"><strong>Originaux à télécharger</strong></p>'
-			. '<p style="margin:0 0 8px;">L’auteur de la notice « ' . esc_html( $titre ) . ' » a déposé les originaux de ses figures sur un service de transfert. '
-			. 'Téléchargez-les ' . esc_html( $phrase ) . '.</p>'
-			. '<p style="margin:0;"><a href="' . esc_url( $d['originaux_lien'] ) . '">' . esc_html( $d['originaux_lien'] ) . '</a></p>'
+			. '<p style="margin:0 0 8px;">L’auteur de la notice « ' . esc_html( $titre ) . ' » a envoyé des figures par un service de transfert. '
+			. 'Téléchargez-les à temps, puis rangez-les avec la notice.</p>'
+			. '<ul style="margin:0;padding-left:20px;">' . $liste . '</ul>'
 			. '</div>'
 			. ( ! empty( $d['resp_email'] ) && is_email( $d['resp_email'] )
-				? '<p>Si le lien a expiré, il faut les redemander à l’auteur&nbsp;: ' . esc_html( $d['resp_email'] ) . '.</p>' : '' )
+				? '<p>Si un lien a expiré, il faut redemander les fichiers à l’auteur&nbsp;: ' . esc_html( $d['resp_email'] ) . '.</p>' : '' )
 			. '</div></body></html>';
 		if ( ! wp_mail( $destinataires, $objet, $corps, $entetes ) ) {
 			error_log( 'Notice Archeomed: alerte des originaux non envoyée (' . $titre . ').' );
 		}
+	}
+
+	/**
+	 * Les envois par un service de transfert d'une notice : un par lien,
+	 * avec la plus proche de ses dates et les figures qu'il porte (« Fig. 2
+	 * (« coupe.tif ») »). Plusieurs figures d'un même transfert ne font
+	 * qu'un lien à télécharger. Le lien unique des originaux, qu'avaient
+	 * les notices d'avant les figures envoyées à part, vient en dernier,
+	 * sans figure nommée.
+	 */
+	private static function transferts_de( $d ) {
+		$liens = array();
+		$items = is_array( $d ) && isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array();
+		foreach ( $items as $item ) {
+			$a_part = self::figure_a_part( $item );
+			if ( null === $a_part || empty( $a_part['lien'] ) ) {
+				continue;
+			}
+			$cle = (string) $a_part['lien'];
+			if ( ! isset( $liens[ $cle ] ) ) {
+				$liens[ $cle ] = array( 'lien' => $cle, 'jusqua' => '', 'figures' => array() );
+			}
+			$jusqua = isset( $a_part['jusqua'] ) ? (string) $a_part['jusqua'] : '';
+			if ( self::date_valide( $jusqua ) && ( '' === $liens[ $cle ]['jusqua'] || $jusqua < $liens[ $cle ]['jusqua'] ) ) {
+				$liens[ $cle ]['jusqua'] = $jusqua;
+			}
+			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+			$liens[ $cle ]['figures'][] = ( $rang > 0 ? Notice_Archeomed_Normes::numero_de_figure( $rang ) : 'Figure' )
+				. ( ! empty( $a_part['fichier'] ) ? ' (« ' . $a_part['fichier'] . ' »)' : '' );
+		}
+		if ( is_array( $d ) && ! empty( $d['originaux_lien'] ) && ! isset( $liens[ (string) $d['originaux_lien'] ] ) ) {
+			$jusqua = isset( $d['originaux_jusqua'] ) ? (string) $d['originaux_jusqua'] : '';
+			$liens[ (string) $d['originaux_lien'] ] = array(
+				'lien'    => (string) $d['originaux_lien'],
+				'jusqua'  => self::date_valide( $jusqua ) ? $jusqua : '',
+				'figures' => array(),
+			);
+		}
+		return array_values( $liens );
 	}
 	/**
 	 * Met en gras l'intitulé d'une ligne de métadonnée (la partie avant " : ").
@@ -8724,10 +9228,14 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $d['id_patriarche'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Identifiant Patriarche', $d['id_patriarche'] );
 		}
-		if ( ! empty( $d['originaux_lien'] ) ) {
-			$admin_lines[] = $this->meta_line( 'Originaux des figures à télécharger'
-				. ( ! empty( $d['originaux_jusqua'] ) ? ' avant le ' . self::date_en_lettres( $d['originaux_jusqua'] ) : '' ),
-				$d['originaux_lien'] );
+		// Les figures envoyées à part, lien par lien, et le lien unique des
+		// originaux des notices plus anciennes.
+		foreach ( self::transferts_de( $d ) as $t ) {
+			$admin_lines[] = $this->meta_line(
+				( empty( $t['figures'] ) ? 'Originaux des figures' : 'Envoyé à part — ' . implode( ', ', $t['figures'] ) )
+				. ' à télécharger'
+				. ( '' !== $t['jusqua'] ? ' avant le ' . self::date_en_lettres( $t['jusqua'] ) : '' ),
+				$t['lien'] );
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Rapport final', $d['rapport_lien'] );
@@ -9198,6 +9706,29 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Le cadre rouge d'une figure envoyée à part, à la place de son image :
+	 * télécharger l'original, le mettre ici. Le lien, la date où il s'éteint
+	 * et le nom du fichier dans l'envoi, pour qu'on ne prenne pas la figure
+	 * voisine d'un même transfert.
+	 */
+	private function poser_le_cadre_a_part( $doc, $a_part ) {
+		$xml = $doc->plain( 'Figure envoyée à part : télécharger l’original et le placer ici, à la place de ce cadre.' );
+		if ( ! empty( $a_part['fichier'] ) ) {
+			$xml .= $doc->plain( ' Fichier « ' . $a_part['fichier'] . ' » dans l’envoi.' );
+		}
+		if ( ! empty( $a_part['lien'] ) ) {
+			$xml .= $doc->plain( ' Lien'
+				. ( ! empty( $a_part['jusqua'] ) ? ', valable jusqu’au ' . self::date_en_lettres( $a_part['jusqua'] ) : '' )
+				. ' : ' ) . $doc->hyperlink( $a_part['lien'], $a_part['lien'] );
+		}
+		if ( method_exists( $doc, 'add_framed_paragraph' ) ) {
+			$doc->add_framed_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $xml );
+		} else {
+			$doc->add_raw_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, $xml );
+		}
+	}
+
+	/**
 	 * La description détaillée d'une figure, en fin de légende : c'est la
 	 * seule place qui passe aujourd'hui à la publication, un seul texte
 	 * alternatif suivant l'image. Elle s'ouvre sur « Description : », pour
@@ -9537,6 +10068,12 @@ class Notice_Archeomed_Pactols {
 					$titre,
 					$alt
 				) );
+			} elseif ( null !== self::figure_a_part( $item ) ) {
+				// Une figure envoyée à part n'a pas d'image sur le site : un
+				// cadre rouge tient sa place et dit où prendre l'original.
+				// Il porte le style qui s'ôte avant l'import, comme les
+				// autres renseignements de la rédaction.
+				$this->poser_le_cadre_a_part( $doc, self::figure_a_part( $item ) );
 			} elseif ( ! empty( $item['figure']['apercu'] )
 				&& method_exists( $doc, 'image_incluse' ) ) {
 				// Hors dossier, le document part seul : il porte donc ses
@@ -9975,6 +10512,8 @@ class Notice_Archeomed_Pactols {
 		$listes = array(
 			'nature' => true, 'commune' => true, 'commune_ark' => true, 'organisme' => true,
 			'illus_titre' => true, 'illus_credits' => true, 'illus_alt' => false, 'illus_legende' => false, 'illus_description' => false, 'illus_type' => true,
+			'illus_source' => true, 'illus_lien' => true, 'illus_jusqua' => true, 'illus_nom_envoi' => true,
+			'garde_lien' => true, 'garde_jusqua' => true, 'garde_nom_envoi' => true,
 			'garde_titre' => true, 'garde_credits' => true, 'garde_alt' => false, 'garde_legende' => false, 'garde_type' => true,
 			'garde_action' => true, 'garde_autorisation_retirer' => true,
 		);
@@ -10023,6 +10562,9 @@ class Notice_Archeomed_Pactols {
 		if ( ! isset( $_POST['notice_archeomed_envoi'] ) ) {
 			return;
 		}
+		// Avant tout refus : la saisie gardée doit retrouver chaque figure à
+		// sa place, celles envoyées à part comprises.
+		$this->ranger_les_figures_a_part();
 		// Un délai d'envoi forgé en tableau passait le contrôle des trois
 		// secondes : c'est un robot, on refuse comme pour lui.
 		if ( isset( $_POST['na_ts'] ) && ! is_string( $_POST['na_ts'] ) ) {
@@ -11068,6 +11610,11 @@ class Notice_Archeomed_Pactols {
 			$rang   = $i + 1;
 			$piece  = '';
 			$legere = false;
+			// Le témoin d'une figure envoyée à part ne part pas : le courriel
+			// donne son lien.
+			if ( self::est_a_part( $original ) ) {
+				continue;
+			}
 			if ( ! empty( $apercus[ $rang ]['apercu'] ) && is_readable( $apercus[ $rang ]['apercu'] ) ) {
 				$piece  = $apercus[ $rang ]['apercu'];
 				$legere = true;
@@ -11169,6 +11716,7 @@ class Notice_Archeomed_Pactols {
 		foreach ( (array) $d['illustrations'] as $item ) {
 			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
 			if ( $rang >= 1 && isset( $originaux[ $rang - 1 ] ) && file_exists( $originaux[ $rang - 1 ] )
+				&& ! self::est_a_part( $originaux[ $rang - 1 ] )
 				&& ( empty( $apercus[ $rang ]['apercu'] ) || ! is_readable( $apercus[ $rang ]['apercu'] ) ) ) {
 				return true;
 			}
@@ -12278,8 +12826,9 @@ class Notice_Archeomed_Pactols {
 		$apercus  = array();
 		foreach ( (array) $d['illustrations'] as $item ) {
 			$rang = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+			// Une figure envoyée à part n'a qu'un témoin : rien à réduire.
 			if ( $rang < 1 || ! isset( $fichiers[ $rang - 1 ] )
-				|| ! file_exists( $fichiers[ $rang - 1 ] ) ) {
+				|| ! file_exists( $fichiers[ $rang - 1 ] ) || self::est_a_part( $fichiers[ $rang - 1 ] ) ) {
 				continue;
 			}
 			$cible  = $dossier . 'apercu-' . wp_generate_password( 10, false, false ) . '.jpg';
@@ -12813,7 +13362,10 @@ class Notice_Archeomed_Pactols {
 	private function handle_uploads( &$upload_error = '' ) {
 		$attachments = array();
 		$upload_error = '';
-		if ( empty( $_FILES['illustrations'] ) || empty( $_FILES['illustrations']['name'][0] ) ) {
+		// Une figure envoyée à part laisse la première entrée vide : on ne
+		// juge plus sur elle seule.
+		if ( empty( $this->figures_a_part )
+			&& ( empty( $_FILES['illustrations'] ) || empty( $_FILES['illustrations']['name'][0] ) ) ) {
 			return $attachments;
 		}
 		$tmp_dir = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp';
@@ -12864,6 +13416,18 @@ class Notice_Archeomed_Pactols {
 			return $attachments;
 		}
 		for ( $i = 0; $i < $count; $i++ ) {
+			// La figure envoyée à part : un témoin tient sa place, que le
+			// serveur écrit lui-même et qui ne passe donc par aucun contrôle
+			// de format.
+			if ( isset( $this->figures_a_part[ $i ] ) ) {
+				$dest = trailingslashit( $tmp_dir ) . 'notice-archeomed-a-part-' . wp_generate_password( 32, false, false ) . '.txt';
+				if ( false === @file_put_contents( $dest, self::texte_du_temoin( $this->figures_a_part[ $i ] ) ) ) {
+					$upload_error = 'upload_move';
+					return $attachments;
+				}
+				$attachments[] = $dest;
+				continue;
+			}
 			if ( UPLOAD_ERR_NO_FILE === $files['error'][ $i ] || UPLOAD_ERR_OK !== $files['error'][ $i ] ) {
 				continue;
 			}
@@ -13038,6 +13602,8 @@ class Notice_Archeomed_Pactols {
 				$ligne[] = isset( $item[ $cle ] ) && is_scalar( $item[ $cle ] ) ? (string) $item[ $cle ] : '';
 			}
 			$ligne[]  = ! empty( $item['autorisation'] );
+			// Un lien d'envoi à part remplacé est un changement de la figure.
+			$ligne[]  = (array) self::figure_a_part( $item );
 			$textes[] = $ligne;
 		}
 		return $textes;
@@ -13241,6 +13807,13 @@ class Notice_Archeomed_Pactols {
 			if ( '' !== $p['remplacant'] && isset( $_FILES[ 'garde_fichier_' . $k ]['name'] )
 				&& is_string( $_FILES[ 'garde_fichier_' . $k ]['name'] ) ) {
 				$ancien['fichier_depose'] = sanitize_text_field( $_FILES[ 'garde_fichier_' . $k ]['name'] );
+			}
+			// Une figure envoyée à part que l'auteur remplace par un fichier
+			// n'est plus à part ; gardée, elle prend le lien renvoyé.
+			if ( '' !== $p['remplacant'] ) {
+				unset( $ancien['a_part'] );
+			} elseif ( null !== self::figure_a_part( $ancien ) ) {
+				$ancien['a_part'] = $this->a_part_de_la_garde( $k, $ancien['a_part'] );
 			}
 			$fichier = '' !== $p['remplacant'] ? $p['remplacant']
 				: ( isset( $originaux[ $k - 1 ] ) && file_exists( $originaux[ $k - 1 ] ) ? $originaux[ $k - 1 ] : '' );

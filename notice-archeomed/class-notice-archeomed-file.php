@@ -1118,6 +1118,22 @@ class Notice_Archeomed_File {
 					. esc_html__( 'fichier introuvable sur le serveur', 'notice-archeomed' ) . '</em></li>';
 				continue;
 			}
+			// Une figure envoyée à part : son lien, sa date et le nom du
+			// fichier dans l'envoi, au lieu du témoin qui tient sa place.
+			if ( Notice_Archeomed_Pactols::est_a_part( $chemin ) ) {
+				$a_part = Notice_Archeomed_Pactols::figure_a_part( isset( $dites[ $rang ] ) ? $dites[ $rang ] : null );
+				$titre  = isset( $dites[ $rang ]['titre'] ) ? $dites[ $rang ]['titre'] : '';
+				echo '<li>' . esc_html( Notice_Archeomed_Normes::numero_de_figure( $rang + 1 ) )
+					. ( '' !== $titre ? ' — ' . esc_html( $titre ) : '' )
+					. ' <span class="description">— ' . esc_html__( 'envoyée à part', 'notice-archeomed' )
+					. ( ! empty( $a_part['fichier'] ) ? esc_html( ' (« ' . $a_part['fichier'] . ' »)' ) : '' ) . '</span>'
+					. ( ! empty( $a_part['lien'] ) ? '<br><a href="' . esc_url( $a_part['lien'] ) . '">' . esc_html( $a_part['lien'] ) . '</a>' : '' )
+					. ( ! empty( $a_part['jusqua'] ) ? ' <span class="description">' . esc_html( sprintf(
+						/* translators: %s : date d'expiration du lien. */
+						__( '(valable jusqu’au %s)', 'notice-archeomed' ), Notice_Archeomed_Pactols::date_en_lettres( $a_part['jusqua'] ) ) ) . '</span>' : '' )
+					. $this->lien_de_l_autorisation( $post->ID, $rang + 1, $poids ) . '</li>';
+				continue;
+			}
 			$poids += (int) filesize( $chemin );
 			$url = wp_nonce_url(
 				add_query_arg(

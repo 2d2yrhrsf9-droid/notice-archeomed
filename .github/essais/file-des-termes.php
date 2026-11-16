@@ -2676,6 +2676,83 @@ remove_all_filters( 'notice_archeomed_plafond_disque' );
 @unlink( $dossier_essai . '/essai-disque.bin' );
 delete_transient( 'na_disque' );
 
+WP_CLI::log( 'Les figures envoyées à part' );
+na_verifier( Notice_Archeomed_Pactols::est_a_part( '/tmp/notice-archeomed-a-part-abcdef0123456789abcdef0123456789.txt' )
+	&& Notice_Archeomed_Pactols::est_a_part( '/x/12-notice-archeomed-garde-a-part-ABCDEFGH12.txt' )
+	&& ! Notice_Archeomed_Pactols::est_a_part( '/x/figure-a-part.jpg' )
+	&& ! Notice_Archeomed_Pactols::est_a_part( '/x/plan-a-part-court.txt' )
+	&& ! Notice_Archeomed_Pactols::est_a_part( null ),
+	'le fichier témoin se reconnaît à son nom, et seulement lui' );
+// Le champ de fichiers ne porte que les vrais fichiers : la figure à part
+// doit retrouver sa place entre eux, sans décaler les suivants.
+$_POST['illus_source']    = array( 'fichier', 'a_part', 'fichier' );
+$_POST['illus_lien']      = array( '', 'https://filesender.renater.fr/?s=download&token=abc', '' );
+$_POST['illus_jusqua']    = array( '', '2030-01-02', '' );
+$_POST['illus_nom_envoi'] = array( '', 'coupe.tif', '' );
+$_FILES = array( 'illustrations' => array(
+	'name'     => array( 'plan.jpg', 'vue.jpg' ),
+	'type'     => array( 'image/jpeg', 'image/jpeg' ),
+	'tmp_name' => array( '/tmp/php-a', '/tmp/php-b' ),
+	'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
+	'size'     => array( 10, 20 ),
+) );
+na_appel( $plugin, 'ranger_les_figures_a_part' );
+$prop_a_part = new ReflectionProperty( $plugin, 'figures_a_part' );
+$prop_a_part->setAccessible( true );
+$rangees = $prop_a_part->getValue( $plugin );
+na_verifier( array( 'plan.jpg', '', 'vue.jpg' ) === $_FILES['illustrations']['name']
+	&& UPLOAD_ERR_NO_FILE === $_FILES['illustrations']['error'][1] && 20 === $_FILES['illustrations']['size'][2]
+	&& array( 1 ) === array_keys( $rangees ) && '2030-01-02' === $rangees[1]['jusqua'] && 'coupe.tif' === $rangees[1]['fichier']
+	&& 0 === strpos( $rangees[1]['lien'], 'https://filesender.renater.fr/' ),
+	'la figure envoyée à part garde son rang entre deux fichiers joints', array( $_FILES, $rangees ) );
+na_verifier( 3 === na_appel( $plugin, 'fichiers_deposes' ), 'deux fichiers et une figure à part font trois figures déposées' );
+$_POST['illus_source'] = array( 'fichier', 'fichier' );
+na_appel( $plugin, 'ranger_les_figures_a_part' );
+na_verifier( array() === $prop_a_part->getValue( $plugin ) && array( 'plan.jpg', '', 'vue.jpg' ) === $_FILES['illustrations']['name'],
+	'sans figure à part, on ne touche pas aux fichiers' );
+$_FILES = array();
+$prop_a_part->setValue( $plugin, array() );
+unset( $_POST['illus_source'], $_POST['illus_lien'], $_POST['illus_jusqua'], $_POST['illus_nom_envoi'] );
+
+$d_a_part = array(
+	'commune'        => 'Caen',
+	'reference'      => 'AM-2026-0001',
+	'originaux_lien' => 'https://partage.exemple.fr/ancien',
+	'illustrations'  => array(
+		array( 'rang' => 1, 'titre' => 'Coupe', 'a_part' => array( 'lien' => 'https://filesender.renater.fr/x', 'jusqua' => '2030-02-01', 'fichier' => 'coupe.tif' ) ),
+		array( 'rang' => 2, 'titre' => 'Plan' ),
+		array( 'rang' => 3, 'titre' => 'Vue', 'a_part' => array( 'lien' => 'https://filesender.renater.fr/x', 'jusqua' => '2030-01-15', 'fichier' => 'vue.tif' ) ),
+	),
+);
+$transferts = na_appel( 'Notice_Archeomed_Pactols', 'transferts_de', array( $d_a_part ) );
+na_verifier( 2 === count( $transferts ) && 'https://filesender.renater.fr/x' === $transferts[0]['lien']
+	&& '2030-01-15' === $transferts[0]['jusqua'] && 2 === count( $transferts[0]['figures'] )
+	&& false !== strpos( $transferts[0]['figures'][1], 'vue.tif' )
+	&& 'https://partage.exemple.fr/ancien' === $transferts[1]['lien'] && array() === $transferts[1]['figures'],
+	'deux figures d\'un même envoi font un seul lien, à la date la plus proche ; l\'ancien lien unique vient après', $transferts );
+
+$doc_a_part = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_a_part, array_merge( $saisie_styles, array( 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Coupe', 'legende' => '', 'credits' => '', 'a_part' => $d_a_part['illustrations'][0]['a_part'] ) ) ) ) ) );
+$xml_a_part = implode( '', $corps->getValue( $doc_a_part ) );
+na_verifier( false !== strpos( $xml_a_part, '<w:pBdr>' ) && false !== strpos( $xml_a_part, 'w:color="C00000"' )
+	&& false !== strpos( $xml_a_part, 'Figure envoyée à part' ) && false !== strpos( $xml_a_part, 'coupe.tif' )
+	&& false !== strpos( $xml_a_part, 'filesender.renater.fr/x' ),
+	'le Word pose un cadre rouge, avec le fichier et le lien, à la place de l\'aperçu', $xml_a_part );
+
+$paquet = new Notice_Archeomed_Paquet();
+$erreur = '';
+$paquet->preparer( 'I. Constructions et habitats civils', array( array(
+	'id'            => 0,
+	'd'             => array_merge( $d_a_part, array( 'lieu_dit' => 'Château', 'annee' => '2026' ) ),
+	'illustrations' => array( '/tmp/notice-archeomed-a-part-abcdef0123456789abcdef0123456789.txt' ),
+) ), $erreur );
+$texte = na_appel( $paquet, 'lisez_moi' );
+na_verifier( false !== strpos( $texte, 'envoyée à part par l’auteur, à reprendre' ) && false !== strpos( $texte, 'coupe.tif' )
+	&& false !== strpos( $texte, 'AM-2026-0001' ) && false === strpos( $texte, 'introuvable sur le serveur' ),
+	'le lisez-moi donne la figure à reprendre, avec de quoi la retrouver', $texte );
+$paquet->nettoyer();
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

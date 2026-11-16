@@ -613,6 +613,25 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
+	 * Un paragraphe encadré de rouge : ce qui doit arrêter l'œil du
+	 * préparateur avant l'import, là où une figure manque.
+	 *
+	 * Le cadre est posé sur le paragraphe, non sur un style : le modèle de
+	 * la revue n'en a pas, et un style ajouté pour un avertissement
+	 * passerait dans la chaîne. Celui du paragraphe s'en va avec lui.
+	 */
+	public function add_framed_paragraph( $style_name, $xml_content ) {
+		$bord = '';
+		foreach ( array( 'top', 'left', 'bottom', 'right' ) as $cote ) {
+			$bord .= '<w:' . $cote . ' w:val="single" w:sz="18" w:space="4" w:color="C00000"/>';
+		}
+		$style = isset( $this->styles[ $style_name ] )
+			? '<w:pStyle w:val="' . self::esc( $this->styles[ $style_name ] ) . '"/>' : '';
+		$this->body[] = '<w:p><w:pPr>' . $style . '<w:pBdr>' . $bord . '</w:pBdr></w:pPr>'
+			. $xml_content . '</w:p>';
+	}
+
+	/**
 	 * Rend du texte sans mise en forme sous la forme d'un run, seule façon
 	 * valide d'insérer du texte dans un paragraphe WordprocessingML.
 	 */
