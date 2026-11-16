@@ -63,7 +63,7 @@ Le nom est historique : la classe porte tout le formulaire, pas seulement Pactol
 
 - **Constantes** : gabarits, plafonds (`MAX_FILES` = 3, `MAX_TOTAL_FILESIZE` = 20 Mo — le plafond réel est le plus petit de celui-ci et de ceux de PHP, voir `plafonds_des_fichiers()`), quotas (`MAX_ATTEMPTS_PER_HOUR`, `MAX_SENDS_PER_IP`, `MAX_SENDS_PER_EMAIL`, `MAX_LOOKUPS_PER_HOUR`), extensions admises, constantes du puzzle, identifiants des thésaurus Pactols (`TH_1` pour sujets et périodes, `th17` pour les lieux), rubriques et matières.
 - **Listes métier** : `$rubriques` (sept rubriques), les natures d'opération avec leur ARK (`$natures`), les familles d'opérations, les matières de la rubrique V, les anciens libellés de rubrique (`RUBRIQUES_ANCIENNES`, pour relire les notices déposées avant un changement de nom).
-- **Protection** : `protection()`, `verifier_la_protection()`, le puzzle (`defi_du_puzzle()`, `verifier_le_puzzle()`, sceau HMAC à l'heure, sans rien stocker), Turnstile (`verify_turnstile()`), et `protection_suspendue()` pour les sites d'essai.
+- **Protection** : `protection()`, `verifier_la_protection()`, le puzzle (`defi_du_puzzle()`, `verifier_le_puzzle()`, sceau HMAC lié à l'heure d'affichage `na_ts`, valable 24 h, retenu après un dépôt réussi pour ne servir qu'une fois ; Cloudflare injoignable, le transient `na_turnstile_injoignable` ajoute le puzzle à Turnstile), Turnstile (`verify_turnstile()`), et `protection_suspendue()` pour les sites d'essai.
 - **Formulaire** : `render_form()` (de la ligne ≈ 2 090 à ≈ 5 960 : HTML, CSS et JavaScript en ligne), `enqueue_assets()`, la reprise d'une saisie (`garder_la_saisie()`, `reprise()`, `repris*()`), les messages de retour (`messages_du_retour()`, `panneau_de_fin()`).
 - **Réception** : `handle_submission()` et ses `collect_*()`, `handle_uploads()`, `recevoir_les_autorisations()`, `champs_manquants()`, `entrees_attendues()` (ramène chaque champ à la forme attendue avant toute lecture), `refuser_l_envoi_trop_lourd()`.
 - **Fabrication** : `build_notice()` (le HTML du courriel), `remplir_le_document()` (le DOCX ou RTF d'une notice), `fabriquer_le_fascicule()`, `page_de_relecture()`, `indexation_de()` (blocs d'index TEI), la typographie et les siècles en HTML.
@@ -143,6 +143,8 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `na_recapituler_les_notices` | chaque jour à 7 h, heure du site | récapitulatif adressé aux destinataires « recap » |
 | `na_fabriquer_les_apercus` (argument : id) | ponctuelle | versions allégées manquantes, puis reprogrammation de l'envoi |
 | `na_resoudre_les_termes` | tâche unique, réservée au besoin | lire dans Pactols les termes des notices en attente, par lots (`LOT_TERMES` = 50) et dans un budget de `BUDGET_TERMES` (10 s) |
+| `na_ranger_sur_sdrive` | tâche unique, réservée au besoin | ranger sur sDrive les notices envoyées ; un échec propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive (injoignable, 429, 507) arrête le passage sans en coûter |
+| `na_mesurer_le_disque` | tâche unique, au plus tous les quarts d'heure | remesurer le disque pour l'estimation que lit le dépôt |
 
 `activer()` pose les tâches périodiques, `desactiver()` les retire. `verifier_les_rendez_vous()` les repose si WordPress les a perdues. Si `DISABLE_WP_CRON` est actif sans tâche système de remplacement, la file s'allonge : un bandeau le signale, et l'envoi immédiat reste possible dans les réglages.
 
@@ -190,6 +192,9 @@ Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `sais
 | `notice_archeomed_candidats` | statut et note par terme candidat |
 | `na_etat_des_donnees` | version de la forme des données |
 | `na_essais_de_poids` | l'historique des essais de poids du courriel |
+| `na_sdrive_etat` | ce qu'a fait le dernier passage du rangement, ou la panne qui l'a arrêté |
+| `na_sdrive_refus` | les refus du mot de passe sDrive (401) reçus de suite ; à trois (`REFUS_MAX`), le rangement s'arrête jusqu'à une nouvelle liaison ou « Ranger maintenant » |
+| `na_disque_connu`, `na_disque_recu` | la dernière mesure du disque, et ce que les dépôts ont reçu depuis |
 
 ### Transients
 
@@ -334,10 +339,10 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 
 ### Prérequis
 
-- **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures ; à son défaut, ou s'il échoue, GD réduit les JPEG et les PNG, mais ni les TIFF ni les PDF). Aucune limite de temps ni de mémoire n'est posée à Imagick : elles valent pour le processus entier, non pour une image.
+- **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures ; à son défaut, ou s'il échoue, GD réduit les JPEG et les PNG, mais ni les TIFF ni les PDF). Aucune limite de temps ni de mémoire n'est posée à Imagick : elles valent pour le processus entier, non pour une image. GD, lui, déplie l'image entière : `Notice_Archeomed_Paquet::memoire_suffit()` compte cinq octets par pixel et 16 Mo de marge face à la limite relevée pour les images, et l'on renonce à l'aperçu plutôt que de faire tomber le processus. La conversion reçue du navigateur se vérifie alors à sa marque de fin de JPEG.
 - **WordPress 5.6 au moins**, base MySQL ou MariaDB.
 - **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
-- **Disque** : les illustrations et leurs originaux restent sur le site, de quelques Mo à vingt Mo par notice. Une campagne de 300 notices demande, selon une estimation, de 1 à 2,5 Go. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes. Relié à sDrive, le site n'y garde plus que les aperçus : originaux, JPEG convertis et autorisations sont rangés dans `<dossier>/<numéro>/originaux/<référence>/` après l'envoi, et effacés d'ici une fois leur copie vérifiée.
+- **Disque** : les illustrations et leurs originaux restent sur le site, de quelques Mo à vingt Mo par notice. Une campagne de 300 notices demande, selon une estimation, de 1 à 2,5 Go. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes. Le dépôt ne parcourt pas le disque : il lit l'estimation (`disque_estime()` : dernière mesure plus `na_disque_recu`) et, au-delà de 85 % (`PART_SANS_FICHIERS`) ou de 500 Mo reçus dans l'heure, reçoit la notice sans ses fichiers (`garder_le_disque()`, paramètre `notice_sans_fichiers` à la page de fin). Bandeau d'administration dès 60 %. Relié à sDrive, le site n'y garde plus que les aperçus : originaux, JPEG convertis et autorisations sont rangés dans `<dossier>/<numéro>/originaux/<référence>/` après l'envoi, et effacés d'ici une fois leur copie vérifiée.
 - **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.
 - **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers sDrive si les illustrations doivent y être rangées : l'essai de l'onglet Diagnostic dit si le proxy de l'hébergement laisse passer. Le site s'y relie depuis le même onglet, sans mot de passe tapé : l'administrateur autorise le site dans sDrive, qui lui rend un mot de passe d'application révocable, scellé dans la base avec les clés de `wp-config.php`.
 
@@ -367,7 +372,7 @@ Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vé
 
 - Le bandeau de l'administration signale les notices en échec ou en attente depuis plus de 30 minutes ; il ne se voit que si quelqu'un ouvre l'administration. Une sonde externe peut interroger la liste des notices en état `en_attente` ou `echec`.
 - Les incidents s'écrivent dans le journal PHP, préfixe `Notice Archeomed:`.
-- Plafonds : 300 tentatives et 150 envois par heure et par adresse, 100 dépôts par heure toutes adresses confondues. Un refus « quota » à répétition indique un robot, ou un relais non déclaré dans `NA_PROXYS`.
+- Plafonds : 300 tentatives et 15 envois par heure et par adresse (filtre `notice_archeomed_plafond_par_poste`), 10 saisies gardées après refus par heure et par adresse, 100 dépôts par heure toutes adresses confondues. Les compteurs sont rangés sous l'heure en cours (`cle_horaire()`). Un refus « quota » à répétition indique un robot, ou un relais non déclaré dans `NA_PROXYS`.
 
 ### Données personnelles
 

@@ -36,6 +36,9 @@ foreach ( array(
 	'na_derniers_refus',
 	'na_sdrive_etat',
 	'na_sdrive_verrou',
+	Notice_Archeomed_Sdrive::REFUS,
+	'na_disque_connu',
+	'na_disque_recu',
 ) as $option ) {
 	delete_option( $option );
 }

@@ -33,6 +33,14 @@ class Notice_Archeomed_Settings {
 	const PLAFOND_DISQUE = 2 * GB_IN_BYTES;
 
 	/**
+	 * La part du plafond au-delà de laquelle un dépôt est reçu sans ses
+	 * fichiers. Un disque plein ne refuserait pas seulement les notices :
+	 * WordPress lui-même cesserait d'écrire. On garde donc une marge, et la
+	 * notice entre quand même — ses figures suivent à part.
+	 */
+	const PART_SANS_FICHIERS = 0.85;
+
+	/**
 	 * Valeurs par défaut, reprises de la version précédente du plugin.
 	 */
 	private static $defaults = array(
@@ -127,6 +135,8 @@ class Notice_Archeomed_Settings {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_post_na_essai', array( $this, 'faire_un_essai' ) );
+		add_action( self::HOOK_DISQUE, array( __CLASS__, 'remesurer_le_disque' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'signaler_le_disque' ) );
 	}
 
 	/**
@@ -807,7 +817,87 @@ class Notice_Archeomed_Settings {
 			}
 		}
 		set_transient( 'na_disque', $mesure, 15 * MINUTE_IN_SECONDS );
+		// La dernière mesure se garde sans échéance : le dépôt la lit sans
+		// parcourir le disque, et y ajoute ce qu'il a reçu depuis.
+		update_option( 'na_disque_connu', array( 'site' => (int) $mesure['site'], 'quand' => time() ), false );
+		update_option( 'na_disque_recu', 0, false );
 		return $mesure;
+	}
+
+	/** La tâche qui refait la mesure du disque, hors de toute requête d'auteur. */
+	const HOOK_DISQUE = 'na_mesurer_le_disque';
+
+	/** Refait la mesure, sans tenir compte de celle gardée un quart d'heure. */
+	public static function remesurer_le_disque() {
+		delete_transient( 'na_disque' );
+		self::mesurer_le_disque();
+	}
+
+	/**
+	 * Ce que pèsent les téléversements du site, au mieux de ce qu'on sait
+	 * sans parcourir le disque : la dernière mesure, plus ce que les dépôts
+	 * ont reçu depuis. Null quand rien n'a encore été mesuré.
+	 *
+	 * Le parcours prend jusqu'à cinq secondes : fait pendant un dépôt, il
+	 * ferait attendre l'auteur, et cinq dépôts simultanés le feraient chacun.
+	 * Il se fait donc à part, par une tâche que le dépôt demande quand la
+	 * mesure a plus d'un quart d'heure.
+	 */
+	public static function disque_estime() {
+		$connu = get_option( 'na_disque_connu' );
+		if ( ! is_array( $connu ) || ! isset( $connu['site'], $connu['quand'] ) ) {
+			self::demander_une_mesure();
+			return null;
+		}
+		if ( time() - (int) $connu['quand'] > 15 * MINUTE_IN_SECONDS ) {
+			self::demander_une_mesure();
+		}
+		return (int) $connu['site'] + max( 0, (int) get_option( 'na_disque_recu', 0 ) );
+	}
+
+	/** Ajoute à l'estimation ce qu'un dépôt vient d'écrire. */
+	public static function noter_le_poids_recu( $octets ) {
+		if ( (int) $octets > 0 ) {
+			update_option( 'na_disque_recu', (int) get_option( 'na_disque_recu', 0 ) + (int) $octets, false );
+		}
+	}
+
+	/** La part du disque prise, de 0 à 1 et plus ; null si l'on ne sait pas. */
+	public static function part_du_disque( $en_plus = 0 ) {
+		$plafond = (int) apply_filters( 'notice_archeomed_plafond_disque', self::PLAFOND_DISQUE );
+		$estime  = self::disque_estime();
+		if ( $plafond <= 0 || null === $estime ) {
+			return null;
+		}
+		return ( $estime + max( 0, (int) $en_plus ) ) / $plafond;
+	}
+
+	private static function demander_une_mesure() {
+		if ( ! wp_next_scheduled( self::HOOK_DISQUE ) ) {
+			wp_schedule_single_event( time(), self::HOOK_DISQUE );
+		}
+	}
+
+	/**
+	 * Le bandeau du disque, dès 60 % : à 85 %, les dépôts n'acceptent plus
+	 * de fichiers, et la rédaction doit l'avoir appris avant.
+	 */
+	public static function signaler_le_disque() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$part = self::part_du_disque();
+		if ( null === $part || $part < 0.6 ) {
+			return;
+		}
+		$pourcent = (int) round( 100 * $part );
+		$plein    = $part >= self::PART_SANS_FICHIERS;
+		echo '<div class="notice ' . ( $plein ? 'notice-error' : 'notice-warning' ) . '"><p><strong>'
+			. esc_html__( 'Chronique :', 'notice-archeomed' ) . '</strong> '
+			. esc_html( $plein
+				? sprintf( 'le disque du site est plein à %d %% : les notices sont encore reçues, mais sans leurs fichiers, que les auteurs sont invités à envoyer à part. Rangez les figures sur sDrive ou demandez plus de place à l’hébergeur.', $pourcent )
+				: sprintf( 'le disque du site est plein à %d %%. À 85 %%, les notices seront reçues sans leurs fichiers. Rangez les figures sur sDrive ou demandez plus de place à l’hébergeur.', $pourcent ) )
+			. '</p></div>';
 	}
 
 	/**
@@ -936,14 +1026,14 @@ class Notice_Archeomed_Settings {
 		);
 		if ( $plafond > 0 ) {
 			$part  = $disque['site'] / $plafond;
-			$etat  = $part >= 0.85 ? 'manque' : ( $part >= 0.6 ? 'note' : 'ok' );
+			$etat  = $part >= self::PART_SANS_FICHIERS ? 'manque' : ( $part >= 0.6 ? 'note' : 'ok' );
 			$lignes[] = array(
 				'quoi'     => 'Disque : téléversements du site',
 				'requis'   => 'moins de 60 % de ' . size_format( $plafond ),
 				'constate' => $au_moins . size_format( $disque['site'] ) . ' (' . (int) round( 100 * $part ) . ' %)',
 				'etat'     => $etat,
 				'ecart'    => 'manque' === $etat ? size_format( max( 0, $plafond - $disque['site'] ) ) . ' libres' : '',
-				'pourquoi' => 'Le plafond de l\'hébergeur vaut pour tout le site, fichiers de WordPress compris, et ne s\'étend pas. Mesure faite sur les téléversements, comptés toutes les quinze minutes : le reste du site s\'y ajoute.',
+				'pourquoi' => 'Le plafond de l\'hébergeur vaut pour tout le site, fichiers de WordPress compris, et ne s\'étend pas. Mesure faite sur les téléversements, comptés toutes les quinze minutes : le reste du site s\'y ajoute. À 85 %, les notices sont reçues sans leurs fichiers, que l\'auteur envoie à part.',
 			);
 		}
 
@@ -2468,6 +2558,12 @@ class Notice_Archeomed_Settings {
 			if ( $attente > 0 && '' !== $bloque ) {
 				echo ' <span class="na-etat na-etat--echec">' . esc_html( 'Rien ne se range : ' . $bloque . '.' ) . '</span>';
 			}
+			$laissees = count( Notice_Archeomed_Rangement::laissees() );
+			if ( $laissees > 0 ) {
+				echo ' <span class="na-etat na-etat--echec">' . esc_html( sprintf( _n( '%1$s notice laissée après %2$s essais : ses fichiers restent sur le site.',
+					'%1$s notices laissées après %2$s essais : leurs fichiers restent sur le site.', $laissees, 'notice-archeomed' ),
+					number_format_i18n( $laissees ), number_format_i18n( Notice_Archeomed_Rangement::ESSAIS ) ) ) . '</span>';
+			}
 			if ( is_array( $etat ) && ! empty( $etat['le'] ) ) {
 				echo ' ' . esc_html( 'Dernier passage le ' . $quand( $etat['le'] ) . ' : '
 					. sprintf( _n( '%s notice rangée', '%s notices rangées', (int) $etat['rangees'], 'notice-archeomed' ), number_format_i18n( (int) $etat['rangees'] ) )
@@ -2483,7 +2579,8 @@ class Notice_Archeomed_Settings {
 		<?php
 		// La relance ne passe qu'aux visites du site : un soir sans visite,
 		// une notice attendait sans qu'on puisse rien y faire.
-		if ( Notice_Archeomed_Rangement::peut_ranger() ) {
+		// Après des refus du mot de passe, le bouton reste : il fait un essai de plus.
+		if ( Notice_Archeomed_Rangement::peut_ranger() || Notice_Archeomed_Sdrive::refusee() ) {
 			self::ouvrir_un_essai();
 			?>
 				<button type="submit" class="button" name="na_quoi" value="sdrive_ranger">Ranger maintenant</button>

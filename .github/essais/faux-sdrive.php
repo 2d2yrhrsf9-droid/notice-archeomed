@@ -9,6 +9,10 @@
  * MKCOL, PUT, GET et DELETE sous /remote.php/dav/files/essai/. Toute
  * authentification Basic passe ; son absence vaut 401, comme sur sDrive.
  * Chaque requête est notée dans /tmp/sdrive.log.
+ *
+ * Une panne se joue en écrivant dans /tmp/sdrive.panne une méthode et un
+ * code : « PUT 507 » refuse les dépôts comme un compte plein, « * 401 »
+ * refuse tout comme une liaison révoquée.
  */
 
 const RACINE  = '/tmp/sdrive';
@@ -22,6 +26,11 @@ $auth = isset( $_SERVER['HTTP_AUTHORIZATION'] ) ? (string) $_SERVER['HTTP_AUTHOR
 if ( 0 !== stripos( $auth, 'Basic ' ) && ! isset( $_SERVER['PHP_AUTH_USER'] ) ) {
 	http_response_code( 401 );
 	header( 'WWW-Authenticate: Basic realm="essai"' );
+	exit;
+}
+$panne = is_file( '/tmp/sdrive.panne' ) ? (string) file_get_contents( '/tmp/sdrive.panne' ) : '';
+if ( preg_match( '/^(\S+)\s+(\d{3})/', $panne, $p ) && ( '*' === $p[1] || $methode === $p[1] ) ) {
+	http_response_code( (int) $p[2] );
 	exit;
 }
 if ( 0 !== strpos( $chemin, PREFIXE ) ) {

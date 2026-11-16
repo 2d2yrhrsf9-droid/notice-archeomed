@@ -83,6 +83,9 @@ class Notice_Archeomed_Rangement {
 		if ( ! Notice_Archeomed_Sdrive::pret() ) {
 			return 'aucun dossier sDrive n’est choisi';
 		}
+		if ( Notice_Archeomed_Sdrive::refusee() ) {
+			return 'sDrive refuse le mot de passe de la liaison (code HTTP 401) : il faut relier de nouveau le site à sDrive';
+		}
 		return 'aucun numéro n’est réglé';
 	}
 
@@ -94,6 +97,7 @@ class Notice_Archeomed_Rangement {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+		self::signaler_les_laissees();
 		$bloque = self::ce_qui_bloque();
 		if ( '' === $bloque ) {
 			return;
@@ -111,17 +115,53 @@ class Notice_Archeomed_Rangement {
 			. esc_html( 'aucun numéro n’est réglé' === $bloque ? 'Régler le numéro' : 'Ouvrir la liaison à sDrive (onglet Hébergement)' ) . '</a></p></div>';
 	}
 
+	/**
+	 * Un bandeau pour les notices qu'on a laissées après leurs essais : elles
+	 * n'attendent plus rien, et sans lui personne ne les verrait.
+	 */
+	private static function signaler_les_laissees() {
+		$laissees = count( self::laissees() );
+		if ( 0 === $laissees ) {
+			return;
+		}
+		echo '<div class="notice notice-error"><p>'
+			. esc_html( sprintf( _n( '%1$s notice n’a pas pu être rangée sur sDrive après %2$s essais : ses fichiers restent sur le site.',
+				'%1$s notices n’ont pas pu être rangées sur sDrive après %2$s essais : leurs fichiers restent sur le site.', $laissees, 'notice-archeomed' ),
+				number_format_i18n( $laissees ), number_format_i18n( self::ESSAIS ) ) )
+			. ' ' . esc_html__( 'La raison est notée sur chaque fiche ; « Ranger maintenant » les reprend.', 'notice-archeomed' )
+			. ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'diagnostic' ) ) . '">'
+			. esc_html( 'Ouvrir le rangement (onglet Hébergement)' ) . '</a></p></div>';
+	}
+
+	/** Les notices laissées après leurs essais, qu'aucun passage ne reprend seul. */
+	public static function laissees() {
+		return array_map( 'intval', (array) get_posts( array(
+			'post_type'        => Notice_Archeomed_File::CPT,
+			'post_status'      => 'any',
+			'fields'           => 'ids',
+			'posts_per_page'   => -1,
+			'no_found_rows'    => true,
+			'suppress_filters' => true,
+			'meta_query'       => array(
+				array( 'key' => '_na_sdrive_essais', 'compare' => 'EXISTS' ),
+				array( 'key' => '_na_sdrive_apres', 'compare' => 'NOT EXISTS' ),
+			),
+		) ) );
+	}
+
 	/** À la désactivation, la tâche s'efface ; l'attente reste dans les notices. */
 	public static function desactiver() {
 		wp_unschedule_hook( self::HOOK );
 	}
 
 	/**
-	 * Peut-on ranger ? sDrive relié, un dossier choisi, un numéro réglé :
-	 * sans numéro, on ne sait pas où ranger.
+	 * Peut-on ranger ? sDrive relié, un dossier choisi, un mot de passe
+	 * qu'il accepte encore, un numéro réglé : sans numéro, on ne sait pas
+	 * où ranger.
 	 */
 	public static function peut_ranger() {
 		return Notice_Archeomed_Sdrive::pret()
+			&& ! Notice_Archeomed_Sdrive::refusee()
 			&& '' !== trim( (string) Notice_Archeomed_Settings::get( 'numero' ) );
 	}
 
@@ -277,12 +317,11 @@ class Notice_Archeomed_Rangement {
 			// notices, aucune ne perd un essai. On repasse dans un quart d'heure.
 			$panne = Notice_Archeomed_Sdrive::joignable();
 			if ( '' !== $panne ) {
-				self::noter( 'sDrive ne répond pas : ' . $panne );
-				wp_clear_scheduled_hook( self::HOOK );
-				wp_schedule_single_event( time() + 15 * MINUTE_IN_SECONDS, self::HOOK );
+				self::en_panne( 'sDrive ne répond pas : ' . $panne, 15 * MINUTE_IN_SECONDS, 0 );
 				return;
 			}
 			$raison = '';
+			$panne  = null;
 			foreach ( self::dues( time(), self::LOT ) as $id ) {
 				if ( microtime( true ) > $echeance - self::MARGE ) {
 					$interrompu = true;
@@ -312,8 +351,19 @@ class Notice_Archeomed_Rangement {
 					$interrompu = true;
 					break;
 				} else {
+					// Le compte plein ou sDrive tombé en route ne sont pas
+					// la faute de cette notice : elle ne perd pas d'essai,
+					// et les suivantes n'essaient pas en vain.
+					$panne = self::panne_du_service();
+					if ( null !== $panne ) {
+						break;
+					}
 					self::compter_un_essai( $id, $raison );
 				}
+			}
+			if ( null !== $panne ) {
+				self::en_panne( $panne[0], $panne[1], $rangees );
+				return;
 			}
 			self::noter( '' !== $raison ? $raison : 'ok', $rangees );
 		} finally {
@@ -344,25 +394,16 @@ class Notice_Archeomed_Rangement {
 	 * verrou de la tâche : un passage lancé par une visite n'est pas doublé.
 	 */
 	public static function ranger_maintenant() {
+		// Un essai demandé lève l'arrêt sur les refus du mot de passe : s'il
+		// est encore refusé, le passage le dira.
+		Notice_Archeomed_Sdrive::oublier_le_refus();
 		if ( ! self::peut_ranger() ) {
 			$bloque = self::ce_qui_bloque();
 			return array( 'ok' => false, 'message' => 'Rien ne peut se ranger : '
 				. ( '' !== $bloque ? $bloque : 'le site n’est pas relié à sDrive' ) . '.' );
 		}
 		$maintenant = time();
-		$laissees   = get_posts( array(
-			'post_type'        => Notice_Archeomed_File::CPT,
-			'post_status'      => 'any',
-			'fields'           => 'ids',
-			'posts_per_page'   => -1,
-			'no_found_rows'    => true,
-			'suppress_filters' => true,
-			'meta_query'       => array(
-				array( 'key' => '_na_sdrive_essais', 'compare' => 'EXISTS' ),
-				array( 'key' => '_na_sdrive_apres', 'compare' => 'NOT EXISTS' ),
-			),
-		) );
-		foreach ( (array) $laissees as $id ) {
+		foreach ( self::laissees() as $id ) {
 			delete_post_meta( (int) $id, '_na_sdrive_essais' );
 			update_post_meta( (int) $id, '_na_sdrive_apres', $maintenant );
 		}
@@ -390,6 +431,41 @@ class Notice_Archeomed_Rangement {
 				. ( '' !== $raison ? ' — ' . $raison . '.' : ' : le passage suivant les prendra dans une minute.' );
 		}
 		return array( 'ok' => 0 === $reste || $rangees > 0, 'message' => $message );
+	}
+
+	/**
+	 * Après un échec, la faute en revient-elle au service plutôt qu'à la
+	 * notice ? Un compte plein (507) ou un sDrive qui demande de ralentir
+	 * (429) valent pour toutes ; sinon, on regarde si le dossier choisi
+	 * répond encore. Rend la raison et le délai avant le passage suivant,
+	 * ou null quand seule la notice est en cause.
+	 */
+	private static function panne_du_service() {
+		$code = Notice_Archeomed_Sdrive::dernier_code();
+		if ( 507 === $code ) {
+			return array( 'l’espace du compte sDrive est plein (code HTTP 507)', HOUR_IN_SECONDS );
+		}
+		if ( 429 === $code ) {
+			return array( 'sDrive demande de ralentir (code HTTP 429)', HOUR_IN_SECONDS );
+		}
+		$panne = Notice_Archeomed_Sdrive::joignable();
+		return '' === $panne ? null : array( 'sDrive ne répond plus : ' . $panne, 15 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * Le passage s'arrête sur une panne de sDrive : aucune notice ne perd
+	 * d'essai, on repasse plus tard. Quand le mot de passe est refusé de
+	 * suite, on cesse : seule une nouvelle liaison, ou un essai demandé, y
+	 * remédie.
+	 */
+	private static function en_panne( $panne, $delai, $rangees ) {
+		wp_clear_scheduled_hook( self::HOOK );
+		if ( Notice_Archeomed_Sdrive::refusee() ) {
+			self::noter( 'sDrive refuse le mot de passe de la liaison : le rangement est arrêté jusqu’à une nouvelle liaison', $rangees );
+			return;
+		}
+		self::noter( $panne, $rangees );
+		wp_schedule_single_event( time() + (int) $delai, self::HOOK );
 	}
 
 	/** La notice n'a plus rien à ranger. */

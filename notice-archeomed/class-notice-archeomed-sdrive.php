@@ -36,6 +36,18 @@ class Notice_Archeomed_Sdrive {
 
 	const CONSTANTES = array( 'NA_SDRIVE_WEBDAV', 'NA_SDRIVE_IDENTIFIANT', 'NA_SDRIVE_MOT_DE_PASSE', 'NA_SDRIVE_DOSSIER' );
 
+	/**
+	 * Les refus du mot de passe (401) reçus de suite. Au troisième, le
+	 * rangement cesse d'essayer : Nextcloud ralentit, puis bloque, l'adresse
+	 * qui échoue sans fin à s'authentifier, et une liaison révoquée ne
+	 * revient pas d'elle-même.
+	 */
+	const REFUS     = 'na_sdrive_refus';
+	const REFUS_MAX = 3;
+
+	/** Le code de la dernière réponse, zéro quand rien n'a répondu. */
+	private static $dernier_code = 0;
+
 	/** Vrai quand wp-config.php déclare les quatre constantes : elles priment. */
 	public static function par_constantes() {
 		foreach ( self::CONSTANTES as $c ) {
@@ -166,6 +178,7 @@ class Notice_Archeomed_Sdrive {
 			'dossier' => isset( $ancienne['dossier'] ) ? $ancienne['dossier'] : '',
 			'le'      => time(),
 		), false );
+		self::oublier_le_refus();
 		return array( 'ok' => true, 'message' => 'Le site est relié au compte sDrive ' . $data['loginName'] . '.' );
 	}
 
@@ -185,6 +198,7 @@ class Notice_Archeomed_Sdrive {
 		$revoque = self::revoquer();
 		$lien    = self::liaison();
 		update_option( self::OPTION, array( 'dossier' => isset( $lien['dossier'] ) ? $lien['dossier'] : '' ), false );
+		self::oublier_le_refus();
 		if ( ! $revoque ) {
 			return array( 'ok' => false, 'message' => 'Le site est délié, mais sDrive n’a pas confirmé la révocation : retirez l’appareil « '
 				. self::nom_du_site() . ' » dans sDrive, Paramètres personnels, Sécurité.' );
@@ -231,6 +245,7 @@ class Notice_Archeomed_Sdrive {
 	 * quand rien n'a répondu — et la réponse, pour qui veut la lire.
 	 */
 	private static function requete( $methode, $relatif, $options = array() ) {
+		self::$dernier_code = 0;
 		if ( ! self::pret() ) {
 			return array( 0, new WP_Error( 'na_sdrive', 'sDrive n’est pas relié, ou aucun dossier n’est choisi.' ) );
 		}
@@ -239,7 +254,33 @@ class Notice_Archeomed_Sdrive {
 		$options = array_merge( array( 'timeout' => 30 ), $options, array( 'method' => $methode ) );
 		$options['headers'] = array( 'Authorization' => 'Basic ' . base64_encode( $acces['compte'] . ':' . $acces['mot_de_passe'] ) ) + $entetes;
 		$reponse = wp_remote_request( self::adresse( $acces, $relatif ), $options );
-		return array( is_wp_error( $reponse ) ? 0 : (int) wp_remote_retrieve_response_code( $reponse ), $reponse );
+		$code    = is_wp_error( $reponse ) ? 0 : (int) wp_remote_retrieve_response_code( $reponse );
+		self::$dernier_code = $code;
+		if ( 401 === $code ) {
+			update_option( self::REFUS, (int) get_option( self::REFUS, 0 ) + 1, false );
+		} elseif ( $code >= 200 && $code < 300 && false !== get_option( self::REFUS, false ) ) {
+			delete_option( self::REFUS );
+		}
+		return array( $code, $reponse );
+	}
+
+	/** Le code de la dernière requête WebDAV, zéro si rien n'a répondu. */
+	public static function dernier_code() {
+		return self::$dernier_code;
+	}
+
+	/**
+	 * sDrive a-t-il refusé le mot de passe trop de fois de suite ? Le
+	 * rangement s'arrête alors jusqu'à une nouvelle liaison, ou jusqu'au
+	 * bouton « Ranger maintenant », qui fait un essai de plus.
+	 */
+	public static function refusee() {
+		return (int) get_option( self::REFUS, 0 ) >= self::REFUS_MAX;
+	}
+
+	/** Efface le compte des refus : une liaison neuve, ou un essai demandé. */
+	public static function oublier_le_refus() {
+		delete_option( self::REFUS );
 	}
 
 	/**

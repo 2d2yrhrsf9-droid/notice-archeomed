@@ -308,6 +308,11 @@ jobs:
           	file_put_contents( '/tmp/courriels.log', $vers . "\t" . $atts['subject'] . "\n", FILE_APPEND | LOCK_EX );
           	return true;
           }, 10, 2 );
+          // La charge dépose vingt-cinq notices depuis la même adresse : le
+          // plafond par poste, réglé pour un laboratoire, se relève ici.
+          add_filter( 'notice_archeomed_plafond_par_poste', function () {
+          	return 1000;
+          } );
           PHP
           wp plugin activate notice-archeomed
           wp option update notice_archeomed_options \
@@ -599,6 +604,61 @@ jobs:
             foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
             if ( $echecs ) { exit( 1 ); }
             echo "Blocage dit, rangement forcé, lien de correction posé.\n";'
+
+      - name: Une panne de sDrive ne coûte d'essai à aucune notice, un mot de passe refusé arrête le rangement
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $echecs = array();
+            $ids = get_posts( array( "post_type" => "na_notice", "post_status" => "any", "posts_per_page" => 2, "fields" => "ids",
+              "meta_key" => "_na_etat", "meta_value" => "envoyee" ) );
+            if ( 2 !== count( $ids ) ) { echo "::error::deux notices envoyées attendues\n"; exit( 1 ); }
+            // Le Word de leur version est à refaire : le passage déposera.
+            foreach ( $ids as $n ) {
+              $t = Notice_Archeomed_Rangement::table_de( $n );
+              unset( $t[ "word:v" . max( 1, (int) get_post_meta( $n, "_na_version", true ) ) ] );
+              update_post_meta( $n, "_na_sdrive", $t );
+              delete_post_meta( $n, "_na_sdrive_essais" );
+              update_post_meta( $n, "_na_sdrive_apres", time() - 10 );
+            }
+            $essais = function () use ( $ids ) {
+              $e = array();
+              foreach ( $ids as $n ) { wp_cache_delete( $n, "post_meta" ); $e[] = (int) get_post_meta( $n, "_na_sdrive_essais", true ); }
+              return $e;
+            };
+            $etat = function () { wp_cache_delete( Notice_Archeomed_Rangement::ETAT, "options" ); $e = get_option( Notice_Archeomed_Rangement::ETAT ); return (string) $e["raison"]; };
+
+            file_put_contents( "/tmp/sdrive.panne", "PUT 507" );
+            Notice_Archeomed_Rangement::en_tache();
+            $prochain = (int) wp_next_scheduled( Notice_Archeomed_Rangement::HOOK );
+            if ( array( 0, 0 ) !== $essais() ) { $echecs[] = "le compte plein a coûté des essais : " . wp_json_encode( $essais() ); }
+            if ( false === strpos( $etat(), "507" ) ) { $echecs[] = "le compte plein ne se dit pas : " . $etat(); }
+            if ( $prochain < time() + 50 * MINUTE_IN_SECONDS ) { $echecs[] = "le compte plein ne repousse pas le passage d’une heure"; }
+            echo "Compte plein : ", $etat(), "\n";
+
+            file_put_contents( "/tmp/sdrive.panne", "* 401" );
+            foreach ( array( 1, 2, 3 ) as $i ) {
+              wp_clear_scheduled_hook( Notice_Archeomed_Rangement::HOOK );
+              Notice_Archeomed_Rangement::en_tache();
+            }
+            wp_cache_delete( Notice_Archeomed_Sdrive::REFUS, "options" );
+            if ( ! Notice_Archeomed_Sdrive::refusee() ) { $echecs[] = "trois refus du mot de passe n’arrêtent pas le rangement"; }
+            if ( wp_next_scheduled( Notice_Archeomed_Rangement::HOOK ) ) { $echecs[] = "le rangement refusé repasse encore"; }
+            if ( false === strpos( Notice_Archeomed_Rangement::ce_qui_bloque(), "401" ) ) { $echecs[] = "le refus ne se dit pas : " . Notice_Archeomed_Rangement::ce_qui_bloque(); }
+            if ( array( 0, 0 ) !== $essais() ) { $echecs[] = "les refus ont coûté des essais : " . wp_json_encode( $essais() ); }
+            echo "Mot de passe refusé : ", Notice_Archeomed_Rangement::ce_qui_bloque(), "\n";
+
+            unlink( "/tmp/sdrive.panne" );
+            $r = Notice_Archeomed_Rangement::ranger_maintenant();
+            wp_cache_delete( Notice_Archeomed_Sdrive::REFUS, "options" );
+            if ( Notice_Archeomed_Sdrive::refusee() ) { $echecs[] = "« Ranger maintenant » ne lève pas l’arrêt"; }
+            foreach ( $ids as $n ) {
+              wp_cache_delete( $n, "post_meta" );
+              if ( "" !== (string) get_post_meta( $n, "_na_sdrive_apres", true ) ) { $echecs[] = "la notice " . $n . " attend encore : " . wp_json_encode( $r ); }
+            }
+            foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
+            if ( $echecs ) { exit( 1 ); }
+            echo "Panne sans essai perdu, refus arrêté puis repris : ", $r["message"], "\n";'
 
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()

@@ -75,13 +75,18 @@ voir le dessin, au prix de plusieurs frappes. La vérification demande un geste 
 formulaire donne, dans son introduction, l'adresse où envoyer la notice par
 courriel quand il fait obstacle, et Turnstile sait s'en passer.
 
-**Le sceau porte l'heure.** Il ne portait que la réponse : un couple
-(réponse, sceau) récolté une fois valait indéfiniment, sur toutes les pages.
-Il vaut désormais l'heure en cours et les vingt-quatre précédentes
-(`PUZZLE_VALIDITE`) : la limite de temps du RGAA (critère 13.1) veut vingt
-heures au moins, et un formulaire ouvert le soir doit pouvoir partir le
-lendemain. Rien n'est retenu
-entre l'affichage et l'envoi, et une page mise en cache reste donc valable.
+**Le sceau porte l'heure d'affichage, et ne sert qu'une fois.** Il ne portait
+que la réponse : un couple (réponse, sceau) récolté une fois valait
+indéfiniment, sur toutes les pages. Il porte maintenant l'heure d'affichage de
+la page (`na_ts`), qu'on ne peut donc plus changer sans le défaire, et vaut
+vingt-quatre heures (`PUZZLE_VALIDITE`) : la limite de temps du RGAA (critère
+13.1) veut vingt heures au moins, et un formulaire ouvert le soir doit pouvoir
+partir le lendemain. Un dépôt réussi retient son sceau : récolté, il ne se
+rejoue pas. Rien d'autre n'est retenu entre l'affichage et l'envoi.
+
+Quand Cloudflare est injoignable, Turnstile laisse passer : le formulaire
+ajoute alors la pièce de puzzle à Turnstile, le temps que la sortie revienne
+(un jour après le dernier échec).
 
 **Les autres garde-fous du serveur.** Le jeton du formulaire (`nonce`) vit de
 24 à 48 heures, pour ce seul formulaire, et non les 12 à 24 de WordPress : sans
@@ -951,6 +956,15 @@ alors sur le serveur, et rien n'est perdu. Un passage coupé par le serveur,
 faute de temps ou de mémoire, compte comme un essai manqué : une notice trop
 lourde ne retient pas les suivantes.
 
+Une panne de sDrive n'est la faute d'aucune notice, et n'en use pas les
+essais : sDrive injoignable, tombé en cours de passage, ou un compte plein
+(507), le passage s'arrête et reprend un quart d'heure plus tard, une heure
+pour un compte plein. Après trois refus de suite du mot de passe (401), le
+rangement cesse d'essayer : une liaison révoquée ne revient pas d'elle-même,
+et Nextcloud finirait par bloquer le serveur. Un bandeau le dit ; relier de
+nouveau le site, ou « Ranger maintenant », le relance. Les notices laissées
+après leurs huit essais ont aussi leur bandeau.
+
 La fiche, la correction et l'export rapatrient de sDrive, le temps de s'en
 servir, ce qui n'est plus sur le serveur. Supprimer une notice n'efface pas
 ce qui est rangé sur sDrive.
@@ -1048,8 +1062,22 @@ Deux plafonds distincts, et non plus un :
 | Compteur | Par heure | Ce qu'il compte |
 |---|---|---|
 | Tentatives | 300 par adresse IP | toutes les soumissions, abouties ou non |
-| Envois | 150 par adresse IP | seulement ce qui est réellement parti |
+| Envois | 15 par adresse IP | seulement ce qui est réellement parti (filtre `notice_archeomed_plafond_par_poste`) |
 | Envois | 25 par adresse électronique | idem, mais là une personne est vraiment désignée |
+| Réserves de saisie | 10 par adresse IP | les saisies gardées après un refus |
+
+Les compteurs sont horaires : chacun se range sous l'heure en cours
+(`na_…_AAAAMMJJHH`). Leur échéance repartait à chaque dépôt, et un plafond « par
+heure » ne retombait jamais tant qu'on déposait.
+
+**Le disque.** Un dépôt n'écrit ses fichiers que s'il reste de la place. Au-delà
+de 85 % du plafond de l'hébergeur, ou de 500 Mo reçus dans l'heure (filtre
+`notice_archeomed_poids_par_heure`), la notice est reçue sans ses fichiers :
+chaque figure devient « envoyée à part », son fichier témoin le dit à la
+rédaction, et la page de fin demande à l'auteur d'envoyer ses figures et ses
+autorisations. La part du disque s'estime sans le parcourir (la dernière mesure,
+plus ce que les dépôts ont reçu depuis) ; la mesure se refait à part. Un bandeau
+d'administration prévient dès 60 %.
 
 **Rien n'est effacé tant que rien n'est parti.** Le fichier stylé et les
 illustrations vivent dans le répertoire temporaire du serveur sous un nom

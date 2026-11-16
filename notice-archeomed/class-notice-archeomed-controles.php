@@ -449,14 +449,14 @@ class Notice_Archeomed_Controles {
 	 */
 	public static function phrases_d_accessibilite() {
 		return array(
-			'longueur'    => "le texte alternatif fait {n}\u{00A0}caractères, pour {max} au plus conseillés\u{00A0}; le détail a sa place dans la légende ou la description détaillée.",
-			'fichier'     => "le texte alternatif «\u{00A0}{texte}\u{00A0}» est un nom de fichier\u{00A0}; décrivez plutôt ce que montre l’image.",
-			'sans_contenu' => "le texte alternatif «\u{00A0}{texte}\u{00A0}» ne dit pas ce que montre l’image\u{00A0}; décrivez-la en quelques mots.",
-			'titre'       => 'le texte alternatif reprend le titre, au lieu de dire ce que montre l’image.',
-			'legende'     => "le texte alternatif reprend la légende\u{00A0}; il ne la répète pas, il restitue l’information visuelle utile.",
-			'debut'       => "le texte alternatif commence par «\u{00A0}{debut}\u{00A0}», que le lecteur d’écran annonce déjà.",
+			'longueur'    => "la description de l’image fait {n}\u{00A0}caractères, pour {max} au plus conseillés dans sa première phrase\u{00A0}; le détail se met à la ligne, à la suite.",
+			'fichier'     => "la description de l’image «\u{00A0}{texte}\u{00A0}» est un nom de fichier\u{00A0}; dites plutôt ce qu’on voit.",
+			'sans_contenu' => "la description de l’image «\u{00A0}{texte}\u{00A0}» ne dit pas ce qu’on voit\u{00A0}; décrivez-la en une ou deux phrases.",
+			'titre'       => 'la description de l’image reprend sa légende, au lieu de dire ce qu’on voit.',
+			'legende'     => "la description de l’image reprend le complément de légende\u{00A0}; elle ne le répète pas, elle dit ce qu’on voit.",
+			'debut'       => "la description de l’image commence par «\u{00A0}{debut}\u{00A0}», que le lecteur d’écran annonce déjà.",
 			'couleur'     => "«\u{00A0}{couleur}\u{00A0}» — l’information ne doit pas reposer sur la seule couleur\u{00A0}; nommez aussi ce qu’elle désigne.",
-			'donnees'     => "figure de type {mot}\u{00A0}: son contenu ne se lit pas à l’écoute. Recopiez les données (valeurs, séries, lignes du tableau) dans la description détaillée, à la suite du texte alternatif.",
+			'donnees'     => "figure de type {mot}\u{00A0}: son contenu ne se lit pas à l’écoute. Recopiez les données (valeurs, séries, lignes du tableau) dans la description de l’image, à la ligne après sa première phrase.",
 			// Celle-ci ne suit pas « Fig. N : » : elle porte sur le texte.
 			'sigle'       => "Le sigle «\u{00A0}{sigle}\u{00A0}» n’est pas développé à sa première mention\u{00A0}: écrivez par exemple «\u{00A0}{developpement} ({sigle})\u{00A0}».",
 			'sigle_casse' => "«\u{00A0}{ecrit}\u{00A0}» s’écrit «\u{00A0}{sigle}\u{00A0}»\u{00A0}: un sigle qu’on épelle prend toutes ses capitales, un sigle qu’on prononce comme un mot n’en prend qu’une, à l’initiale.",

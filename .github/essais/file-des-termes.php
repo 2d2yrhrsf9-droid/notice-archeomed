@@ -282,6 +282,25 @@ if ( ! Notice_Archeomed_Paquet::imagick_disponible() && function_exists( 'imagec
 		&& false === $accepte['png déguisé'] && false === $accepte['faux'],
 		'un JPEG converti se reconnaît à son contenu et à ses mesures : la haute définition tient dans 4 000 px, la basse dans son côté réglé ; un PNG déguisé ou un faux ne passent pas', $accepte );
 
+	// Un JPEG tronqué en route n'a pas sa marque de fin.
+	$tronque = trailingslashit( get_temp_dir() ) . 'na-essai-conv-tronque.jpg';
+	$entier  = (string) file_get_contents( $hr_ok );
+	file_put_contents( $tronque, substr( $entier, 0, (int) ( strlen( $entier ) * 0.8 ) ) );
+	na_verifier( false === Notice_Archeomed_Pactols::jpeg_converti_acceptable( $tronque, 'hr' ),
+		'un JPEG converti tronqué en route est écarté' );
+	@unlink( $tronque );
+
+	// GD ne s'ouvre pas sur une image que la mémoire ne tiendrait pas.
+	$limite_avant = ini_get( 'memory_limit' );
+	ini_set( 'memory_limit', '256M' );
+	$memoire = array(
+		'petite' => Notice_Archeomed_Paquet::memoire_suffit( 1181, 1772 ),
+		'enorme' => Notice_Archeomed_Paquet::memoire_suffit( 20000, 20000 ),
+	);
+	ini_set( 'memory_limit', $limite_avant );
+	na_verifier( true === $memoire['petite'] && false === $memoire['enorme'],
+		'la mémoire se compte avant que GD déplie une image : 2 Mpx passent, 400 Mpx non', $memoire );
+
 	// Le rangement à demeure, par rang de figure.
 	$fiche_conv = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Conv' ) );
 	$tmp_hr = trailingslashit( get_temp_dir() ) . 'notice-archeomed-conv-hr-2-essai.jpg';
@@ -872,13 +891,17 @@ $jeton_valable = isset( $m_jeton[1] ) && na_appel( $plugin, 'verifier_le_jeton',
 na_verifier( $jeton_valable && ! wp_verify_nonce( 'xx' . ( isset( $m_jeton[1] ) ? $m_jeton[1] : '' ), 'notice_archeomed_submit' ) && false === na_appel( $plugin, 'verifier_le_jeton', array( array( 'x' ) ) ),
 	'le jeton du formulaire se vérifie ; un jeton faux ou d\'un autre type est refusé' );
 // Le plafond de toute la revue.
-$global_avant = get_transient( 'na_envois_global' );
-set_transient( 'na_envois_global', $plugin::MAX_SENDS_GLOBAL_PER_HOUR, HOUR_IN_SECONDS );
+$cle_globale  = na_appel( $plugin, 'cle_horaire', array( 'na_envois_global' ) );
+$global_avant = get_transient( $cle_globale );
+set_transient( $cle_globale, $plugin::MAX_SENDS_GLOBAL_PER_HOUR, HOUR_IN_SECONDS );
 $plein = na_appel( $plugin, 'check_global_limit' );
-set_transient( 'na_envois_global', 0, HOUR_IN_SECONDS );
+set_transient( $cle_globale, 0, HOUR_IN_SECONDS );
 $vide = na_appel( $plugin, 'check_global_limit' );
-if ( false === $global_avant ) { delete_transient( 'na_envois_global' ); } else { set_transient( 'na_envois_global', $global_avant, HOUR_IN_SECONDS ); }
+if ( false === $global_avant ) { delete_transient( $cle_globale ); } else { set_transient( $cle_globale, $global_avant, HOUR_IN_SECONDS ); }
 na_verifier( false === $plein && true === $vide, 'le plafond de dépôts de toute la revue se referme à son seuil, et s\'ouvre en dessous' );
+// Le compteur se tient à l'heure d'horloge : un dépôt ne repousse pas son échéance.
+na_verifier( (bool) preg_match( '/^na_envois_global_\d{10}$/', $cle_globale ) && $cle_globale === 'na_envois_global_' . gmdate( 'YmdH' ),
+	'les compteurs horaires portent l\'heure en cours dans leur clé, et repartent de zéro à chaque heure pleine', $cle_globale );
 // La saisie gardée après un refus ne gonfle pas la base.
 $_POST = array( 'texte_notice' => str_repeat( 'a', 900000 ), 'commentaires' => str_repeat( 'b', 900000 ), 'illus_titre' => array_fill( 0, 40, str_repeat( 'c', 9000 ) ) );
 $jeton_gros = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
@@ -1396,12 +1419,16 @@ $jouer_un_depot = function ( $mode ) use ( $plugin, $reglages_avant ) {
 	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_avant, array(
 		'mode_envoi'    => $mode,
 		'destinataires' => array( array( 'email' => 'redaction@example.org', 'notices' => 1, 'recap' => 0 ) ) ) ) );
-	$defi = na_appel( $plugin, 'defi_du_puzzle' );
+	// Une seconde d'écart par dépôt : deux sceaux identiques se
+	// prendraient l'un pour l'autre, déjà servi.
+	static $decalage = 0;
+	$ts_defi = time() - 30 - ( $decalage++ );
+	$defi    = na_appel( $plugin, 'defi_du_puzzle', array( $ts_defi ) );
 	$_SERVER['REQUEST_METHOD'] = 'POST';
 	$_SERVER['HTTP_REFERER']   = 'https://phishing.example/depot/';
 	$_POST = array(
 		'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
-		'na_ts' => (string) ( time() - 30 ), 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
+		'na_ts' => (string) $ts_defi, 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
 		'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Caen' ), 'commune_ark' => array( '' ),
 		'departement' => 'Calvados', 'lieu_dit' => 'Château ' . $mode, 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
 		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.' . $mode . '@example.org',
@@ -1765,19 +1792,36 @@ $forger = function ( $vers ) {
 };
 add_filter( 'wp_redirect', $forger );
 $cible_vieille = 50;
-$heure_defi   = na_appel( $plugin, 'heure_du_defi' );
-$_POST = array( 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $heure_defi - 22 ) ) );
+$ts_vieux     = time() - 22 * HOUR_IN_SECONDS;
+$ts_perime    = time() - 30 * HOUR_IN_SECONDS;
+$_POST = array( 'na_ts' => (string) $ts_vieux, 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $ts_vieux ) ) );
 $puzzle_vieux = na_appel( $plugin, 'verifier_le_puzzle' );
-$_POST = array( 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $heure_defi - 30 ) ) );
+$_POST = array( 'na_ts' => (string) $ts_perime, 'na_curseur' => (string) $cible_vieille, 'na_preuve' => na_appel( $plugin, 'sceau_du_defi', array( $cible_vieille, $ts_perime ) ) );
 $puzzle_perime = na_appel( $plugin, 'verifier_le_puzzle' );
 $_POST = array();
 na_verifier( true === $puzzle_vieux && false === $puzzle_perime,
 	'un défi du puzzle reste valable plus de vingt heures (limite de temps du RGAA), et se périme ensuite' );
-$defi_forge = na_appel( $plugin, 'defi_du_puzzle' );
+// Le sceau porte l'heure d'affichage : la changer le défait. Et il ne sert
+// qu'une fois — un dépôt réussi le retient.
+$ts_sceau = time() - 60;
+$sceau    = na_appel( $plugin, 'defi_du_puzzle', array( $ts_sceau ) );
+$_POST = array( 'na_ts' => (string) ( $ts_sceau - 3600 ), 'na_curseur' => (string) $sceau['cible'], 'na_preuve' => $sceau['preuve'] );
+$sceau_deplace = na_appel( $plugin, 'verifier_le_puzzle' );
+$_POST = array( 'na_ts' => (string) $ts_sceau, 'na_curseur' => (string) $sceau['cible'], 'na_preuve' => $sceau['preuve'] );
+$sceau_premier = na_appel( $plugin, 'verifier_le_puzzle' );
+na_appel( $plugin, 'consommer_le_sceau' );
+$sceau_second = na_appel( $plugin, 'verifier_le_puzzle' );
+$_POST = array();
+delete_transient( 'na_sceau_' . substr( $sceau['preuve'], 0, 40 ) );
+na_verifier( false === $sceau_deplace && true === $sceau_premier && false === $sceau_second,
+	'le sceau du puzzle tient à l\'heure d\'affichage de la page, et ne sert qu\'une fois',
+	array( $sceau_deplace, $sceau_premier, $sceau_second ) );
+$ts_forge   = time() - 30;
+$defi_forge = na_appel( $plugin, 'defi_du_puzzle', array( $ts_forge ) );
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = array(
 	'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
-	'na_ts' => (string) ( time() - 30 ), 'na_curseur' => (string) $defi_forge['cible'], 'na_preuve' => $defi_forge['preuve'],
+	'na_ts' => (string) $ts_forge, 'na_curseur' => (string) $defi_forge['cible'], 'na_preuve' => $defi_forge['preuve'],
 	'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Caen' ), 'departement' => 'Calvados',
 	'lieu_dit' => 'Essai forgé', 'annee' => '2025', 'nature' => array( 'Fouille préventive' ), 'organisme' => array( 'Inrap' ),
 	'resp_prenom' => 'Aude', 'resp_nom' => array( 'Ferrand' ), 'resp_email' => array( 'a@example.org' ), 'resp_inst' => 'Inrap',
@@ -1912,10 +1956,10 @@ $avis_alt = Notice_Archeomed_Controles::figures( array(
 	array( 'rang' => 2, 'titre' => 'Fig. 2 : Vue du fossé', 'legende' => '', 'credits' => 'A', 'alt' => 'Vue du fossé' ),
 	array( 'rang' => 3, 'titre' => 'Coupe', 'legende' => 'Les couches en rouge.', 'credits' => 'A', 'alt' => 'Photo de la coupe' ),
 	array( 'rang' => 4, 'titre' => 'Mur', 'legende' => '', 'credits' => 'A', 'alt' => str_repeat( 'mur ', 30 ) ) ) );
-na_verifier( 1 === count( preg_grep( '/Fig\. 1\x{00A0}: le texte alternatif fait 159\x{00A0}caractères, pour 150/u', $avis_alt ) )
+na_verifier( 1 === count( preg_grep( '/Fig\. 1\x{00A0}: la description de l’image fait 159\x{00A0}caractères, pour 150/u', $avis_alt ) )
 	&& 0 === count( preg_grep( '/Fig\. 4.*fait/u', $avis_alt ) ),
 	'au-delà de 150 caractères, un avis, sans refus ; en deçà, rien', $avis_alt );
-na_verifier( 1 === count( preg_grep( '/Fig\. 2.*reprend le titre/u', $avis_alt ) )
+na_verifier( 1 === count( preg_grep( '/Fig\. 2.*reprend sa légende/u', $avis_alt ) )
 	&& 1 === count( preg_grep( '/Fig\. 3.*commence par «\x{00A0}Photo de/u', $avis_alt ) )
 	&& 1 === count( preg_grep( '/Fig\. 3.*«\x{00A0}en rouge\x{00A0}».*seule couleur/u', $avis_alt ) ),
 	'un avis quand le texte alternatif reprend le titre, commence par « Photo de », ou que la couleur porte seule l\'information', $avis_alt );
@@ -2026,7 +2070,7 @@ $avis_de = function ( $item ) use ( $C ) {
 	return $C::accessibilite_de_la_figure( array_merge( array( 'rang' => 1, 'titre' => '', 'legende' => '', 'credits' => 'A', 'description' => 'Décrite.' ), $item ) );
 };
 $a_la_legende = function ( $alt, $legende ) use ( $avis_de ) {
-	return 1 === count( preg_grep( '/reprend la légende/u', $avis_de( array( 'alt' => $alt, 'legende' => $legende ) ) ) );
+	return 1 === count( preg_grep( '/reprend le complément de légende/u', $avis_de( array( 'alt' => $alt, 'legende' => $legende ) ) ) );
 };
 na_verifier( $a_la_legende( 'Plan général des vestiges de la phase 2', 'Fig. 12. Plan général des vestiges de la phase 2.' )
 	&& $a_la_legende( 'PLAN GÉNÉRAL des vestiges de la phase 2 !', 'Plan general des vestiges de la phase 2' )
@@ -2038,7 +2082,7 @@ na_verifier( $a_la_legende( 'Plan général des vestiges de la phase 2', 'Fig. 1
 	'un texte alternatif qui reprend la légende — identique à la casse, à la ponctuation et au « Fig. N » près, contenu, ou presque tous ses mots — reçoit un avis ; les exemples de la rédaction, non' );
 $sans_contenu = array();
 foreach ( array( 'Image', 'photo 3', 'Fig. 2', 'Plan', 'Illustration n° 2', 'Figure 2a', 'dessin.' ) as $vide_de_sens ) {
-	$sans_contenu[ $vide_de_sens ] = count( preg_grep( '/ne dit pas ce que montre l’image/u', $avis_de( array( 'alt' => $vide_de_sens ) ) ) );
+	$sans_contenu[ $vide_de_sens ] = count( preg_grep( '/ne dit pas ce qu’on voit/u', $avis_de( array( 'alt' => $vide_de_sens ) ) ) );
 }
 na_verifier( array( 1 ) === array_values( array_unique( $sans_contenu ) )
 	&& array() === preg_grep( '/ne dit pas/u', $avis_de( array( 'alt' => 'Plan du château et de ses fossés' ) ) ),
@@ -2089,8 +2133,8 @@ $figures_a11y = array(
 	array( 'rang' => 1, 'titre' => 'Coupe du fossé', 'legende' => 'Fig. 1. Coupe du fossé nord.', 'credits' => 'A', 'alt' => 'Coupe du fossé nord' ),
 	array( 'rang' => 2, 'titre' => 'Vue', 'legende' => '', 'credits' => 'A', 'alt' => 'DSC_0042.JPG', 'description' => 'x' ) );
 $avis_tous = $C::figures( $figures_a11y );
-na_verifier( 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: le texte alternatif reprend la légende\x{00A0}; il ne la répète pas, il restitue l’information visuelle utile\\.$/u", $avis_tous ) )
-	&& 1 === count( preg_grep( "/^Fig\\. 2\x{00A0}: le texte alternatif «\x{00A0}DSC_0042\\.JPG\x{00A0}» est un nom de fichier/u", $avis_tous ) ),
+na_verifier( 1 === count( preg_grep( "/^Fig\\. 1\x{00A0}: la description de l’image reprend le complément de légende\x{00A0}; elle ne le répète pas, elle dit ce qu’on voit\\.$/u", $avis_tous ) )
+	&& 1 === count( preg_grep( "/^Fig\\. 2\x{00A0}: la description de l’image «\x{00A0}DSC_0042\\.JPG\x{00A0}» est un nom de fichier/u", $avis_tous ) ),
 	'au serveur, chaque avis suit « Fig. N : », dans la phrase même que reçoit le navigateur', $avis_tous );
 $regles = $C::regles_d_accessibilite();
 $motifs_js_sans_ucp = true;

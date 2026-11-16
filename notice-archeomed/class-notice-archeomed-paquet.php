@@ -851,6 +851,22 @@ class Notice_Archeomed_Paquet {
 	}
 
 	/**
+	 * GD tiendra-t-il cette image en mémoire ? Il la déplie entière, quatre
+	 * octets par pixel, et le décodage en demande un peu plus : cinq en tout,
+	 * et une marge, face à ce qui reste sous la limite relevée pour les
+	 * images. Au-delà, le processus tomberait sans rien noter, la file
+	 * reprendrait la notice et tomberait encore : on renonce avant.
+	 */
+	public static function memoire_suffit( $largeur, $hauteur ) {
+		wp_raise_memory_limit( 'image' );
+		$limite = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
+		if ( $limite <= 0 ) {
+			return true;
+		}
+		return memory_get_usage() + (int) $largeur * (int) $hauteur * 5 + 16 * MB_IN_BYTES <= $limite;
+	}
+
+	/**
 	 * Le repli quand Imagick manque ou échoue : GD, pour un JPEG ou un PNG.
 	 * Un TIFF ou un PDF ne se lit pas ainsi ; la figure part alors sans
 	 * aperçu, comme avant.
@@ -872,6 +888,11 @@ class Notice_Archeomed_Paquet {
 		// ses métadonnées. C'est le cas de la haute définition d'une photographie.
 		if ( IMAGETYPE_JPEG === $dimensions[2] && max( $dimensions[0], $dimensions[1] ) <= $largeur && self::SANS_PLAFOND === $poids_max ) {
 			return @copy( $source, $cible ) && file_exists( $cible );
+		}
+		if ( ! self::memoire_suffit( $dimensions[0], $dimensions[1] ) ) {
+			$this->erreurs[] = basename( $source ) . ' : image trop grande pour la mémoire du serveur sans Imagick ('
+				. number_format_i18n( $dimensions[0] * $dimensions[1] / 1000000, 1 ) . ' millions de pixels), aperçu non fabriqué.';
+			return false;
 		}
 		try {
 			$image = @call_user_func( $lecteurs[ $dimensions[2] ], $source );
