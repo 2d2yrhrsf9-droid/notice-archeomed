@@ -154,7 +154,8 @@ class Notice_Archeomed_Relecture {
 		if ( $utilisateur instanceof WP_User ) {
 			return $utilisateur;
 		}
-		return $utilisateur ? get_userdata( (int) $utilisateur ) : wp_get_current_user();
+		// Rien de précisé : le compte connecté. Un numéro nul n'est personne.
+		return null === $utilisateur ? wp_get_current_user() : get_userdata( (int) $utilisateur );
 	}
 
 	/** Ce compte relit-il pour la rédaction : toutes les rubriques, tous les états ? */
