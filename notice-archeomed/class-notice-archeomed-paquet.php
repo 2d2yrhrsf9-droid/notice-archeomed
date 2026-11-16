@@ -165,7 +165,12 @@ class Notice_Archeomed_Paquet {
 			return array();
 		}
 		$plan = array();
-		foreach ( $this->planifier( $notices, 'file_exists', false ) as $figure ) {
+		// Une fonction à deux arguments : « file_exists » en refuse un
+		// second sous PHP 8.
+		$existe = function ( $source ) {
+			return file_exists( $source );
+		};
+		foreach ( $this->planifier( $notices, $existe, false ) as $figure ) {
 			if ( ! isset( $plan[ $figure['notice'] ] ) ) {
 				$plan[ $figure['notice'] ] = array();
 			}

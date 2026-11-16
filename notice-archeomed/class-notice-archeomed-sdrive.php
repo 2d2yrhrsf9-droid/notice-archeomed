@@ -31,6 +31,9 @@ class Notice_Archeomed_Sdrive {
 	// Nextcloud garde une demande de liaison vingt minutes.
 	const ATTENTE = 20 * MINUTE_IN_SECONDS;
 
+	/** Ce qu'on demande de chaque entrée d'un dossier : sa nature et sa taille. */
+	const PROPRIETES = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/></d:prop></d:propfind>';
+
 	const CONSTANTES = array( 'NA_SDRIVE_WEBDAV', 'NA_SDRIVE_IDENTIFIANT', 'NA_SDRIVE_MOT_DE_PASSE', 'NA_SDRIVE_DOSSIER' );
 
 	/** Vrai quand wp-config.php déclare les quatre constantes : elles priment. */
@@ -328,16 +331,56 @@ class Notice_Archeomed_Sdrive {
 	public static function lister( $relatif ) {
 		list( $code, $reponse ) = self::requete( 'PROPFIND', untrailingslashit( (string) $relatif ) . '/', array(
 			'headers' => array( 'Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8' ),
-			'body'    => '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/></d:prop></d:propfind>',
+			'body'    => self::PROPRIETES,
 		) );
 		if ( 404 === $code ) {
 			return array();
 		}
-		if ( 207 !== $code ) {
-			return null;
+		return 207 === $code ? self::entrees( wp_remote_retrieve_body( $reponse ) ) : null;
+	}
+
+	/**
+	 * Les sous-dossiers d'un chemin pris depuis la racine du compte, et non
+	 * du dossier choisi : c'est de quoi choisir ce dossier. Rend les noms,
+	 * ou une raison si sDrive ne répond pas.
+	 */
+	public static function dossiers_du_compte( $chemin ) {
+		$acces = self::acces();
+		if ( null === $acces ) {
+			return 'sDrive n’est pas relié.';
 		}
+		$acces['dossier'] = '';
+		$reponse = wp_remote_request( self::adresse( $acces, (string) $chemin ), array(
+			'method'  => 'PROPFIND',
+			'timeout' => 15,
+			'headers' => array(
+				'Authorization' => 'Basic ' . base64_encode( $acces['compte'] . ':' . $acces['mot_de_passe'] ),
+				'Depth'         => '1',
+				'Content-Type'  => 'application/xml; charset=utf-8',
+			),
+			'body'    => self::PROPRIETES,
+		) );
+		$code = is_wp_error( $reponse ) ? 0 : (int) wp_remote_retrieve_response_code( $reponse );
+		if ( 207 !== $code ) {
+			return 404 === $code ? 'Ce dossier n’existe pas sur sDrive.' : 'sDrive ne répond pas : ' . self::pourquoi( $code, $reponse ) . '.';
+		}
+		$noms = array();
+		foreach ( self::entrees( wp_remote_retrieve_body( $reponse ) ) as $entree ) {
+			if ( $entree['dossier'] ) {
+				$noms[] = $entree['nom'];
+			}
+		}
+		natcasesort( $noms );
+		return array_values( $noms );
+	}
+
+	/**
+	 * Les entrées d'une réponse PROPFIND, le dossier lu mis à part : nom,
+	 * nature et taille de chacune.
+	 */
+	private static function entrees( $corps ) {
 		$entrees = array();
-		$blocs   = preg_split( '#<(?:[a-z0-9]+:)?response[\s>]#i', wp_remote_retrieve_body( $reponse ) );
+		$blocs   = preg_split( '#<(?:[a-z0-9]+:)?response[\s>]#i', (string) $corps );
 		array_shift( $blocs );
 		// La première réponse est le dossier lui-même.
 		array_shift( $blocs );

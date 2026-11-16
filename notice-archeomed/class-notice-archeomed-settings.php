@@ -2381,6 +2381,54 @@ class Notice_Archeomed_Settings {
 			<button type="submit" class="button" name="na_quoi" value="sdrive">Tester l’accès à sDrive</button>
 		</form>
 		<?php
+		self::etat_sdrive();
+	}
+
+	/**
+	 * Où en sont le rangement et l'export : les notices qui attendent, le
+	 * dernier passage et sa raison, puis chaque rubrique du numéro. Rien ne
+	 * se lit sur sDrive : ce sont les traces que les tâches ont laissées.
+	 */
+	private static function etat_sdrive() {
+		$etat     = get_option( Notice_Archeomed_Rangement::ETAT );
+		$attente  = Notice_Archeomed_Rangement::en_attente();
+		$numero   = Notice_Archeomed_Export::numero();
+		$travail  = Notice_Archeomed_Export::travail();
+		$rubriques = array_merge(
+			null !== $travail ? array( $travail['rubrique'] ) : array(),
+			Notice_Archeomed_Export::attente()
+		);
+		$manifestes = Notice_Archeomed_Export::manifestes();
+		if ( isset( $manifestes[ $numero ] ) && is_array( $manifestes[ $numero ] ) ) {
+			$rubriques = array_merge( $rubriques, array_keys( $manifestes[ $numero ] ) );
+		}
+		$rubriques = array_values( array_unique( array_map( 'strval', $rubriques ) ) );
+		if ( ! is_array( $etat ) && 0 === $attente && empty( $rubriques ) ) {
+			return;
+		}
+		$quand = function ( $t ) {
+			return wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $t );
+		};
+		?>
+		<h3>Rangement et export</h3>
+		<ul style="max-width:46em;list-style:disc;margin-left:1.5em">
+			<li><?php
+			echo esc_html( 0 === $attente
+				? 'Aucune notice n’attend d’être rangée.'
+				: sprintf( _n( '%s notice attend d’être rangée.', '%s notices attendent d’être rangées.', $attente, 'notice-archeomed' ), number_format_i18n( $attente ) ) );
+			if ( is_array( $etat ) && ! empty( $etat['le'] ) ) {
+				echo ' ' . esc_html( 'Dernier passage le ' . $quand( $etat['le'] ) . ' : '
+					. sprintf( _n( '%s notice rangée', '%s notices rangées', (int) $etat['rangees'], 'notice-archeomed' ), number_format_i18n( (int) $etat['rangees'] ) )
+					. ( empty( $etat['raison'] ) ? '.' : ' — ' . $etat['raison'] . '.' ) );
+			}
+			?></li>
+			<?php foreach ( $rubriques as $rubrique ) : ?>
+				<?php $e = Notice_Archeomed_Export::etat_de( $rubrique ); ?>
+				<li><strong><?php echo esc_html( $rubrique ); ?></strong>&nbsp;:
+					<span<?php echo 'echec' === $e['etat'] ? ' class="na-etat na-etat--echec"' : ''; ?>><?php echo esc_html( '' === $e['texte'] ? 'jamais exportée dans ce numéro.' : $e['texte'] ); ?></span></li>
+			<?php endforeach; ?>
+		</ul>
+		<?php
 	}
 
 	/**
@@ -2395,6 +2443,7 @@ class Notice_Archeomed_Settings {
 		if ( Notice_Archeomed_Sdrive::par_constantes() ) {
 			echo '<p class="description" style="max-width:46em">L’accès est déclaré dans wp-config.php '
 				. '(constantes <code>NA_SDRIVE_*</code>)&nbsp;: il prime, et la liaison ne se règle pas ici.</p>';
+			self::destination_sdrive( (string) NA_SDRIVE_DOSSIER );
 			return;
 		}
 		$lien    = Notice_Archeomed_Sdrive::liaison();
@@ -2445,11 +2494,92 @@ class Notice_Archeomed_Settings {
 					value="<?php echo esc_attr( isset( $lien['dossier'] ) ? $lien['dossier'] : '' ); ?>"
 					placeholder="Archéologie médiévale/Notices">
 				<button type="submit" class="button" name="na_quoi" value="sdrive_dossier">Enregistrer le dossier</button>
+				<?php if ( ! empty( $lien['compte'] ) && ! Notice_Archeomed_Sdrive::liaison_illisible() ) : ?>
+					<a class="button" href="<?php echo esc_url( add_query_arg( 'na_parcourir', isset( $lien['dossier'] ) ? $lien['dossier'] : '', self::url( 'diagnostic' ) ) . '#na-sdrive-parcourir' ); ?>">Parcourir sDrive</a>
+				<?php endif; ?>
 			</p>
 			<p class="description" style="max-width:46em">Le chemin depuis la racine du compte, tel que
 			sDrive l’affiche. Un dossier partagé par quelqu’un d’autre paraît à la racine, sous le
 			nom qu’il porte chez vous.</p>
 		</form>
+		<?php
+		if ( ! empty( $lien['compte'] ) && isset( $_GET['na_parcourir'] ) ) {
+			self::parcourir_sdrive( sanitize_text_field( wp_unslash( $_GET['na_parcourir'] ) ) );
+		}
+		self::destination_sdrive( isset( $lien['dossier'] ) ? (string) $lien['dossier'] : '' );
+	}
+
+	/**
+	 * Le sélecteur du dossier des figures : les sous-dossiers d'un chemin du
+	 * compte, lus sur sDrive à la demande, chacun menant plus bas, et un
+	 * bouton pour choisir celui où l'on est. Taper un chemin se trompe d'un
+	 * accent ou d'une espace ; cliquer, non.
+	 */
+	private static function parcourir_sdrive( $chemin ) {
+		$segments = array_values( array_filter( array_map( 'trim', explode( '/', str_replace( '\\', '/', $chemin ) ) ),
+			function ( $s ) {
+				return '' !== $s && '.' !== $s && '..' !== $s;
+			} ) );
+		$chemin   = implode( '/', $segments );
+		$lu       = Notice_Archeomed_Sdrive::dossiers_du_compte( $chemin );
+		$vers     = function ( $c ) {
+			return esc_url( add_query_arg( 'na_parcourir', $c, self::url( 'diagnostic' ) ) . '#na-sdrive-parcourir' );
+		};
+		?>
+		<div id="na-sdrive-parcourir" class="card" style="max-width:46em;margin:1em 0">
+			<p style="margin-top:0"><strong>Dans sDrive&nbsp;:</strong>
+				<a href="<?php echo $vers( '' ); ?>">racine du compte</a>
+				<?php
+				$ici = '';
+				foreach ( $segments as $segment ) {
+					$ici .= ( '' === $ici ? '' : '/' ) . $segment;
+					echo ' / <a href="' . $vers( $ici ) . '">' . esc_html( $segment ) . '</a>';
+				}
+				?>
+			</p>
+			<?php if ( is_string( $lu ) ) : ?>
+				<p class="na-etat na-etat--echec"><?php echo esc_html( $lu ); ?></p>
+			<?php elseif ( empty( $lu ) ) : ?>
+				<p class="description">Aucun sous-dossier ici.</p>
+			<?php else : ?>
+				<ul style="columns:2;margin-left:1.5em;list-style:disc">
+					<?php foreach ( $lu as $nom ) : ?>
+						<li><a href="<?php echo $vers( ( '' === $chemin ? '' : $chemin . '/' ) . $nom ); ?>"><?php echo esc_html( $nom ); ?></a></li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+			<?php if ( '' !== $chemin && ! is_string( $lu ) ) : ?>
+				<?php self::ouvrir_un_essai(); ?>
+					<input type="hidden" name="na_sdrive_dossier" value="<?php echo esc_attr( $chemin ); ?>">
+					<button type="submit" class="button button-primary" name="na_quoi" value="sdrive_dossier">Choisir «&nbsp;<?php echo esc_html( $chemin ); ?>&nbsp;»</button>
+					<a class="button-link" href="<?php echo esc_url( self::url( 'diagnostic' ) ); ?>">Fermer</a>
+				</form>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Où iront les fichiers, dit en clair : le dossier choisi, le numéro en
+	 * préparation, et ce que chacun reçoit. Sans numéro, rien ne se range.
+	 */
+	private static function destination_sdrive( $dossier ) {
+		$numero = Notice_Archeomed_Export::numero();
+		$dossier = trim( $dossier, '/' );
+		?>
+		<p style="max-width:46em">
+		<?php if ( '' === $dossier ) : ?>
+			Aucun dossier n’est choisi&nbsp;: rien ne se range sur sDrive.
+		<?php elseif ( '' === $numero ) : ?>
+			Aucun numéro n’est réglé&nbsp;: rien ne se range sur sDrive.
+			<a href="<?php echo esc_url( self::url( 'numero' ) ); ?>">Régler le numéro en préparation</a>.
+		<?php else : ?>
+			Les envois des auteurs se rangent dans
+			<code><?php echo esc_html( $dossier . '/' . $numero . '/originaux/' ); ?></code>, une notice par
+			dossier&nbsp;; l’export de chaque rubrique écrit dans <code><?php echo esc_html( $dossier . '/' . $numero . '/' ); ?></code>.
+			<a href="<?php echo esc_url( self::url( 'numero' ) ); ?>">Changer de numéro</a>.
+		<?php endif; ?>
+		</p>
 		<?php
 	}
 

@@ -468,6 +468,29 @@ jobs:
           NA_SDRIVE_RACINE='/tmp/sdrive/Revue AM' wp eval-file "$GITHUB_WORKSPACE/.github/essais/rangement-verification.php" | tee /tmp/rangement-3.log
           echo "::notice::$(head -1 /tmp/rangement-3.log)"
 
+      - name: Le sélecteur lit les dossiers du compte, le diagnostic dit où en sont rangement et export
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $echecs = array();
+            $racine = Notice_Archeomed_Sdrive::dossiers_du_compte( "" );
+            if ( ! is_array( $racine ) || ! in_array( "Revue AM", $racine, true ) ) { $echecs[] = "racine du compte : " . wp_json_encode( $racine ); }
+            $dedans = Notice_Archeomed_Sdrive::dossiers_du_compte( "Revue AM" );
+            if ( ! is_array( $dedans ) || ! in_array( "AM99", $dedans, true ) ) { $echecs[] = "dans Revue AM : " . wp_json_encode( $dedans ); }
+            if ( ! is_string( Notice_Archeomed_Sdrive::dossiers_du_compte( "Revue AM/nulle part" ) ) ) { $echecs[] = "un dossier absent se lit"; }
+            $page = "";
+            foreach ( array( "etat_sdrive" => array(), "destination_sdrive" => array( "Revue AM" ) ) as $quoi => $args ) {
+              $m = new ReflectionMethod( "Notice_Archeomed_Settings", $quoi );
+              $m->setAccessible( true );
+              ob_start(); $m->invokeArgs( null, $args ); $page .= ob_get_clean();
+            }
+            foreach ( array( "Aucune notice n’attend d’être rangée.", "Exporté le", "IV. Sépultures et nécropoles", "Revue AM/AM99/originaux/" ) as $attendu ) {
+              if ( false === strpos( $page, esc_html( $attendu ) ) && false === strpos( $page, $attendu ) ) { $echecs[] = "le diagnostic ne dit pas « " . $attendu . " »"; }
+            }
+            foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
+            if ( $echecs ) { exit( 1 ); }
+            echo "Le sélecteur et le diagnostic passent.\n";'
+
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
         working-directory: /tmp/wp
