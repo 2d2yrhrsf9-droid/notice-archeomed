@@ -10,7 +10,8 @@
  * la page comme un navigateur — le formulaire rempli de la notice, ses
  * figures gardées —, change le lieu-dit, garde la figure 1, remplace la
  * figure 2 par un TIFF (avec les deux JPEG que le navigateur en aurait
- * tirés) et ajoute une figure 3 en JPEG.
+ * tirés) et ajoute une figure 3 en JPEG — ou garde la figure 3 quand
+ * c'est une figure envoyée à part.
  *
  * Les <disputées> premières notices sont corrigées deux fois à la même
  * seconde, depuis deux pages ouvertes sur la même version : une seule
@@ -137,12 +138,20 @@ foreach ( $liens as $n => $lien ) {
 		$champs['garde_fichier_2']        = new CURLFile( $dossier . '/remplacement.tif', 'image/tiff', 'remplacement-' . $n . '.tif' );
 		$champs['na_conv_garde_hr_2']     = new CURLFile( $dossier . '/hr.jpg', 'image/jpeg', 'remplacement-' . $n . '-hr.jpg' );
 		$champs['na_conv_garde_br_2']     = new CURLFile( $dossier . '/br.jpg', 'image/jpeg', 'remplacement-' . $n . '-br.jpg' );
-		$champs['illustrations[0]']       = new CURLFile( $dossier . '/neuve.jpg', 'image/jpeg', 'ajout-' . $n . '.jpg' );
-		$champs['illus_titre[0]']         = 'Figure ajoutée';
-		$champs['illus_legende[0]']       = '';
-		$champs['illus_credits[0]']       = '© Essai, Inrap';
-		$champs['illus_type[0]']          = 'photo';
-		$champs['illus_alt[0]']           = 'Sondage vu de l’est';
+		// Une notice qui porte déjà une troisième figure — envoyée à part —
+		// la garde telle que la page la remplit, lien compris : on n'en
+		// ajoute pas, le maximum est de trois.
+		if ( ! isset( $champs['garde_action[3]'] ) ) {
+			$champs['illustrations[0]'] = new CURLFile( $dossier . '/neuve.jpg', 'image/jpeg', 'ajout-' . $n . '.jpg' );
+			$champs['illus_titre[0]']   = 'Figure ajoutée';
+			$champs['illus_legende[0]'] = '';
+			$champs['illus_credits[0]'] = '© Essai, Inrap';
+			$champs['illus_type[0]']    = 'photo';
+			$champs['illus_alt[0]']     = 'Sondage vu de l’est';
+		} elseif ( empty( $champs['garde_lien[3]'] ) ) {
+			fwrite( STDERR, "Le formulaire rouvert par $lien n'a pas rempli le lien de la figure envoyée à part.\n" );
+			exit( 2 );
+		}
 		$envois[] = array( 'notice' => $n, 'champs' => $champs );
 	}
 }

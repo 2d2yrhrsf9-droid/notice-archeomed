@@ -12,8 +12,9 @@
  * une autre. Même nombre de notices, même référence, une version de plus
  * exactement — les corrections disputées n'en ont fait passer qu'une —,
  * le lieu-dit corrigé, la figure 1 gardée telle quelle, la figure 2
- * remplacée et ses anciens fichiers effacés, la figure 3 ajoutée, toutes
- * avec leur aperçu ; la notice repartie une seule fois vers la rédaction,
+ * remplacée et ses anciens fichiers effacés, la figure 3 ajoutée — ou
+ * gardée avec son lien quand elle était envoyée à part —, toutes avec leur
+ * aperçu sauf celle-là ; la notice repartie une seule fois vers la rédaction,
  * marquée corrigée ; rien laissé au répertoire temporaire.
  *
  * Variables : NA_ETAPE, NA_INSTANTANE, NA_LIENS, NA_COURRIELS (le journal
@@ -126,7 +127,7 @@ foreach ( $notes as $id => $avant ) {
 		if ( ! is_file( $chemin ) ) {
 			$fautes( $id, 'le fichier de la figure ' . ( $i + 1 ) . ' manque.' );
 		}
-		if ( empty( $apercus[ $i + 1 ] ) || ! is_file( $apercus[ $i + 1 ] ) ) {
+		if ( ! Notice_Archeomed_Pactols::est_a_part( $chemin ) && ( empty( $apercus[ $i + 1 ] ) || ! is_file( $apercus[ $i + 1 ] ) ) ) {
 			$fautes( $id, 'pas d’aperçu pour la figure ' . ( $i + 1 ) . '.' );
 		}
 	}
@@ -142,7 +143,17 @@ foreach ( $notes as $id => $avant ) {
 	if ( empty( $conv[2]['hr'] ) || empty( $conv[2]['br'] ) || ! is_file( $conv[2]['hr'] ) || ! is_file( $conv[2]['br'] ) ) {
 		$fautes( $id, 'le TIFF de remplacement n’a pas gardé ses JPEG convertis.' );
 	}
-	if ( 0 !== strpos( (string) $items[2]['titre'], 'Figure ajoutée' ) ) {
+	// La figure 3 envoyée à part est restée telle quelle : même témoin, même
+	// lien, même titre.
+	if ( Notice_Archeomed_Pactols::est_a_part( isset( $avant['illustrations'][2] ) ? $avant['illustrations'][2] : null ) ) {
+		$a_part = Notice_Archeomed_Pactols::figure_a_part( $items[2] );
+		if ( $fichiers[2] !== $avant['illustrations'][2] || null === $a_part || false === strpos( (string) $a_part['lien'], 'essai-' ) ) {
+			$fautes( $id, 'la figure envoyée à part n’a pas été gardée avec son lien : ' . wp_json_encode( $items[2] ) );
+		}
+		if ( 0 !== strpos( (string) $items[2]['titre'], 'Coupe' ) ) {
+			$fautes( $id, 'la figure envoyée à part a perdu son titre (« ' . $items[2]['titre'] . ' »).' );
+		}
+	} elseif ( 0 !== strpos( (string) $items[2]['titre'], 'Figure ajoutée' ) ) {
 		$fautes( $id, 'la figure ajoutée n’est pas la troisième (« ' . $items[2]['titre'] . ' »).' );
 	}
 	// Ce que la notice ne désigne plus a quitté le serveur.
