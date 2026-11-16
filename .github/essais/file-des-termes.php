@@ -1259,7 +1259,7 @@ WP_CLI::log( 'La liaison à sDrive' );
 $S        = 'Notice_Archeomed_Sdrive';
 $sd_mot   = 'mot-d-application';
 $sd_vus   = array();
-$sd_etat  = array( 'autorise' => false, 'ailleurs' => false, 'proxy' => false );
+$sd_etat  = array( 'autorise' => false, 'ailleurs' => false, 'proxy' => false, 'sans_id' => false );
 $sd_auth  = 'Basic ' . base64_encode( '862404:' . $sd_mot );
 $sd_simul = function ( $pre, $args, $url ) use ( &$sd_vus, &$sd_etat, $sd_auth, $sd_mot ) {
 	if ( 0 !== strpos( $url, 'https://sdrive.cnrs.fr/' ) ) {
@@ -1295,7 +1295,18 @@ $sd_simul = function ( $pre, $args, $url ) use ( &$sd_vus, &$sd_etat, $sd_auth, 
 	if ( '/ocs/v2.php/core/apppassword' === $chemin && 'DELETE' === $methode ) {
 		return $rep( $authentifie && isset( $args['headers']['OCS-APIRequest'] ) ? 200 : 401 );
 	}
-	if ( 0 === strpos( $chemin, '/remote.php/dav/files/862404/Arch%C3%A9ologie%20m%C3%A9di%C3%A9vale/Notices/' ) ) {
+	// L'identifiant interne diffère du nom de connexion, comme pour un
+	// compte de la fédération d'identité.
+	if ( '/ocs/v2.php/cloud/user' === $chemin && 'GET' === $methode ) {
+		if ( $sd_etat['sans_id'] ) {
+			return $rep( 500 );
+		}
+		return ( $authentifie && isset( $args['headers']['OCS-APIRequest'] ) )
+			? $rep( 200, wp_json_encode( array( 'ocs' => array( 'meta' => array( 'statuscode' => 200 ),
+				'data' => array( 'id' => 'f3a1-862404', 'display-name' => 'Compte de la revue' ) ) ) ) )
+			: $rep( 401 );
+	}
+	if ( 0 === strpos( $chemin, '/remote.php/dav/files/f3a1-862404/Arch%C3%A9ologie%20m%C3%A9di%C3%A9vale/Notices/' ) ) {
 		if ( ! $authentifie ) {
 			return $rep( 401 );
 		}
@@ -1343,10 +1354,23 @@ $sd_lien             = $S::liaison();
 $sd_acces            = $S::acces();
 na_verifier( true === $sd_fin['ok'] && null === $S::demande_en_cours() && '862404' === $sd_lien['compte']
 	&& false === strpos( serialize( get_option( $S::OPTION ) ), $sd_mot )
-	&& is_array( $sd_acces ) && $sd_mot === $sd_acces['mot_de_passe']
-	&& 'https://sdrive.cnrs.fr/remote.php/dav/files/862404/' === $sd_acces['webdav'],
-	'l\'autorisation donnée, le site est relié : le mot de passe est scellé dans la base, et se descelle pour parler à sDrive',
-	array( $sd_fin, $sd_lien ) );
+	&& is_array( $sd_acces ) && $sd_mot === $sd_acces['mot_de_passe'] && '862404' === $sd_acces['compte']
+	&& 'https://sdrive.cnrs.fr/remote.php/dav/files/f3a1-862404/' === $sd_acces['webdav'],
+	'l\'autorisation donnée, le site est relié : le mot de passe est scellé dans la base, et se descelle pour parler à sDrive ; '
+	. 'l\'adresse WebDAV prend l\'identifiant interne du compte, la connexion son nom',
+	array( $sd_fin, $sd_lien, $sd_acces ) );
+
+$sd_etat['sans_id'] = true;
+$sd_sans            = na_appel( $S, 'identifiant_du_compte', array( 'https://sdrive.cnrs.fr', '862404', $sd_mot ) );
+$sd_etat['sans_id'] = false;
+$sd_ancien          = $sd_lien;
+unset( $sd_ancien['id'] );
+update_option( $S::OPTION, $sd_ancien, false );
+$sd_repli = $S::acces();
+update_option( $S::OPTION, $sd_lien, false );
+na_verifier( '' === $sd_sans && 'https://sdrive.cnrs.fr/remote.php/dav/files/862404/' === $sd_repli['webdav'],
+	'sans identifiant rendu par sDrive, ou pour une liaison plus ancienne, l\'adresse retombe sur le nom de connexion',
+	array( $sd_sans, $sd_repli ) );
 na_verifier( false !== strpos( $sd_rendu(), 'Délier le site' ) && false !== strpos( $sd_rendu(), '862404' ),
 	'relié, la page nomme le compte et offre de délier' );
 

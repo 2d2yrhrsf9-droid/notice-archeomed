@@ -61,7 +61,9 @@ class Notice_Archeomed_Sdrive {
 	/**
 	 * De quoi parler à sDrive : adresse WebDAV du compte, identifiant, mot de
 	 * passe et dossier. Null tant que rien n'est relié ni déclaré ; le dossier
-	 * peut être vide, l'essai le dit alors.
+	 * peut être vide, l'essai le dit alors. L'adresse se bâtit sur
+	 * l'identifiant interne du compte, qui peut différer du nom de connexion ;
+	 * une liaison qui ne l'a pas obtenu retombe sur ce nom.
 	 */
 	public static function acces() {
 		if ( self::par_constantes() ) {
@@ -80,8 +82,9 @@ class Notice_Archeomed_Sdrive {
 		if ( '' === $mot ) {
 			return null;
 		}
+		$nom = ! empty( $lien['id'] ) ? (string) $lien['id'] : (string) $lien['compte'];
 		return array(
-			'webdav'       => $lien['serveur'] . '/remote.php/dav/files/' . rawurlencode( $lien['compte'] ) . '/',
+			'webdav'       => $lien['serveur'] . '/remote.php/dav/files/' . rawurlencode( $nom ) . '/',
 			'compte'       => $lien['compte'],
 			'mot_de_passe' => $mot,
 			'dossier'      => isset( $lien['dossier'] ) ? (string) $lien['dossier'] : '',
@@ -167,19 +170,46 @@ class Notice_Archeomed_Sdrive {
 			return array( 'ok' => false, 'message' => 'sDrive a répondu sans rendre d’accès (code HTTP ' . $code . ').' );
 		}
 		delete_transient( self::cle_de_demande() );
+		$serveur  = untrailingslashit( (string) $data['server'] );
+		$id       = self::identifiant_du_compte( $serveur, (string) $data['loginName'], (string) $data['appPassword'] );
 		$ancienne = self::liaison();
 		if ( ! empty( $ancienne['compte'] ) ) {
 			self::revoquer();
 		}
 		update_option( self::OPTION, array(
-			'serveur' => untrailingslashit( (string) $data['server'] ),
+			'serveur' => $serveur,
 			'compte'  => (string) $data['loginName'],
+			'id'      => $id,
 			'scelle'  => self::sceller( (string) $data['appPassword'] ),
 			'dossier' => isset( $ancienne['dossier'] ) ? $ancienne['dossier'] : '',
 			'le'      => time(),
 		), false );
 		self::oublier_le_refus();
 		return array( 'ok' => true, 'message' => 'Le site est relié au compte sDrive ' . $data['loginName'] . '.' );
+	}
+
+	/**
+	 * L'identifiant interne du compte, tel que sDrive le donne : c'est lui
+	 * qui nomme le dossier WebDAV, quand la connexion passe par la
+	 * fédération d'identité sous un autre nom. Vide si sDrive ne le dit
+	 * pas ; le nom de connexion sert alors.
+	 */
+	private static function identifiant_du_compte( $serveur, $compte, $mot ) {
+		$reponse = wp_remote_get( $serveur . '/ocs/v2.php/cloud/user?format=json', array(
+			'timeout'    => 15,
+			'user-agent' => self::nom_du_site(),
+			'headers'    => array(
+				'Authorization'  => 'Basic ' . base64_encode( $compte . ':' . $mot ),
+				'OCS-APIRequest' => 'true',
+				'Accept'         => 'application/json',
+			),
+		) );
+		if ( is_wp_error( $reponse ) || 200 !== (int) wp_remote_retrieve_response_code( $reponse ) ) {
+			return '';
+		}
+		$data = json_decode( wp_remote_retrieve_body( $reponse ), true );
+		$id   = isset( $data['ocs']['data']['id'] ) && is_string( $data['ocs']['data']['id'] ) ? trim( $data['ocs']['data']['id'] ) : '';
+		return ( '' !== $id && false === strpos( $id, '/' ) ) ? $id : '';
 	}
 
 	/** Abandonne une demande de liaison restée sans réponse. */
