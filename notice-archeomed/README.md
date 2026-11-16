@@ -1143,7 +1143,10 @@ lui-même (`ranger_comme_au_fascicule()`), non un second tri écrit à côté.
 les champs se corrigent. Les lieux du titre se cherchent dans Pactols depuis
 le navigateur, comme au dépôt : une commune changée prend l'identifiant (ARK)
 du terme choisi, un nom inchangé garde le sien — et le dossier de la notice
-sur sDrive garde son nom, on ne le renomme pas. Trois choses ne s'y font pas,
+sur sDrive garde son nom, on ne le renomme pas. Comme au dépôt, la première
+commune choisie remplit la précision géographique d'après Pactols (« vérifiez »),
+et « Falaise (Calvados) » s'allège en « Falaise » quand la parenthèse dit
+déjà « Calvados ». Trois choses ne s'y font pas,
 et le serveur les refuse quoi que poste la requête :
 
 - les **courriels des responsables** ne sont pas dans la page d'un

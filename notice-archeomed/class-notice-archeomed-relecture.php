@@ -1651,10 +1651,47 @@ class Notice_Archeomed_Relecture {
 				return fermer;
 			}
 
+			// Le département d'une commune, d'après son ARK, comme au dépôt :
+			// l'avant-dernier élément du chemin dans Pactols, débarrassé de
+			// « Département du… ». Chaque ARK n'est demandé qu'une fois.
+			var departements = {};
+			function departementDe(uri) {
+				var m = String(uri).match(/ark:\/(.+)$/);
+				if (!m) { return Promise.resolve(''); }
+				if (departements[m[1]]) { return departements[m[1]]; }
+				departements[m[1]] = fetch(R.pactols + 'api/searchwidgetbyark?q=' + encodeURIComponent(m[1]) + '&lang=fr',
+					{ headers: { 'Accept': 'application/json' } }).then(function (r) {
+					if (!r.ok) { throw new Error('HTTP ' + r.status); }
+					return r.json();
+				}).then(function (data) {
+					if (!Array.isArray(data) || !data.length) { return ''; }
+					var chemin = Array.isArray(data[0]) ? data[0] : data;
+					if (chemin.length < 2) { return ''; }
+					var nom = (chemin[chemin.length - 2] && chemin[chemin.length - 2].label) ? chemin[chemin.length - 2].label : '';
+					if (nom.indexOf('épartement') === -1) {
+						for (var i = chemin.length - 2; i >= 0; i--) {
+							if (chemin[i].label && chemin[i].label.indexOf('épartement') !== -1) { nom = chemin[i].label; break; }
+						}
+					}
+					return nom.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|de\s+)/i, '').trim();
+				}).catch(function () { delete departements[m[1]]; return ''; });
+				return departements[m[1]];
+			}
+			function plier(t) {
+				t = String(t || '').replace(/\s+/g, ' ').trim().replace(/[’‘ʼ`]/g, '\'').toLowerCase();
+				t = t.replace(/^[\s()]+|[\s()]+$/g, '').replace(/^l'\s*/, '');
+				return t.normalize ? t.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : t;
+			}
+			var QUALIFIE = /^(.*\S)\s*\(([^()]+)\)$/;
+			var deptChamp = document.getElementById('na-rel-departement');
+
 			// Les lieux du titre : un nom choisi dans la liste prend
 			// l'identifiant du terme ; un nom retapé le perd, sauf à
-			// redevenir celui que la notice portait.
-			[].forEach.call(form.querySelectorAll('.na-rel-lieu'), function (bloc) {
+			// redevenir celui que la notice portait. Comme au dépôt, la
+			// première commune choisie remplit la parenthèse, et un libellé
+			// « Falaise (Calvados) » perd la précision que la parenthèse dit
+			// déjà ; l'identifiant reste celui du lieu choisi.
+			[].forEach.call(form.querySelectorAll('.na-rel-lieu'), function (bloc, rang) {
 				var champ = bloc.querySelector('input[type="text"]');
 				var ark = bloc.querySelector('input[type="hidden"]');
 				var dit = bloc.querySelector('.na-rel-dit');
@@ -1665,6 +1702,20 @@ class Notice_Archeomed_Relecture {
 					champ.value = item.label;
 					ark.value = item.ark;
 					dit.textContent = item.label + ' retenu, avec son identifiant.';
+					departementDe(item.ark).then(function (dept) {
+						if (champ.value !== item.label || ark.value !== item.ark) { return; }
+						var phrases = [item.label + ' retenu, avec son identifiant.'];
+						if (0 === rang && dept && deptChamp && plier(deptChamp.value) !== plier(dept)) {
+							deptChamp.value = dept;
+							phrases.push('Précision géographique remplie d’après Pactols\u00a0: ' + dept + ', vérifiez.');
+						}
+						var m = QUALIFIE.exec(item.label);
+						if (m && deptChamp && plier(m[2]) === plier(deptChamp.value)) {
+							champ.value = m[1];
+							phrases[0] = m[1] + ' retenu, avec son identifiant\u00a0: « ' + m[2] + ' » est dans la parenthèse.';
+						}
+						dit.textContent = phrases.join(' ');
+					});
 				});
 			});
 
