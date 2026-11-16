@@ -7590,10 +7590,13 @@ class Notice_Archeomed_Pactols {
 			// ── Entrée ne soumet pas depuis un champ d'une ligne ───────────
 			// Une recherche Pactols ou une légende validée par Entrée envoyait
 			// la notice à moitié remplie. Les listes gardent leur propre Entrée.
+			// Les cases à cocher, les boutons radio et les dates envoyaient
+			// encore : on parcourt la nature d'opération au clavier, et Entrée
+			// partait avec tout le formulaire. Seul le bouton d'envoi envoie.
 			form.addEventListener('keydown', function (e) {
 				if (e.key !== 'Enter' || e.defaultPrevented) { return; }
 				var t = e.target;
-				if (t.tagName === 'INPUT' && /^(text|email|url|search|tel|number)$/.test(t.type)) { e.preventDefault(); }
+				if (t.tagName === 'INPUT' && !/^(submit|button|image|reset|file)$/.test(t.type)) { e.preventDefault(); }
 			});
 
 			// ── Le brouillon gardé sur l'appareil ──────────────────────────
