@@ -490,6 +490,46 @@ jobs:
             echo "Le pas coupé compte : ", $apres["raison"], "\n";
           '
 
+      - name: Un formulaire ouvert sans être connecté passe après connexion, et chaque refus se note
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $echecs = array();
+            $p = $GLOBALS["notice_archeomed_plugin"];
+            $duree = function () { return 2 * DAY_IN_SECONDS; };
+            wp_set_current_user( 0 );
+            add_filter( "nonce_life", $duree );
+            $anonyme = wp_create_nonce( "notice_archeomed_submit" );
+            remove_filter( "nonce_life", $duree );
+            $admin = get_users( array( "role" => "administrator", "number" => 1, "fields" => "ID" ) );
+            wp_set_current_user( (int) $admin[0] );
+            $v = new ReflectionMethod( $p, "verifier_le_jeton" );
+            $v->setAccessible( true );
+            if ( ! $v->invoke( $p, $anonyme, true ) ) { $echecs[] = "le jeton anonyme est refusé après connexion"; }
+            if ( $v->invoke( $p, $anonyme, false ) ) { $echecs[] = "le jeton anonyme passe pour la rédaction"; }
+            if ( $v->invoke( $p, "0123456789", true ) ) { $echecs[] = "un jeton quelconque passe"; }
+            if ( ! $v->invoke( $p, wp_create_nonce( "notice_archeomed_submit" ), false ) ) { $echecs[] = "le jeton de la personne connectée est refusé"; }
+            delete_option( "na_derniers_refus" );
+            $_POST["na_ts"] = (string) ( time() - 90 );
+            $c = new ReflectionProperty( $p, "cause_du_refus" );
+            $c->setAccessible( true );
+            $c->setValue( $p, "champ piège rempli" );
+            $n = new ReflectionMethod( $p, "noter_le_refus" );
+            $n->setAccessible( true );
+            $n->invoke( $p, "piege", array() );
+            $r = Notice_Archeomed_Pactols::derniers_refus();
+            if ( 1 !== count( $r ) || "piege" !== $r[0]["raison"] || "champ piège rempli" !== $r[0]["cause"]
+              || $r[0]["age"] < 89 || empty( $r[0]["connecte"] ) ) { $echecs[] = "le refus noté : " . wp_json_encode( $r ); }
+            $t = new ReflectionMethod( "Notice_Archeomed_Settings", "tableau_des_refus" );
+            $t->setAccessible( true );
+            ob_start(); $t->invoke( null ); $page = ob_get_clean();
+            if ( false === strpos( $page, "champ piège rempli" ) ) { $echecs[] = "le diagnostic ne montre pas la cause"; }
+            delete_option( "na_derniers_refus" );
+            unset( $_POST["na_ts"] );
+            if ( $echecs ) { foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; } exit( 1 ); }
+            echo "Jeton anonyme admis après connexion, refus noté et montré.\n";
+          '
+
       - name: Le sélecteur lit les dossiers du compte, le diagnostic dit où en sont rangement et export
         working-directory: /tmp/wp
         run: |

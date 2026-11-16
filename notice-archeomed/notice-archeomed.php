@@ -238,6 +238,8 @@ class Notice_Archeomed_Pactols {
 	 * du serveur ce que le plugin pouvait retenir.
 	 */
 	private $derniere_erreur_mail = '';
+	/** Ce qui a fait refuser un envoi, en clair, pour le diagnostic. */
+	private $cause_du_refus = '';
 	private $rubriques = array(
 		'I. Constructions et habitats civils – Environnement rural et urbain',
 		'II. Constructions et habitats ecclésiastiques',
@@ -2284,6 +2286,7 @@ class Notice_Archeomed_Pactols {
 		$serveur  = $this->en_mo( $plafonds['requete'] ) . "\u{00A0}Mo";
 		$messages = array(
 			'securite'        => 'La page était ouverte depuis trop longtemps et a expiré.',
+			'piege'           => 'Un champ invisible du formulaire a été rempli, sans doute par votre navigateur ou votre gestionnaire de mots de passe. Renvoyez le formulaire sans les laisser remplir la page.',
 			'quota'           => 'Trop de tentatives depuis cette connexion. Attendez une heure, ou écrivez directement à la rédaction.',
 			'envois'          => 'Le nombre de notices envoyées depuis cette adresse a atteint la limite horaire. Attendez une heure, ou écrivez directement à la rédaction.',
 			'verification'    => 'La vérification n’a pas abouti. Faites glisser la pièce jusqu’à son encoche, puis renvoyez le formulaire.',
@@ -2381,8 +2384,6 @@ class Notice_Archeomed_Pactols {
 			'coresp_email'        => array( 'na-coresp-email', 'Saisissez une adresse électronique complète pour le co-responsable, par exemple prenom.nom@exemple.fr' ),
 			'coauteur_email'      => array( 'na-coauteur-email', 'Saisissez une adresse électronique complète pour le co-auteur, par exemple prenom.nom@exemple.fr' ),
 			'texte'               => array( 'na-texte', 'Saisissez ou collez le texte de la notice' ),
-			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
-			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
 			// Les champs d'une figure ne sont dans la page qu'une fois son
 			// fichier choisi : le lien y mène quand il existe.
 			'illus_lien_1'        => array( 'na-illus-1-lien', 'Collez le lien de téléchargement de la figure 1, envoyée à part' ),
@@ -2405,6 +2406,8 @@ class Notice_Archeomed_Pactols {
 			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en quelques mots ce que montre la figure 3, pour un public empêché de voir' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
+			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
+			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
 		);
 		// Les figures déjà déposées d'une notice qu'on corrige : leur carte
@@ -3277,7 +3280,7 @@ class Notice_Archeomed_Pactols {
 			<?php echo $this->champ_du_jeton(); // Champ caché fabriqué par WordPress. ?>
 			<div aria-hidden="true" style="position:absolute!important;left:-9999px!important;top:-9999px!important;height:0;overflow:hidden;">
 				<label>Ne pas remplir ce champ
-					<input type="text" name="na_website" tabindex="-1" autocomplete="off" value="">
+					<input type="text" name="na_website" tabindex="-1" autocomplete="off" value="" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other">
 				</label>
 			</div>
 			<input type="hidden" name="na_ts" value="<?php echo esc_attr( time() ); ?>">
@@ -3492,64 +3495,7 @@ class Notice_Archeomed_Pactols {
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s4">
-				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Classement et mots-clés</h2>
-				<div class="na-champ">
-					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
-					<select id="na-rubrique" name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
-				</div>
-				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
-				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
-					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
-					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
-						<option value="">Choisir une matière…</option>
-						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
-							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</div>
-				<button type="button" class="na-ajout" aria-controls="na-renvois" aria-expanded="true" hidden><span aria-hidden="true">+</span> Signaler la notice dans d’autres rubriques</button>
-				<fieldset class="na-sous-groupe na-bloc" id="na-renvois" aria-describedby="na-renvois-aide">
-					<legend>Autres rubriques concernées <span class="na-facultatif">(facultatif)</span></legend>
-					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
-					<div class="na-half">
-						<div class="na-champ">
-							<label for="na-renvoi-1">Premier renvoi</label>
-							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_1' ) ), 'Aucun renvoi' ); ?></select>
-						</div>
-						<div class="na-champ">
-							<label for="na-renvoi-2">Second renvoi</label>
-							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_2' ) ), 'Aucun renvoi' ); ?></select>
-						</div>
-					</div>
-					<button type="button" class="na-retirer" hidden>Retirer les renvois</button>
-				</fieldset>
-
-				<div class="na-sous-groupe" role="group" aria-labelledby="na-kw-titre" aria-describedby="na-kw-aide">
-					<h3 class="na-sous-titre" id="na-kw-titre">Mots-clés Pactols <span class="na-facultatif">(facultatif)</span></h3>
-					<p class="na-help" id="na-kw-aide">Tapez trois lettres au moins, puis choisissez les termes dans la liste que propose le thésaurus Pactols&nbsp;: la notice sera indexée avec eux. Si le terme n’est pas dans la liste, vous pouvez appuyer deux fois sur Entrée pour le proposer tel quel&nbsp;; mais un terme absent de Pactols ne sera pas utilisé dans la notice. Dix au plus par catégorie.</p>
-					<div class="na-pactols-grid">
-						<?php
-						echo $this->pactols_categorie_html( 'period', 'Périodes',
-							'Par exemple&nbsp;: haut Moyen Âge, XII<sup>e</sup>&nbsp;siècle.', 'Chercher une période', 'pactols_periods' );
-						echo $this->pactols_categorie_html( 'subject', 'Sujets',
-							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects' );
-						// La commune de la notice est déjà demandée plus haut : ce qu'on
-						// attend ici, ce sont les autres lieux — la région, le pays, un
-						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
-						echo $this->pactols_categorie_html( 'place', 'Autres lieux',
-							'Région, pays ou ensemble géographique&nbsp;: Normandie. La commune de l’opération est déjà dans le titre.',
-							'Chercher un lieu', 'pactols_places' );
-						?>
-					</div>
-					<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
-					<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
-					<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
-				</div>
-			</section>
-
-			<section class="na-section" aria-labelledby="na-s5">
-				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
+				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
 				<p class="na-help" id="na-illus-aide">Trois fichiers au plus<?php echo ( $en_place && ! empty( $gardees ) ) ? ', figures déjà déposées comprises' : ''; ?>, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?> Appelez chaque figure dans le texte, à l’endroit qui en parle&nbsp;: (fig.&nbsp;1).</p>
 				<?php if ( $en_place && ! empty( $gardees ) ) : ?>
 				<?php
@@ -3695,6 +3641,63 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<?php endif; ?>
 				</details>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s5">
+				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Classement et mots-clés</h2>
+				<div class="na-champ">
+					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
+					<select id="na-rubrique" name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
+				</div>
+				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
+				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
+					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
+					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
+					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
+						<option value="">Choisir une matière…</option>
+						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
+							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<button type="button" class="na-ajout" aria-controls="na-renvois" aria-expanded="true" hidden><span aria-hidden="true">+</span> Signaler la notice dans d’autres rubriques</button>
+				<fieldset class="na-sous-groupe na-bloc" id="na-renvois" aria-describedby="na-renvois-aide">
+					<legend>Autres rubriques concernées <span class="na-facultatif">(facultatif)</span></legend>
+					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
+					<div class="na-half">
+						<div class="na-champ">
+							<label for="na-renvoi-1">Premier renvoi</label>
+							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_1' ) ), 'Aucun renvoi' ); ?></select>
+						</div>
+						<div class="na-champ">
+							<label for="na-renvoi-2">Second renvoi</label>
+							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_2' ) ), 'Aucun renvoi' ); ?></select>
+						</div>
+					</div>
+					<button type="button" class="na-retirer" hidden>Retirer les renvois</button>
+				</fieldset>
+
+				<div class="na-sous-groupe" role="group" aria-labelledby="na-kw-titre" aria-describedby="na-kw-aide">
+					<h3 class="na-sous-titre" id="na-kw-titre">Mots-clés Pactols <span class="na-facultatif">(facultatif)</span></h3>
+					<p class="na-help" id="na-kw-aide">Tapez trois lettres au moins, puis choisissez les termes dans la liste que propose le thésaurus Pactols&nbsp;: la notice sera indexée avec eux. Si le terme n’est pas dans la liste, vous pouvez appuyer deux fois sur Entrée pour le proposer tel quel&nbsp;; mais un terme absent de Pactols ne sera pas utilisé dans la notice. Dix au plus par catégorie.</p>
+					<div class="na-pactols-grid">
+						<?php
+						echo $this->pactols_categorie_html( 'period', 'Périodes',
+							'Par exemple&nbsp;: haut Moyen Âge, XII<sup>e</sup>&nbsp;siècle.', 'Chercher une période', 'pactols_periods' );
+						echo $this->pactols_categorie_html( 'subject', 'Sujets',
+							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects' );
+						// La commune de la notice est déjà demandée plus haut : ce qu'on
+						// attend ici, ce sont les autres lieux — la région, le pays, un
+						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
+						echo $this->pactols_categorie_html( 'place', 'Autres lieux',
+							'Région, pays ou ensemble géographique&nbsp;: Normandie. La commune de l’opération est déjà dans le titre.',
+							'Chercher un lieu', 'pactols_places' );
+						?>
+					</div>
+					<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
+					<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
+					<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
+				</div>
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s6">
@@ -10714,6 +10717,7 @@ class Notice_Archeomed_Pactols {
 		// secondes : c'est un robot, on refuse comme pour lui.
 		if ( isset( $_POST['na_ts'] ) && ! is_string( $_POST['na_ts'] ) ) {
 			error_log( 'Notice Archeomed: forged timestamp.' );
+			$this->cause_du_refus = 'heure d’affichage forgée';
 			$this->redirect_result( false, 'securite' );
 		}
 		// La notice que ce formulaire corrige en place, s'il en corrige une.
@@ -10730,13 +10734,15 @@ class Notice_Archeomed_Pactols {
 			$this->redirect_result( false, 'quota' );
 		}
 		self::entrees_attendues();
-		if ( ! isset( $_POST['notice_archeomed_nonce'] ) || ! $this->verifier_le_jeton( $_POST['notice_archeomed_nonce'] ) ) {
+		if ( ! isset( $_POST['notice_archeomed_nonce'] ) || ! $this->verifier_le_jeton( $_POST['notice_archeomed_nonce'], ! $redaction ) ) {
 			error_log( 'Notice Archeomed: nonce verification failed.' );
+			$this->cause_du_refus = 'jeton refusé';
 			$this->redirect_result( false, 'securite' );
 		}
 		if ( ! empty( $_POST['na_website'] ) ) {
 			error_log( 'Notice Archeomed: honeypot triggered.' );
-			$this->redirect_result( false, 'securite' );
+			$this->cause_du_refus = 'champ piège rempli';
+			$this->redirect_result( false, 'piege' );
 		}
 		// L'heure d'affichage de la page est exigée : sans elle, le délai
 		// minimal se contournait en l'omettant. Un humain l'a toujours, posée
@@ -10745,6 +10751,9 @@ class Notice_Archeomed_Pactols {
 		$ts = isset( $_POST['na_ts'] ) ? absint( $_POST['na_ts'] ) : 0;
 		if ( $ts <= 0 || $ts > time() + 300 || ( time() - $ts ) < 3 || ( time() - $ts ) > WEEK_IN_SECONDS ) {
 			error_log( 'Notice Archeomed: horodatage absent, invraisemblable ou trop rapide.' );
+			$this->cause_du_refus = $ts <= 0 ? 'heure d’affichage absente'
+				: ( $ts > time() + 300 ? 'heure d’affichage dans le futur'
+				: ( ( time() - $ts ) < 3 ? 'envoyé moins de trois secondes après l’affichage' : 'page affichée il y a plus d’une semaine' ) );
 			$this->redirect_result( false, 'securite' );
 		}
 		// Un formulaire de correction dont le lien a expiré, ou dont la notice
@@ -13102,6 +13111,9 @@ class Notice_Archeomed_Pactols {
 		// manquée comme d'une page expirée, et dans les deux cas la personne
 		// devant l'écran n'y est pour rien.
 		$jeton   = $ok ? '' : $this->garder_la_saisie();
+		if ( ! $ok ) {
+			$this->noter_le_refus( $raison, $champs );
+		}
 		$referer = $this->url_du_formulaire();
 		$redirect = add_query_arg( 'notice_envoyee', $ok ? '1' : '0', $referer );
 		if ( ! $ok && '' !== $raison ) {
@@ -13190,18 +13202,82 @@ class Notice_Archeomed_Pactols {
 	 * formulaire (le défaut de WordPress est de 12 à 24 heures, trop court
 	 * pour qui laisse sa page ouverte la nuit : critère 13.1 du RGAA).
 	 */
-	private function verifier_le_jeton( $jeton ) {
+	private function verifier_le_jeton( $jeton, $anonyme_admis = false ) {
+		$jeton = is_string( $jeton ) ? $jeton : '';
 		$duree = function () { return 2 * DAY_IN_SECONDS; };
 		add_filter( 'nonce_life', $duree );
-		$ok = wp_verify_nonce( is_string( $jeton ) ? $jeton : '', 'notice_archeomed_submit' );
+		$ok = wp_verify_nonce( $jeton, 'notice_archeomed_submit' );
+		// WordPress lie le jeton à la session : une page ouverte sans être
+		// connecté, puis envoyée après s'être connecté dans un autre onglet,
+		// était refusée comme expirée. Hors correction par la rédaction, le
+		// jeton d'un visiteur anonyme vaut pour tous, puisque n'importe qui
+		// l'obtient en affichant la page.
+		if ( ! $ok && $anonyme_admis && is_user_logged_in() ) {
+			$ok = self::jeton_anonyme_valable( $jeton );
+		}
 		remove_filter( 'nonce_life', $duree );
 		// Une page servie avant cette durée (un onglet resté ouvert pendant la
 		// mise à jour) porte un jeton de durée ordinaire : on l'accepte encore,
 		// pour ne pas refuser des notices que leur auteur vient d'écrire.
 		if ( ! $ok ) {
-			$ok = wp_verify_nonce( is_string( $jeton ) ? $jeton : '', 'notice_archeomed_submit' );
+			$ok = wp_verify_nonce( $jeton, 'notice_archeomed_submit' );
 		}
 		return $ok;
+	}
+
+	/**
+	 * Le jeton est-il celui qu'aurait reçu un visiteur anonyme ?
+	 *
+	 * Même calcul que wp_verify_nonce(), pour l'identifiant zéro et une
+	 * session vide : l'heure présente ou la précédente.
+	 */
+	private static function jeton_anonyme_valable( $jeton ) {
+		if ( '' === $jeton ) {
+			return false;
+		}
+		$action = 'notice_archeomed_submit';
+		$uid    = (int) apply_filters( 'nonce_user_logged_out', 0, $action );
+		$tic    = wp_nonce_tick( $action );
+		foreach ( array( $tic, $tic - 1 ) as $i ) {
+			$attendu = substr( wp_hash( $i . '|' . $action . '|' . $uid . '|', 'nonce' ), -12, 10 );
+			if ( hash_equals( $attendu, $jeton ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Garde trace des derniers refus, pour le diagnostic.
+	 *
+	 * Le premier essai en 3.70 a reçu « la page a expiré » sans qu'on sache
+	 * laquelle des quatre causes jouait : elle n'était écrite qu'au journal
+	 * PHP, que l'administrateur du site ne lit pas. On garde les vingt
+	 * derniers, sans adresse ni contenu : l'heure, la raison, la cause, l'âge
+	 * de la page et si la personne était connectée.
+	 */
+	private function noter_le_refus( $raison, $champs = array() ) {
+		$ts    = isset( $_POST['na_ts'] ) && is_string( $_POST['na_ts'] ) ? absint( $_POST['na_ts'] ) : 0;
+		$cause = $this->cause_du_refus;
+		if ( '' === $cause && ! empty( $champs ) ) {
+			$cause = implode( ', ', array_map( 'sanitize_key', (array) $champs ) );
+		}
+		$refus = get_option( 'na_derniers_refus', array() );
+		$refus = is_array( $refus ) ? $refus : array();
+		array_unshift( $refus, array(
+			'quand'    => time(),
+			'raison'   => sanitize_key( $raison ),
+			'cause'    => $cause,
+			'age'      => $ts > 0 ? time() - $ts : null,
+			'connecte' => is_user_logged_in(),
+		) );
+		update_option( 'na_derniers_refus', array_slice( $refus, 0, 20 ), false );
+	}
+
+	/** Les derniers refus, du plus récent au plus ancien. */
+	public static function derniers_refus() {
+		$refus = get_option( 'na_derniers_refus', array() );
+		return is_array( $refus ) ? $refus : array();
 	}
 
 	/** Le champ du jeton, de la même durée que sa vérification. */

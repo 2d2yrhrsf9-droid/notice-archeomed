@@ -1375,3 +1375,22 @@ service.
 Les incidents (échec de génération, refus d'envoi, erreur de téléversement)
 sont écrits dans le journal PHP avec le préfixe `Notice Archeomed:`. En cas
 de comportement inattendu, c'est le premier endroit à consulter.
+
+Les vingt derniers envois refusés se lisent aussi dans **Réglages ›
+Diagnostic**, sous « Derniers envois refusés ». Le tableau ne montre ni
+adresse ni contenu, seulement :
+
+- l'heure du refus ;
+- le message vu par l'auteur ;
+- la cause exacte, par exemple jeton refusé, champ piège rempli ou page
+  affichée il y a plus d'une semaine ;
+- l'âge de la page ;
+- si la personne était connectée.
+
+« La page a expiré » couvre plusieurs causes, et c'est ce tableau qui dit
+laquelle a joué.
+
+Un formulaire ouvert sans être connecté reste valable si l'on se connecte
+ensuite dans un autre onglet : son jeton est celui de n'importe quel
+visiteur. Cette tolérance ne vaut pas pour une correction ouverte par la
+rédaction.

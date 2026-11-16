@@ -2261,6 +2261,45 @@ class Notice_Archeomed_Settings {
 	}
 
 	/** Ce que l'hébergement offre : un constat, pour dépanner. */
+	/**
+	 * Les derniers envois refusés, avec leur cause.
+	 *
+	 * « La page a expiré » couvrait quatre causes, que seul le journal PHP
+	 * distinguait : l'administrateur ne pouvait pas dire laquelle avait joué.
+	 */
+	private static function tableau_des_refus() {
+		$refus = Notice_Archeomed_Pactols::derniers_refus();
+		if ( empty( $refus ) ) {
+			echo '<p><span class="na-etat na-etat--ok"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span> Aucun refus noté.</span></p>';
+			return;
+		}
+		?>
+		<table class="widefat striped" style="max-width:66em">
+			<thead>
+				<tr>
+					<th scope="col" style="width:17%">Quand</th>
+					<th scope="col" style="width:13%">Message</th>
+					<th scope="col">Cause</th>
+					<th scope="col" style="width:17%">Page affichée depuis</th>
+					<th scope="col" style="width:10%">Connecté</th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach ( $refus as $r ) : ?>
+				<?php $r = is_array( $r ) ? $r : array(); ?>
+				<tr>
+					<td><?php echo esc_html( isset( $r['quand'] ) ? wp_date( 'j M Y, H:i:s', (int) $r['quand'] ) : '—' ); ?></td>
+					<td><code><?php echo esc_html( isset( $r['raison'] ) && '' !== $r['raison'] ? $r['raison'] : '—' ); ?></code></td>
+					<td><?php echo esc_html( isset( $r['cause'] ) && '' !== $r['cause'] ? $r['cause'] : '—' ); ?></td>
+					<td><?php echo isset( $r['age'] ) ? esc_html( human_time_diff( 0, max( 1, (int) $r['age'] ) ) ) : '—'; ?></td>
+					<td><?php echo ! empty( $r['connecte'] ) ? 'oui' : 'non'; ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
 	private function onglet_diagnostic( $essai ) {
 		?>
 		<h2>Ce que l’hébergement offre</h2>
@@ -2315,6 +2354,12 @@ class Notice_Archeomed_Settings {
 			L’envoi d’une notice précise se diagnostique depuis sa fiche, dans
 			l’encart « Dépannage ».
 		</p>
+
+		<h2>Derniers envois refusés</h2>
+		<p style="max-width:46em">L’auteur voit le message, et la cause exacte
+		est ici&nbsp;: quand le message ne suffit pas à comprendre un refus,
+		c’est là qu’il faut regarder. Vingt au plus, sans adresse ni contenu.</p>
+		<?php self::tableau_des_refus(); ?>
 
 		<h2>Sortie vers Pactols</h2>
 		<p style="max-width:46em">Cet essai dit si le serveur peut joindre le
