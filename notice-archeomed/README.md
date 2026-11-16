@@ -272,6 +272,7 @@ de réglages et laisser la constante indéfinie.
 | `class-notice-archeomed-accessibilite.php` | L'onglet Accessibilité : contrôle axe-core du formulaire, trace de l'audit Ara |
 | `modele-metopes.docx` | **Feuille de styles Métopes de référence** |
 | `modele-metopes.rtf` | La même feuille dans l'autre format, pour le repli |
+| `class-notice-archeomed-relecture.php` | La relecture sur le site : rôles, verrou, états, journal, versions, Word à suivi de modifications |
 | `.htaccess`, `index.php` | Empêchent le téléchargement direct et le listage du dossier |
 
 ## Le surlignement des styles
@@ -1086,6 +1087,121 @@ d'administration prévient dès 60 %.
 illustrations vivent dans le répertoire temporaire du serveur sous un nom
 portant `notice-archeomed-garde-`, à l'abri de la purge quotidienne, et ne
 sont supprimés qu'une fois le courriel de la rédaction remis.
+
+## La relecture par les coordinateurs de rubrique
+
+Chaque coordinateur relisait sa partie dans un Word stylé, et en cassait
+souvent les styles : une métadonnée ajoutée à la main, le fichier ouvert dans
+un autre traitement de texte. La relecture se fait désormais sur le site,
+dans un écran « Relecture » qui écrit dans la saisie gardée — celle d'où se
+refont le Word, le fascicule et le dossier Métopes.
+
+**Elle s'ouvre quand la campagne est close.** Rien ne fermait une campagne :
+l'onglet « Relecture » des réglages porte donc une case « La campagne est
+close ». Cochée, elle ouvre la relecture et ferme les liens de correction des
+auteurs : qui en suit un lit que la campagne est close et qu'il faut écrire à
+la rédaction ; un formulaire de correction resté ouvert n'enregistre plus
+rien. Le dépôt de nouvelles notices n'est pas fermé par cette case : il
+l'est en dépubliant la page du formulaire.
+
+**Qui relit quoi.** Deux rôles WordPress, créés par l'extension :
+
+- « Coordinateur de rubrique (Chronique) » : lire son profil et relire
+  (`na_relire`), rien d'autre. L'onglet « Relecture » associe un ou plusieurs
+  coordinateurs à chaque rubrique ;
+- « Rédaction de la Chronique (relecture) » : la capacité `na_relire_tout`,
+  qui ouvre toutes les rubriques avec le même écran. Les administrateurs du
+  site l'ont d'office.
+
+Sans connexion, on ne voit rien : il n'y a pas de lien anonyme. Le droit se
+juge à chaque requête sur la notice elle-même — sa rubrique en base —, jamais
+sur ce que l'adresse ou le formulaire prétendent.
+
+**Ce que voit le coordinateur.** Les notices de sa rubrique, dans l'ordre du
+fascicule — sous-rubriques, puis communes —, avec un sommaire latéral qui
+dit l'état de chacune et qui la tient ouverte. C'est le tri du fascicule
+lui-même (`ranger_comme_au_fascicule()`), non un second tri écrit à côté.
+
+**Le formulaire** reprend celui du dépôt, sans ses explications. Le texte et
+les champs se corrigent. Trois choses ne s'y font pas, et le serveur les
+refuse quoi que poste la requête :
+
+- les **courriels des responsables** ne sont pas dans la page d'un
+  coordinateur — pas même masqués : le serveur ne les y écrit pas. La
+  rédaction les lit, sans champ pour les changer ;
+- une **illustration** ne s'ajoute ni ne se remplace. Elle se retire, avec un
+  motif obligatoire (redondante, qualité insuffisante, autorisation manquante,
+  au-delà du nombre admis par les normes, ou « autre » avec une précision).
+  Retirée, elle n'est que masquée : ses fichiers et ses textes restent, à son
+  rang, et la rédaction la rétablit d'une case. Le fascicule, le dossier
+  Métopes et le Word de relecture ne la portent plus, et les figures qui
+  restent se numérotent à la suite : un rappel invite alors à vérifier les
+  appels « (fig. N) » du texte, avec ce que le contrôle des appels y trouve ;
+- un **mot-clé** se retire, ou s'ajoute en le choisissant dans la liste que
+  Pactols propose. Un terme neuf sans identifiant n'entre pas.
+
+L'aperçu de chaque figure est celui qui a été fabriqué pour le Word : il
+reste sur le site quand l'original part sur sDrive (le rangement n'efface un
+original que si son aperçu se lit). Une figure sans aperçu — envoyée à part,
+ou que le serveur n'a pas su réduire — le dit, sans image.
+
+Deux boutons : « Enregistrer », qui reste sur la notice, et « Suivante », qui
+enregistre puis ouvre la notice suivante du sommaire.
+
+**Le verrou.** Une notice ouverte est verrouillée pour les autres, au nom de
+qui l'a ouverte. Le verrou est pris par une écriture conditionnelle, se
+renouvelle chaque minute tant que la page est ouverte, se rend quand on la
+quitte, et expire seul au bout de cinq minutes sans nouvelles. Le dernier
+rempart reste le numéro de version : deux enregistrements partis de la même
+version ne s'écrasent pas, le second est rendu au conflit.
+
+**Les états.** À relire ; relue par le coordinateur ; à soumettre à
+l'auteur ; soumise à l'auteur ; accord reçu ; validée par la rédaction. Le
+coordinateur marque une notice « relue », ou coche « modification de fond »,
+qui la fait passer à « à soumettre à l'auteur » : une correction de forme
+passe sans accord, une modification de fond demande l'accord écrit de
+l'auteur. Tout le reste relève de la rédaction, qui peut rouvrir une notice
+validée. À partir de « soumise à l'auteur », le coordinateur ne corrige plus.
+
+**Aucun courriel ne part de lui-même vers l'auteur.** La rédaction voit la
+notice « à soumettre », et un bouton « Soumettre à l'auteur » envoie au
+responsable un courriel avec le Word où se lisent toutes les modifications
+depuis sa version. Un courriel refusé ne change ni la notice ni son état : on
+recommence.
+
+**La remarque à la rédaction** est un champ à part, hors de la saisie, donc
+hors de tout ce qui se publie. Chaque remarque reste au journal, datée et
+signée.
+
+**Le journal** de chaque notice dit qui, quand, quoi : les champs corrigés,
+les figures et les mots-clés retirés avec le motif, les renvois ajoutés ou
+retirés, les changements d'état, les remarques. Il ne se récrit pas : chaque
+ligne est une écriture de plus, et rien dans l'écran n'en modifie.
+
+**Une notice à cheval sur deux rubriques.** Seul le coordinateur de la
+rubrique principale la corrige ; il peut ajouter un renvoi, dans les deux
+emplacements existants, pourvu qu'il ne vise ni la rubrique de la notice ni
+une rubrique déjà visée, et retirer n'importe lequel. Le coordinateur d'une
+rubrique de renvoi voit la notice en lecture seule, dans un bloc à part de
+son sommaire, dès que le renvoi est posé ; il peut laisser une remarque à la
+rédaction, et retirer le renvoi vers sa propre rubrique. Changer la rubrique
+principale reste à la rédaction.
+
+**Les versions.** Chaque enregistrement garde la version précédente
+(`_na_relecture_version`, une ligne par version, avec la date et l'auteur) et
+paraît aussi dans l'historique de la fiche. De deux versions gardées se tire
+un **Word à suivi de modifications** : des `w:ins` et des `w:del` signés du
+relecteur, mot par mot. Il se télécharge depuis l'écran — sans les adresses
+des responsables pour un coordinateur — et se dépose dans le dossier de la
+notice sur sDrive sous le nom `notice_v3_relecture_Jeanne_Martin.docx`, à
+côté des `notice_v1.docx` du rangement, par une tâche à part
+(`na_deposer_les_relectures`) : sDrive en panne, la correction est
+enregistrée quand même et le Word attend. Il ne porte aucune image.
+
+**Le fascicule reste vierge de tout suivi** : il se fabrique, comme avant, de
+la dernière version de chaque notice. La version corrigée par le coordinateur
+est la dernière avant la relecture de la rédaction, qui corrige ensuite avec
+le même écran ; ses enregistrements sont versionnés de la même façon.
 
 ## Tenir la charge : accepter vite, expédier ensuite
 

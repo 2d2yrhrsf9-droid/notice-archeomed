@@ -306,6 +306,7 @@ class Notice_Archeomed_Settings {
 			'formulaire'    => __( 'Formulaire', 'notice-archeomed' ),
 			'accessibilite' => __( 'Accessibilité', 'notice-archeomed' ),
 			'candidats'     => __( 'Candidats à Pactols', 'notice-archeomed' ),
+			'relecture'     => __( 'Relecture', 'notice-archeomed' ),
 			'courriel'      => __( 'Courriel', 'notice-archeomed' ),
 			'feuille'       => __( 'Feuille de styles', 'notice-archeomed' ),
 			'maj'           => __( 'Mises à jour', 'notice-archeomed' ),
@@ -1550,6 +1551,12 @@ class Notice_Archeomed_Settings {
 	private function onglet_candidats( $essai ) {
 		unset( $essai );
 		Notice_Archeomed_Candidats::onglet();
+	}
+
+	/** La clôture de la campagne, et les coordinateurs de chaque rubrique. */
+	private function onglet_relecture( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Relecture::onglet();
 	}
 
 	/** Le numéro en préparation et ce qu'on fait des illustrations. */

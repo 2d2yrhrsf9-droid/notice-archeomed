@@ -660,6 +660,64 @@ jobs:
             if ( $echecs ) { exit( 1 ); }
             echo "Panne sans essai perdu, refus arrêté puis repris : ", $r["message"], "\n";'
 
+      - name: Le Word de relecture rejoint le dossier de sa notice sur sDrive, et une panne de sDrive ne coûte pas la correction
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            require_once ABSPATH . "wp-admin/includes/user.php";
+            $echecs = array();
+            $R = "Notice_Archeomed_Relecture";
+            $R::assurer_les_roles();
+            $ids = get_posts( array( "post_type" => "na_notice", "post_status" => "private", "posts_per_page" => 1, "fields" => "ids",
+              "meta_key" => "_na_etat", "meta_value" => "envoyee" ) );
+            if ( 1 !== count( $ids ) ) { echo "::error::une notice envoyée attendue\n"; exit( 1 ); }
+            $id = (int) $ids[0];
+            $compte = (int) wp_insert_user( array( "user_login" => "relectrice", "user_pass" => wp_generate_password( 24 ),
+              "user_email" => "relectrice@example.org", "display_name" => "Jeanne Martin", "role" => $R::ROLE_REDACTION ) );
+            $R::regler( true, array() );
+            $version = max( 1, (int) get_post_meta( $id, "_na_version", true ) );
+            $attendus = function () use ( $id ) { wp_cache_delete( $id, "post_meta" ); return array_map( "intval", (array) get_post_meta( $id, "_na_relecture_a_deposer", false ) ); };
+
+            // sDrive refuse les dépôts : la correction s’enregistre quand même.
+            file_put_contents( "/tmp/sdrive.panne", "PUT 507" );
+            $_POST = wp_slash( array( "lieu_dit" => "Relu sur le site" ) );
+            $r = $R::enregistrer( $id, $version, $compte );
+            $_POST = array();
+            if ( "enregistree" !== $r["issue"] || $version + 1 !== (int) $r["version"] ) { echo "::error::la relecture ne s’enregistre pas : ", wp_json_encode( $r ), "\n"; exit( 1 ); }
+            wp_clear_scheduled_hook( $R::HOOK );
+            $R::en_tache();
+            $d = get_post_meta( $id, "_na_donnees", true );
+            if ( "Relu sur le site" !== $d["lieu_dit"] ) { $echecs[] = "la correction n’est pas dans la notice : " . $d["lieu_dit"]; }
+            if ( array( $version + 1 ) !== $attendus() ) { $echecs[] = "le Word n’attend plus sDrive après la panne : " . wp_json_encode( $attendus() ); }
+            if ( 0 !== (int) get_post_meta( $id, "_na_relecture_essais", true ) ) { $echecs[] = "la panne de sDrive a coûté un essai"; }
+            if ( ! wp_next_scheduled( $R::HOOK ) ) { $echecs[] = "après la panne, aucun passage n’est réservé"; }
+
+            // sDrive revenu, le passage suivant dépose.
+            unlink( "/tmp/sdrive.panne" );
+            wp_clear_scheduled_hook( $R::HOOK );
+            $R::en_tache();
+            $dossier = (string) get_post_meta( $id, "_na_sdrive_dossier", true );
+            $fichier = "/tmp/sdrive/Revue AM/" . $dossier . "/" . $R::nom_du_word( $version + 1, "Jeanne Martin" );
+            if ( array() !== $attendus() ) { $echecs[] = "le Word attend encore : " . get_post_meta( $id, "_na_relecture_raison", true ); }
+            if ( "" === $dossier || ! is_file( $fichier ) ) { $echecs[] = "le Word de relecture n’est pas dans le dossier de la notice : " . $fichier; }
+            else {
+              $zip = new ZipArchive();
+              $zip->open( $fichier );
+              $xml = (string) $zip->getFromName( "word/document.xml" );
+              $zip->close();
+              if ( false === strpos( $xml, "<w:ins " ) || false === strpos( $xml, "<w:del " ) || false === strpos( $xml, "w:author=\"Jeanne Martin\"" ) ) { $echecs[] = "le Word déposé ne porte pas le suivi signé du relecteur"; }
+              if ( false === simplexml_load_string( $xml ) ) { $echecs[] = "le Word déposé n’est pas un XML valide"; }
+            }
+            // Le Word net de la version suit, par le rangement.
+            Notice_Archeomed_Rangement::ranger_maintenant();
+            $table = Notice_Archeomed_Rangement::table_de( $id );
+            if ( ! isset( $table[ "word:v" . ( $version + 1 ) ] ) ) { $echecs[] = "le Word net de la version relue n’est pas rangé"; }
+            wp_delete_user( $compte );
+            delete_option( $R::OPTION );
+            foreach ( $echecs as $e ) { echo "::error::", $e, "\n"; }
+            if ( $echecs ) { exit( 1 ); }
+            echo "Word de relecture déposé : ", basename( $fichier ), "\n";'
+
       - name: Ce qui reste en route, quand la charge n'a pas passé
         if: failure()
         working-directory: /tmp/wp

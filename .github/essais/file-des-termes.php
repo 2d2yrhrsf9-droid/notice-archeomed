@@ -2824,6 +2824,356 @@ na_verifier( false !== strpos( $texte, 'envoyée à part par l’auteur, à repr
 	'le lisez-moi donne la figure à reprendre, avec de quoi la retrouver', $texte );
 $paquet->nettoyer();
 
+WP_CLI::log( 'La relecture par les coordinateurs' );
+// Trois notices dans la rubrique I, une dans la II ; un coordinateur par
+// rubrique, et la rédaction. Tout passe par les fonctions que l'écran
+// appelle : le droit se juge sur la notice, jamais sur la requête.
+require_once ABSPATH . 'wp-admin/includes/user.php';
+$R = 'Notice_Archeomed_Relecture';
+$R::assurer_les_roles();
+$file_rel = $GLOBALS['notice_archeomed_file'];
+$rubs_rel = $plugin->rubriques();
+$compte_rel = function ( $identifiant, $nom, $role ) {
+	return (int) wp_insert_user( array( 'user_login' => $identifiant, 'user_pass' => wp_generate_password( 24 ),
+		'user_email' => $identifiant . '@example.org', 'display_name' => $nom, 'role' => $role ) );
+};
+$coord_1 = $compte_rel( 'coord-un', 'Jeanne Martin', $R::ROLE );
+$coord_2 = $compte_rel( 'coord-deux', 'Paul Durand', $R::ROLE );
+$redac   = $compte_rel( 'redaction-essai', 'Rédaction Essai', $R::ROLE_REDACTION );
+$ark_four = 'https://ark.frantiq.fr/ark:/26678/pcrtFourEssai';
+$notice_rel = function ( $ajouts ) use ( $saisie_styles, $file_rel, $rubs_rel ) {
+	$d = array_merge( $saisie_styles, array(
+		'rubrique_principale' => $rubs_rel[0], 'nature' => 'Fouille programmée',
+		'nature_items' => array( array( 'label' => 'Fouille programmée', 'ark' => 'https://ark.frantiq.fr/ark:/26678/crtSrWQs2w2KV', 'idConcept' => '' ) ),
+		'texte_notice' => '<p>Le texte de départ, tel que l’auteur l’a déposé.</p>', 'pactols_places_items' => array(),
+	), $ajouts );
+	$d['lieux'] = array( array( 'nom' => $d['commune'], 'ark' => '' ) );
+	$id = na_notice( $d );
+	$file_rel->mettre_a_jour( $id, $d, '' );
+	update_post_meta( $id, '_na_etat', 'envoyee' );
+	update_post_meta( $id, '_na_version', '1' );
+	update_post_meta( $id, '_na_reference', 'REL' . $id );
+	return $id;
+};
+$rel_a = $notice_rel( array( 'commune' => 'Vire', 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan du four', 'legende' => '', 'credits' => 'A. Ferrand', 'alt' => 'Plan du four.', 'description' => '', 'type' => 'plan' ),
+	array( 'rang' => 2, 'titre' => 'Vue zénithale de la tranchée', 'legende' => '', 'credits' => 'A. Ferrand', 'alt' => 'Vue de la tranchée.', 'description' => '', 'type' => 'photo' ),
+) ) );
+$rel_b = $notice_rel( array( 'commune' => 'Bayeux', 'nature' => 'Prospection pédestre',
+	'nature_items' => array( array( 'label' => 'Prospection pédestre', 'ark' => 'https://ark.frantiq.fr/ark:/26678/crtVqcSVS0rm7', 'idConcept' => '' ) ) ) );
+$rel_c = $notice_rel( array( 'commune' => 'Argentan' ) );
+$rel_d = $notice_rel( array( 'commune' => 'Lisieux', 'rubrique_principale' => $rubs_rel[1] ) );
+$lire_rel = function ( $id ) {
+	wp_cache_delete( $id, 'post_meta' );
+	return get_post_meta( $id, '_na_donnees', true );
+};
+$xml_du_docx = function ( $chemin ) {
+	$zip = new ZipArchive();
+	if ( '' === (string) $chemin || true !== $zip->open( $chemin ) ) {
+		return '';
+	}
+	$xml = (string) $zip->getFromName( 'word/document.xml' );
+	$zip->close();
+	return $xml;
+};
+
+// Avant la clôture, personne ne relit, et le lien de l'auteur corrige.
+$R::regler( false, array( 0 => array( $coord_1 ), 1 => array( $coord_2 ) ) );
+$garde_rel = array( 'corrige_id' => $rel_a, 'vivant' => true, 'par_la_redaction' => 0 );
+na_verifier( null === $R::droit_sur( $rel_a, $coord_1 ) && null === $R::droit_sur( $rel_a, $redac ),
+	'avant la clôture de la campagne, la relecture n\'est ouverte à personne' );
+na_verifier( $rel_a === na_appel( $plugin, 'contexte_valide', array( $garde_rel ) ),
+	'avant la clôture, le lien de correction de l\'auteur ouvre sa notice' );
+$R::regler( true, array( 0 => array( $coord_1, 999999 ), 1 => array( $coord_2 ), 9 => array( $coord_1 ) ) );
+$reglages_rel = $R::reglages();
+na_verifier( $R::campagne_close() && array( $coord_1 ) === $reglages_rel['coordinateurs'][ $rubs_rel[0] ] && 2 === count( $reglages_rel['coordinateurs'] ),
+	'les réglages ne retiennent que des comptes qui peuvent relire, pour des rubriques qui existent', $reglages_rel );
+na_verifier( 0 === na_appel( $plugin, 'contexte_valide', array( $garde_rel ) ),
+	'la campagne close, le lien de correction de l\'auteur ne rouvre plus sa notice' );
+set_transient( 'na_reprise_jetonclos1', $garde_rel, HOUR_IN_SECONDS );
+$reprise_rel = new ReflectionProperty( $plugin, 'reprise' );
+$reprise_rel->setAccessible( true );
+$reprise_rel->setValue( $plugin, null );
+$_GET['notice_reprise'] = 'jetonclos1';
+$lien_clos = na_appel( $plugin, 'etat_du_lien_de_reprise' );
+unset( $_GET['notice_reprise'] );
+$reprise_rel->setValue( $plugin, null );
+delete_transient( 'na_reprise_jetonclos1' );
+na_verifier( 'close' === $lien_clos['etat'], 'qui suit ce lien lit que la campagne est close, non que le lien a expiré', $lien_clos );
+
+// Le cloisonnement par rubrique.
+$droit_1 = $R::droit_sur( $rel_a, $coord_1 );
+$droit_r = $R::droit_sur( $rel_a, $redac );
+na_verifier( is_array( $droit_1 ) && 'principale' === $droit_1['sorte'] && null === $R::droit_sur( $rel_a, $coord_2 )
+	&& null === $R::droit_sur( $rel_d, $coord_1 ) && is_array( $droit_r ) && 'tout' === $droit_r['sorte'],
+	'un coordinateur ne peut rien d\'une notice hors de sa rubrique ; la rédaction les relit toutes' );
+na_verifier( array( $rubs_rel[0] ) === $R::rubriques_de( $coord_1 ) && $rubs_rel === $R::rubriques_de( $redac ) && array() === $R::rubriques_de( 0 ),
+	'chacun a ses rubriques : celle qu\'on lui confie, toutes pour la rédaction, aucune sans compte' );
+$_POST = wp_slash( array( 'texte_notice' => '<p>Texte forgé.</p>', 'remarque' => 'Remarque forgée.' ) );
+$forge = $R::enregistrer( $rel_a, 1, $coord_2 );
+$d_forge = $lire_rel( $rel_a );
+na_verifier( 'interdit' === $forge['issue'] && false === strpos( $d_forge['texte_notice'], 'forgé' ) && array() === $R::journal_de( $rel_a )
+	&& 1 === $file_rel->version_de( $rel_a ),
+	'un identifiant forgé dans la requête n\'écrit rien dans la notice d\'une autre rubrique, pas même une remarque', $forge );
+
+// L'ordre du fascicule.
+$sommaire_rel = $R::sommaire( $rubs_rel[0] );
+$ordre_rel    = array_values( array_intersect( array_map( 'intval', wp_list_pluck( $sommaire_rel['notices'], 'id' ) ), array( $rel_a, $rel_b, $rel_c ) ) );
+$erreur_rel   = '';
+$fascicule_rel = $xml_du_docx( na_appel( $plugin, 'fabriquer_le_fascicule', array( $rubs_rel[0],
+	na_appel( $plugin, 'donnees_des_notices', array( $plugin->ids_de_la_rubrique( $rubs_rel[0] ) ) ), &$erreur_rel ) ) );
+$pos_rel = array( strpos( $fascicule_rel, 'Argentan' ), strpos( $fascicule_rel, 'Vire' ), strpos( $fascicule_rel, 'Bayeux' ) );
+na_verifier( array( $rel_c, $rel_a, $rel_b ) === $ordre_rel && false !== $pos_rel[0] && $pos_rel[0] < $pos_rel[1] && $pos_rel[1] < $pos_rel[2],
+	'le sommaire suit l\'ordre du fascicule : la sous-rubrique, puis la commune', array( $ordre_rel, $pos_rel ) );
+na_verifier( ! in_array( $rel_d, array_map( 'intval', wp_list_pluck( $sommaire_rel['notices'], 'id' ) ), true ),
+	'le sommaire d\'une rubrique ne porte pas les notices d\'une autre' );
+
+// Le verrou.
+$verrou_1 = $R::prendre_le_verrou( $rel_a, $coord_1 );
+$verrou_2 = $R::prendre_le_verrou( $rel_a, $redac );
+$verrou_3 = $R::prendre_le_verrou( $rel_a, $coord_1 );
+$_POST    = wp_slash( array( 'texte_notice' => '<p>La rédaction passe outre.</p>' ) );
+$refus_verrou = $R::enregistrer( $rel_a, 1, $redac );
+na_verifier( $verrou_1['tenu'] && ! $verrou_2['tenu'] && $coord_1 === $verrou_2['par'] && $verrou_3['tenu']
+	&& 'verrouillee' === $refus_verrou['issue'] && 'Jeanne Martin' === $refus_verrou['par'] && 1 === $file_rel->version_de( $rel_a ),
+	'une notice ouverte est verrouillée pour les autres, au nom de qui l\'a ouverte, et ne s\'enregistre pas sous son verrou', array( $verrou_2, $refus_verrou ) );
+update_post_meta( $rel_a, '_na_relecture_verrou', ( time() - $R::DUREE_DU_VERROU - 5 ) . ':' . $coord_1 );
+$verrou_4 = $R::prendre_le_verrou( $rel_a, $redac );
+$R::liberer_le_verrou( $rel_a, $redac );
+$verrou_5 = $R::verrou_de( $rel_a );
+na_verifier( $verrou_4['tenu'] && 0 === $verrou_5['par'], 'un verrou sans nouvelles expire seul, et un verrou rendu est libre' );
+
+// Retirer une figure demande un motif.
+$_POST = wp_slash( array( 'garde_action' => array( 2 => 'retirer' ) ) );
+$sans_motif = $R::enregistrer( $rel_a, 1, $coord_1 );
+$_POST = wp_slash( array( 'garde_action' => array( 2 => 'retirer' ), 'garde_motif' => array( 2 => 'autre' ), 'garde_precision' => array( 2 => '  ' ) ) );
+$sans_precision = $R::enregistrer( $rel_a, 1, $coord_1 );
+na_verifier( 'motif' === $sans_motif['issue'] && 'motif' === $sans_precision['issue'] && 1 === $file_rel->version_de( $rel_a ),
+	'une figure ne se retire pas sans motif, ni pour « autre » sans précision', array( $sans_motif, $sans_precision ) );
+
+// L'enregistrement d'un coordinateur.
+$_POST = wp_slash( array(
+	'texte_notice'        => '<p>Le texte de départ, tel que le coordinateur l’a relu (fig. 2).</p>',
+	'resp_nom'            => 'Ferrand-Dupont',
+	'resp_email'          => 'pirate@example.org',
+	'coresp_email'        => 'autre@example.org',
+	'rubrique_principale' => $rubs_rel[1],
+	'pactols_subjects'    => wp_json_encode( array(
+		array( 'label' => 'four de potier', 'ark' => $ark_four, 'idConcept' => '12', 'fullpath' => '' ),
+		array( 'label' => 'terme inventé', 'ark' => '' ),
+	) ),
+	'illus_titre'         => array( 'Figure neuve' ),
+	'illus_alt'           => array( 'Figure neuve.' ),
+	'garde_titre'         => array( 1 => 'Plan du four, état 2', 3 => 'Troisième figure' ),
+	'garde_action'        => array( 1 => 'remplacer', 2 => 'retirer' ),
+	'garde_motif'         => array( 2 => 'redondante' ),
+	'relue'               => '1',
+	'remarque'            => 'La figure 2 double la première.',
+) );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'neuve.jpg' ), 'type' => array( 'image/jpeg' ), 'tmp_name' => array( '/tmp/neuve.jpg' ), 'error' => array( 0 ), 'size' => array( 10 ) ) );
+$relu   = $R::enregistrer( $rel_a, 1, $coord_1 );
+$_FILES = array();
+$d_relu = $lire_rel( $rel_a );
+na_verifier( 'enregistree' === $relu['issue'] && 2 === $relu['version'] && 2 === $file_rel->version_de( $rel_a )
+	&& false !== strpos( $d_relu['texte_notice'], 'coordinateur' ) && 'Ferrand-Dupont' === $d_relu['resp_nom'],
+	'le texte et les champs se corrigent, et la notice passe à la version suivante', $relu );
+na_verifier( 'a@example.org' === $d_relu['resp_email'] && '' === $d_relu['coresp_email'],
+	'le courriel des responsables ne se modifie pas, quoi que poste la requête', array( $d_relu['resp_email'], $d_relu['coresp_email'] ) );
+na_verifier( $rubs_rel[0] === $d_relu['rubrique_principale'], 'un coordinateur ne change pas la rubrique principale', $d_relu['rubrique_principale'] );
+$sujets_relus = wp_list_pluck( $d_relu['pactols_subjects_items'], 'label' );
+na_verifier( array( 'four de potier' ) === $sujets_relus && array( 'église' ) === $relu['faits']['termes_retires'],
+	'un mot-clé se retire, un autre s\'ajoute par le thésaurus ; un terme neuf sans identifiant n\'entre pas', $sujets_relus );
+$masque_relu = Notice_Archeomed_Pactols::figure_masquee( $d_relu['illustrations'][1] );
+na_verifier( 2 === count( $d_relu['illustrations'] ) && 'Plan du four, état 2' === $d_relu['illustrations'][0]['titre']
+	&& null === Notice_Archeomed_Pactols::figure_masquee( $d_relu['illustrations'][0] ),
+	'aucune illustration ne s\'ajoute ni ne se remplace : les deux figures restent deux, la première corrigée', $d_relu['illustrations'] );
+na_verifier( is_array( $masque_relu ) && 'redondante' === $masque_relu['motif'] && 'Jeanne Martin' === $masque_relu['par']
+	&& 2 === $d_relu['illustrations'][1]['rang'] && 'Vue zénithale de la tranchée' === $d_relu['illustrations'][1]['titre'],
+	'une illustration retirée est masquée, avec son motif : elle garde son rang, ses textes et ses fichiers', $masque_relu );
+$rappel_rel = $plugin->appels_a_verifier( $rel_a );
+na_verifier( false !== strpos( implode( ' | ', $rappel_rel ), 'fig. 2' ),
+	'après le retrait, le contrôle des appels dit que le texte appelle une figure qui n\'est plus là', $rappel_rel );
+
+// Les versions, les états et le journal.
+$versions_rel = $R::versions_gardees( $rel_a );
+na_verifier( array( 1, 2 ) === array_keys( $versions_rel ) && 'Jeanne Martin' === $versions_rel[2]['par'] && '' !== $versions_rel[2]['le']
+	&& false !== strpos( $versions_rel[1]['donnees']['texte_notice'], 'l’auteur l’a déposé' )
+	&& 2 === count( $versions_rel[1]['donnees']['pactols_subjects_items'] ) + count( $versions_rel[2]['donnees']['pactols_subjects_items'] ),
+	'chaque enregistrement garde la version précédente, avec la date et l\'auteur de la suivante', array_keys( $versions_rel ) );
+$journal_rel = $R::journal_de( $rel_a );
+$dit_rel     = implode( ' | ', $journal_rel[0]['quoi'] );
+na_verifier( 1 === count( $journal_rel ) && 'Jeanne Martin' === $journal_rel[0]['par'] && $coord_1 === $journal_rel[0]['par_id']
+	&& false !== strpos( $dit_rel, 'figure 2 retirée' ) && false !== strpos( $dit_rel, 'Redondante' ) && false !== strpos( $dit_rel, 'termes retirés : église' )
+	&& false !== strpos( $dit_rel, 'À relire → Relue par le coordinateur' ) && 'La figure 2 double la première.' === $journal_rel[0]['remarque'],
+	'le journal dit qui, quand, quoi : la figure et le mot-clé retirés, le motif, l\'état, la remarque à la rédaction', $journal_rel );
+na_verifier( 'relue' === $R::etat_de( $rel_a ) && ! isset( $d_relu['remarque'] ) && false === strpos( wp_json_encode( $d_relu ), 'double la première' ),
+	'la notice est marquée relue, et la remarque à la rédaction reste hors de la saisie publiée' );
+na_verifier( array( 2 ) === array_map( 'intval', (array) get_post_meta( $rel_a, '_na_relecture_a_deposer', false ) ),
+	'le Word de relecture attend sDrive hors de la requête : sans sDrive, la correction est enregistrée quand même' );
+$R::en_tache();
+na_verifier( array( 2 ) === array_map( 'intval', (array) get_post_meta( $rel_a, '_na_relecture_a_deposer', false ) ) && 2 === $file_rel->version_de( $rel_a ),
+	'un passage de la tâche sans sDrive ne perd ni l\'attente ni la notice' );
+$_POST = wp_slash( array( 'etat' => 'validee', 'garde_action' => array( 2 => 'retablir' ) ) );
+$coord_valide = $R::enregistrer( $rel_a, 2, $coord_1 );
+$d_coord      = $lire_rel( $rel_a );
+na_verifier( 'relue' === $R::etat_de( $rel_a ) && null !== Notice_Archeomed_Pactols::figure_masquee( $d_coord['illustrations'][1] ) && 'inchangee' === $coord_valide['issue'],
+	'le coordinateur ne valide pas une notice et ne rétablit pas une figure : ce sont les gestes de la rédaction', $coord_valide );
+$_POST = wp_slash( array( 'fond' => '1' ) );
+$R::enregistrer( $rel_a, 2, $coord_1 );
+na_verifier( 'a_soumettre' === $R::etat_de( $rel_a ), 'la case « modification de fond » fait passer la notice à « à soumettre à l\'auteur »', $R::etat_de( $rel_a ) );
+
+// Le Word de relecture, et le fascicule.
+$erreur_word = '';
+$word_rel    = $plugin->word_de_relecture( $rel_a, 2, $erreur_word );
+$xml_word    = $xml_du_docx( $word_rel );
+if ( '' !== $word_rel ) {
+	@unlink( $word_rel );
+}
+na_verifier( '' !== $xml_word && false !== strpos( $xml_word, '<w:ins ' ) && false !== strpos( $xml_word, '<w:del ' ) && false !== strpos( $xml_word, '<w:delText' )
+	&& false !== strpos( $xml_word, 'w:author="Jeanne Martin"' ) && false !== simplexml_load_string( $xml_word ),
+	'le Word de relecture porte des « w:ins » et des « w:del » signés du relecteur, dans un XML valide', '' !== $xml_word ? substr( $xml_word, 0, 600 ) : $erreur_word );
+na_verifier( 1 === preg_match( '#<w:ins [^>]*>(?:(?!</w:ins>).)*coordinateur#s', $xml_word ) && 1 === preg_match( '#<w:delText[^>]*>[^<]*auteur#', $xml_word )
+	&& 1 === preg_match( '#<w:delText[^>]*>[^<]*zénithale#', $xml_word ) && 1 === preg_match( '#<w:delText[^>]*>[^<]*église#', $xml_word )
+	&& false === strpos( $xml_word, '<w:drawing' ) && false === strpos( $xml_word, 'r:embed' ),
+	'le suivi montre le mot ajouté, le mot ôté, le mot-clé et la figure retirés ; aucune image n\'y est incorporée' );
+$word_coord = $plugin->word_de_relecture( $rel_a, 2, $erreur_word, 0, true );
+$xml_coord  = $xml_du_docx( $word_coord );
+if ( '' !== $word_coord ) {
+	@unlink( $word_coord );
+}
+na_verifier( '' !== $xml_coord && false === strpos( $xml_coord, 'a@example.org' ) && false !== strpos( $xml_word, 'a@example.org' ),
+	'le Word rendu à un coordinateur ne porte pas le courriel des responsables ; celui de la rédaction, si' );
+na_verifier( 'notice_v2_relecture_Jeanne_Martin.docx' === $R::nom_du_word( 2, 'Jeanne Martin' ), 'le Word de relecture porte la version et le nom du relecteur', $R::nom_du_word( 2, 'Jeanne Martin' ) );
+$fascicule_relu = $xml_du_docx( na_appel( $plugin, 'fabriquer_le_fascicule', array( $rubs_rel[0],
+	na_appel( $plugin, 'donnees_des_notices', array( $plugin->ids_de_la_rubrique( $rubs_rel[0] ) ) ), &$erreur_rel ) ) );
+na_verifier( '' !== $fascicule_relu && false === strpos( $fascicule_relu, '<w:ins' ) && false === strpos( $fascicule_relu, '<w:del' )
+	&& false !== strpos( $fascicule_relu, 'coordinateur' ) && false !== strpos( $fascicule_relu, 'Plan du four' ),
+	'le fascicule se fabrique de la dernière version, vierge de tout suivi' );
+na_verifier( false === strpos( $fascicule_relu, 'zénithale' ), 'le fascicule ne porte pas la figure masquée' );
+$page_rel = $plugin->page_a_lire( $rel_a, function ( $rang ) {
+	return 'apercu-' . $rang;
+} );
+na_verifier( false !== strpos( $page_rel, 'Plan du four' ) && false === strpos( $page_rel, 'zénithale' ) && false === strpos( $page_rel, 'a@example.org' ),
+	'la lecture seule ne montre ni la figure masquée ni le courriel des responsables' );
+
+// L'écran d'un coordinateur ne reçoit pas les courriels ; celui de la rédaction, si.
+$ecran_rel = ( new ReflectionClass( $R ) )->newInstanceWithoutConstructor();
+$notice_ecran = $plugin->notice_a_relire( $rel_a );
+$rendre_rel = function ( $compte ) use ( $ecran_rel, $rel_a, $notice_ecran, $rubs_rel, $R ) {
+	wp_set_current_user( $compte );
+	ob_start();
+	na_appel( $ecran_rel, 'afficher_le_formulaire', array( $rel_a, $notice_ecran, $R::droit_sur( $rel_a, $compte ), $rubs_rel[0], $R::etat_de( $rel_a ) ) );
+	return (string) ob_get_clean();
+};
+$page_coord = $rendre_rel( $coord_1 );
+$page_redac = $rendre_rel( $redac );
+wp_set_current_user( 0 );
+na_verifier( false === strpos( $page_coord, 'a@example.org' ) && false !== strpos( $page_redac, 'a@example.org' )
+	&& false === strpos( $page_redac, 'name="resp_email"' ) && false !== strpos( $page_coord, 'name="resp_nom"' ),
+	'le formulaire du coordinateur ne porte pas les courriels ; la rédaction les lit, sans champ pour les changer' );
+na_verifier( false !== strpos( $page_coord, 'Vous pouvez retirer une illustration si elle ne vous semble pas utile.' )
+	&& false === strpos( $page_coord, 'type="file"' ) && false !== strpos( $page_coord, 'value="suivante"' ) && false !== strpos( $page_coord, 'name="garde_motif[1]"' )
+	&& false === strpos( $page_coord, 'name="rubrique_principale"' ) && false !== strpos( $page_redac, 'name="rubrique_principale"' ),
+	'le formulaire dit qu\'on peut retirer une illustration, sans champ pour en ajouter, avec ses deux boutons' );
+
+// La rédaction : soumettre à l'auteur, rétablir, valider, rouvrir.
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+$courriel_rel = array( 'part' => false, 'vu' => array() );
+$poste_rel    = function ( $rendu, $atts ) use ( &$courriel_rel ) {
+	$courriel_rel['vu'] = $atts;
+	return $courriel_rel['part'];
+};
+add_filter( 'pre_wp_mail', $poste_rel, 10, 2 );
+$refus_envoi = $R::soumettre_la_notice( $rel_a, $redac );
+$etat_refus  = $R::etat_de( $rel_a );
+$courriel_rel['part'] = true;
+$envoi_rel   = $R::soumettre_la_notice( $rel_a, $redac );
+remove_filter( 'pre_wp_mail', $poste_rel, 10 );
+na_verifier( '' !== $refus_envoi && 'a_soumettre' === $etat_refus && 2 === $file_rel->version_de( $rel_a ),
+	'un courriel à l\'auteur qui ne part pas ne change ni l\'état ni la notice', $refus_envoi );
+na_verifier( '' === $envoi_rel && 'soumise' === $R::etat_de( $rel_a ) && 'a@example.org' === $courriel_rel['vu']['to']
+	&& 1 === count( (array) $courriel_rel['vu']['attachments'] ),
+	'la rédaction soumet la notice à l\'auteur d\'un geste : un courriel au responsable, le Word joint, l\'état « soumise »', $envoi_rel );
+$_POST = wp_slash( array( 'texte_notice' => '<p>Le coordinateur revient après coup.</p>' ) );
+$trop_tard = $R::enregistrer( $rel_a, 2, $coord_1 );
+$d_tard    = $lire_rel( $rel_a );
+na_verifier( 'inchangee' === $trop_tard['issue'] && false === strpos( $d_tard['texte_notice'], 'après coup' ),
+	'une notice soumise à l\'auteur ne se corrige plus par le coordinateur', $trop_tard );
+$_POST = wp_slash( array( 'etat' => 'validee', 'garde_action' => array( 2 => 'retablir' ), 'rubrique_principale' => $rubs_rel[0] ) );
+$retabli   = $R::enregistrer( $rel_a, 2, $redac );
+$d_retabli = $lire_rel( $rel_a );
+na_verifier( 'enregistree' === $retabli['issue'] && 3 === $retabli['version'] && null === Notice_Archeomed_Pactols::figure_masquee( $d_retabli['illustrations'][1] )
+	&& 'validee' === $R::etat_de( $rel_a ) && array( 1, 2, 3 ) === array_keys( $R::versions_gardees( $rel_a ) ),
+	'la rédaction rétablit la figure avec le même écran, valide la notice, et son enregistrement est versionné de même', $retabli );
+$_POST = wp_slash( array( 'etat' => 'a_relire' ) );
+$R::enregistrer( $rel_a, 3, $redac );
+$R::liberer_le_verrou( $rel_a, $redac );
+na_verifier( 'a_relire' === $R::etat_de( $rel_a ) && 5 <= count( $R::journal_de( $rel_a ) ), 'la rédaction rouvre une notice validée, et chaque changement d\'état est au journal', count( $R::journal_de( $rel_a ) ) );
+
+// Les renvois : ajout par le coordinateur de la rubrique, retrait par chacun des deux.
+$_POST = wp_slash( array( 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rubs_rel[0] ) );
+$ajout_renvoi = $R::enregistrer( $rel_a, 3, $coord_1 );
+$d_renvoi     = $lire_rel( $rel_a );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+$droit_renvoi = $R::droit_sur( $rel_a, $coord_2 );
+$sommaire_2   = $R::sommaire( $rubs_rel[1] );
+na_verifier( 'enregistree' === $ajout_renvoi['issue'] && $rubs_rel[1] === $d_renvoi['renvoi_1'] && '' === $d_renvoi['renvoi_2']
+	&& array( $rubs_rel[1] ) === $ajout_renvoi['faits']['renvois_ajoutes'],
+	'le coordinateur de la rubrique ajoute un renvoi ; il ne peut viser la rubrique de la notice elle-même', $ajout_renvoi );
+na_verifier( is_array( $droit_renvoi ) && 'renvoi' === $droit_renvoi['sorte'] && in_array( $rel_a, array_map( 'intval', wp_list_pluck( $sommaire_2['renvois'], 'id' ) ), true )
+	&& ! in_array( $rel_a, array_map( 'intval', wp_list_pluck( $sommaire_2['notices'], 'id' ) ), true ),
+	'la notice ajoutée en renvoi paraît aussitôt, à part, dans le sommaire du coordinateur de l\'autre rubrique' );
+$_POST = wp_slash( array( 'renvoi_2' => $rubs_rel[1] ) );
+$doublon_renvoi = $R::enregistrer( $rel_a, 4, $coord_1 );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+na_verifier( 'inchangee' === $doublon_renvoi['issue'], 'un renvoi ne vise pas une rubrique déjà visée', $doublon_renvoi );
+$_POST = wp_slash( array( 'texte_notice' => '<p>Le coordinateur du renvoi récrit.</p>', 'renvoi_2' => $rubs_rel[3], 'remarque' => 'À rapprocher de Lisieux.' ) );
+$lecture_seule = $R::enregistrer( $rel_a, 4, $coord_2 );
+$d_lecture     = $lire_rel( $rel_a );
+$journal_renvoi = $R::journal_de( $rel_a );
+$derniere_rel   = end( $journal_renvoi );
+na_verifier( 'inchangee' === $lecture_seule['issue'] && false === strpos( $d_lecture['texte_notice'], 'récrit' ) && '' === $d_lecture['renvoi_2']
+	&& 'À rapprocher de Lisieux.' === $derniere_rel['remarque'] && 'Paul Durand' === $derniere_rel['par'],
+	'le coordinateur d\'une rubrique de renvoi lit sans corriger ni ajouter de renvoi, et laisse une remarque à la rédaction', $lecture_seule );
+$_POST = wp_slash( array( 'retirer_renvoi' => array( 'renvoi_1' => '1' ), 'texte_notice' => '<p>Et récrit encore.</p>' ) );
+$retrait_renvoi = $R::enregistrer( $rel_a, 4, $coord_2 );
+$d_retrait      = $lire_rel( $rel_a );
+$journal_renvoi = $R::journal_de( $rel_a );
+$derniere_rel   = end( $journal_renvoi );
+na_verifier( 'enregistree' === $retrait_renvoi['issue'] && '' === $d_retrait['renvoi_1'] && false === strpos( $d_retrait['texte_notice'], 'récrit' )
+	&& null === $R::droit_sur( $rel_a, $coord_2 ) && false !== strpos( implode( ' | ', $derniere_rel['quoi'] ), 'renvoi retiré : ' . $rubs_rel[1] ),
+	'le coordinateur d\'une rubrique de renvoi retire le renvoi vers la sienne, et rien d\'autre ; le retrait est au journal', $retrait_renvoi );
+$_POST = wp_slash( array( 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rubs_rel[3] ) );
+$R::enregistrer( $rel_a, 5, $coord_1 );
+$_POST = wp_slash( array( 'retirer_renvoi' => array( 'renvoi_2' => '1' ), 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rubs_rel[3] ) );
+$retrait_principal = $R::enregistrer( $rel_a, 6, $coord_1 );
+$d_principal       = $lire_rel( $rel_a );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+na_verifier( 'enregistree' === $retrait_principal['issue'] && $rubs_rel[1] === $d_principal['renvoi_1'] && '' === $d_principal['renvoi_2']
+	&& array( $rubs_rel[3] ) === $retrait_principal['faits']['renvois_retires'],
+	'le coordinateur de la rubrique principale retire n\'importe quel renvoi de sa notice', $retrait_principal );
+
+// Deux relectures de la même version : une seule passe.
+$_POST = wp_slash( array( 'lieu_dit' => 'Le Bourg' ) );
+$premier_rel = $R::enregistrer( $rel_c, 1, $coord_1 );
+$_POST = wp_slash( array( 'lieu_dit' => 'Le Vieux Bourg' ) );
+$second_rel  = $R::enregistrer( $rel_c, 1, $coord_1 );
+$d_conflit   = $lire_rel( $rel_c );
+na_verifier( 'enregistree' === $premier_rel['issue'] && 'conflit' === $second_rel['issue'] && 'Le Bourg' === $d_conflit['lieu_dit'],
+	'deux enregistrements partis de la même version ne s\'écrasent pas : le second est rendu au conflit', $second_rel );
+$_POST = wp_slash( array( 'lieu_dit' => 'Le Bourg' ) );
+$rien_rel = $R::enregistrer( $rel_c, 2, $coord_1 );
+na_verifier( 'inchangee' === $rien_rel['issue'] && 2 === $file_rel->version_de( $rel_c ), 'un enregistrement qui ne change rien ne fait pas de version', $rien_rel );
+
+$_POST = array();
+foreach ( array( $rel_a, $rel_b, $rel_c, $rel_d ) as $id ) {
+	wp_delete_post( $id, true );
+}
+foreach ( array( $coord_1, $coord_2, $redac ) as $compte ) {
+	wp_delete_user( $compte );
+}
+delete_option( $R::OPTION );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

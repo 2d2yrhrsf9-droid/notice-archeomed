@@ -1174,6 +1174,322 @@ class Notice_Archeomed_DOCX {
 			. $kept . $new . '</Relationships>';
 	}
 
+	/** Le numéro de la dernière révision posée : chacune a le sien. */
+	private $revisions = 0;
+
+	/**
+	 * Fait de ce document le suivi des modifications d'un autre : ce qui
+	 * n'était pas dans « $ancien » paraît inséré, ce qui n'y est plus paraît
+	 * supprimé, chaque révision signée de « $auteur » et datée.
+	 *
+	 * Les deux documents sont composés par la même fonction, d'après deux
+	 * versions d'une même notice : on les rapproche paragraphe par
+	 * paragraphe, puis mot par mot dans les paragraphes qui se répondent. Ce
+	 * qui n'a pas changé reste tel que ce document l'a composé, liens
+	 * compris. Un paragraphe supprimé garde son style et perd ses liens :
+	 * ils désignaient les relations de l'autre document.
+	 *
+	 * Rien ici ne touche à la feuille de styles : les révisions sont des
+	 * balises du texte, « w:ins » et « w:del », que Word montre et qu'on
+	 * accepte ou refuse une à une.
+	 */
+	public function suivre_les_modifications( $ancien, $auteur, $quand ) {
+		if ( ! ( $ancien instanceof self ) ) {
+			return;
+		}
+		$auteur = self::une_ligne( $auteur );
+		$marque = ' w:author="' . self::esc( '' !== $auteur ? $auteur : 'Relecture' ) . '"'
+			. ' w:date="' . gmdate( 'Y-m-d\TH:i:s\Z', (int) $quand ) . '"';
+		$avant  = array_values( $ancien->body );
+		$apres  = array_values( $this->body );
+		$cles_avant = array();
+		foreach ( $avant as $paragraphe ) {
+			$cles_avant[] = self::cle_de_paragraphe( $paragraphe, $ancien->links );
+		}
+		$cles_apres = array();
+		foreach ( $apres as $paragraphe ) {
+			$cles_apres[] = self::cle_de_paragraphe( $paragraphe, $this->links );
+		}
+		$operations   = self::aligner( $cles_avant, $cles_apres );
+		// Une dernière égalité, vide : elle fait sortir ce qui attend encore.
+		$operations[] = array( '=', -1, -1 );
+		$corps   = array();
+		$retires = array();
+		$ajoutes = array();
+		foreach ( $operations as $operation ) {
+			if ( '-' === $operation[0] ) {
+				$retires[] = $operation[1];
+				continue;
+			}
+			if ( '+' === $operation[0] ) {
+				$ajoutes[] = $operation[2];
+				continue;
+			}
+			// Entre deux paragraphes inchangés, ceux qui ont disparu et ceux
+			// qui sont apparus se répondent un à un, dans l'ordre.
+			$combien = max( count( $retires ), count( $ajoutes ) );
+			for ( $k = 0; $k < $combien; $k++ ) {
+				$a = isset( $retires[ $k ] ) ? $avant[ $retires[ $k ] ] : null;
+				$b = isset( $ajoutes[ $k ] ) ? $apres[ $ajoutes[ $k ] ] : null;
+				if ( null !== $a && null !== $b && self::proprietes_de( $a ) === self::proprietes_de( $b ) ) {
+					$corps[] = $this->paragraphe_compare( $a, $ancien->links, $b, $marque );
+					continue;
+				}
+				if ( null !== $a ) {
+					$corps[] = $this->paragraphe_entier( $a, $ancien->links, '-', $marque );
+				}
+				if ( null !== $b ) {
+					$corps[] = $this->paragraphe_entier( $b, $this->links, '+', $marque );
+				}
+			}
+			$retires = array();
+			$ajoutes = array();
+			if ( $operation[2] >= 0 ) {
+				$corps[] = $apres[ $operation[2] ];
+			}
+		}
+		$this->body = $corps;
+	}
+
+	/**
+	 * Ce qui fait l'identité d'un paragraphe ou d'un fragment : son XML, où
+	 * chaque lien est désigné par son adresse et non par son numéro de
+	 * relation, qui n'est pas le même d'un document à l'autre.
+	 */
+	private static function cle_de_paragraphe( $xml, $liens ) {
+		return (string) preg_replace_callback( '/ r:id="([^"]*)"/', function ( $m ) use ( $liens ) {
+			return ' r:id="' . ( isset( $liens[ $m[1] ] ) ? self::esc( $liens[ $m[1] ] ) : $m[1] ) . '"';
+		}, (string) $xml );
+	}
+
+	/** Les propriétés d'un paragraphe — son style, son cadre —, sans leur balise. */
+	private static function proprietes_de( $paragraphe ) {
+		return preg_match( '#^<w:p><w:pPr>(.*?)</w:pPr>#s', (string) $paragraphe, $m ) ? $m[1] : '';
+	}
+
+	/** Le contenu d'un paragraphe, sans sa balise ni ses propriétés. */
+	private static function contenu_de( $paragraphe ) {
+		$contenu = (string) preg_replace( '#^<w:p>(?:<w:pPr>.*?</w:pPr>)?#s', '', (string) $paragraphe, 1 );
+		return (string) preg_replace( '#</w:p>$#', '', $contenu, 1 );
+	}
+
+	/**
+	 * Un paragraphe en jetons : ses mots et les espaces qui les séparent,
+	 * chacun avec la mise en forme de son fragment et le lien qui le porte.
+	 * Un fragment qui n'est pas du texte — une image — fait un jeton
+	 * indivisible.
+	 */
+	private static function jetons( $contenu, $liens ) {
+		$jetons = array();
+		if ( ! preg_match_all( '#<w:hyperlink r:id="([^"]*)">(.*?)</w:hyperlink>|<w:r>.*?</w:r>#s', (string) $contenu, $morceaux, PREG_SET_ORDER ) ) {
+			return $jetons;
+		}
+		foreach ( $morceaux as $morceau ) {
+			$rid   = isset( $morceau[1] ) ? (string) $morceau[1] : '';
+			$suite = ( '' !== $rid && isset( $morceau[2] ) ) ? $morceau[2] : $morceau[0];
+			$lien  = ( '' !== $rid && isset( $liens[ $rid ] ) ) ? (string) $liens[ $rid ] : '';
+			if ( ! preg_match_all( '#<w:r>(.*?)</w:r>#s', $suite, $fragments ) ) {
+				continue;
+			}
+			foreach ( $fragments[1] as $fragment ) {
+				$forme = '';
+				if ( preg_match( '#^<w:rPr>.*?</w:rPr>#s', $fragment, $p ) ) {
+					$forme    = $p[0];
+					$fragment = (string) substr( $fragment, strlen( $forme ) );
+				}
+				$reste = preg_replace( '#<w:t xml:space="preserve">[^<]*</w:t>|<w:br/>#', '', $fragment );
+				if ( '' !== $reste ) {
+					$entier   = '<w:r>' . $forme . $fragment . '</w:r>';
+					$jetons[] = array( 'entier' => $entier, 'texte' => '', 'forme' => $forme, 'rid' => $rid,
+						'cle' => "i\x00" . self::cle_de_paragraphe( $entier, $liens ) . "\x00" . $lien );
+					continue;
+				}
+				preg_match_all( '#<w:t xml:space="preserve">([^<]*)</w:t>|<w:br/>#', $fragment, $textes, PREG_SET_ORDER );
+				foreach ( $textes as $texte ) {
+					$mots = ( '<w:br/>' === $texte[0] ) ? array( "\n" )
+						: preg_split( '/( +)/', $texte[1], -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
+					foreach ( (array) $mots as $mot ) {
+						$jetons[] = array( 'texte' => $mot, 'forme' => $forme, 'rid' => $rid,
+							'cle' => "t\x00" . $mot . "\x00" . $forme . "\x00" . $lien );
+					}
+				}
+			}
+		}
+		return $jetons;
+	}
+
+	/**
+	 * Le plus long alignement de deux listes : une suite d'opérations
+	 * { sorte, rang dans la première, rang dans la seconde }, la sorte étant
+	 * « = » (commun), « - » (dans la première seule) ou « + » (dans la
+	 * seconde seule), le rang absent valant -1.
+	 *
+	 * Le début et la fin communs s'écartent d'abord : une relecture touche
+	 * quelques mots, et le reste se compare en un instant. Au-delà de
+	 * 250 000 rapprochements, le milieu se donne pour remplacé d'un bloc —
+	 * le document reste juste, seulement moins fin, et le serveur ne s'y
+	 * épuise pas.
+	 */
+	private static function aligner( $a, $b ) {
+		$a  = array_values( (array) $a );
+		$b  = array_values( (array) $b );
+		$na = count( $a );
+		$nb = count( $b );
+		$debut = 0;
+		while ( $debut < $na && $debut < $nb && $a[ $debut ] === $b[ $debut ] ) {
+			++$debut;
+		}
+		$fin = 0;
+		while ( $fin < $na - $debut && $fin < $nb - $debut && $a[ $na - 1 - $fin ] === $b[ $nb - 1 - $fin ] ) {
+			++$fin;
+		}
+		$operations = array();
+		for ( $i = 0; $i < $debut; $i++ ) {
+			$operations[] = array( '=', $i, $i );
+		}
+		$ma = $na - $debut - $fin;
+		$mb = $nb - $debut - $fin;
+		$i  = 0;
+		$j  = 0;
+		if ( $ma > 0 && $mb > 0 && $ma * $mb <= 250000 ) {
+			$table = array_fill( 0, $ma + 1, array_fill( 0, $mb + 1, 0 ) );
+			for ( $x = $ma - 1; $x >= 0; $x-- ) {
+				for ( $y = $mb - 1; $y >= 0; $y-- ) {
+					$table[ $x ][ $y ] = ( $a[ $debut + $x ] === $b[ $debut + $y ] )
+						? $table[ $x + 1 ][ $y + 1 ] + 1
+						: max( $table[ $x + 1 ][ $y ], $table[ $x ][ $y + 1 ] );
+				}
+			}
+			while ( $i < $ma && $j < $mb ) {
+				if ( $a[ $debut + $i ] === $b[ $debut + $j ] ) {
+					$operations[] = array( '=', $debut + $i, $debut + $j );
+					++$i;
+					++$j;
+				} elseif ( $table[ $i + 1 ][ $j ] >= $table[ $i ][ $j + 1 ] ) {
+					$operations[] = array( '-', $debut + $i, -1 );
+					++$i;
+				} else {
+					$operations[] = array( '+', -1, $debut + $j );
+					++$j;
+				}
+			}
+		}
+		for ( ; $i < $ma; $i++ ) {
+			$operations[] = array( '-', $debut + $i, -1 );
+		}
+		for ( ; $j < $mb; $j++ ) {
+			$operations[] = array( '+', -1, $debut + $j );
+		}
+		for ( $k = 0; $k < $fin; $k++ ) {
+			$operations[] = array( '=', $na - $fin + $k, $nb - $fin + $k );
+		}
+		return $operations;
+	}
+
+	/**
+	 * Des jetons rendus en fragments : ceux qui se suivent avec la même
+	 * sorte, la même forme et le même lien n'en font qu'un. « $suite » est
+	 * une liste de { sorte, jeton } ; un jeton supprimé sort dans « w:del »,
+	 * hors de tout lien, un jeton inséré dans « w:ins ».
+	 */
+	private function rendre_les_jetons( $suite, $marque ) {
+		$xml    = '';
+		$ouvert = '';
+		$n      = count( $suite );
+		$i      = 0;
+		while ( $i < $n ) {
+			$sorte = $suite[ $i ][0];
+			$jeton = $suite[ $i ][1];
+			$rid   = ( '-' === $sorte ) ? '' : $jeton['rid'];
+			if ( $rid !== $ouvert ) {
+				$xml   .= ( '' !== $ouvert ? '</w:hyperlink>' : '' ) . ( '' !== $rid ? '<w:hyperlink r:id="' . self::esc( $rid ) . '">' : '' );
+				$ouvert = $rid;
+			}
+			if ( isset( $jeton['entier'] ) ) {
+				// Une image supprimée ne se montre pas : sa relation était
+				// celle de l'autre document.
+				if ( '+' === $sorte ) {
+					$xml .= '<w:ins w:id="' . ( ++$this->revisions ) . '"' . $marque . '>' . $jeton['entier'] . '</w:ins>';
+				} elseif ( '=' === $sorte ) {
+					$xml .= $jeton['entier'];
+				}
+				++$i;
+				continue;
+			}
+			$balise = ( '-' === $sorte ) ? 'w:delText' : 'w:t';
+			$texte  = '';
+			$tampon = '';
+			while ( $i < $n && $suite[ $i ][0] === $sorte && ! isset( $suite[ $i ][1]['entier'] )
+				&& $suite[ $i ][1]['forme'] === $jeton['forme'] && ( ( '-' === $sorte ) ? '' : $suite[ $i ][1]['rid'] ) === $rid ) {
+				if ( "\n" === $suite[ $i ][1]['texte'] ) {
+					if ( '' !== $tampon ) {
+						$texte .= '<' . $balise . ' xml:space="preserve">' . $tampon . '</' . $balise . '>';
+						$tampon = '';
+					}
+					$texte .= '<w:br/>';
+				} else {
+					$tampon .= $suite[ $i ][1]['texte'];
+				}
+				++$i;
+			}
+			if ( '' !== $tampon ) {
+				$texte .= '<' . $balise . ' xml:space="preserve">' . $tampon . '</' . $balise . '>';
+			}
+			$fragment = '<w:r>' . $jeton['forme'] . $texte . '</w:r>';
+			if ( '+' === $sorte ) {
+				$fragment = '<w:ins w:id="' . ( ++$this->revisions ) . '"' . $marque . '>' . $fragment . '</w:ins>';
+			} elseif ( '-' === $sorte ) {
+				$fragment = '<w:del w:id="' . ( ++$this->revisions ) . '"' . $marque . '>' . $fragment . '</w:del>';
+			}
+			$xml .= $fragment;
+		}
+		return $xml . ( '' !== $ouvert ? '</w:hyperlink>' : '' );
+	}
+
+	/**
+	 * Un paragraphe entièrement inséré (« + ») ou supprimé (« - ») : sa
+	 * marque de fin porte la révision, et tout son texte avec elle.
+	 */
+	private function paragraphe_entier( $paragraphe, $liens, $sorte, $marque ) {
+		$trace = '<w:rPr><w:' . ( '+' === $sorte ? 'ins' : 'del' ) . ' w:id="' . ( ++$this->revisions ) . '"' . $marque . '/></w:rPr>';
+		$suite = array();
+		foreach ( self::jetons( self::contenu_de( $paragraphe ), $liens ) as $jeton ) {
+			$suite[] = array( $sorte, $jeton );
+		}
+		return '<w:p><w:pPr>' . self::proprietes_de( $paragraphe ) . $trace . '</w:pPr>'
+			. $this->rendre_les_jetons( $suite, $marque ) . '</w:p>';
+	}
+
+	/**
+	 * Un paragraphe modifié, mot par mot : ce qui est commun reste, le reste
+	 * est supprimé ou inséré. Deux paragraphes qui n'ont presque rien de
+	 * commun ne se répondent pas : l'un sort supprimé, l'autre inséré.
+	 */
+	private function paragraphe_compare( $avant, $liens_avant, $apres, $marque ) {
+		$ja = self::jetons( self::contenu_de( $avant ), $liens_avant );
+		$jb = self::jetons( self::contenu_de( $apres ), $this->links );
+		$operations = self::aligner( array_column( $ja, 'cle' ), array_column( $jb, 'cle' ) );
+		$communs    = 0;
+		foreach ( $operations as $operation ) {
+			if ( '=' === $operation[0] ) {
+				++$communs;
+			}
+		}
+		if ( $communs * 4 < min( count( $ja ), count( $jb ) ) ) {
+			return $this->paragraphe_entier( $avant, $liens_avant, '-', $marque )
+				. $this->paragraphe_entier( $apres, $this->links, '+', $marque );
+		}
+		$suite = array();
+		foreach ( $operations as $operation ) {
+			$suite[] = ( '-' === $operation[0] )
+				? array( '-', $ja[ $operation[1] ] )
+				: array( $operation[0], $jb[ $operation[2] ] );
+		}
+		$proprietes = self::proprietes_de( $apres );
+		return '<w:p>' . ( '' !== $proprietes ? '<w:pPr>' . $proprietes . '</w:pPr>' : '' )
+			. $this->rendre_les_jetons( $suite, $marque ) . '</w:p>';
+	}
+
 	/**
 	 * Liste des styles de paragraphe reconnus, utile au diagnostic.
 	 */

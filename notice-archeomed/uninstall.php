@@ -31,6 +31,8 @@ foreach ( array(
 	Notice_Archeomed_Sdrive::OPTION,
 	'notice_archeomed_accessibilite',
 	'notice_archeomed_candidats',
+	'notice_archeomed_relecture',
+	'na_relecture_verrou_depot',
 	'na_etat_des_donnees',
 	'na_essais_de_poids',
 	'na_derniers_refus',
@@ -41,6 +43,17 @@ foreach ( array(
 	'na_disque_recu',
 ) as $option ) {
 	delete_option( $option );
+}
+
+// Les deux rôles de la relecture, et la capacité donnée à l'administrateur :
+// un rôle sans extension resterait proposé à la création d'un compte. Qui
+// le portait garde son compte, sans rôle.
+remove_role( 'na_coordinateur' );
+remove_role( 'na_redaction' );
+$administrateur = get_role( 'administrator' );
+if ( null !== $administrateur ) {
+	$administrateur->remove_cap( 'na_relire' );
+	$administrateur->remove_cap( 'na_relire_tout' );
 }
 
 // Les attentes qui traînent : saisies gardées après un refus, compteurs

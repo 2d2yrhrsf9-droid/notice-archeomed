@@ -37,6 +37,7 @@ notice-archeomed/                     le dossier de l'extension, tel qu'il est i
   class-notice-archeomed-accessibilite.php l'onglet Accessibilité et l'encart des figures sur la fiche
   class-notice-archeomed-candidats.php l'onglet Candidats à Pactols
   class-notice-archeomed-documentation.php l'onglet Documentation, qui affiche ces pages
+  class-notice-archeomed-relecture.php la relecture sur le site : droits, verrou, états, journal, versions
   class-notice-archeomed-nommage.php  la règle des noms de fichiers
   class-notice-archeomed-maj.php      les mises à jour depuis GitHub
   modele-metopes.docx                 le gabarit Métopes livré (feuille de styles de référence)
@@ -89,6 +90,7 @@ Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices re
 - **Notice_Archeomed_Accessibilite** : contrôle axe-core lancé depuis le navigateur de l'administrateur, trace de l'audit Ara, encart « Accessibilité des illustrations » sur la fiche avec historique des corrections.
 - **Notice_Archeomed_Candidats** : relevé des termes gardés hors de Pactols, statut et note de la rédaction, export CSV.
 - **Notice_Archeomed_Documentation** : rend ces fichiers Markdown dans l'onglet Documentation, par un convertisseur volontairement restreint (titres, paragraphes, listes, tableaux, code, liens, gras, italique).
+- **Notice_Archeomed_Relecture** : l'écran « Relecture » et tout ce qui l'entoure (section 16) : les deux rôles, le droit sur une notice (`droit_sur()`), le verrou, les états, le journal, les versions gardées, la tâche qui dépose les Word de relecture sur sDrive, l'onglet de réglages. La saisie elle-même se corrige dans la classe principale (`enregistrer_la_relecture()`), avec les fonctions de réception du dépôt.
 - **Notice_Archeomed_Nommage** : la règle des noms de fichiers (sans accent, sans espace, souligné pour séparateur) et la construction sur le modèle des réglages (`{numero}_{rubrique}_{commune}_{lieu_dit}_{annee}_Fig_{n}`).
 - **Notice_Archeomed_MiseAJour** : glisse la dernière release GitHub dans le transient des mises à jour de WordPress.
 
@@ -144,6 +146,7 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `na_fabriquer_les_apercus` (argument : id) | ponctuelle | versions allégées manquantes, puis reprogrammation de l'envoi |
 | `na_resoudre_les_termes` | tâche unique, réservée au besoin | lire dans Pactols les termes des notices en attente, par lots (`LOT_TERMES` = 50) et dans un budget de `BUDGET_TERMES` (10 s) |
 | `na_ranger_sur_sdrive` | tâche unique, réservée au besoin | ranger sur sDrive les notices envoyées ; un échec propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive (injoignable, 429, 507) arrête le passage sans en coûter |
+| `na_deposer_les_relectures` | tâche unique, réservée au besoin | déposer sur sDrive les Word de relecture qui attendent ; même règle que le rangement : un refus propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive arrête le passage sans en coûter |
 | `na_mesurer_le_disque` | tâche unique, au plus tous les quarts d'heure | remesurer le disque pour l'estimation que lit le dépôt |
 
 `activer()` pose les tâches périodiques, `desactiver()` les retire. `verifier_les_rendez_vous()` les repose si WordPress les a perdues. Si `DISABLE_WP_CRON` est actif sans tâche système de remplacement, la file s'allonge : un bandeau le signale, et l'envoi immédiat reste possible dans les réglages.
@@ -176,10 +179,17 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `_na_pactols` | les concepts lus dans Pactols, par ARK (forme préférée, étiquettes, chaîne, date de lecture) |
 | `_na_pactols_apres`, `_na_pactols_essais` | l'attente de résolution des termes |
 | `_na_historique_figures` | les textes d'accessibilité remplacés par une correction depuis la fiche |
+| `_na_relecture_etat` | l'état de relecture : `a_relire` (défaut), `relue`, `a_soumettre`, `soumise`, `accord`, `validee` |
+| `_na_relecture_verrou` | qui tient la notice ouverte : « heure:compte » ; périmé au bout de `DUREE_DU_VERROU` (300 s) |
+| `_na_relecture_version` | une ligne par version gardée : `version`, `le`, `par`, `par_id`, `champs`, `donnees` (la saisie entière) |
+| `_na_relecture_journal` | une ligne par événement : `le`, `par`, `par_id`, `quoi`, `etat_avant`, `etat_apres`, `remarque`, `version` |
+| `_na_relecture_a_deposer`, `_na_relecture_apres`, `_na_relecture_essais`, `_na_relecture_raison`, `_na_relecture_deposes` | l'attente du dépôt des Word de relecture sur sDrive, et ce qui y est déjà |
 
 ### La saisie (`_na_donnees`)
 
 Clés principales : `rubrique_principale`, `renvoi_1`, `renvoi_2`, `rubrique_matiere` ; `lieux` (liste `{nom, ark}`, le premier est la commune, recopiée dans `commune` et `commune_ark`), `departement`, `lieu_dit`, `annee` ; `nature` et `nature_items` (`{label, ark}`) ; `pactols_periods_items`, `pactols_subjects_items`, `pactols_places_items` (`{label, ark, idConcept, fullpath}`, plus `libre` pour un terme gardé hors de la liste) et leurs versions texte ; `num_autorisation`, `id_patriarche`, `rapport_lien`, `originaux_lien`, `originaux_jusqua` (AAAA-MM-JJ) ; `organismes` ; responsable, co-responsable et co-auteur (`*_prenom`, `*_nom`, `*_inst`, `*_email`) ; `texte_notice` (HTML restreint : `p`, `h3` et `h4` pour les intertitres, `br`, `em`, `strong`, `sup`, `sub`, `span` de petites capitales) ; `illustrations` (par figure : `rang`, `titre`, `legende`, `credits`, `alt`, `description`, `autorisation`, pixels) ; `commentaires` ; `remplace`.
+
+Une figure retirée à la relecture reste dans `illustrations`, à son rang, avec une clé `masquee` (`motif`, `precision`, `par`, `le`) : `preparer_la_saisie()` l'ôte de tout document et numérote les autres à la suite, `notices_a_assembler()` écarte ses fichiers du dossier.
 
 Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `saisie_de()`, qui ajoute les formes préférées, les aperçus et ce que chaque époque de la saisie demande (`lieux_de()`, `organismes_de()` relisent les notices anciennes). Quand une version change la forme des données, `rattraper_les_anciennes()` met les notices à niveau une fois (`ETAT_DES_DONNEES`, option `na_etat_des_donnees`).
 
@@ -190,6 +200,7 @@ Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `sais
 | `notice_archeomed_options` | tous les réglages (section 7), y compris les sous-clés `normes` et `styles` |
 | `notice_archeomed_accessibilite` | le dernier contrôle axe-core et le dernier audit Ara |
 | `notice_archeomed_candidats` | statut et note par terme candidat |
+| `notice_archeomed_relecture` | la relecture : `close` (campagne close) et `coordinateurs` (rubrique ⇒ comptes) |
 | `na_etat_des_donnees` | version de la forme des données |
 | `na_essais_de_poids` | l'historique des essais de poids du courriel |
 | `na_sdrive_etat` | ce qu'a fait le dernier passage du rangement, ou la panne qui l'a arrêté |
@@ -212,7 +223,7 @@ Pour chaque clé : une constante de `wp-config.php` si elle existe (`NA_TURNSTIL
 
 ### Onglets
 
-Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Courriel · Feuille de styles · Mises à jour · Hébergement · Documentation. Chaque onglet a son propre formulaire. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
+Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Relecture · Courriel · Feuille de styles · Mises à jour · Hébergement · Documentation. Chaque onglet a son propre formulaire. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
 
 ### Clés principales de `notice_archeomed_options`
 
@@ -380,7 +391,7 @@ L'outil d'exportation de WordPress rend les notices où figure une adresse de co
 
 ### Désinstallation
 
-Supprimer l'extension efface les réglages et leurs secrets, et les attentes en base ; les notices et les fichiers restent, sauf `NA_SUPPRIMER_LES_NOTICES`.
+Supprimer l'extension efface les réglages et leurs secrets, les attentes en base, et les deux rôles de la relecture avec la capacité donnée aux administrateurs (un compte qui n'avait que ce rôle reste, sans rôle) ; les notices et les fichiers restent, sauf `NA_SUPPRIMER_LES_NOTICES`. L'état, le journal et les versions de relecture sont des métadonnées des notices : ils restent ou partent avec elles.
 
 ### Imagick
 
@@ -389,3 +400,33 @@ Sans l'extension `imagick`, le serveur ne lit ni TIFF ni PDF. Le **TIFF** se con
 ### Mise à jour
 
 Par dépôt manuel de `notice-archeomed.zip` (produit par `./empaqueter`, ou téléchargé depuis la version publiée sur GitHub). La mise à jour automatique depuis GitHub est inactive par défaut ; l'archive n'est pas signée, la confiance repose sur le compte GitHub du dépôt.
+
+## 16. La relecture sur le site
+
+### Ouverture et droits
+
+L'option `notice_archeomed_relecture` porte `close` : tant qu'elle est fausse, `droit_sur()` rend null pour tout le monde et les liens de correction des auteurs vivent ; vraie, la relecture s'ouvre et `contexte_valide()` refuse toute correction d'auteur (`par_la_redaction` = 0) — le formulaire affiche « La campagne est close », et un envoi déjà ouvert est refusé avec la raison `close`. La correction par la rédaction depuis la fiche (« Corriger dans le formulaire ») reste ouverte.
+
+Deux rôles, vérifiés à chaque chargement (`assurer_les_roles()`, parce qu'une mise à jour par archive ne repasse pas par l'activation) : `na_coordinateur` (`read`, `na_relire`) et `na_redaction` (`read`, `na_relire`, `na_relire_tout`). L'administrateur reçoit les deux capacités ; `manage_options` vaut de toute façon `na_relire_tout`.
+
+`droit_sur( $id, $compte )` est le seul juge, pour l'affichage comme pour chaque écriture, et ne lit que la base : `tout` (rédaction), `principale` (coordinateur de `_na_rubrique`, pour une notice que le fascicule porte), `renvoi` (coordinateur d'une rubrique que `renvoi_1` ou `renvoi_2` désigne), ou null. `peut_corriger()` y ajoute l'état : le coordinateur corrige en `a_relire`, `relue` et `a_soumettre`.
+
+### Enregistrer
+
+`Notice_Archeomed_Relecture::enregistrer()` vérifie le droit, prend le verrou, appelle `Notice_Archeomed_Pactols::enregistrer_la_relecture()`, puis pose l'état, la remarque et la ligne du journal, et inscrit le Word au dépôt. `enregistrer_la_relecture()` suit la correction en place : `saisie_relue()` part de la saisie gardée et n'y change que les champs postés (reçus par les fonctions du dépôt : `textes_postes()`, `collect_lieux()`, `collect_pactols_keywords()`, `texte_notice_pose()`, `textes_de_figure()`), tout refus précède toute écriture, et la version passe par `changer_de_version()`. Rien de changé : pas de version. La notice ne repart pas vers la rédaction et personne n'est prévenu.
+
+Règles tenues par le serveur, quoi que poste la requête : aucun courriel de responsable n'est lu ; aucun fichier n'est lu, aucune figure ajoutée ni remplacée ; une figure retirée exige un motif de `MOTIFS` ; un terme neuf du thésaurus exige un ARK de Frantiq ; la rubrique principale ne change que pour `tout` ; un renvoi posé ne vise ni la rubrique de la notice ni une rubrique déjà visée ; la portée `renvoi` ne retire que le renvoi vers sa rubrique.
+
+### Verrou
+
+`_na_relecture_verrou` vaut « heure:compte ». `prendre_le_verrou()` est une écriture conditionnelle (`UPDATE … WHERE` libre, périmé ou déjà le nôtre), sur le modèle de `prendre()` ; la page le renouvelle chaque minute (`wp_ajax_na_relecture_verrou`) et le rend en partant (`na_relecture_liberer`, par `sendBeacon`). **Ne pas le remplacer par `wp_set_post_lock`**, qui lit puis écrit.
+
+### Word à suivi de modifications
+
+`word_de_relecture( $id, $version )` compose deux documents par `remplir_le_document()` — la version et celle d'avant, toutes deux passées par `preparer_la_saisie()` — puis `Notice_Archeomed_DOCX::suivre_les_modifications()` les rapproche : alignement des paragraphes (plus longue sous-suite commune, début et fin communs écartés d'abord), puis des mots dans les paragraphes de même style qui se répondent. Un paragraphe entier porte la révision sur sa marque de fin (`w:rPr` de `w:pPr`) ; un texte supprimé sort en `w:delText`, hors de tout lien. La feuille de styles n'est pas touchée. Le fascicule et le dossier Métopes ne passent jamais par cette fonction.
+
+Le Word se refait à volonté des versions gardées : rien n'est conservé sur le serveur en attendant sDrive. La tâche `na_deposer_les_relectures` le dépose dans `Notice_Archeomed_Rangement::dossier_de( $id )`, sous `nom_du_word()`.
+
+### Essais
+
+`file-des-termes.php` éprouve : la fermeture des liens d'auteur, le cloisonnement (identifiant forgé compris), l'ordre du fascicule, le verrou et son expiration, le refus de modifier un courriel, d'ajouter ou de remplacer une figure, le masquage avec motif et le rétablissement, les mots-clés, les versions, les états et le journal, l'ajout et les deux retraits de renvoi, la soumission à l'auteur (courriel refusé puis parti), la présence de `w:ins` et `w:del` dans le Word de relecture et leur absence du fascicule, l'absence des courriels dans la page et le Word d'un coordinateur. Le travail `charger` dépose un Word de relecture sur le faux sDrive.

@@ -57,6 +57,7 @@ Le texte alternatif de chaque image est inscrit dans le document à l'endroit o�
 - **La liste des notices reçues**, triable par rubrique, filtrable par état d'envoi, avec une recherche sur la référence et le nom du responsable.
 - **La fiche de chaque notice** : son contenu, son historique d'envoi, ses illustrations, et un tableau de l'accessibilité des figures où la rédaction peut corriger un texte alternatif (l'ancienne version est conservée).
 - **Par rubrique** : le fascicule, c'est-à-dire toutes les notices de la rubrique dans l'ordre du volume, en un seul document Word ; une page de relecture dans le navigateur ; et un **dossier complet pour la chaîne d'édition**, avec le document, les illustrations en haute et basse définition renommées selon la règle de la revue, et un fichier d'indexation.
+- **La relecture sur le site**, une fois la campagne close : chaque coordinateur relit les notices de sa rubrique dans l'ordre du volume, la rédaction les relit toutes. Une notice ouverte est verrouillée pour les autres ; chaque enregistrement garde la version précédente et produit un Word à suivi de modifications ; un journal dit qui a fait quoi. Une modification de fond passe par l'accord de l'auteur, que la rédaction demande d'un bouton.
 - **Un récapitulatif quotidien** des dépôts, adressé aux personnes qui le souhaitent.
 - **Les termes candidats** au thésaurus, avec un statut (à proposer, proposé, écarté) et un export en tableur.
 

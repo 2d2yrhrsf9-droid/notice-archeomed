@@ -1324,7 +1324,7 @@ class Notice_Archeomed_File {
 	 * comme pour les neuves. Le coût est de quelques centaines de lectures sur
 	 * une action demandée à la main, qui en fait bien davantage par ailleurs.
 	 */
-	public function renvois_vers( $rubrique ) {
+	public function renvois_vers( $rubrique, $par_notice = false ) {
 		// Un ancien libellé de rubrique vaut le nouveau, des deux côtés.
 		$rubrique   = Notice_Archeomed_Pactols::rubrique_actuelle( $rubrique );
 		$remplacees = $this->references_remplacees();
@@ -1355,12 +1355,14 @@ class Notice_Archeomed_File {
 			}
 			foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
 				if ( isset( $d[ $champ ] ) && $rubrique === Notice_Archeomed_Pactols::rubrique_actuelle( $d[ $champ ] ) ) {
-					$out[] = $d;
+					$out[ (int) $id ] = $d;
 					break;
 				}
 			}
 		}
-		return $out;
+		// « $par_notice » garde l'identifiant de chaque notice en clef : la
+		// relecture en fait le bloc des renvois de son sommaire.
+		return $par_notice ? $out : array_values( $out );
 	}
 
 	/**

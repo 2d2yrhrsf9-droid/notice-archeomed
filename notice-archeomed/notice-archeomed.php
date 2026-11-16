@@ -34,7 +34,9 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-accessibilite
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-candidats.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-documentation.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-confidentialite.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-relecture.php';
 
+new Notice_Archeomed_Relecture();
 new Notice_Archeomed_Settings();
 new Notice_Archeomed_Accessibilite();
 new Notice_Archeomed_Candidats();
@@ -875,11 +877,16 @@ class Notice_Archeomed_Pactols {
 			if ( null === $d ) {
 				continue;
 			}
+			// Les fichiers d'une figure masquée restent où ils sont, mais le
+			// dossier ne les emporte pas : la saisie vient d'en sortir sans elle.
+			list( $illustrations, $conversions ) = self::fichiers_sans_les_masquees(
+				self::figures_lisibles( (array) get_post_meta( (int) $id, '_na_donnees', true ) ),
+				self::illustrations_rangees( $id ), self::conversions_rangees( $id ) );
 			$notices[] = array(
 				'id'            => (int) $id,
 				'd'             => $d,
-				'illustrations' => self::illustrations_rangees( $id ),
-				'conversions'   => self::conversions_rangees( $id ),
+				'illustrations' => $illustrations,
+				'conversions'   => $conversions,
 			);
 		}
 		return $notices;
@@ -1268,6 +1275,64 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Range des entrées dans l'ordre du fascicule : la sous-rubrique, puis la
+	 * commune par ordre alphabétique. Chaque entrée porte sa « clef », celle
+	 * du classement.
+	 *
+	 * Le fascicule et le sommaire de la relecture passent tous deux par ici :
+	 * le coordinateur lit ses notices dans l'ordre où le volume les donnera,
+	 * et un second tri écrit à côté aurait fini par ranger autrement.
+	 */
+	public function ranger_comme_au_fascicule( $entrees ) {
+		$entrees = array_values( (array) $entrees );
+		usort( $entrees, function ( $a, $b ) {
+			// La clef porte le rang de rubrique en tête ; ici toutes les
+			// entrées ne sont pas de la même, et c'est la sous-rubrique puis
+			// la commune qui comptent.
+			$sa = substr( $a['clef'], strpos( $a['clef'], '|' ) + 1 );
+			$sb = substr( $b['clef'], strpos( $b['clef'], '|' ) + 1 );
+			return strcmp( $sa, $sb );
+		} );
+		return $entrees;
+	}
+
+	/**
+	 * Le sommaire d'une rubrique pour la relecture : ses notices, celles que
+	 * le fascicule portera, dans son ordre, chacune avec sa sous-rubrique et
+	 * son titre.
+	 */
+	public function sommaire_de_la_rubrique( $rubrique ) {
+		$entrees = array();
+		foreach ( $this->ids_de_la_rubrique( $rubrique ) as $id ) {
+			$d = $this->saisie_de( $id, false );
+			if ( null === $d ) {
+				continue;
+			}
+			$entrees[] = array(
+				'id'      => (int) $id,
+				'clef'    => $this->classement_de( $d ),
+				'famille' => $this->titre_de_famille( $d ),
+				'titre'   => $this->titre_de_liste( $d ),
+			);
+		}
+		return $this->ranger_comme_au_fascicule( $entrees );
+	}
+
+	/** Les rubriques de la Chronique, dans l'ordre du volume. */
+	public function rubriques() {
+		return $this->rubriques;
+	}
+
+	/** Les natures d'opération que le formulaire propose, par leur libellé. */
+	public function natures_proposees() {
+		$natures = array();
+		foreach ( array_keys( $this->natures ) as $nature ) {
+			$natures[ $nature ] = isset( $this->libelles_des_natures[ $nature ] ) ? $this->libelles_des_natures[ $nature ] : $nature;
+		}
+		return $natures;
+	}
+
+	/**
 	 * Le document d'une rubrique, assemblé une fois pour deux usages.
 	 *
 	 * Le fascicule le sert seul ; le paquet le range dans « style ». Deux
@@ -1305,14 +1370,7 @@ class Notice_Archeomed_Pactols {
 			// porte : c'est la même opération, vue d'une autre rubrique.
 			$entrees[] = array( 'quoi' => 'renvoi', 'd' => $d, 'clef' => $this->classement_de( $d ) );
 		}
-		usort( $entrees, function ( $a, $b ) {
-			// La clef porte le rang de rubrique en tête ; ici toutes les
-			// entrées ne sont pas de la même, et c'est la sous-rubrique puis
-			// la commune qui comptent.
-			$sa = substr( $a['clef'], strpos( $a['clef'], '|' ) + 1 );
-			$sb = substr( $b['clef'], strpos( $b['clef'], '|' ) + 1 );
-			return strcmp( $sa, $sb );
-		} );
+		$entrees = $this->ranger_comme_au_fascicule( $entrees );
 
 		$famille_en_cours = null;
 		foreach ( $entrees as $entree ) {
@@ -1662,6 +1720,14 @@ class Notice_Archeomed_Pactols {
 		if ( '' !== $faite ) {
 			return array( 'etat' => 'utilise', 'reference' => $faite );
 		}
+		// Le lien vit encore, mais la campagne est close : il ne faut pas le
+		// dire expiré, l'auteur en redemanderait un.
+		$garde = get_transient( 'na_reprise_' . $jeton );
+		if ( is_array( $garde ) && ! empty( $garde['corrige_id'] ) && empty( $garde['par_la_redaction'] )
+			&& Notice_Archeomed_Relecture::campagne_close() ) {
+			$etat['etat'] = 'close';
+			return $etat;
+		}
 		$etat['etat'] = 'expire';
 		return $etat;
 	}
@@ -1833,6 +1899,14 @@ class Notice_Archeomed_Pactols {
 		}
 		$par = isset( $garde['par_la_redaction'] ) ? (int) $garde['par_la_redaction'] : 0;
 		if ( $par > 0 && ( get_current_user_id() !== $par || ! current_user_can( 'manage_options' ) ) ) {
+			return 0;
+		}
+		// La campagne close, les notices sont en relecture : le lien de
+		// l'auteur ne les rouvre plus, ni pour les lire ni pour les écrire.
+		// Une correction d'auteur croisant celle d'un coordinateur aurait
+		// renvoyé l'un des deux au conflit, et la rubrique relue aurait
+		// changé sous les yeux de qui la relit.
+		if ( 0 === $par && Notice_Archeomed_Relecture::campagne_close() ) {
 			return 0;
 		}
 		return $id;
@@ -2401,6 +2475,7 @@ class Notice_Archeomed_Pactols {
 			'conflit'         => 'La notice a été corrigée par ailleurs pendant que vous la relisiez : votre correction n’est pas enregistrée. Le formulaire reprend votre saisie, mais les figures sont celles de la notice telle qu’elle est maintenant. Vérifiez-les, puis renvoyez.',
 			'occupee'         => 'La notice part en ce moment vers la rédaction : votre correction n’est pas enregistrée. Votre saisie est conservée ; renvoyez-la dans une minute.',
 			'perimee'         => 'Ce lien de correction n’est plus valable : il a expiré, ou la notice a été retirée. Rien n’a été enregistré, et aucun nouveau dépôt n’a été fait. Votre saisie est reprise ci-dessous pour que vous puissiez la copier ; ce formulaire ne l’enverra plus.',
+			'close'           => 'La campagne est close : les notices sont en relecture, et ce lien ne les corrige plus. Rien n’a été enregistré, et aucun nouveau dépôt n’a été fait. Votre saisie est reprise ci-dessous pour que vous puissiez la copier ; ce formulaire ne l’enverra plus.',
 		);
 		$mot = isset( $messages[ $raison ] ) ? $messages[ $raison ] : 'Une erreur est survenue lors de l’envoi.';
 		// Un champ oublié se corrige dans la page : l'adresse de la rédaction
@@ -3338,6 +3413,17 @@ class Notice_Archeomed_Pactols {
 						. esc_html( $lien['reference'] ) . '</strong>. Pour la corriger encore, suivez le lien de la copie reçue pour '
 						. 'cette correction, ou écrivez à la rédaction en citant cette référence. Envoyé d’ici, ce formulaire ferait '
 						. 'un dépôt nouveau, sans lien avec le précédent.' );
+				?></p></div>
+				<?php
+			elseif ( 'close' === $lien['etat'] ) :
+				$contact = $this->adresse_de_contact();
+				?>
+				<div class="na-message na-avis" id="na-lien-clos" role="alert"><p><?php
+					echo $this->typo( '<strong>La campagne est close</strong> : les notices sont en relecture, et ce lien ne les '
+						. 'corrige plus. Pour signaler une correction, écrivez à ' . ( '' !== $contact
+							? '<a href="mailto:' . esc_attr( antispambot( $contact ) ) . '">' . esc_html( antispambot( $contact ) ) . '</a>'
+							: 'la rédaction' )
+						. ' en citant la référence de votre notice : un dépôt fait d’ici ne remplacerait pas l’ancien.' );
 				?></p></div>
 				<?php
 			elseif ( 'expire' === $lien['etat'] ) :
@@ -10985,6 +11071,59 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Les champs de texte d'une ligne ou de quelques-unes, tels que le
+	 * formulaire les poste : nettoyés, bornés, et ramenés à la forme de la
+	 * revue. Rend « champ => valeur » pour les champs demandés.
+	 *
+	 * Le dépôt et la relecture reçoivent les mêmes champs : une seule
+	 * réception, pour qu'une borne changée d'un côté le soit de l'autre.
+	 */
+	private function textes_postes( $champs ) {
+		$noms_des_champs = array(
+			'departement' => 'la précision géographique', 'lieu_dit' => 'le lieu-dit', 'annee' => 'l’année',
+			'num_autorisation' => 'le numéro d’arrêté', 'id_patriarche' => 'le code Patriarche',
+			'resp_prenom' => 'le prénom du responsable', 'resp_nom' => 'le nom du responsable', 'resp_inst' => 'l’institution du responsable',
+			'coresp_prenom' => 'le prénom du co-responsable', 'coresp_nom' => 'le nom du co-responsable', 'coresp_inst' => 'l’institution du co-responsable',
+			'coauteur_prenom' => 'le prénom du co-auteur', 'coauteur_nom' => 'le nom du co-auteur', 'coauteur_inst' => 'l’institution du co-auteur',
+			'commentaires' => 'le message à la rédaction',
+		);
+		$bornes = array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'id_patriarche' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'commentaires' => 3000 );
+		$d      = array();
+		foreach ( (array) $champs as $f ) {
+			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( self::chevrons_a_garder( wp_unslash( $_POST[ $f ] ) ) ) : '';
+			if ( isset( $bornes[ $f ] ) ) {
+				$d[ $f ] = $this->limit_string( $d[ $f ], $bornes[ $f ], $noms_des_champs[ $f ] );
+			}
+		}
+		if ( isset( $d['departement'] ) ) {
+			$d['departement'] = $this->sans_parentheses( $d['departement'] );
+		}
+		if ( isset( $d['annee'] ) ) {
+			$d['annee'] = self::annee_normalisee( $d['annee'] );
+		}
+		if ( isset( $d['lieu_dit'] ) ) {
+			// Un titre ne prend pas de point final : « Rue de Reviers. » donnait
+			// un titre pointé, au document comme au renvoi.
+			$d['lieu_dit'] = Notice_Archeomed_Controles::sans_point_final( $d['lieu_dit'] );
+			// La première lettre en capitale : le lieu-dit ouvre une phrase du
+			// titre, après le point — « Caen (Calvados). La Croix-Blanche ».
+			$d['lieu_dit'] = $this->capitale_initiale( $d['lieu_dit'] );
+		}
+		return $d;
+	}
+
+	/**
+	 * Un lien posté, restreint à « http » et « https » et borné : il finit en
+	 * lien hypertexte dans le document, où une adresse mal formée ne mènerait
+	 * nulle part.
+	 */
+	private function lien_poste( $champ, $nom ) {
+		$lien = isset( $_POST[ $champ ] ) && is_string( $_POST[ $champ ] )
+			? esc_url_raw( trim( wp_unslash( $_POST[ $champ ] ) ), array( 'http', 'https' ) ) : '';
+		return $this->limit_string( $lien, 500, $nom );
+	}
+
+	/**
 	 * Un texte sans caractère de contrôle. Sur une ligne, les sauts et les
 	 * tabulations deviennent une espace ; sinon, ils restent.
 	 */
@@ -11064,7 +11203,7 @@ class Notice_Archeomed_Pactols {
 		// notice, que personne n'a demandée.
 		if ( $this->correction_sans_lien() ) {
 			error_log( 'Notice Archeomed: correction en place sans réserve valable.' );
-			$this->redirect_result( false, 'perimee' );
+			$this->redirect_result( false, Notice_Archeomed_Relecture::campagne_close() ? 'close' : 'perimee' );
 		}
 		if ( ! $redaction && ! $this->verifier_la_protection() ) {
 			$this->redirect_result( false, 'verification' );
@@ -11095,21 +11234,15 @@ class Notice_Archeomed_Pactols {
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst',
 			'commentaires',
 		);
-		foreach ( $text_fields as $f ) {
-			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( self::chevrons_a_garder( wp_unslash( $_POST[ $f ] ) ) ) : '';
-		}
+		$d = array_merge( $d, $this->textes_postes( $text_fields ) );
 		// Le lien du rapport passe par « esc_url_raw » et non par le tamis des
 		// champs de texte : il finit dans un lien hypertexte du document, et
 		// une adresse mal formée y ferait un lien qui ne mène nulle part. Les
 		// schémas sont restreints à ce qu'un rapport peut porter.
-		$d['rapport_lien'] = isset( $_POST['rapport_lien'] )
-			? esc_url_raw( trim( wp_unslash( $_POST['rapport_lien'] ) ), array( 'http', 'https' ) ) : '';
-		$d['rapport_lien'] = $this->limit_string( $d['rapport_lien'], 500, 'le lien du rapport' );
+		$d['rapport_lien'] = $this->lien_poste( 'rapport_lien', 'le lien du rapport' );
 		// Le lien de téléchargement des originaux trop lourds pour le
 		// formulaire : la rédaction le trouve dans le courriel et le document.
-		$d['originaux_lien'] = isset( $_POST['originaux_lien'] )
-			? esc_url_raw( trim( wp_unslash( $_POST['originaux_lien'] ) ), array( 'http', 'https' ) ) : '';
-		$d['originaux_lien'] = $this->limit_string( $d['originaux_lien'], 500, 'le lien des originaux' );
+		$d['originaux_lien'] = $this->lien_poste( 'originaux_lien', 'le lien des originaux' );
 		// Le jour où le service de transfert efface les originaux : la
 		// rédaction reçoit une alerte qui le dit. Une date mal formée vaut
 		// une date manquante.
@@ -11122,25 +11255,6 @@ class Notice_Archeomed_Pactols {
 		// la copie partait au seul responsable. Son adresse reçoit la même
 		// copie ; elle ne sort jamais de la rédaction ni de la notice.
 		$d['deposant_email'] = isset( $_POST['deposant_email'] ) ? sanitize_email( wp_unslash( $_POST['deposant_email'] ) ) : '';
-		$noms_des_champs = array(
-			'departement' => 'la précision géographique', 'lieu_dit' => 'le lieu-dit', 'annee' => 'l’année',
-			'num_autorisation' => 'le numéro d’arrêté', 'id_patriarche' => 'le code Patriarche',
-			'resp_prenom' => 'le prénom du responsable', 'resp_nom' => 'le nom du responsable', 'resp_inst' => 'l’institution du responsable',
-			'coresp_prenom' => 'le prénom du co-responsable', 'coresp_nom' => 'le nom du co-responsable', 'coresp_inst' => 'l’institution du co-responsable',
-			'coauteur_prenom' => 'le prénom du co-auteur', 'coauteur_nom' => 'le nom du co-auteur', 'coauteur_inst' => 'l’institution du co-auteur',
-			'commentaires' => 'le message à la rédaction',
-		);
-		foreach ( array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'id_patriarche' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'commentaires' => 3000 ) as $field => $max ) {
-			$d[ $field ] = $this->limit_string( $d[ $field ], $max, $noms_des_champs[ $field ] );
-		}
-		$d['departement'] = $this->sans_parentheses( $d['departement'] );
-		$d['annee'] = self::annee_normalisee( $d['annee'] );
-		// Un titre ne prend pas de point final : « Rue de Reviers. » donnait
-		// un titre pointé, au document comme au renvoi.
-		$d['lieu_dit'] = Notice_Archeomed_Controles::sans_point_final( $d['lieu_dit'] );
-		// La première lettre en capitale : le lieu-dit ouvre une phrase du
-		// titre, après le point — « Caen (Calvados). La Croix-Blanche ».
-		$d['lieu_dit'] = $this->capitale_initiale( $d['lieu_dit'] );
 		$d['lieux'] = $this->collect_lieux();
 		// « commune » reste le premier lieu : c'est lui qui donne le titre de
 		// la fiche, le nom du fichier, l'objet du courriel et le rang au
@@ -13112,6 +13226,7 @@ class Notice_Archeomed_Pactols {
 		wp_unschedule_hook( self::HOOK_APERCUS );
 		Notice_Archeomed_Rangement::desactiver();
 		Notice_Archeomed_Export::desactiver();
+		Notice_Archeomed_Relecture::desactiver();
 		wp_unschedule_hook( Notice_Archeomed_Settings::HOOK_DISQUE );
 	}
 
@@ -13266,7 +13381,30 @@ class Notice_Archeomed_Pactols {
 		if ( ! is_array( $d ) || empty( $d ) ) {
 			return null;
 		}
-		$d       = self::figures_lisibles( $d );
+		return $this->preparer_la_saisie( $id, $d, $avec_apercus ? $this->apercus_de( $id, self::figures_lisibles( $d ) ) : array() );
+	}
+
+	/**
+	 * Une saisie mise à la forme que les documents attendent : celle de la
+	 * notice aujourd'hui, ou celle d'une de ses versions gardées, d'où se
+	 * tire le Word de relecture. Une seule préparation pour les deux : la
+	 * version d'avant et celle d'après doivent sortir par le même chemin,
+	 * sans quoi le suivi des modifications montrerait des écarts que
+	 * personne n'a écrits.
+	 */
+	private function preparer_la_saisie( $id, $d, $apercus ) {
+		$rangs = array();
+		$d     = self::sans_les_masquees( self::figures_lisibles( $d ), $rangs );
+		// Les aperçus suivent leur figure au rang que le document lui donne.
+		if ( ! empty( $apercus ) && ! empty( $rangs ) ) {
+			$suivis = array();
+			foreach ( $rangs as $origine => $nouveau ) {
+				if ( isset( $apercus[ $origine ] ) ) {
+					$suivis[ $nouveau ] = $apercus[ $origine ];
+				}
+			}
+			$apercus = $suivis;
+		}
 		// Le libellé en vigueur de chaque rubrique : une notice reçue sous un
 		// ancien s'imprime sous le nouveau.
 		foreach ( array( 'rubrique_principale', 'renvoi_1', 'renvoi_2' ) as $champ ) {
@@ -13274,7 +13412,6 @@ class Notice_Archeomed_Pactols {
 				$d[ $champ ] = self::rubrique_actuelle( $d[ $champ ] );
 			}
 		}
-		$apercus = $avec_apercus ? $this->apercus_de( $id, $d ) : array();
 		if ( ! empty( $d['illustrations'] ) ) {
 			foreach ( array_keys( (array) $d['illustrations'] ) as $i ) {
 				unset( $d['illustrations'][ $i ]['figure'] );
@@ -14705,6 +14842,798 @@ class Notice_Archeomed_Pactols {
 			'notice_sans_fichiers' => $this->fichiers_refuses ? '1' : '',
 		) ), $this->url_du_formulaire() ) );
 		exit;
+	}
+
+	/**
+	 * Ce que l'écran de relecture montre d'une notice : sa saisie telle
+	 * qu'elle est gardée, sa version, ses lieux, ses organismes, ses natures,
+	 * et ses figures avec la présence de leur aperçu. Null sans saisie.
+	 */
+	public function notice_a_relire( $id ) {
+		$id = (int) $id;
+		$d  = get_post_meta( $id, '_na_donnees', true );
+		if ( ! is_array( $d ) || empty( $d ) ) {
+			return null;
+		}
+		$d = self::figures_lisibles( $d );
+		foreach ( array( 'rubrique_principale', 'renvoi_1', 'renvoi_2' ) as $champ ) {
+			if ( isset( $d[ $champ ] ) ) {
+				$d[ $champ ] = self::rubrique_actuelle( $d[ $champ ] );
+			}
+		}
+		$figures = array();
+		foreach ( $this->figures_gardees_de( $id, $d ) as $figure ) {
+			$figure['apercu']  = '' !== $this->chemin_de_l_apercu( $id, (int) $figure['k'] );
+			$figure['masquee'] = null;
+			foreach ( (array) $d['illustrations'] as $item ) {
+				if ( is_array( $item ) && isset( $item['rang'] ) && (int) $item['rang'] === (int) $figure['k'] ) {
+					$figure['masquee'] = self::figure_masquee( $item );
+				}
+			}
+			$figures[] = $figure;
+		}
+		return array(
+			'd'          => $d,
+			'version'    => $this->file()->version_de( $id ),
+			'figures'    => $figures,
+			'lieux'      => self::lieux_saisis( $d ),
+			'organismes' => array_values( $this->organismes_de( $d ) ),
+			'natures'    => self::natures_saisies( $d ),
+		);
+	}
+
+	/**
+	 * Les lieux d'une saisie tels qu'on les a saisis, non redressés comme à
+	 * la sortie : ceux d'une notice ancienne tiennent dans sa seule commune.
+	 */
+	private static function lieux_saisis( $d ) {
+		$lieux = ( ! empty( $d['lieux'] ) && is_array( $d['lieux'] ) ) ? $d['lieux']
+			: ( ! empty( $d['commune'] ) ? array( array( 'nom' => (string) $d['commune'],
+				'ark' => isset( $d['commune_ark'] ) ? (string) $d['commune_ark'] : '' ) ) : array() );
+		$propres = array();
+		foreach ( $lieux as $lieu ) {
+			if ( is_array( $lieu ) && isset( $lieu['nom'] ) && is_scalar( $lieu['nom'] ) && '' !== trim( (string) $lieu['nom'] ) ) {
+				$propres[] = array(
+					'nom' => (string) $lieu['nom'],
+					'ark' => isset( $lieu['ark'] ) && is_scalar( $lieu['ark'] ) ? (string) $lieu['ark'] : '',
+				);
+			}
+		}
+		return $propres;
+	}
+
+	/** Les natures cochées d'une saisie, par leur libellé. */
+	private static function natures_saisies( $d ) {
+		$natures = array();
+		if ( ! empty( $d['nature_items'] ) && is_array( $d['nature_items'] ) ) {
+			foreach ( $d['nature_items'] as $item ) {
+				if ( is_array( $item ) && isset( $item['label'] ) && is_scalar( $item['label'] ) ) {
+					$natures[] = (string) $item['label'];
+				}
+			}
+		}
+		if ( empty( $natures ) && ! empty( $d['nature'] ) && is_scalar( $d['nature'] ) ) {
+			$natures = array_map( 'trim', explode( ',', (string) $d['nature'] ) );
+		}
+		return array_values( array_filter( $natures, 'strlen' ) );
+	}
+
+	/**
+	 * L'aperçu d'une figure, celui qui a été fabriqué pour le Word : son
+	 * chemin, ou une chaîne vide s'il n'y en a pas sur le serveur.
+	 *
+	 * Les originaux partent sur sDrive ; l'aperçu, lui, reste — le rangement
+	 * n'efface un original que si son aperçu se lit. C'est donc lui que la
+	 * relecture montre, et jamais un fichier hors du dossier de dépôt.
+	 */
+	public function chemin_de_l_apercu( $id, $rang ) {
+		$d       = get_post_meta( (int) $id, '_na_donnees', true );
+		$apercus = $this->apercus_de( (int) $id, is_array( $d ) ? self::figures_lisibles( $d ) : null );
+		$rang    = (int) $rang;
+		$chemin  = ( isset( $apercus[ $rang ] ) && is_array( $apercus[ $rang ] ) && ! empty( $apercus[ $rang ]['apercu'] )
+			&& is_string( $apercus[ $rang ]['apercu'] ) ) ? $apercus[ $rang ]['apercu'] : '';
+		$dossier = $this->dossier_des_illustrations();
+		return ( '' !== $chemin && '' !== $dossier && 0 === strpos( $chemin, $dossier ) && is_file( $chemin ) ) ? $chemin : '';
+	}
+
+	/**
+	 * La notice à lire sans la corriger, en page HTML : celle que le dossier
+	 * Métopes donne à relire, figures masquées ôtées, et sans aucune adresse
+	 * de courriel. « $adresse_des_apercus » rend, pour un rang de figure,
+	 * l'adresse qui sert son aperçu ; chaîne vide sans saisie.
+	 */
+	public function page_a_lire( $id, $adresse_des_apercus ) {
+		$brute = get_post_meta( (int) $id, '_na_donnees', true );
+		$d     = $this->saisie_de( (int) $id, false );
+		if ( null === $d || ! is_array( $brute ) ) {
+			return '';
+		}
+		// Les figures qui paraissent, chacune avec l'aperçu de son rang
+		// d'origine : c'est sous lui que le fichier est rangé.
+		$rangs = array();
+		self::sans_les_masquees( self::figures_lisibles( $brute ), $rangs );
+		$origines = array_flip( $rangs );
+		foreach ( ( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() ) as $i => $item ) {
+			$rang    = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+			$origine = isset( $origines[ $rang ] ) ? (int) $origines[ $rang ] : $rang;
+			if ( '' !== $this->chemin_de_l_apercu( $id, $origine ) ) {
+				$d['illustrations'][ $i ]['figure'] = array( 'fichier' => (string) call_user_func( $adresse_des_apercus, $origine ) );
+			}
+		}
+		return $this->page_de_relecture( isset( $d['rubrique_principale'] ) ? (string) $d['rubrique_principale'] : '', array( $d ) );
+	}
+
+	/** L'identité d'un terme du thésaurus : son ARK, ou son libellé s'il n'en a pas. */
+	private static function cle_de_terme( $item ) {
+		$ark = isset( $item['ark'] ) && is_scalar( $item['ark'] ) ? trim( (string) $item['ark'] ) : '';
+		return '' !== $ark ? $ark : 'libre:' . ( isset( $item['label'] ) && is_scalar( $item['label'] ) ? trim( (string) $item['label'] ) : '' );
+	}
+
+	/**
+	 * Ce qui masque une figure — son motif, qui l'a retirée et quand —, ou
+	 * null si elle paraît.
+	 */
+	public static function figure_masquee( $item ) {
+		return ( is_array( $item ) && ! empty( $item['masquee'] ) && is_array( $item['masquee'] ) ) ? $item['masquee'] : null;
+	}
+
+	/**
+	 * Une saisie sans ses figures masquées, celles qui restent numérotées à
+	 * la suite ; « $rangs » rend, pour chaque figure gardée, son rang
+	 * d'origine et le nouveau.
+	 *
+	 * Tous les documents passent par ici : le Word, le fascicule, le dossier
+	 * Métopes, la page de relecture. La saisie gardée, elle, ne bouge pas :
+	 * chaque figure y garde son rang, donc ses fichiers, et se rétablit
+	 * sans rien avoir à remettre en place.
+	 */
+	private static function sans_les_masquees( $d, &$rangs = array() ) {
+		$rangs = array();
+		if ( empty( $d['illustrations'] ) || ! is_array( $d['illustrations'] ) ) {
+			return $d;
+		}
+		// Sans figure masquée, rien ne se renumérote : la saisie sort telle
+		// qu'elle est, comme avant qu'on puisse en masquer.
+		if ( empty( self::rangs_masques( $d ) ) ) {
+			foreach ( $d['illustrations'] as $item ) {
+				if ( is_array( $item ) && isset( $item['rang'] ) ) {
+					$rangs[ (int) $item['rang'] ] = (int) $item['rang'];
+				}
+			}
+			return $d;
+		}
+		$restent = array();
+		foreach ( $d['illustrations'] as $item ) {
+			if ( null !== self::figure_masquee( $item ) ) {
+				continue;
+			}
+			$nouveau = count( $restent ) + 1;
+			if ( is_array( $item ) && isset( $item['rang'] ) ) {
+				$rangs[ (int) $item['rang'] ] = $nouveau;
+				if ( (int) $item['rang'] !== $nouveau && isset( $item['titre'] ) && is_scalar( $item['titre'] ) ) {
+					$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( (string) $item['titre'], $nouveau );
+				}
+				$item['rang'] = $nouveau;
+			}
+			$restent[] = $item;
+		}
+		$d['illustrations'] = $restent;
+		return $d;
+	}
+
+	/** Les rangs des figures masquées d'une saisie. */
+	private static function rangs_masques( $d ) {
+		$masques = array();
+		foreach ( ( is_array( $d ) && isset( $d['illustrations'] ) && is_array( $d['illustrations'] ) ) ? $d['illustrations'] : array() as $item ) {
+			if ( null !== self::figure_masquee( $item ) && ! empty( $item['rang'] ) ) {
+				$masques[] = (int) $item['rang'];
+			}
+		}
+		return $masques;
+	}
+
+	/**
+	 * Les fichiers d'une notice sans ceux de ses figures masquées : ceux des
+	 * figures qui paraissent, chacun au rang que les documents lui donnent.
+	 *
+	 * La liste des originaux se lit par position, les conversions par rang ;
+	 * rien n'est effacé, le dossier Métopes ne les emporte simplement pas.
+	 */
+	private static function fichiers_sans_les_masquees( $d, $illustrations, $conversions ) {
+		$masques = self::rangs_masques( $d );
+		if ( empty( $masques ) ) {
+			return array( $illustrations, $conversions );
+		}
+		$dernier = count( $illustrations );
+		foreach ( (array) $d['illustrations'] as $item ) {
+			if ( is_array( $item ) && ! empty( $item['rang'] ) ) {
+				$dernier = max( $dernier, (int) $item['rang'] );
+			}
+		}
+		$originaux = array();
+		$converties = array();
+		$rang      = 0;
+		for ( $k = 1; $k <= $dernier; $k++ ) {
+			if ( in_array( $k, $masques, true ) ) {
+				continue;
+			}
+			++$rang;
+			if ( isset( $illustrations[ $k - 1 ] ) ) {
+				$originaux[] = $illustrations[ $k - 1 ];
+			}
+			if ( ! empty( $conversions[ $k ] ) ) {
+				$converties[ $rang ] = $conversions[ $k ];
+			}
+		}
+		return array( $originaux, $converties );
+	}
+
+	/**
+	 * Le rappel à donner après le retrait d'une figure : ce que le contrôle
+	 * des appels trouve dans le texte, maintenant que les figures qui restent
+	 * se numérotent à la suite. Vide si le texte n'appelle rien de travers.
+	 */
+	public function appels_a_verifier( $id ) {
+		$d = get_post_meta( (int) $id, '_na_donnees', true );
+		if ( ! is_array( $d ) ) {
+			return array();
+		}
+		$d = self::sans_les_masquees( self::figures_lisibles( $d ) );
+		return Notice_Archeomed_Controles::appels_de_figure(
+			wp_strip_all_tags( str_replace( array( '</p>', '</h3>', '</h4>', '<br>' ), "\n", isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '' ) ),
+			count( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() ) );
+	}
+
+	/**
+	 * La saisie d'une notice telle que la relecture postée la corrige, ou
+	 * une raison de refus : « texte » (vide, ou trop long), « motif » (une
+	 * figure retirée sans dire pourquoi).
+	 *
+	 * On part de la saisie gardée et l'on n'y change que ce que le
+	 * formulaire de relecture renvoie : un champ absent garde sa valeur, et
+	 * ce que la relecture ne montre pas — le message à la rédaction, le lien
+	 * des originaux, le lien de correction — reste tel quel.
+	 *
+	 * Ces règles tiennent ici, côté serveur, quoi que poste le formulaire :
+	 * les courriels des responsables ne se lisent jamais dans la requête ;
+	 * une illustration se retire, avec son motif, ou garde ses textes
+	 * corrigés — aucune ne s'ajoute ni ne se remplace, et une figure retirée
+	 * n'est que masquée, que la rédaction seule rétablit ; un mot-clé neuf ne
+	 * vient que du thésaurus, avec son identifiant ; la rédaction seule
+	 * change la rubrique principale.
+	 *
+	 * « $portee » dit qui relit : { tout } pour la rédaction, { renvoi } avec
+	 * sa rubrique pour le coordinateur d'une rubrique de renvoi, qui ne peut
+	 * que retirer le renvoi vers elle.
+	 *
+	 * Rend array( saisie, ce qui a été retiré ou rétabli ), ou la raison du
+	 * refus.
+	 */
+	private function saisie_relue( $id, $avant, $portee, $nom ) {
+		$toutes_rubriques = ! empty( $portee['tout'] );
+		$faits            = array( 'figures_masquees' => array(), 'figures_retablies' => array(), 'termes_retires' => array(), 'renvois_retires' => array(), 'renvois_ajoutes' => array() );
+		$d                = $avant;
+		$rubrique_anc     = self::rubrique_actuelle( isset( $avant['rubrique_principale'] ) ? $avant['rubrique_principale'] : '' );
+
+		// ── La rubrique : la rédaction seule la change, le coordinateur n'en
+		// sort pas une notice. ────────────────────────────────────────────
+		if ( $toutes_rubriques && isset( $_POST['rubrique_principale'] ) ) {
+			$rubrique = $this->collect_select( 'rubrique_principale', $this->rubriques, true );
+			if ( '' !== $rubrique && $rubrique !== $rubrique_anc ) {
+				$d['rubrique_principale'] = $rubrique;
+			}
+		}
+		$rubrique = self::rubrique_actuelle( isset( $d['rubrique_principale'] ) ? $d['rubrique_principale'] : '' );
+
+		// ── Les renvois, dans leurs deux emplacements. Qui relit la
+		// rubrique principale en retire et en pose ; le coordinateur d'une
+		// rubrique de renvoi ne retire que le renvoi vers la sienne, et ne
+		// corrige rien d'autre. Un renvoi ne vise ni la rubrique de la
+		// notice, ni une rubrique déjà visée. ─────────────────────────────
+		$renvois = array();
+		foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
+			$ancien = self::rubrique_actuelle( isset( $avant[ $champ ] ) ? $avant[ $champ ] : '' );
+			$renvoi = $ancien;
+			if ( empty( $portee['renvoi'] ) && isset( $_POST[ $champ ] ) ) {
+				$renvoi = $this->collect_select( $champ, $this->rubriques, false );
+			}
+			if ( '' !== $ancien && ! empty( $_POST['retirer_renvoi'] ) && is_array( $_POST['retirer_renvoi'] ) && ! empty( $_POST['retirer_renvoi'][ $champ ] )
+				&& ( empty( $portee['renvoi'] ) || $portee['renvoi'] === $ancien ) ) {
+				$renvoi = '';
+			}
+			if ( '' !== $renvoi && $renvoi !== $ancien && ( $renvoi === $rubrique || in_array( $renvoi, $renvois, true ) ) ) {
+				$renvoi = $ancien;
+			}
+			$renvois[ $champ ] = $renvoi;
+		}
+		// Le second emplacement ne garde pas ce que le premier vient de prendre.
+		if ( '' !== $renvois['renvoi_1'] && $renvois['renvoi_1'] === $renvois['renvoi_2'] ) {
+			$renvois['renvoi_2'] = '';
+		}
+		$avant_vises = array();
+		foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
+			$ancien = self::rubrique_actuelle( isset( $avant[ $champ ] ) ? $avant[ $champ ] : '' );
+			if ( '' !== $ancien ) {
+				$avant_vises[] = $ancien;
+			}
+			if ( $renvois[ $champ ] !== $ancien ) {
+				$d[ $champ ] = $renvois[ $champ ];
+			}
+		}
+		$apres_vises              = array_values( array_filter( $renvois, 'strlen' ) );
+		$faits['renvois_retires'] = array_values( array_diff( $avant_vises, $apres_vises ) );
+		$faits['renvois_ajoutes'] = array_values( array_diff( $apres_vises, $avant_vises ) );
+		if ( ! empty( $portee['renvoi'] ) ) {
+			return array( $d, $faits );
+		}
+
+		$matiere  = self::matiere_de( $avant );
+		if ( self::RUBRIQUE_ARTISANAT !== $rubrique ) {
+			$matiere = '';
+		} elseif ( isset( $_POST['rubrique_matiere'] ) ) {
+			$postee  = strtoupper( sanitize_key( wp_unslash( $_POST['rubrique_matiere'] ) ) );
+			$matiere = array_key_exists( $postee, self::MATIERES ) ? $postee : '';
+		}
+		if ( $matiere !== self::matiere_de( $avant ) || $rubrique !== $rubrique_anc ) {
+			$d['rubrique_matiere'] = $matiere;
+		}
+
+		// ── Les champs de texte, reçus comme au dépôt. Les courriels n'y
+		// sont pas : ils restent ceux de la saisie gardée. ────────────────
+		$postes = array();
+		foreach ( array( 'departement', 'lieu_dit', 'annee', 'num_autorisation', 'id_patriarche',
+			'resp_prenom', 'resp_nom', 'resp_inst', 'coresp_prenom', 'coresp_nom', 'coresp_inst',
+			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst' ) as $champ ) {
+			if ( isset( $_POST[ $champ ] ) && is_string( $_POST[ $champ ] ) ) {
+				$postes[] = $champ;
+			}
+		}
+		foreach ( $this->textes_postes( $postes ) as $champ => $valeur ) {
+			if ( array_key_exists( $champ, $avant ) || '' !== $valeur ) {
+				$d[ $champ ] = $valeur;
+			}
+		}
+		if ( isset( $_POST['rapport_lien'] ) && is_string( $_POST['rapport_lien'] ) ) {
+			$lien = $this->lien_poste( 'rapport_lien', 'le lien du rapport' );
+			if ( array_key_exists( 'rapport_lien', $avant ) || '' !== $lien ) {
+				$d['rapport_lien'] = $lien;
+			}
+		}
+
+		// ── Les lieux. Un nom garde l'identifiant qu'il avait ; un nom
+		// changé ou ajouté n'en a pas, puisque rien ici ne le cherche dans
+		// le thésaurus. Une liste vidée ne s'enregistre pas. ──────────────
+		if ( isset( $_POST['commune'] ) ) {
+			$anciens = self::lieux_saisis( $avant );
+			$connus  = array();
+			foreach ( $anciens as $lieu ) {
+				$connus[ $lieu['nom'] ] = $lieu['ark'];
+			}
+			$lieux = array();
+			foreach ( $this->collect_lieux() as $lieu ) {
+				$lieux[] = array( 'nom' => $lieu['nom'], 'ark' => isset( $connus[ $lieu['nom'] ] ) ? $connus[ $lieu['nom'] ] : '' );
+			}
+			if ( ! empty( $lieux ) && $lieux !== $anciens ) {
+				$d['lieux']       = $lieux;
+				$d['commune']     = $lieux[0]['nom'];
+				$d['commune_ark'] = $lieux[0]['ark'];
+			}
+		}
+		if ( isset( $_POST['organisme'] ) ) {
+			$organismes = $this->collect_organismes();
+			if ( $organismes !== array_values( $this->organismes_de( $avant ) ) ) {
+				$d['organismes'] = $organismes;
+				$d['organisme']  = implode( ', ', $organismes );
+			}
+		}
+
+		// ── Les natures : celles du formulaire, et celles que la notice
+		// portait déjà — une nature qu'on ne propose plus ne se perd pas à
+		// la relecture. Les décocher toutes ne s'enregistre pas. ──────────
+		if ( isset( $_POST['nature'] ) && is_array( $_POST['nature'] ) ) {
+			$anciennes = self::natures_saisies( $avant );
+			$items_anc = array();
+			foreach ( ( isset( $avant['nature_items'] ) && is_array( $avant['nature_items'] ) ) ? $avant['nature_items'] : array() as $item ) {
+				if ( is_array( $item ) && isset( $item['label'] ) && is_scalar( $item['label'] ) ) {
+					$items_anc[ (string) $item['label'] ] = $item;
+				}
+			}
+			$admises = array_values( array_unique( array_merge( array_keys( $this->natures ), $anciennes ) ) );
+			$cochees = array();
+			foreach ( wp_unslash( $_POST['nature'] ) as $valeur ) {
+				$valeur = is_string( $valeur ) ? sanitize_text_field( $valeur ) : '';
+				if ( '' !== $valeur && in_array( $valeur, $admises, true ) && ! in_array( $valeur, $cochees, true ) ) {
+					$cochees[] = $valeur;
+				}
+			}
+			$triees_neuves = $cochees;
+			$triees_avant  = $anciennes;
+			sort( $triees_neuves );
+			sort( $triees_avant );
+			if ( ! empty( $cochees ) && $triees_neuves !== $triees_avant ) {
+				$items = array();
+				foreach ( $cochees as $libelle ) {
+					if ( isset( $items_anc[ $libelle ] ) ) {
+						$items[] = $items_anc[ $libelle ];
+					} elseif ( isset( $this->natures[ $libelle ] ) ) {
+						$items[] = array( 'label' => $libelle, 'ark' => $this->natures[ $libelle ], 'idConcept' => '' );
+					}
+				}
+				$d['nature']       = implode( ', ', $cochees );
+				$d['nature_items'] = $items;
+			}
+		}
+
+		// ── Les termes du thésaurus : on en retire, et l'on en ajoute par
+		// les listes de Pactols. Un terme gardé reste tel qu'il était ; un
+		// terme neuf sans identifiant n'entre pas. ────────────────────────
+		foreach ( array( 'periods', 'subjects', 'places' ) as $liste ) {
+			$champ = 'pactols_' . $liste;
+			if ( ! isset( $_POST[ $champ ] ) || ! is_string( $_POST[ $champ ] ) || '' === trim( $_POST[ $champ ] ) ) {
+				continue;
+			}
+			$anciens = ( isset( $avant[ $champ . '_items' ] ) && is_array( $avant[ $champ . '_items' ] ) )
+				? array_values( array_filter( $avant[ $champ . '_items' ], 'is_array' ) ) : array();
+			$connus  = array();
+			foreach ( $anciens as $item ) {
+				$connus[ self::cle_de_terme( $item ) ] = $item;
+			}
+			$items = array();
+			$vus   = array();
+			foreach ( $this->collect_pactols_keywords( $champ ) as $item ) {
+				$cle = self::cle_de_terme( $item );
+				if ( isset( $vus[ $cle ] ) ) {
+					continue;
+				}
+				$vus[ $cle ] = true;
+				if ( isset( $connus[ $cle ] ) ) {
+					$items[] = $connus[ $cle ];
+				} elseif ( '' !== $item['ark'] ) {
+					$items[] = $item;
+				}
+			}
+			foreach ( $connus as $cle => $item ) {
+				if ( ! isset( $vus[ $cle ] ) && isset( $item['label'] ) && is_scalar( $item['label'] ) ) {
+					$faits['termes_retires'][] = (string) $item['label'];
+				}
+			}
+			if ( $items !== $anciens ) {
+				$d[ $champ . '_items' ] = $items;
+				$d[ $champ . '_text' ]  = $this->pactols_keywords_to_text( $items );
+			}
+		}
+
+		// ── Le texte. Vide, il ne s'enregistre pas : un éditeur qui ne
+		// s'est pas chargé ne doit pas effacer une notice. ────────────────
+		if ( isset( $_POST['texte_notice'] ) && is_string( $_POST['texte_notice'] ) ) {
+			$brut = wp_unslash( $_POST['texte_notice'] );
+			if ( strlen( $brut ) > 200000 ) {
+				return 'texte';
+			}
+			$texte = $this->texte_notice_pose( $brut, 'le texte, balises comprises' );
+			if ( '' === trim( wp_strip_all_tags( $texte ) ) ) {
+				return 'texte';
+			}
+			$d['texte_notice'] = $texte;
+		}
+
+		// ── Les illustrations : chacune garde sa place, son rang, ses
+		// fichiers et ses textes corrigés. Retirée, elle n'est que masquée,
+		// avec son motif : rien ne s'efface, et la rédaction la rétablit.
+		// Rien de ce que la requête porterait d'autre — une figure neuve, un
+		// fichier — n'est lu. ─────────────────────────────────────────────
+		$items = array();
+		foreach ( ( isset( $avant['illustrations'] ) && is_array( $avant['illustrations'] ) ) ? $avant['illustrations'] : array() as $item ) {
+			if ( ! is_array( $item ) || empty( $item['rang'] ) ) {
+				$items[] = $item;
+				continue;
+			}
+			$k       = (int) $item['rang'];
+			$action  = $this->garde_postee( 'action', $k );
+			$action  = null === $action ? '' : sanitize_key( $action );
+			$titre   = isset( $item['titre'] ) && is_scalar( $item['titre'] ) ? (string) $item['titre'] : '';
+			if ( null !== self::figure_masquee( $item ) ) {
+				// Masquée, elle ne se corrige pas ; la rédaction seule la rétablit.
+				if ( 'retablir' === $action && $toutes_rubriques ) {
+					unset( $item['masquee'] );
+					$faits['figures_retablies'][] = array( 'rang' => $k, 'titre' => $titre );
+				}
+				$items[] = $item;
+				continue;
+			}
+			$brut   = array( 'description' => '' );
+			$touche = false;
+			foreach ( array( 'titre', 'legende', 'credits', 'alt' ) as $cle ) {
+				$valeur = $this->garde_postee( $cle, $k );
+				$touche = $touche || null !== $valeur;
+				if ( null === $valeur ) {
+					$valeur = isset( $item[ $cle ] ) && is_scalar( $item[ $cle ] ) ? (string) $item[ $cle ] : '';
+					if ( 'alt' === $cle && isset( $item['description'] ) && is_scalar( $item['description'] ) && '' !== (string) $item['description'] ) {
+						$valeur .= "\n" . (string) $item['description'];
+					}
+				}
+				$brut[ $cle ] = $valeur;
+			}
+			if ( $touche ) {
+				foreach ( $this->textes_de_figure( $brut, $k ) as $cle => $valeur ) {
+					// Une clef que la figure ne portait pas ne naît pas vide :
+					// la notice ne doit pas sembler changée pour si peu.
+					if ( array_key_exists( $cle, $item ) || '' !== $valeur ) {
+						$item[ $cle ] = $valeur;
+					}
+				}
+			}
+			$type = $this->garde_postee( 'type', $k );
+			if ( null !== $type && '' !== Notice_Archeomed_Controles::type_de_figure( $type ) ) {
+				$item['type'] = Notice_Archeomed_Controles::type_de_figure( $type );
+			}
+			if ( 'retirer' === $action ) {
+				$motif     = $this->garde_postee( 'motif', $k );
+				$motif     = null === $motif ? '' : sanitize_key( $motif );
+				$precision = $this->garde_postee( 'precision', $k );
+				$precision = null === $precision ? '' : trim( $this->limit_string( sanitize_text_field( $precision ), 300 ) );
+				if ( ! array_key_exists( $motif, Notice_Archeomed_Relecture::MOTIFS ) || ( 'autre' === $motif && '' === $precision ) ) {
+					return 'motif';
+				}
+				$item['masquee'] = array(
+					'motif'     => $motif,
+					'precision' => $precision,
+					'par'       => (string) $nom,
+					'le'        => current_time( 'mysql' ),
+				);
+				$faits['figures_masquees'][] = array( 'rang' => $k, 'titre' => $titre,
+					'motif' => Notice_Archeomed_Relecture::MOTIFS[ $motif ] . ( '' !== $precision ? ' : ' . $precision : '' ) );
+			}
+			$items[] = $item;
+		}
+		if ( isset( $avant['illustrations'] ) && is_array( $avant['illustrations'] ) ) {
+			$d['illustrations'] = $items;
+		}
+		return array( $d, $faits );
+	}
+
+	/**
+	 * Enregistre la relecture d'une notice : la saisie corrigée devient la
+	 * dernière version, et la précédente est gardée.
+	 *
+	 * L'appelant a vérifié qui relit, sa rubrique, son jeton et son verrou ;
+	 * « $lue » est la version que sa page montrait, « $portee » ce que ce
+	 * relecteur peut changer. Comme pour toute correction, une seule
+	 * écriture conditionnelle fait passer la notice à la version suivante :
+	 * deux enregistrements partis ensemble ne s'écrasent pas, le second est
+	 * rendu au conflit. Tout ce qui peut refuser refuse avant qu'on écrive
+	 * quoi que ce soit.
+	 *
+	 * Personne n'est prévenu, et la notice ne repart pas vers la rédaction :
+	 * elle se relit sur le site. Rien de ce qui touche sDrive ne se fait
+	 * ici — une panne de sDrive ne coûte pas une correction.
+	 *
+	 * Rend { issue, version, champs, faits } ; l'issue est « enregistree »,
+	 * « inchangee », « conflit », « occupee », « texte », « motif » ou
+	 * « introuvable ».
+	 */
+	public function enregistrer_la_relecture( $id, $lue, $relecteur, $portee = array() ) {
+		$id    = (int) $id;
+		$lue   = (int) $lue;
+		$rendu = array( 'issue' => 'introuvable', 'version' => 0, 'champs' => array(), 'faits' => array() );
+		$avant = get_post_meta( $id, '_na_donnees', true );
+		if ( ! $id || ! is_array( $avant ) || empty( $avant ) ) {
+			return $rendu;
+		}
+		$avant            = self::figures_lisibles( $avant );
+		$rendu['version'] = $this->file()->version_de( $id );
+		if ( $lue < 1 || $rendu['version'] !== $lue ) {
+			$rendu['issue'] = 'conflit';
+			return $rendu;
+		}
+		$utilisateur  = ( $relecteur instanceof WP_User ) ? $relecteur : wp_get_current_user();
+		$nom          = $utilisateur->exists() ? (string) $utilisateur->display_name : 'la rédaction';
+		$this->coupes = array();
+		$relue        = $this->saisie_relue( $id, $avant, (array) $portee, $nom );
+		if ( ! is_array( $relue ) ) {
+			$rendu['issue'] = (string) $relue;
+			return $rendu;
+		}
+		list( $d, $faits ) = $relue;
+		$rendu['faits']    = $faits;
+
+		// Ce qui a changé, en mots. Rien de changé : pas de version de plus,
+		// ni de Word vide de tout suivi.
+		$sans_avis = function ( $saisie ) {
+			unset( $saisie['avis'] );
+			return wp_json_encode( $saisie );
+		};
+		if ( $sans_avis( $avant ) === $sans_avis( $d ) ) {
+			$rendu['issue'] = 'inchangee';
+			return $rendu;
+		}
+		$figures_changees = ! empty( $faits['figures_masquees'] ) || ! empty( $faits['figures_retablies'] )
+			|| self::textes_des_figures( isset( $avant['illustrations'] ) ? $avant['illustrations'] : array() )
+				!== self::textes_des_figures( isset( $d['illustrations'] ) ? $d['illustrations'] : array() );
+		$champs = $this->champs_changes( $avant, $d, $figures_changees );
+		if ( empty( $champs ) ) {
+			$champs = array( 'la saisie' );
+		}
+
+		// ── La version : un seul enregistrement passe ──────────────────────
+		if ( ! $this->file()->changer_de_version( $id, $lue ) ) {
+			$rendu['issue']   = 'conflit';
+			$rendu['version'] = $this->file()->version_de( $id );
+			return $rendu;
+		}
+		// La file ne doit pas envoyer la notice pendant qu'on la récrit, ni la
+		// récrire pendant qu'elle part.
+		wp_cache_delete( $id, 'post_meta' );
+		if ( (int) get_post_meta( $id, '_na_preparation', true ) > time() - Notice_Archeomed_File::ABANDON ) {
+			$this->file()->rendre_la_version( $id, $lue );
+			$rendu['issue'] = 'occupee';
+			return $rendu;
+		}
+		update_post_meta( $id, '_na_preparation', time() );
+		wp_cache_delete( $id, 'post_meta' );
+		$etat_avant = (string) get_post_meta( $id, '_na_etat', true );
+		if ( 'en_cours' === $etat_avant
+			&& (int) get_post_meta( $id, '_na_prise', true ) > time() - Notice_Archeomed_File::ABANDON ) {
+			$this->file()->rendre_la_version( $id, $lue );
+			delete_post_meta( $id, '_na_preparation' );
+			$rendu['issue'] = 'occupee';
+			return $rendu;
+		}
+
+		// ── La version d'avant se garde, avant toute écriture ──────────────
+		Notice_Archeomed_Relecture::garder_la_version( $id, $lue, $avant, '', 0, array() );
+
+		// ── La notice. Aucun fichier ne bouge : une figure retirée garde
+		// les siens, à son rang. ───────────────────────────────────────────
+		$d['avis'] = array_merge( (array) Notice_Archeomed_Controles::avis( self::sans_les_masquees( $d ) ), $this->avis_des_coupes() );
+		$this->file()->mettre_a_jour( $id, $d, $this->build_notice( self::sans_les_masquees( $d ) ) );
+		wp_cache_delete( $id, 'post_meta' );
+		Notice_Archeomed_Relecture::garder_la_version( $id, $lue + 1, $d,
+			$nom, $utilisateur->exists() ? (int) $utilisateur->ID : 0, $champs );
+		$this->file()->noter_la_version( $id, $lue + 1, $nom, $champs );
+		// Le thésaurus se relit sur les termes d'aujourd'hui, et le Word se
+		// refait à la demande, d'après la saisie relue.
+		delete_post_meta( $id, '_na_pactols_essais' );
+		delete_post_meta( $id, '_na_pactols_apres' );
+		$this->mettre_en_attente( $id, $d );
+		delete_post_meta( $id, '_na_document' );
+		// Une notice qui n'était jamais partie part relue ; une notice
+		// partie le reste, et ce qu'on devait signaler d'elle s'allonge.
+		$a_signaler = get_post_meta( $id, '_na_corrigee', true );
+		if ( is_array( $a_signaler ) ) {
+			update_post_meta( $id, '_na_corrigee', array_values( array_unique( array_merge( $a_signaler, $champs ) ) ) );
+		}
+		if ( 'echec' === $etat_avant ) {
+			$this->file()->remettre_en_file( $id );
+		} elseif ( 'en_attente' === $etat_avant ) {
+			$this->file()->programmer( $id );
+		}
+		// La marque se lève en dernier, comme pour toute correction.
+		delete_post_meta( $id, '_na_preparation' );
+		$rendu['issue']   = 'enregistree';
+		$rendu['version'] = $lue + 1;
+		$rendu['champs']  = $champs;
+		return $rendu;
+	}
+
+	/**
+	 * Le Word de relecture d'une version : la notice telle que le relecteur
+	 * l'a laissée, avec le suivi des modifications par rapport à la version
+	 * précédente, signé de son nom. Rend son chemin au répertoire
+	 * temporaire, ou une chaîne vide avec l'erreur.
+	 *
+	 * « $depuis » compare à une version plus ancienne que la précédente :
+	 * c'est le Word qu'on soumet à l'auteur, toutes relectures réunies,
+	 * signé alors de « $signature ». « $sans_courriels » ôte les adresses
+	 * des responsables : le coordinateur ne les lit nulle part.
+	 *
+	 * Il se tire des versions gardées, et se refait donc à volonté : le
+	 * dépôt sur sDrive peut attendre, échouer et reprendre sans que rien ne
+	 * soit à conserver sur le serveur. Il ne porte aucune image : les
+	 * figures du Word restent des liens, que seul le dossier Métopes sait
+	 * résoudre. Le fascicule, lui, ne passe pas par ici — il se fabrique de
+	 * la dernière saisie, sans aucun suivi.
+	 */
+	public function word_de_relecture( $id, $version, &$erreur = '', $depuis = 0, $sans_courriels = false, $signature = '' ) {
+		$erreur = '';
+		$id     = (int) $id;
+		$apres  = Notice_Archeomed_Relecture::version_gardee( $id, (int) $version );
+		$avant  = Notice_Archeomed_Relecture::version_gardee( $id, $depuis > 0 ? (int) $depuis : (int) $version - 1 );
+		if ( null === $apres || null === $avant ) {
+			$erreur = 'la version ' . (int) $version . ' ou celle à laquelle on la compare n’est pas gardée';
+			return '';
+		}
+		if ( ! class_exists( 'ZipArchive' ) ) {
+			$erreur = 'le suivi des modifications demande un DOCX, donc l’extension ZipArchive';
+			return '';
+		}
+		$chemin = '';
+		try {
+			$ancien = $this->ouvrir_un_document( 'docx', $erreur );
+			$neuf   = ( null === $ancien ) ? null : $this->ouvrir_un_document( 'docx', $erreur );
+			if ( null === $ancien || null === $neuf ) {
+				return '';
+			}
+			$saisies = array();
+			foreach ( array( $avant['donnees'], $apres['donnees'] ) as $saisie ) {
+				if ( $sans_courriels ) {
+					foreach ( array( 'resp_email', 'coresp_email', 'coauteur_email', 'deposant_email' ) as $champ ) {
+						$saisie[ $champ ] = '';
+					}
+				}
+				$saisies[] = $this->preparer_la_saisie( $id, $saisie, array() );
+			}
+			$this->remplir_le_document( $ancien, $saisies[0] );
+			$this->remplir_le_document( $neuf, $saisies[1] );
+			$quand = '' !== $apres['le'] ? strtotime( get_gmt_from_date( $apres['le'] ) . ' UTC' ) : time();
+			$par   = '' !== (string) $signature ? (string) $signature : $apres['par'];
+			$neuf->suivre_les_modifications( $ancien, $par, $quand ? $quand : time() );
+			$neuf->definir_le_titre( trim( $this->titre_de_liste( $saisies[1] ) . ' — relecture, version ' . (int) $version ) );
+			$chemin = $neuf->write_to( trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp',
+				'notice-archeomed-' . wp_generate_password( 8, false, false ) . '-'
+					. Notice_Archeomed_Relecture::nom_du_word( (int) $version, $par ) );
+			if ( '' === $chemin ) {
+				$erreur = $neuf->get_error();
+			}
+		} catch ( Throwable $e ) {
+			$erreur = $e->getMessage();
+			return '';
+		}
+		return $chemin;
+	}
+
+	/**
+	 * Soumet à l'auteur une notice dont la relecture a touché le fond : un
+	 * courriel au responsable de l'opération, avec le Word où se lisent
+	 * toutes les modifications depuis sa version. Rend une chaîne vide, ou
+	 * ce qui a empêché l'envoi.
+	 *
+	 * Rien ne part de soi-même : c'est la rédaction qui le demande, d'un
+	 * bouton. Un courriel refusé ne change rien à la notice — on recommence.
+	 */
+	public function soumettre_a_l_auteur( $id ) {
+		$id = (int) $id;
+		$d  = get_post_meta( $id, '_na_donnees', true );
+		if ( ! is_array( $d ) || empty( $d['resp_email'] ) || ! is_email( $d['resp_email'] ) ) {
+			return 'le responsable de l’opération n’a pas d’adresse valide';
+		}
+		$versions = Notice_Archeomed_Relecture::versions_gardees( $id );
+		if ( count( $versions ) < 2 ) {
+			return 'aucune relecture n’est enregistrée pour cette notice';
+		}
+		$numeros = array_keys( $versions );
+		$erreur  = '';
+		$word    = $this->word_de_relecture( $id, max( $numeros ), $erreur, min( $numeros ), false, 'Relecture de la revue' );
+		if ( '' === $word ) {
+			return 'le Word de relecture ne se fabrique pas (' . $erreur . ')';
+		}
+		$reference = (string) get_post_meta( $id, '_na_reference', true );
+		$titre     = $this->titre_de_liste( self::figures_lisibles( $d ) );
+		$contact   = $this->adresse_de_contact();
+		$corps     = '<p>Bonjour,</p>'
+			. '<p>' . esc_html( 'Votre notice « ' . $titre . ' »' . ( '' !== $reference ? ' (référence ' . $reference . ')' : '' )
+				. ' a été relue pour la Chronique d’Archéologie médiévale. La relecture en a modifié le fond : votre accord écrit est nécessaire avant publication.' ) . '</p>'
+			. '<p>' . esc_html( 'Le document joint montre chaque modification en suivi : ce qui a été ajouté, ce qui a été retiré.'
+				. ' Répondez à ce courriel pour donner votre accord, ou pour dire ce que vous souhaitez reprendre.' ) . '</p>'
+			. '<p>' . esc_html( 'La rédaction' ) . '</p>';
+		$entetes = array( 'Content-Type: text/html; charset=UTF-8' );
+		if ( '' !== $contact && is_email( $contact ) ) {
+			$entetes[] = 'Reply-To: ' . $contact;
+		}
+		$this->derniere_erreur_mail = '';
+		$parti = false;
+		try {
+			$parti = wp_mail( $d['resp_email'], 'Votre notice relue : accord demandé — ' . $titre, $corps, $entetes,
+				array( Notice_Archeomed_Relecture::nom_du_word( max( $numeros ), 'pour accord' ) => $word ) );
+		} catch ( Throwable $e ) {
+			$this->derniere_erreur_mail = $e->getMessage();
+		}
+		@unlink( $word );
+		if ( ! $parti ) {
+			return 'le courriel n’est pas parti' . ( '' !== $this->derniere_erreur_mail
+				? ' (' . Notice_Archeomed_File::expliquer_l_erreur( $this->derniere_erreur_mail ) . ')' : '' );
+		}
+		return '';
 	}
 
 	private function purge_old_tmp_files( $tmp_dir ) {
