@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.69
+# Formulaire des notices d’archéologie médiévale — version 3.70
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -656,6 +656,31 @@ portent un astérisque, dans tout le formulaire. Un champ libre commun recevait
 tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
 image.
 
+### La taille d'impression
+
+Chaque carte dit à quelle taille la figure peut s'imprimer : « Imprimable
+jusqu’à 25 × 17 cm environ, à 300 ppp ». L'auteur juge mieux d'une mesure en
+centimètres que d'un nombre de pixels. Un plan, une carte, un graphique ou un
+tableau se comptent à la densité du trait, réglée dans les normes.
+
+### Une figure envoyée à part
+
+Un fichier trop lourd pour le formulaire ne se perd pas : l'auteur le dépose
+sur un service de transfert (FileSender de RENATER, espace de son
+établissement) et ajoute une **figure envoyée à part**. C'est une carte sans
+fichier, qui prend place parmi les trois et se range comme les autres. On y
+colle le lien de téléchargement, sa date d'expiration et le nom du fichier
+dans l'envoi, puis on remplit les mêmes textes que pour une figure déposée.
+La carte suivante reprend d'office le dernier lien donné. Un fichier choisi
+trop lourd ouvre lui-même une telle carte.
+
+Le Word de la notice porte, à la place de l'aperçu, un cadre rouge « à
+remplacer par l'original envoyé à part ». Le courriel et la fiche donnent le
+lien. Il n'y a pas de version allégée de ces figures : la rédaction télécharge
+l'original et le dépose dans le dossier de la notice sur sDrive, sous le nom
+de l'envoi ou sous « Fig_N ». Le fichier `a-deposer.txt` de ce dossier le
+rappelle, figure par figure.
+
 ### Le texte alternatif
 
 Il est **obligatoire** pour toute figure déposée, dans le champ « Pour un public
@@ -903,9 +928,35 @@ une campagne de plusieurs milliers de sollicitations, cela se compte en
 dizaines de giga-octets. La fiche indique le poids conservé, et supprimer une
 notice efface ses illustrations avec elle.
 
-Le document Word, lui, ne se garde pas : il se refabrique à partir de la
-saisie. L'archiver reviendrait à figer une mise en forme que la feuille de
-styles fera évoluer.
+Le document Word, lui, ne se garde pas sur le serveur : il se refabrique à
+partir de la saisie. L'archiver reviendrait à figer une mise en forme que la
+feuille de styles fera évoluer.
+
+### Sur sDrive, quand le site y est relié
+
+Le disque du serveur ne suffit pas à une campagne. Une fois le site relié à
+sDrive (onglet **Diagnostic**, bouton « Relier le site à sDrive », puis « Parcourir
+sDrive » pour choisir le dossier) et le numéro réglé, chaque notice envoyée
+range ses fichiers dans `<dossier>/<numéro>/originaux/<référence>/` :
+originaux, JPEG tirés par le navigateur, autorisations, Word de chaque
+version et `a-deposer.txt`. Les versions successives s'y gardent ; seule la
+dernière va au fascicule.
+
+Le rangement se fait par la file, après l'envoi : l'auteur n'attend pas. Le
+serveur n'efface sa copie qu'après avoir relu sur sDrive la taille de chaque
+fichier, et seulement si la figure garde un aperçu, dont vivent le Word, le
+courriel et la fiche. Il ne garde donc que les aperçus. La fiche dit où la
+notice est rangée, ou pourquoi elle ne l'est pas encore ; ses fichiers restent
+alors sur le serveur, et rien n'est perdu. Un passage coupé par le serveur,
+faute de temps ou de mémoire, compte comme un essai manqué : une notice trop
+lourde ne retient pas les suivantes.
+
+La fiche, la correction et l'export rapatrient de sDrive, le temps de s'en
+servir, ce qui n'est plus sur le serveur. Supprimer une notice n'efface pas
+ce qui est rangé sur sDrive.
+
+L'onglet Diagnostic dit où vont les envois et l'export, combien de notices
+attendent d'être rangées, et où en est l'export de chaque rubrique.
 
 ## Ce qui se passe quand ça ne passe pas
 
@@ -1086,6 +1137,21 @@ serveur reste dans l'encart « Dépannage » de la fiche. Une notice qu'une
 correction remplace le dit, et ne paraît plus au fascicule ni au dossier.
 Les fascicules et dossiers Métopes se téléchargent rubrique par rubrique, un
 seul à la fois : un second clic pendant l'assemblage est refusé poliment.
+
+**Quand le site est relié à sDrive**, le dossier Métopes ne se télécharge
+plus : « Exporter sur sDrive » l'écrit dans `<numéro>/` à côté des originaux,
+avec `style/` (le Word), `icono/hr`, `icono/br`, `XML/indexation`, la page de
+relecture et le lisez-moi. Le Word appelle `../icono/br/<nom>.jpg` : une
+figure porte le même nom partout. L'export passe par la file, une figure à
+la fois, pour tenir dans le temps qu'accorde l'hébergement ; l'état, sous le
+lien, se met à jour seul. Deux exports demandés ensemble passent l'un après
+l'autre. Une figure envoyée à part est reprise si son original a été déposé ;
+sinon le lisez-moi la donne à reprendre.
+
+Un nouvel export d'une rubrique efface d'abord ce que le précédent avait
+écrit pour elle, et rien d'autre : les rubriques partagent `icono/` et
+`style/`, et chacune tient la liste de ses fichiers. L'export ne touche
+jamais à `originaux/`, à `indd/`, ni au reste de `XML/`.
 
 Une notice qui n'a pas pu partir se retente d'elle-même, cinq fois, en
 espaçant les essais. Si la file s'allonge sans redescendre, c'est que le
