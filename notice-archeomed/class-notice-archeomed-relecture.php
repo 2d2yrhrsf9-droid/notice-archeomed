@@ -9,6 +9,11 @@
  * formulaire qui écrit dans la saisie gardée — celle d'où se refont le
  * Word, le fascicule et le dossier Métopes.
  *
+ * L'écran vit sur une page publique du site, dans le thème, par le
+ * shortcode « [relecture_archeomed] » : un coordinateur se connecte, mais
+ * n'entre jamais dans l'administration. Sans connexion, la page renvoie à
+ * la connexion ; sans droit, elle ne montre rien.
+ *
  * Elle s'ouvre quand la campagne est close, et les liens de correction des
  * auteurs se ferment au même instant. Un coordinateur ne voit que les
  * notices de ses rubriques, dans l'ordre du fascicule ; la rédaction les
@@ -42,7 +47,10 @@ class Notice_Archeomed_Relecture {
 	/** L'option des réglages : campagne close, coordinateurs par rubrique. */
 	const OPTION = 'notice_archeomed_relecture';
 
-	/** L'écran de relecture. */
+	/** Le shortcode qui pose l'écran de relecture sur une page du site. */
+	const SHORTCODE = 'relecture_archeomed';
+
+	/** L'entrée du menu d'administration, qui ne fait que mener à cette page. */
 	const PAGE = 'na-relecture';
 
 	/** Le crochet de la tâche qui dépose les Word de relecture sur sDrive. */
@@ -85,6 +93,13 @@ class Notice_Archeomed_Relecture {
 
 	public function __construct() {
 		add_action( 'init', array( __CLASS__, 'assurer_les_roles' ) );
+		add_shortcode( self::SHORTCODE, array( $this, 'afficher' ) );
+		add_action( 'template_redirect', array( $this, 'garder_la_page' ) );
+		add_action( 'wp_enqueue_scripts', array( $this, 'charger_l_editeur' ) );
+		add_action( 'wp_head', array( __CLASS__, 'poser_les_styles' ) );
+		add_filter( 'show_admin_bar', array( __CLASS__, 'sans_barre_d_administration' ) );
+		add_filter( 'login_redirect', array( __CLASS__, 'apres_la_connexion' ), 10, 3 );
+		add_action( 'admin_init', array( $this, 'sortir_de_l_administration' ) );
 		add_action( 'admin_menu', array( $this, 'poser_le_menu' ) );
 		add_action( 'admin_post_na_relecture', array( $this, 'recevoir' ) );
 		add_action( 'admin_post_na_relecture_reglages', array( $this, 'recevoir_les_reglages' ) );
@@ -746,31 +761,169 @@ class Notice_Archeomed_Relecture {
 
 	// ── L'écran ────────────────────────────────────────────────────────────
 
-	/** L'entrée « Relecture » du menu, pour qui relit. */
+	/**
+	 * L'adresse de la page publiée qui porte l'écran de relecture, ou une
+	 * chaîne vide si aucune ne porte le shortcode.
+	 */
+	public static function page() {
+		static $adresse = '';
+		if ( '' !== $adresse ) {
+			return $adresse;
+		}
+		global $wpdb;
+		$id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type NOT IN ( 'revision', 'nav_menu_item', %s )"
+			. " AND post_content LIKE %s ORDER BY ( post_type = 'page' ) DESC, ID ASC LIMIT 1",
+			Notice_Archeomed_File::CPT, '%' . $wpdb->esc_like( '[' . self::SHORTCODE ) . '%' ) );
+		$lien    = $id ? get_permalink( $id ) : '';
+		$adresse = is_string( $lien ) ? $lien : '';
+		return $adresse;
+	}
+
+	/** La page affichée porte-t-elle l'écran de relecture ? */
+	private static function porte_l_ecran() {
+		if ( is_admin() ) {
+			return false;
+		}
+		$objet = get_post();
+		return ( $objet instanceof WP_Post ) && has_shortcode( $objet->post_content, self::SHORTCODE );
+	}
+
+	/**
+	 * Ce compte ne fait-il que relire ? Un coordinateur n'a rien à faire
+	 * dans l'administration ; la rédaction, un administrateur, ou qui écrit
+	 * par ailleurs sur le site y gardent leur place.
+	 */
+	public static function est_coordinateur_seul( $utilisateur = null ) {
+		$compte = self::compte( $utilisateur );
+		return ( $compte instanceof WP_User ) && $compte->exists() && user_can( $compte, self::CAP )
+			&& ! self::peut_tout( $compte ) && ! user_can( $compte, 'edit_posts' );
+	}
+
+	/**
+	 * La page de relecture ne se met pas en cache, et ne se montre pas sans
+	 * connexion : on est renvoyé à la connexion, qui ramène ici.
+	 */
+	public function garder_la_page() {
+		if ( ! self::porte_l_ecran() ) {
+			return;
+		}
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		nocache_headers();
+		if ( ! is_user_logged_in() ) {
+			$args = array();
+			foreach ( array( 'na_rubrique', 'na_notice' ) as $cle ) {
+				if ( isset( $_GET[ $cle ] ) && is_scalar( $_GET[ $cle ] ) && absint( $_GET[ $cle ] ) ) {
+					$args[ $cle ] = absint( $_GET[ $cle ] );
+				}
+			}
+			wp_safe_redirect( wp_login_url( add_query_arg( $args, (string) get_permalink() ) ) );
+			exit;
+		}
+	}
+
+	/** L'éditeur du dépôt, servi par le site, sur la seule page de relecture. */
+	public function charger_l_editeur() {
+		if ( ! self::porte_l_ecran() || ! is_user_logged_in() ) {
+			return;
+		}
+		$base = plugin_dir_url( __FILE__ ) . 'assets/quill/';
+		wp_enqueue_style( 'quill-snow', $base . 'quill.snow.css', array(), '2.0.3' );
+		wp_enqueue_script( 'quill', $base . 'quill.js', array(), '2.0.3', true );
+	}
+
+	/** Un coordinateur ne voit pas la barre d'administration sur le site. */
+	public static function sans_barre_d_administration( $montrer ) {
+		return self::est_coordinateur_seul() ? false : $montrer;
+	}
+
+	/**
+	 * Après sa connexion, un coordinateur arrive sur la page de relecture —
+	 * ou sur la notice qu'il demandait, si c'est d'elle qu'on l'a renvoyé.
+	 */
+	public static function apres_la_connexion( $vers, $demande, $compte ) {
+		$page = self::page();
+		if ( '' === $page || ! ( $compte instanceof WP_User ) || ! self::est_coordinateur_seul( $compte ) ) {
+			return $vers;
+		}
+		return ( is_string( $demande ) && 0 === strpos( $demande, $page ) ) ? $demande : $page;
+	}
+
+	/**
+	 * Où renvoyer un compte qui ouvre une page de l'administration : la page
+	 * de relecture pour un coordinateur, une chaîne vide pour qui y a sa
+	 * place. Les deux portes que l'écran emploie restent ouvertes :
+	 * « admin-ajax.php » pour le verrou, « admin-post.php » pour les gestes.
+	 */
+	public static function renvoi_de_l_administration( $utilisateur, $porte, $ajax = false ) {
+		if ( $ajax || in_array( (string) $porte, array( 'admin-ajax.php', 'admin-post.php' ), true ) || ! self::est_coordinateur_seul( $utilisateur ) ) {
+			return '';
+		}
+		$page = self::page();
+		return '' !== $page ? $page : home_url( '/' );
+	}
+
+	/** Le coordinateur qui ouvre l'administration est ramené à sa page. */
+	public function sortir_de_l_administration() {
+		global $pagenow;
+		$vers = self::renvoi_de_l_administration( null, (string) $pagenow, wp_doing_ajax() );
+		if ( '' !== $vers ) {
+			wp_safe_redirect( $vers );
+			exit;
+		}
+	}
+
+	/**
+	 * L'entrée « Relecture » du menu d'administration : un lien vers la page
+	 * du site, pour la rédaction qui part de là.
+	 */
 	public function poser_le_menu() {
 		add_menu_page(
 			__( 'Relecture de la Chronique', 'notice-archeomed' ),
 			__( 'Relecture', 'notice-archeomed' ),
 			self::CAP,
 			self::PAGE,
-			array( $this, 'afficher' ),
+			array( $this, 'afficher_le_lien' ),
 			'dashicons-visibility',
 			26
 		);
+	}
+
+	/** Ce que l'entrée du menu montre : où est la page de relecture. */
+	public function afficher_le_lien() {
+		echo '<div class="wrap"><h1>' . esc_html__( 'Relecture de la Chronique', 'notice-archeomed' ) . '</h1>';
+		self::dire_la_page();
+		echo '</div>';
+	}
+
+	/** L'adresse de la page de relecture, ou ce qu'il faut faire pour en avoir une. */
+	private static function dire_la_page() {
+		$page = self::page();
+		if ( '' !== $page ) {
+			echo '<p>' . esc_html__( 'La relecture se fait sur le site, à cette adresse :', 'notice-archeomed' )
+				. ' <a href="' . esc_url( $page ) . '">' . esc_html( $page ) . '</a></p>';
+			return;
+		}
+		echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
+			'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et rédaction relisent.',
+			self::SHORTCODE ) ) . '</p></div>';
 	}
 
 	/** L'adresse de l'écran, pour une rubrique et une notice. */
 	public static function url( $rubrique = '', $notice = 0 ) {
 		$plugin = self::plugin();
 		$rang   = ( null !== $plugin && '' !== $rubrique ) ? array_search( $rubrique, $plugin->rubriques(), true ) : false;
-		$args   = array( 'page' => self::PAGE );
+		$page   = self::page();
+		$args   = array();
 		if ( false !== $rang ) {
-			$args['rubrique'] = $rang + 1;
+			$args['na_rubrique'] = $rang + 1;
 		}
 		if ( $notice ) {
-			$args['notice'] = (int) $notice;
+			$args['na_notice'] = (int) $notice;
 		}
-		return add_query_arg( $args, admin_url( 'admin.php' ) );
+		return add_query_arg( $args, '' !== $page ? $page : add_query_arg( 'page', self::PAGE, admin_url( 'admin.php' ) ) );
 	}
 
 	/** L'adresse qui sert l'aperçu d'une figure à qui peut lire la notice. */
@@ -786,9 +939,9 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/** La rubrique demandée dans l'adresse, parmi celles du compte ; la première sinon. */
-	private static function rubrique_demandee( $siennes, $source ) {
+	private static function rubrique_demandee( $siennes, $source, $cle = 'rubrique' ) {
 		$plugin = self::plugin();
-		$rang   = isset( $source['rubrique'] ) && is_scalar( $source['rubrique'] ) ? absint( $source['rubrique'] ) : 0;
+		$rang   = isset( $source[ $cle ] ) && is_scalar( $source[ $cle ] ) ? absint( $source[ $cle ] ) : 0;
 		$toutes = null !== $plugin ? $plugin->rubriques() : array();
 		if ( $rang >= 1 && isset( $toutes[ $rang - 1 ] ) && in_array( $toutes[ $rang - 1 ], $siennes, true ) ) {
 			return $toutes[ $rang - 1 ];
@@ -796,26 +949,62 @@ class Notice_Archeomed_Relecture {
 		return ! empty( $siennes ) ? $siennes[0] : '';
 	}
 
-	/** L'écran de relecture : le sommaire à gauche, la notice à droite. */
+	/** Les scripts de l'écran, mis de côté pour le pied de page. */
+	private $scripts_du_pied = array();
+
+	/**
+	 * Le shortcode : l'écran de relecture dans le contenu de la page, ses
+	 * scripts renvoyés au pied de page — dans le contenu, un thème à blocs
+	 * changeait des « && » en entités et le script tombait en erreur, comme
+	 * pour le formulaire de dépôt.
+	 */
 	public function afficher() {
-		if ( ! current_user_can( self::CAP ) && ! self::peut_tout() ) {
-			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		ob_start();
+		$this->ecran();
+		$html = (string) ob_get_clean();
+		if ( did_action( 'wp_footer' ) ) {
+			return $html;
 		}
-		$plugin = self::plugin();
-		echo '<div class="wrap na-rel"><h1>' . esc_html__( 'Relecture de la Chronique', 'notice-archeomed' ) . '</h1>';
-		self::poser_les_styles();
+		$html = (string) preg_replace_callback( '#<script\b[^>]*>.*?</script>#is', function ( $m ) {
+			$this->scripts_du_pied[] = $m[0];
+			return '';
+		}, $html );
+		if ( ! empty( $this->scripts_du_pied ) && ! has_action( 'wp_footer', array( $this, 'poser_les_scripts_du_pied' ) ) ) {
+			add_action( 'wp_footer', array( $this, 'poser_les_scripts_du_pied' ), 25 );
+		}
+		return $html;
+	}
+
+	/** Les scripts de l'écran, après ceux que la page charge. */
+	public function poser_les_scripts_du_pied() {
+		echo implode( "\n", $this->scripts_du_pied );   // écrits par l'écran, déjà échappés
+		$this->scripts_du_pied = array();
+	}
+
+	/** L'écran de relecture : le sommaire d'un côté, la notice de l'autre. */
+	private function ecran() {
+		echo '<div class="na-rel">';
+		self::poser_les_styles( true );
+		if ( ! is_user_logged_in() ) {
+			echo '<p><a href="' . esc_url( wp_login_url( (string) get_permalink() ) ) . '">' . esc_html__( 'Connectez-vous pour relire.', 'notice-archeomed' ) . '</a></p></div>';
+			return;
+		}
+		$plugin  = self::plugin();
+		$siennes = self::rubriques_de();
+		// Un compte sans droit ne lit qu'une phrase : ni rubrique, ni notice,
+		// ni même si la relecture est ouverte.
+		if ( null === $plugin || ( ! current_user_can( self::CAP ) && ! self::peut_tout() ) ) {
+			echo '<p>' . esc_html__( 'Cette page est réservée aux relecteurs de la Chronique.', 'notice-archeomed' ) . '</p></div>';
+			return;
+		}
 		$message = get_transient( 'na_relecture_message_' . get_current_user_id() );
 		if ( is_array( $message ) && ! empty( $message['lignes'] ) ) {
 			delete_transient( 'na_relecture_message_' . get_current_user_id() );
-			echo '<div class="notice inline notice-' . esc_attr( in_array( $message['type'], array( 'success', 'warning', 'error' ), true ) ? $message['type'] : 'info' ) . '" role="status">';
+			echo '<div class="na-rel-message na-rel-message--' . esc_attr( in_array( $message['type'], array( 'success', 'warning', 'error' ), true ) ? $message['type'] : 'info' ) . '" role="status">';
 			foreach ( (array) $message['lignes'] as $ligne ) {
 				echo '<p>' . esc_html( $ligne ) . '</p>';
 			}
 			echo '</div>';
-		}
-		if ( null === $plugin ) {
-			echo '</div>';
-			return;
 		}
 		if ( ! self::campagne_close() ) {
 			echo '<p>' . esc_html__( 'La relecture s’ouvrira quand la campagne sera close.', 'notice-archeomed' );
@@ -825,21 +1014,20 @@ class Notice_Archeomed_Relecture {
 			echo '</p></div>';
 			return;
 		}
-		$siennes = self::rubriques_de();
 		if ( empty( $siennes ) ) {
 			echo '<p>' . esc_html__( 'Aucune rubrique ne vous est confiée.', 'notice-archeomed' ) . '</p></div>';
 			return;
 		}
-		$rubrique = self::rubrique_demandee( $siennes, $_GET );
+		$rubrique = self::rubrique_demandee( $siennes, $_GET, 'na_rubrique' );
 		$sommaire = self::sommaire( $rubrique );
-		$id       = isset( $_GET['notice'] ) ? absint( $_GET['notice'] ) : 0;
+		$id       = isset( $_GET['na_notice'] ) && is_scalar( $_GET['na_notice'] ) ? absint( $_GET['na_notice'] ) : 0;
 		$droit    = $id ? self::droit_sur( $id ) : null;
 
 		if ( count( $siennes ) > 1 ) {
-			echo '<nav class="nav-tab-wrapper" aria-label="' . esc_attr__( 'Rubriques', 'notice-archeomed' ) . '">';
+			echo '<nav class="na-rel-onglets" aria-label="' . esc_attr__( 'Rubriques', 'notice-archeomed' ) . '">';
 			foreach ( $siennes as $une ) {
-				echo '<a class="nav-tab' . ( $une === $rubrique ? ' nav-tab-active' : '' ) . '" href="' . esc_url( self::url( $une ) ) . '"'
-					. ( $une === $rubrique ? ' aria-current="page"' : '' ) . '>' . esc_html( preg_replace( '/^([IVX]+)\..*$/u', '$1', $une ) ) . '</a>';
+				echo '<a class="na-rel-onglet' . ( $une === $rubrique ? ' na-rel-onglet--actif' : '' ) . '" href="' . esc_url( self::url( $une ) ) . '"'
+					. ( $une === $rubrique ? ' aria-current="page"' : '' ) . ' title="' . esc_attr( $une ) . '">' . esc_html( preg_replace( '/^([IVX]+)\..*$/u', '$1', $une ) ) . '</a>';
 			}
 			echo '</nav>';
 		}
@@ -913,14 +1101,14 @@ class Notice_Archeomed_Relecture {
 		echo '<p class="na-rel-entete"><span class="na-rel-etat na-rel-etat--' . esc_attr( $etat ) . '">' . esc_html( self::ETATS[ $etat ] ) . '</span> '
 			. esc_html( sprintf( 'Version %d', $notice['version'] ) ) . '</p>';
 		if ( $tenant ) {
-			echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
+			echo '<div class="na-rel-message na-rel-message--warning"><p>' . esc_html( sprintf(
 				'Cette notice est ouverte par %s : elle se lit, mais ne se corrige pas tant qu’elle ne l’a pas rendue.', $tenant->display_name ) ) . '</p></div>';
 		} elseif ( 'a_soumettre' === $etat && 'tout' === $droit['sorte'] ) {
-			echo '<div class="notice inline notice-warning"><p>' . esc_html__( 'Modification de fond : un accord écrit de l’auteur est nécessaire. Le Word à suivi de modifications lui part quand vous le demandez.', 'notice-archeomed' ) . '</p>';
+			echo '<div class="na-rel-message na-rel-message--warning"><p>' . esc_html__( 'Modification de fond : un accord écrit de l’auteur est nécessaire. Le Word à suivi de modifications lui part quand vous le demandez.', 'notice-archeomed' ) . '</p>';
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="na_relecture_soumettre">'
 				. '<input type="hidden" name="notice" value="' . (int) $id . '"><input type="hidden" name="rubrique" value="' . esc_attr( (string) ( array_search( $rubrique, $plugin->rubriques(), true ) + 1 ) ) . '">';
 			wp_nonce_field( 'na_relecture_soumettre_' . (int) $id );
-			echo '<p><button type="submit" class="button">' . esc_html__( 'Soumettre à l’auteur', 'notice-archeomed' ) . '</button></p></form></div>';
+			echo '<p><button type="submit" class="na-rel-bouton">' . esc_html__( 'Soumettre à l’auteur', 'notice-archeomed' ) . '</button></p></form></div>';
 		}
 		$rappels = $plugin->appels_a_verifier( $id );
 		$masquee = false;
@@ -928,7 +1116,7 @@ class Notice_Archeomed_Relecture {
 			$masquee = $masquee || null !== $figure['masquee'];
 		}
 		if ( $masquee ) {
-			echo '<div class="notice inline notice-info"><p>' . esc_html__( 'Une figure a été retirée : les figures qui restent se numérotent à la suite. Vérifiez les appels « (fig. N) » du texte.', 'notice-archeomed' ) . '</p>';
+			echo '<div class="na-rel-message na-rel-message--info"><p>' . esc_html__( 'Une figure a été retirée : les figures qui restent se numérotent à la suite. Vérifiez les appels « (fig. N) » du texte.', 'notice-archeomed' ) . '</p>';
 			if ( ! empty( $rappels ) ) {
 				echo '<ul>';
 				foreach ( $rappels as $rappel ) {
@@ -1019,7 +1207,15 @@ class Notice_Archeomed_Relecture {
 			if ( $i > max( 0, count( $lieux ) ) ) {
 				break;
 			}
-			self::champ( 'commune[]', 0 === $i ? 'Commune ou lieu' : 'Autre lieu du titre', isset( $lieux[ $i ] ) ? $lieux[ $i ]['nom'] : '', 'na-rel-commune-' . $i );
+			$nom = isset( $lieux[ $i ] ) ? $lieux[ $i ]['nom'] : '';
+			$ark = isset( $lieux[ $i ] ) ? $lieux[ $i ]['ark'] : '';
+			// Le nom se tape ou se choisit dans le thésaurus des lieux : choisi,
+			// il prend l'identifiant du terme ; inchangé, il garde le sien.
+			echo '<div class="na-rel-champ na-rel-lieu"><label for="na-rel-commune-' . (int) $i . '">' . esc_html( 0 === $i ? 'Commune ou lieu' : 'Autre lieu du titre' ) . '</label>'
+				. '<input type="text" id="na-rel-commune-' . (int) $i . '" name="commune[]" value="' . esc_attr( $nom ) . '" autocomplete="off"'
+				. ' data-nom="' . esc_attr( $nom ) . '" data-ark="' . esc_attr( $ark ) . '">'
+				. '<input type="hidden" name="commune_ark[]" value="' . esc_attr( $ark ) . '">'
+				. '<ul class="na-rel-propositions" hidden></ul><span class="na-rel-dit" aria-live="polite"></span></div>';
 		}
 		self::champ( 'departement', 'Précision géographique', $valeur( 'departement' ) );
 		self::champ( 'lieu_dit', 'Lieu-dit', $valeur( 'lieu_dit' ) );
@@ -1063,7 +1259,7 @@ class Notice_Archeomed_Relecture {
 				. '<span class="na-rel-libelle" id="na-rel-termes-' . esc_attr( $liste ) . '">' . esc_html( $sorte[1] ) . '</span>'
 				. '<input type="hidden" name="pactols_' . esc_attr( $liste ) . '" value="' . esc_attr( (string) wp_json_encode( $propres ) ) . '">'
 				. '<ul class="na-rel-jetons" aria-labelledby="na-rel-termes-' . esc_attr( $liste ) . '"></ul>'
-				. '<label class="screen-reader-text" for="na-rel-cherche-' . esc_attr( $liste ) . '">' . esc_html( sprintf( 'Chercher dans le thésaurus : %s', $sorte[1] ) ) . '</label>'
+				. '<label class="na-rel-sr" for="na-rel-cherche-' . esc_attr( $liste ) . '">' . esc_html( sprintf( 'Chercher dans le thésaurus : %s', $sorte[1] ) ) . '</label>'
 				. '<input type="text" class="na-rel-cherche" id="na-rel-cherche-' . esc_attr( $liste ) . '" autocomplete="off" placeholder="' . esc_attr__( 'Ajouter depuis le thésaurus…', 'notice-archeomed' ) . '">'
 				. '<ul class="na-rel-propositions" hidden></ul><span class="na-rel-dit" aria-live="polite"></span></div>';
 		}
@@ -1115,8 +1311,8 @@ class Notice_Archeomed_Relecture {
 		}
 		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html__( 'Remarque à la rédaction', 'notice-archeomed' ) . '</label>'
 			. '<textarea id="na-rel-remarque" name="remarque" rows="3"></textarea></p></fieldset>';
-		echo '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="button button-primary">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
-			. '<button type="submit" name="suite" value="suivante" class="button">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p>';
+		echo '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="na-rel-bouton na-rel-bouton--principal">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
+			. '<button type="submit" name="suite" value="suivante" class="na-rel-bouton">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p>';
 		echo '</form>';
 		$this->poser_le_script( $id );
 	}
@@ -1189,8 +1385,8 @@ class Notice_Archeomed_Relecture {
 		}
 		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html__( 'Remarque à la rédaction', 'notice-archeomed' ) . '</label>'
 			. '<textarea id="na-rel-remarque" name="remarque" rows="3"></textarea></p>'
-			. '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="button button-primary">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
-			. '<button type="submit" name="suite" value="suivante" class="button">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p></form>';
+			. '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="na-rel-bouton na-rel-bouton--principal">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
+			. '<button type="submit" name="suite" value="suivante" class="na-rel-bouton">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p></form>';
 	}
 
 	/** Le journal de la notice et ses versions, avec le Word de chacune. */
@@ -1232,63 +1428,95 @@ class Notice_Archeomed_Relecture {
 				echo ' — <a href="' . esc_url( $lien ) . '">' . esc_html__( 'Word avec suivi des modifications', 'notice-archeomed' ) . '</a>';
 			}
 			if ( isset( $deposes[ $numero ] ) ) {
-				echo ' <span class="description">' . esc_html__( '(déposé sur sDrive)', 'notice-archeomed' ) . '</span>';
+				echo ' <span class="na-rel-note">' . esc_html__( '(déposé sur sDrive)', 'notice-archeomed' ) . '</span>';
 			} elseif ( in_array( (int) $numero, $attendus, true ) ) {
 				$raison = (string) get_post_meta( $id, '_na_relecture_raison', true );
-				echo ' <span class="description">' . esc_html( '' !== $raison ? sprintf( '(pas encore sur sDrive : %s)', $raison ) : '(en attente de sDrive)' ) . '</span>';
+				echo ' <span class="na-rel-note">' . esc_html( '' !== $raison ? sprintf( '(pas encore sur sDrive : %s)', $raison ) : '(en attente de sDrive)' ) . '</span>';
 			}
 			echo '</li>';
 		}
 		echo '</ul></details>';
 	}
 
-	/** Les styles de l'écran. */
-	private static function poser_les_styles() {
-		echo '<style>'
+	/**
+	 * Les styles de l'écran, une fois par page : dans l'en-tête quand la
+	 * page porte le shortcode, sinon avec l'écran lui-même.
+	 *
+	 * Tout est cloisonné sous « .na-rel » : rien ici ne touche au thème, et
+	 * l'écran ne compte sur aucune classe de l'administration. Sous 800
+	 * pixels, le sommaire passe au-dessus de la notice et chaque champ prend
+	 * toute la largeur.
+	 */
+	public static function poser_les_styles( $dans_l_ecran = false ) {
+		static $poses = false;
+		if ( $poses || ( true !== $dans_l_ecran && ! self::porte_l_ecran() ) ) {
+			return;
+		}
+		$poses = true;
+		echo '<style id="na-rel-styles">'
+			. '.na-rel,.na-rel *,.na-rel *::before,.na-rel *::after{box-sizing:border-box}'
+			. '.na-rel{font-size:16px;line-height:1.5;color:#1d2327;max-width:none}'
 			. '.na-rel-cadre{display:flex;gap:24px;align-items:flex-start;margin-top:12px}'
-			. '.na-rel-sommaire{flex:0 0 300px;max-width:300px;position:sticky;top:42px;max-height:calc(100vh - 60px);overflow:auto;background:#fff;border:1px solid #c3c4c7;padding:10px 14px}'
-			. '.na-rel-sommaire h2{font-size:1em;margin:.4em 0}.na-rel-sommaire h3{font-size:.92em;margin:1em 0 .3em}'
-			. '.na-rel-sommaire ol{margin:0 0 0 1.4em}.na-rel-sommaire li{margin:0 0 .5em}'
-			. '.na-rel-sommaire .na-rel-ouverte>a{font-weight:600}'
-			. '.na-rel-renvois{border-top:1px solid #c3c4c7;padding-top:.8em;margin-top:1.2em}'
+			. '.na-rel-sommaire{flex:0 0 300px;max-width:300px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;background:#fff;border:1px solid #c3c4c7;padding:10px 14px}'
+			. '.na-rel .na-rel-sommaire h2{font-size:1em;margin:.4em 0}.na-rel .na-rel-sommaire h3{font-size:.92em;margin:1em 0 .3em}'
+			. '.na-rel .na-rel-sommaire ol{margin:0 0 0 1.4em;padding:0}.na-rel .na-rel-sommaire li{margin:0 0 .5em}'
+			. '.na-rel-sommaire .na-rel-ouverte a{font-weight:700}'
+			. '.na-rel .na-rel-renvois{border-top:1px solid #c3c4c7;padding-top:.8em;margin-top:1.2em}'
 			. '.na-rel-notice{flex:1 1 auto;min-width:0;max-width:60em}'
-			. '.na-rel-etat{display:inline-block;font-size:.85em;padding:0 .5em;border:1px solid #8c8f94;border-radius:2px;background:#f6f7f7;white-space:nowrap}'
+			. '.na-rel .na-rel-titre{font-size:1.4em;line-height:1.3;margin:0 0 .3em}'
+			. '.na-rel-onglets{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #c3c4c7;margin:0 0 12px}'
+			. '.na-rel-onglet{display:inline-block;padding:.4em .9em;border:1px solid #c3c4c7;border-bottom:0;background:#f6f7f7;color:#1d2327;text-decoration:none}'
+			. '.na-rel-onglet--actif{background:#fff;font-weight:700}'
+			. '.na-rel-message{border-left:4px solid #72aee6;background:#fff;padding:.5em 1em;margin:0 0 16px;box-shadow:0 1px 1px rgba(0,0,0,.08)}'
+			. '.na-rel-message p{margin:.4em 0}.na-rel-message--success{border-left-color:#007017}'
+			. '.na-rel-message--warning{border-left-color:#bd8600}.na-rel-message--error{border-left-color:#b32d2e}'
+			. '.na-rel-etat{display:inline-block;font-size:.85em;padding:0 .5em;border:1px solid #8c8f94;border-radius:2px;background:#f6f7f7;color:#1d2327;white-space:nowrap}'
 			. '.na-rel-etat--relue,.na-rel-etat--accord{border-color:#007017;color:#007017}'
 			. '.na-rel-etat--a_soumettre,.na-rel-etat--soumise{border-color:#825900;color:#825900}'
 			. '.na-rel-etat--validee{background:#007017;border-color:#007017;color:#fff}'
-			. '.na-rel-verrou{font-size:.85em;color:#b32d2e}'
-			. '.na-rel-form fieldset{background:#fff;border:1px solid #c3c4c7;padding:8px 16px 12px;margin:0 0 16px}'
-			. '.na-rel-form legend{font-weight:600;padding:0 .4em}'
-			. '.na-rel-champ{margin:.6em 0}.na-rel-champ label,.na-rel-libelle{display:block;font-weight:600;margin-bottom:2px}'
-			. '.na-rel-champ input[type=text],.na-rel-champ textarea,.na-rel-champ select,.na-rel-cherche{width:100%;max-width:40em}'
+			. '.na-rel-verrou{font-size:.85em;color:#b32d2e}.na-rel-note{font-size:.9em;color:#50575e}'
+			. '.na-rel-form fieldset{background:#fff;border:1px solid #c3c4c7;padding:8px 16px 12px;margin:0 0 16px;min-width:0}'
+			. '.na-rel-form legend{font-weight:700;padding:0 .4em;width:auto;font-size:1em}'
+			. '.na-rel-champ{margin:.6em 0}.na-rel-champ label,.na-rel-libelle{display:block;font-weight:700;margin-bottom:2px}'
+			. '.na-rel-form input[type=text],.na-rel-form textarea,.na-rel-form select{display:block;width:100%;max-width:40em;font:inherit;padding:.35em .5em;border:1px solid #8c8f94;border-radius:3px;background:#fff;color:#1d2327}'
+			. '.na-rel-form input[type=checkbox]{width:auto;margin-right:.3em}'
 			. '.na-rel-cases label{display:inline-block;font-weight:400;margin:0 1.2em .3em 0}'
 			. '.na-rel-personne{border-top:1px solid #dcdcde;padding-top:.6em;margin-top:.6em}.na-rel-personne:first-of-type{border-top:0}'
-			. '.na-rel-termes{margin:.8em 0;position:relative}.na-rel-jetons{margin:.2em 0;padding:0}'
-			. '.na-rel-jetons li{display:inline-block;margin:0 .4em .4em 0;padding:.1em .2em .1em .6em;background:#f0f0f1;border:1px solid #c3c4c7;border-radius:2px}'
-			. '.na-rel-jetons button{border:0;background:none;cursor:pointer;color:#b32d2e;padding:0 .4em}'
-			. '.na-rel-propositions{margin:0;padding:0;border:1px solid #8c8f94;background:#fff;max-width:40em;max-height:16em;overflow:auto}'
-			. '.na-rel-propositions li{margin:0}.na-rel-propositions button{display:block;width:100%;text-align:left;border:0;background:none;padding:.4em .6em;cursor:pointer}'
-			. '.na-rel-propositions button:hover,.na-rel-propositions button:focus{background:#2271b1;color:#fff}'
-			. '#na-rel-editeur{background:#fff;min-height:16em;font-size:15px}.na-rel-form .ql-editor{min-height:16em}.na-pc{font-variant:small-caps}'
+			. '.na-rel-termes{margin:.8em 0}.na-rel .na-rel-jetons{margin:.2em 0;padding:0;list-style:none}'
+			. '.na-rel .na-rel-jetons li{display:inline-block;margin:0 .4em .4em 0;padding:.1em .2em .1em .6em;background:#f0f0f1;border:1px solid #c3c4c7;border-radius:2px}'
+			. '.na-rel .na-rel-jetons button{border:0;background:none;cursor:pointer;color:#b32d2e;padding:0 .5em;font:inherit;min-height:1.8em}'
+			. '.na-rel .na-rel-propositions{margin:0;padding:0;list-style:none;border:1px solid #8c8f94;background:#fff;max-width:40em;max-height:16em;overflow:auto}'
+			. '.na-rel .na-rel-propositions li{margin:0}.na-rel .na-rel-propositions button{display:block;width:100%;text-align:left;border:0;background:none;color:#1d2327;padding:.5em .6em;cursor:pointer;font:inherit}'
+			. '.na-rel .na-rel-propositions button:hover,.na-rel .na-rel-propositions button:focus{background:#2271b1;color:#fff}'
+			. '.na-rel-dit{display:block;font-size:.9em;color:#50575e}'
+			. '.na-rel-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}'
+			. '#na-rel-editeur{background:#fff;min-height:16em;font-size:16px}.na-rel-form .ql-editor{min-height:16em}.na-rel .na-pc{font-variant:small-caps}'
 			. '.na-rel-figure{display:flex;gap:16px;border-top:1px solid #dcdcde;padding-top:12px;margin-top:12px}'
-			. '.na-rel-figure img{flex:0 0 220px;width:220px;height:auto;align-self:flex-start;border:1px solid #c3c4c7}'
+			. '.na-rel-figure img{flex:0 0 220px;width:220px;max-width:100%;height:auto;align-self:flex-start;border:1px solid #c3c4c7}'
 			. '.na-rel-sans-apercu{flex:0 0 220px;width:220px;color:#646970;font-style:italic}'
 			. '.na-rel-figure-textes{flex:1 1 auto;min-width:0}.na-rel-figure--masquee{opacity:.7}'
-			. '.na-rel-lecture{width:100%;height:70vh;border:1px solid #c3c4c7;background:#fff}'
-			. '.na-rel-histoire{background:#fff;border:1px solid #c3c4c7;padding:8px 16px;margin:16px 0}.na-rel-histoire summary{font-weight:600;cursor:pointer}'
-			. '.na-rel-journal li,.na-rel-versions li{margin:.6em 0}'
-			. '@media (max-width:960px){.na-rel-cadre{display:block}.na-rel-sommaire{position:static;max-width:none;max-height:none;margin-bottom:16px}.na-rel-figure{display:block}}'
+			. '.na-rel-boutons{display:flex;flex-wrap:wrap;gap:8px}'
+			. '.na-rel .na-rel-bouton{display:inline-block;font:inherit;line-height:1.4;padding:.5em 1.1em;border:1px solid #2271b1;border-radius:3px;background:#f6f7f7;color:#2271b1;cursor:pointer;text-decoration:none}'
+			. '.na-rel .na-rel-bouton--principal{background:#2271b1;color:#fff}'
+			. '.na-rel .na-rel-bouton:hover,.na-rel .na-rel-bouton:focus{background:#135e96;border-color:#135e96;color:#fff}'
+			. '.na-rel-lecture{display:block;width:100%;height:70vh;border:1px solid #c3c4c7;background:#fff}'
+			. '.na-rel-histoire{background:#fff;border:1px solid #c3c4c7;padding:8px 16px;margin:16px 0}.na-rel-histoire summary{font-weight:700;cursor:pointer}'
+			. '.na-rel .na-rel-journal,.na-rel .na-rel-versions{margin:.6em 0;padding:0 0 0 1.2em}.na-rel-journal li,.na-rel-versions li{margin:.6em 0}'
+			. '@media (max-width:800px){.na-rel-cadre{display:block}'
+			. '.na-rel-sommaire{position:static;max-width:none;max-height:40vh;margin-bottom:16px}'
+			. '.na-rel-form fieldset{padding:6px 10px 10px}.na-rel-form input[type=text],.na-rel-form textarea,.na-rel-form select{max-width:none}'
+			. '.na-rel-figure{display:block}.na-rel-figure img,.na-rel-sans-apercu{width:100%;max-width:320px;margin-bottom:8px}'
+			. '.na-rel .na-rel-bouton{flex:1 1 auto;text-align:center;padding:.7em 1em}.na-rel-lecture{height:60vh}}'
 			. '</style>';
 	}
 
 	/**
-	 * Le script du formulaire : l'éditeur du dépôt, les listes du thésaurus,
-	 * le motif d'un retrait, et le verrou tenu tant que la page est ouverte.
+	 * Le script du formulaire : l'éditeur du dépôt, la recherche dans le
+	 * thésaurus pour les lieux et les mots-clés, le motif d'un retrait, et
+	 * le verrou tenu tant que la page est ouverte. Il part au pied de page,
+	 * après l'éditeur que la page a chargé.
 	 */
 	private function poser_le_script( $id ) {
-		$base = plugin_dir_url( __FILE__ ) . 'assets/quill/';
-		echo '<link rel="stylesheet" href="' . esc_url( $base . 'quill.snow.css' ) . '?ver=2.0.3">';
-		echo '<script src="' . esc_url( $base . 'quill.js' ) . '?ver=2.0.3"></script>';
 		$reglages = array(
 			'ajax'    => admin_url( 'admin-ajax.php' ),
 			'notice'  => (int) $id,
@@ -1358,8 +1586,8 @@ class Notice_Archeomed_Relecture {
 				});
 			}
 
-			// Les termes du thésaurus : on en retire, et l'on en ajoute en
-			// choisissant dans la liste que Pactols propose.
+			// La recherche dans Pactols, depuis le navigateur comme au dépôt :
+			// trois lettres au moins, puis on choisit dans la liste.
 			function chercher(type, q) {
 				var theso = (type === 'place') ? 'th17' : 'TH_1';
 				var propre = String(q).replace(/[’‘ʼ`]/g, '\'').replace(/œ/g, 'oe').replace(/Œ/g, 'Oe')
@@ -1380,12 +1608,72 @@ class Notice_Archeomed_Relecture {
 					return sortie.slice(0, 20);
 				});
 			}
+			// Un champ de recherche et sa liste de propositions ; « choisir »
+			// reçoit le terme retenu.
+			function proposer(champ, liste, dit, type, choisir) {
+				var minuterie = null, tour = 0;
+				function fermer() { liste.hidden = true; liste.textContent = ''; }
+				champ.addEventListener('input', function () {
+					window.clearTimeout(minuterie);
+					var q = champ.value.trim();
+					if (q.length < 3) { fermer(); return; }
+					minuterie = window.setTimeout(function () {
+						var mien = ++tour;
+						chercher(type, q).then(function (resultats) {
+							if (mien !== tour) { return; }
+							liste.textContent = '';
+							if (!resultats.length) { fermer(); dit.textContent = 'Aucun terme du thésaurus pour cette recherche.'; return; }
+							dit.textContent = resultats.length + ' propositions.';
+							resultats.forEach(function (item) {
+								var li = document.createElement('li');
+								var b = document.createElement('button');
+								b.type = 'button';
+								b.textContent = item.label;
+								b.addEventListener('click', function () {
+									fermer();
+									choisir(item);
+									champ.focus();
+								});
+								li.appendChild(b);
+								liste.appendChild(li);
+							});
+							liste.hidden = false;
+						}, function () {
+							if (mien !== tour) { return; }
+							fermer();
+							dit.textContent = 'Le thésaurus ne répond pas pour l’instant.';
+						});
+					}, 300);
+				});
+				champ.addEventListener('keydown', function (e) {
+					if (e.key === 'Escape') { fermer(); }
+				});
+				return fermer;
+			}
+
+			// Les lieux du titre : un nom choisi dans la liste prend
+			// l'identifiant du terme ; un nom retapé le perd, sauf à
+			// redevenir celui que la notice portait.
+			[].forEach.call(form.querySelectorAll('.na-rel-lieu'), function (bloc) {
+				var champ = bloc.querySelector('input[type="text"]');
+				var ark = bloc.querySelector('input[type="hidden"]');
+				var dit = bloc.querySelector('.na-rel-dit');
+				champ.addEventListener('input', function () {
+					ark.value = (champ.value.trim() === champ.getAttribute('data-nom')) ? champ.getAttribute('data-ark') : '';
+				});
+				proposer(champ, bloc.querySelector('.na-rel-propositions'), dit, 'place', function (item) {
+					champ.value = item.label;
+					ark.value = item.ark;
+					dit.textContent = item.label + ' retenu, avec son identifiant.';
+				});
+			});
+
+			// Les mots-clés : on en retire, et l'on en ajoute en choisissant
+			// dans la liste.
 			[].forEach.call(form.querySelectorAll('.na-rel-termes'), function (bloc) {
-				var type = bloc.getAttribute('data-type');
 				var champ = bloc.querySelector('input[type="hidden"]');
 				var jetons = bloc.querySelector('.na-rel-jetons');
 				var cherche = bloc.querySelector('.na-rel-cherche');
-				var liste = bloc.querySelector('.na-rel-propositions');
 				var dit = bloc.querySelector('.na-rel-dit');
 				var items = [];
 				try { items = JSON.parse(champ.value) || []; } catch (e) { items = []; }
@@ -1408,47 +1696,12 @@ class Notice_Archeomed_Relecture {
 					});
 					champ.value = JSON.stringify(items);
 				}
-				function fermer() { liste.hidden = true; liste.textContent = ''; }
-				var minuterie = null, tour = 0;
-				cherche.addEventListener('input', function () {
-					window.clearTimeout(minuterie);
-					var q = cherche.value.trim();
-					if (q.length < 3) { fermer(); return; }
-					minuterie = window.setTimeout(function () {
-						var mien = ++tour;
-						chercher(type, q).then(function (resultats) {
-							if (mien !== tour) { return; }
-							liste.textContent = '';
-							if (!resultats.length) { fermer(); dit.textContent = 'Aucun terme du thésaurus pour cette recherche.'; return; }
-							dit.textContent = resultats.length + ' propositions.';
-							resultats.forEach(function (item) {
-								var li = document.createElement('li');
-								var b = document.createElement('button');
-								b.type = 'button';
-								b.textContent = item.label;
-								b.addEventListener('click', function () {
-									var deja = items.some(function (x) { return x.ark === item.ark; });
-									if (deja) { dit.textContent = item.label + ' est déjà retenu.'; }
-									else if (items.length >= R.maximum) { dit.textContent = R.maximum + ' termes au plus.'; }
-									else { items.push(item); dessiner(); dit.textContent = item.label + ' ajouté.'; }
-									cherche.value = '';
-									fermer();
-									cherche.focus();
-								});
-								li.appendChild(b);
-								liste.appendChild(li);
-							});
-							liste.hidden = false;
-						}, function () {
-							if (mien !== tour) { return; }
-							fermer();
-							dit.textContent = 'Le thésaurus ne répond pas pour l’instant.';
-						});
-					}, 300);
-				});
-				cherche.addEventListener('keydown', function (e) {
-					if (e.key === 'Enter') { e.preventDefault(); }
-					if (e.key === 'Escape') { fermer(); }
+				proposer(cherche, bloc.querySelector('.na-rel-propositions'), dit, bloc.getAttribute('data-type'), function (item) {
+					var deja = items.some(function (x) { return x.ark === item.ark; });
+					if (deja) { dit.textContent = item.label + ' est déjà retenu.'; }
+					else if (items.length >= R.maximum) { dit.textContent = R.maximum + ' termes au plus.'; }
+					else { items.push(item); dessiner(); dit.textContent = item.label + ' ajouté.'; }
+					cherche.value = '';
 				});
 				dessiner();
 			});
@@ -1578,7 +1831,7 @@ class Notice_Archeomed_Relecture {
 		$refus = self::soumettre_la_notice( $id );
 		self::dire( '' === $refus ? 'success' : 'error', '' === $refus
 			? 'Le courriel est parti vers l’auteur, avec le Word à suivi de modifications.'
-			: 'Rien n’est parti : ' . $refus . '. La notice reste « à soumettre à l’auteur ».' );
+			: 'Rien n’est parti : ' . $refus . '.' );
 		wp_safe_redirect( self::url( self::rubrique_demandee( self::rubriques_de(), $_POST ), $id ) );
 		exit;
 	}
@@ -1592,11 +1845,17 @@ class Notice_Archeomed_Relecture {
 		if ( null === $plugin ) {
 			return 'le plugin n’est pas chargé';
 		}
+		// Rien ne part à l'auteur sans modification de fond : le bouton ne
+		// se montre que pour une notice « à soumettre », et le serveur le
+		// vérifie — une requête rejouée ou forgée n'envoie rien.
+		$etat = self::etat_de( $id );
+		if ( 'a_soumettre' !== $etat ) {
+			return 'la notice n’est pas « à soumettre à l’auteur » (elle est « ' . self::ETATS[ $etat ] . ' »)';
+		}
 		$refus = $plugin->soumettre_a_l_auteur( $id );
 		if ( '' !== $refus ) {
 			return $refus;
 		}
-		$etat = self::etat_de( $id );
 		update_post_meta( (int) $id, '_na_relecture_etat', 'soumise' );
 		self::noter_au_journal( $id, $utilisateur, array( 'courriel à l’auteur, avec le Word à suivi de modifications',
 			'état : ' . self::ETATS[ $etat ] . ' → ' . self::ETATS['soumise'] ), $etat, 'soumise' );
@@ -1675,6 +1934,8 @@ class Notice_Archeomed_Relecture {
 		$plugin   = self::plugin();
 		$reglages = self::reglages();
 		$comptes  = get_users( array( 'role__in' => array( self::ROLE ), 'orderby' => 'display_name', 'fields' => array( 'ID', 'display_name' ) ) );
+		echo '<h2>' . esc_html__( 'La page de relecture', 'notice-archeomed' ) . '</h2>';
+		self::dire_la_page();
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="na_relecture_reglages">';
 		wp_nonce_field( 'na_relecture_reglages' );
 		echo '<h2>' . esc_html__( 'Campagne', 'notice-archeomed' ) . '</h2>'

@@ -15200,9 +15200,11 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 
-		// ── Les lieux. Un nom garde l'identifiant qu'il avait ; un nom
-		// changé ou ajouté n'en a pas, puisque rien ici ne le cherche dans
-		// le thésaurus. Une liste vidée ne s'enregistre pas. ──────────────
+		// ── Les lieux. Un nom inchangé garde l'identifiant qu'il avait,
+		// quoi que poste la requête ; un nom changé ou ajouté prend celui du
+		// terme choisi dans le thésaurus — un ARK de Frantiq, ou rien. Une
+		// liste vidée ne s'enregistre pas. Le dossier de la notice sur
+		// sDrive, lui, garde le nom qu'il a reçu au premier rangement. ────
 		if ( isset( $_POST['commune'] ) ) {
 			$anciens = self::lieux_saisis( $avant );
 			$connus  = array();
@@ -15211,7 +15213,7 @@ class Notice_Archeomed_Pactols {
 			}
 			$lieux = array();
 			foreach ( $this->collect_lieux() as $lieu ) {
-				$lieux[] = array( 'nom' => $lieu['nom'], 'ark' => isset( $connus[ $lieu['nom'] ] ) ? $connus[ $lieu['nom'] ] : '' );
+				$lieux[] = array( 'nom' => $lieu['nom'], 'ark' => isset( $connus[ $lieu['nom'] ] ) ? $connus[ $lieu['nom'] ] : $lieu['ark'] );
 			}
 			if ( ! empty( $lieux ) && $lieux !== $anciens ) {
 				$d['lieux']       = $lieux;

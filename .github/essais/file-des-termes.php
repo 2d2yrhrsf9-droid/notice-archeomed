@@ -2884,12 +2884,25 @@ na_verifier( null === $R::droit_sur( $rel_a, $coord_1 ) && null === $R::droit_su
 	'avant la clôture de la campagne, la relecture n\'est ouverte à personne' );
 na_verifier( $rel_a === na_appel( $plugin, 'contexte_valide', array( $garde_rel ) ),
 	'avant la clôture, le lien de correction de l\'auteur ouvre sa notice' );
+$admins_rel = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ) );
+$admin_rel  = (int) $admins_rel[0];
+$garde_redaction = array( 'corrige_id' => $rel_a, 'vivant' => true, 'par_la_redaction' => $admin_rel );
+wp_set_current_user( $admin_rel );
+$redaction_avant = na_appel( $plugin, 'contexte_valide', array( $garde_redaction ) );
 $R::regler( true, array( 0 => array( $coord_1, 999999 ), 1 => array( $coord_2 ), 9 => array( $coord_1 ) ) );
 $reglages_rel = $R::reglages();
 na_verifier( $R::campagne_close() && array( $coord_1 ) === $reglages_rel['coordinateurs'][ $rubs_rel[0] ] && 2 === count( $reglages_rel['coordinateurs'] ),
 	'les réglages ne retiennent que des comptes qui peuvent relire, pour des rubriques qui existent', $reglages_rel );
 na_verifier( 0 === na_appel( $plugin, 'contexte_valide', array( $garde_rel ) ),
 	'la campagne close, le lien de correction de l\'auteur ne rouvre plus sa notice' );
+$redaction_apres = na_appel( $plugin, 'contexte_valide', array( $garde_redaction ) );
+wp_set_current_user( $coord_1 );
+$redaction_autre = na_appel( $plugin, 'contexte_valide', array( $garde_redaction ) );
+wp_set_current_user( 0 );
+na_verifier( $rel_a === $redaction_avant && $rel_a === $redaction_apres && 0 === $redaction_autre
+	&& false !== strpos( Notice_Archeomed_File::lien_pour_corriger( $rel_a ), 'na_corriger=1' ),
+	'le lien « modifier » du courriel de la rédaction ouvre la notice avant comme après la clôture, pour elle seule',
+	array( $redaction_avant, $redaction_apres, $redaction_autre ) );
 set_transient( 'na_reprise_jetonclos1', $garde_rel, HOUR_IN_SECONDS );
 $reprise_rel = new ReflectionProperty( $plugin, 'reprise' );
 $reprise_rel->setAccessible( true );
@@ -3088,12 +3101,19 @@ $refus_envoi = $R::soumettre_la_notice( $rel_a, $redac );
 $etat_refus  = $R::etat_de( $rel_a );
 $courriel_rel['part'] = true;
 $envoi_rel   = $R::soumettre_la_notice( $rel_a, $redac );
+$vu_envoi           = $courriel_rel['vu'];
+$courriel_rel['vu'] = array();
+$envoi_rejoue       = $R::soumettre_la_notice( $rel_a, $redac );
+$vu_rejoue          = $courriel_rel['vu'];
+$courriel_rel['vu'] = $vu_envoi;
 remove_filter( 'pre_wp_mail', $poste_rel, 10 );
 na_verifier( '' !== $refus_envoi && 'a_soumettre' === $etat_refus && 2 === $file_rel->version_de( $rel_a ),
 	'un courriel à l\'auteur qui ne part pas ne change ni l\'état ni la notice', $refus_envoi );
 na_verifier( '' === $envoi_rel && 'soumise' === $R::etat_de( $rel_a ) && 'a@example.org' === $courriel_rel['vu']['to']
 	&& 1 === count( (array) $courriel_rel['vu']['attachments'] ),
 	'la rédaction soumet la notice à l\'auteur d\'un geste : un courriel au responsable, le Word joint, l\'état « soumise »', $envoi_rel );
+na_verifier( '' !== $envoi_rejoue && array() === $vu_rejoue && false !== strpos( $envoi_rejoue, 'à soumettre' ) && 'soumise' === $R::etat_de( $rel_a ),
+	'le serveur refuse de soumettre une notice qui n\'est pas « à soumettre à l\'auteur » : aucun courriel ne part', $envoi_rejoue );
 $_POST = wp_slash( array( 'texte_notice' => '<p>Le coordinateur revient après coup.</p>' ) );
 $trop_tard = $R::enregistrer( $rel_a, 2, $coord_1 );
 $d_tard    = $lire_rel( $rel_a );
@@ -3152,6 +3172,74 @@ $R::liberer_le_verrou( $rel_a, $coord_1 );
 na_verifier( 'enregistree' === $retrait_principal['issue'] && $rubs_rel[1] === $d_principal['renvoi_1'] && '' === $d_principal['renvoi_2']
 	&& array( $rubs_rel[3] ) === $retrait_principal['faits']['renvois_retires'],
 	'le coordinateur de la rubrique principale retire n\'importe quel renvoi de sa notice', $retrait_principal );
+
+// Les lieux du titre : un nom choisi prend l'identifiant du terme, un nom inchangé garde le sien.
+$ark_falaise = 'https://ark.frantiq.fr/ark:/26678/pcrtFalaiseEssai';
+update_post_meta( $rel_a, '_na_sdrive_dossier', 'AM99/originaux/Vire' );
+$_POST = wp_slash( array( 'commune' => array( 'Falaise' ), 'commune_ark' => array( $ark_falaise ) ) );
+$lieu_choisi = $R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_1 );
+$d_lieu      = $lire_rel( $rel_a );
+na_verifier( 'enregistree' === $lieu_choisi['issue'] && array( array( 'nom' => 'Falaise', 'ark' => $ark_falaise ) ) === $d_lieu['lieux']
+	&& 'Falaise' === $d_lieu['commune'] && $ark_falaise === $d_lieu['commune_ark'],
+	'une commune changée prend l\'identifiant du terme choisi dans le thésaurus', $d_lieu['lieux'] );
+$_POST = wp_slash( array( 'commune' => array( 'Falaise', 'Bayeux', 'Vire' ),
+	'commune_ark' => array( 'https://ark.frantiq.fr/ark:/26678/pcrtUnAutre', 'javascript:alert(1)', '' ) ) );
+$R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_1 );
+$d_lieu = $lire_rel( $rel_a );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+na_verifier( 3 === count( $d_lieu['lieux'] ) && $ark_falaise === $d_lieu['lieux'][0]['ark'] && '' === $d_lieu['lieux'][1]['ark'] && '' === $d_lieu['lieux'][2]['ark'],
+	'un nom inchangé garde son identifiant quoi que poste la requête ; un identifiant qui n\'est pas de Frantiq n\'entre pas', $d_lieu['lieux'] );
+na_verifier( 'AM99/originaux/Vire' === Notice_Archeomed_Rangement::dossier_de( $rel_a ),
+	'le dossier de la notice sur sDrive garde son nom quand la commune change', Notice_Archeomed_Rangement::dossier_de( $rel_a ) );
+
+// L'écran public : le coordinateur relit sur le site, jamais dans l'administration.
+$page_ecran  = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Relecture', 'post_content' => '[relecture_archeomed]' ) );
+$adresse_rel = $R::page();
+$abonne_rel  = $compte_rel( 'abonne-essai', 'Abonné Essai', 'subscriber' );
+na_verifier( '' !== $adresse_rel && shortcode_exists( $R::SHORTCODE ) && 0 === strpos( $R::url( $rubs_rel[0], $rel_a ), $adresse_rel )
+	&& false !== strpos( $R::url( $rubs_rel[0], $rel_a ), 'na_notice=' . $rel_a ),
+	'l\'écran de relecture vit sur la page publique qui porte le shortcode', $R::url( $rubs_rel[0], $rel_a ) );
+na_verifier( $adresse_rel === $R::renvoi_de_l_administration( $coord_1, 'index.php' ) && $adresse_rel === $R::renvoi_de_l_administration( $coord_1, 'profile.php' )
+	&& '' === $R::renvoi_de_l_administration( $coord_1, 'admin-post.php' ) && '' === $R::renvoi_de_l_administration( $coord_1, 'admin-ajax.php' )
+	&& '' === $R::renvoi_de_l_administration( $coord_1, 'index.php', true ),
+	'un coordinateur qui ouvre l\'administration est renvoyé à la page de relecture, sauf par les deux portes que l\'écran emploie' );
+na_verifier( '' === $R::renvoi_de_l_administration( $redac, 'index.php' ) && '' === $R::renvoi_de_l_administration( $admin_rel, 'index.php' )
+	&& '' === $R::renvoi_de_l_administration( $abonne_rel, 'index.php' ),
+	'la rédaction, un administrateur et un compte sans rapport avec la relecture gardent l\'administration' );
+na_verifier( $adresse_rel === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $coord_1 ) )
+	&& $R::url( $rubs_rel[0], $rel_a ) === $R::apres_la_connexion( admin_url(), $R::url( $rubs_rel[0], $rel_a ), get_userdata( $coord_1 ) )
+	&& admin_url() === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $redac ) ),
+	'après sa connexion, un coordinateur arrive sur la page de relecture, ou sur la notice qu\'il demandait' );
+wp_set_current_user( $coord_1 );
+$barre_coord = $R::sans_barre_d_administration( true );
+$_GET        = array( 'na_notice' => (string) $rel_a );
+$ecran_coord = do_shortcode( '[' . $R::SHORTCODE . ']' );
+$_GET        = array( 'na_notice' => (string) $rel_d );
+$ecran_autre = do_shortcode( '[' . $R::SHORTCODE . ']' );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+wp_set_current_user( $redac );
+$barre_redac = $R::sans_barre_d_administration( true );
+$_GET        = array( 'na_notice' => (string) $rel_a );
+$ecran_redac = do_shortcode( '[' . $R::SHORTCODE . ']' );
+$R::liberer_le_verrou( $rel_a, $redac );
+wp_set_current_user( $abonne_rel );
+$ecran_abonne = do_shortcode( '[' . $R::SHORTCODE . ']' );
+wp_set_current_user( 0 );
+$ecran_anonyme = do_shortcode( '[' . $R::SHORTCODE . ']' );
+$_GET          = array();
+na_verifier( false === $barre_coord && true === $barre_redac, 'un coordinateur n\'a pas de barre d\'administration sur le site ; la rédaction garde la sienne' );
+na_verifier( false !== strpos( $ecran_coord, 'na-rel-sommaire' ) && false !== strpos( $ecran_coord, 'name="resp_nom"' ) && false !== strpos( $ecran_coord, 'name="commune_ark[]"' )
+	&& false !== strpos( $ecran_coord, 'Journal et versions' ) && false === strpos( $ecran_coord, '<script' ) && false === strpos( $ecran_coord, 'wp-admin/admin.php' ),
+	'le shortcode rend au coordinateur le sommaire, le formulaire et le journal, ses scripts renvoyés au pied de page' );
+na_verifier( false === strpos( $ecran_coord, 'a@example.org' ) && false === strpos( $ecran_coord, 'example.org' ) && false !== strpos( $ecran_redac, 'a@example.org' ),
+	'le HTML rendu au coordinateur ne contient aucun courriel des responsables ; celui de la rédaction les montre' );
+na_verifier( false === strpos( $ecran_autre, 'name="resp_nom"' ) && false !== strpos( $ecran_autre, 'Cette notice n’est pas de vos rubriques.' ) && false === strpos( $ecran_autre, 'Lisieux' ),
+	'une notice d\'une autre rubrique, demandée par son numéro dans l\'adresse, ne se montre pas' );
+na_verifier( false === strpos( $ecran_abonne, 'na-rel-sommaire' ) && false !== strpos( $ecran_abonne, 'réservée aux relecteurs' ) && false === strpos( $ecran_abonne, 'Falaise' )
+	&& false === strpos( $ecran_anonyme, 'na-rel-sommaire' ) && false !== strpos( $ecran_anonyme, 'wp-login.php' ),
+	'un compte sans droit lit une phrase, et rien de plus ; sans connexion, l\'écran ne propose que de se connecter' );
+wp_delete_post( $page_ecran, true );
+wp_delete_user( $abonne_rel );
 
 // Deux relectures de la même version : une seule passe.
 $_POST = wp_slash( array( 'lieu_dit' => 'Le Bourg' ) );

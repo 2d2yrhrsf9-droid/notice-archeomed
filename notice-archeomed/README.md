@@ -1093,15 +1093,32 @@ sont supprimés qu'une fois le courriel de la rédaction remis.
 Chaque coordinateur relisait sa partie dans un Word stylé, et en cassait
 souvent les styles : une métadonnée ajoutée à la main, le fichier ouvert dans
 un autre traitement de texte. La relecture se fait désormais sur le site,
-dans un écran « Relecture » qui écrit dans la saisie gardée — celle d'où se
-refont le Word, le fascicule et le dossier Métopes.
+dans un écran qui écrit dans la saisie gardée — celle d'où se refont le Word,
+le fascicule et le dossier Métopes.
+
+**L'écran vit sur une page publique, dans le thème.** Comme le formulaire de
+dépôt, il se pose par un shortcode, `[relecture_archeomed]`, sur une page
+qu'on publie ; l'onglet « Relecture » des réglages donne l'adresse de cette
+page, ou dit qu'aucune ne porte le shortcode. La page ne se met pas en cache.
+Sans connexion, elle renvoie à la connexion, qui ramène à elle ; un compte
+sans droit n'y lit qu'une phrase.
+
+**Un coordinateur n'entre pas dans l'administration.** Il se connecte, puis
+tout se passe sur cette page : pas de barre d'administration, la connexion
+le mène à la page, et toute adresse de `wp-admin` l'y renvoie — sauf
+`admin-ajax.php` et `admin-post.php`, que le verrou et les gestes de l'écran
+emploient. Il ne peut donc pas ouvrir son profil : un mot de passe oublié se
+refait par le lien de la page de connexion. La rédaction relit sur la même
+page ; le menu « Relecture » de l'administration n'est plus qu'un lien vers
+elle.
 
 **Elle s'ouvre quand la campagne est close.** Rien ne fermait une campagne :
 l'onglet « Relecture » des réglages porte donc une case « La campagne est
 close ». Cochée, elle ouvre la relecture et ferme les liens de correction des
 auteurs : qui en suit un lit que la campagne est close et qu'il faut écrire à
 la rédaction ; un formulaire de correction resté ouvert n'enregistre plus
-rien. Le dépôt de nouvelles notices n'est pas fermé par cette case : il
+rien. Le lien « Corriger cette notice » du courriel reçu par la rédaction,
+lui, marche avant comme après la clôture. Le dépôt de nouvelles notices n'est pas fermé par cette case : il
 l'est en dépubliant la page du formulaire.
 
 **Qui relit quoi.** Deux rôles WordPress, créés par l'extension :
@@ -1113,7 +1130,7 @@ l'est en dépubliant la page du formulaire.
   qui ouvre toutes les rubriques avec le même écran. Les administrateurs du
   site l'ont d'office.
 
-Sans connexion, on ne voit rien : il n'y a pas de lien anonyme. Le droit se
+Il n'y a pas de lien anonyme. Le droit se
 juge à chaque requête sur la notice elle-même — sa rubrique en base —, jamais
 sur ce que l'adresse ou le formulaire prétendent.
 
@@ -1123,8 +1140,11 @@ dit l'état de chacune et qui la tient ouverte. C'est le tri du fascicule
 lui-même (`ranger_comme_au_fascicule()`), non un second tri écrit à côté.
 
 **Le formulaire** reprend celui du dépôt, sans ses explications. Le texte et
-les champs se corrigent. Trois choses ne s'y font pas, et le serveur les
-refuse quoi que poste la requête :
+les champs se corrigent. Les lieux du titre se cherchent dans Pactols depuis
+le navigateur, comme au dépôt : une commune changée prend l'identifiant (ARK)
+du terme choisi, un nom inchangé garde le sien — et le dossier de la notice
+sur sDrive garde son nom, on ne le renomme pas. Trois choses ne s'y font pas,
+et le serveur les refuse quoi que poste la requête :
 
 - les **courriels des responsables** ne sont pas dans la page d'un
   coordinateur — pas même masqués : le serveur ne les y écrit pas. La
@@ -1167,7 +1187,9 @@ validée. À partir de « soumise à l'auteur », le coordinateur ne corrige plu
 notice « à soumettre », et un bouton « Soumettre à l'auteur » envoie au
 responsable un courriel avec le Word où se lisent toutes les modifications
 depuis sa version. Un courriel refusé ne change ni la notice ni son état : on
-recommence.
+recommence. Le serveur refuse l'envoi pour toute notice qui n'est pas « à
+soumettre à l'auteur » : rien ne part sans modification de fond, même par
+une requête rejouée.
 
 **La remarque à la rédaction** est un champ à part, hors de la saisie, donc
 hors de tout ce qui se publie. Chaque remarque reste au journal, datée et

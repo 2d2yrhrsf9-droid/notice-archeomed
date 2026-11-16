@@ -187,6 +187,59 @@ jobs:
             || { echo "::error::Le script du formulaire manque à la page."; exit 1; }
           node --check /tmp/formulaire.js || { echo "::error::Le script du formulaire, tel que la page le sert, n'est pas du JavaScript valide."; exit 1; }
 
+      - name: La relecture se fait sur une page du site, et le coordinateur n'entre pas dans l'administration
+        working-directory: /tmp/wp
+        run: |
+          set -eu
+          ID=$(wp post create --post_type=page --post_status=publish \
+            --post_title=Relecture --post_content='[relecture_archeomed]' --porcelain)
+          PAGE="http://127.0.0.1:8080/?page_id=$ID"
+          rate() { echo "::error::$1"; [ -f "$2" ] && head -c 2000 "$2"; exit 1; }
+
+          # Sans connexion : la connexion, qui ramène à la page, et pas de cache.
+          curl -sS -o /tmp/relecture-anonyme.html -D /tmp/relecture-anonyme.txt "$PAGE"
+          grep -qiE "^location: .*wp-login\.php\?redirect_to=.*page_id(=|%3D)$ID" /tmp/relecture-anonyme.txt \
+            || rate "Sans connexion, la page de relecture ne renvoie pas à la connexion." /tmp/relecture-anonyme.txt
+          grep -qiE '^cache-control: .*no-cache' /tmp/relecture-anonyme.txt \
+            || rate "La page de relecture se laisse mettre en cache." /tmp/relecture-anonyme.txt
+
+          # Un coordinateur : la connexion le mène à la page, l'administration l'y renvoie.
+          wp user create coordinatrice coordinatrice@example.org --role=na_coordinateur \
+            --user_pass=relecture-jetable --display_name="Jeanne Martin" --porcelain > /dev/null
+          wp eval 'Notice_Archeomed_Relecture::regler( true, array( 0 => array( (int) get_user_by( "login", "coordinatrice" )->ID ) ) );'
+          curl -sS -o /dev/null -D /tmp/relecture-connexion.txt -c /tmp/relecture.cookies \
+            -b 'wordpress_test_cookie=WP%20Cookie%20check' \
+            --data-urlencode log=coordinatrice --data-urlencode pwd=relecture-jetable \
+            --data-urlencode wp-submit=1 --data-urlencode testcookie=1 \
+            http://127.0.0.1:8080/wp-login.php
+          grep -qiE "^location: .*page_id=$ID" /tmp/relecture-connexion.txt \
+            || rate "Après sa connexion, le coordinateur n'arrive pas sur la page de relecture." /tmp/relecture-connexion.txt
+          for PORTE in wp-admin/ wp-admin/profile.php wp-admin/index.php; do
+            curl -sS -o /dev/null -D /tmp/relecture-admin.txt -b /tmp/relecture.cookies "http://127.0.0.1:8080/$PORTE"
+            grep -qiE "^location: .*page_id=$ID" /tmp/relecture-admin.txt \
+              || rate "Le coordinateur qui ouvre $PORTE n'est pas renvoyé à la page de relecture." /tmp/relecture-admin.txt
+          done
+          curl -sS -o /tmp/relecture-verrou.txt -b /tmp/relecture.cookies \
+            --data action=na_relecture_verrou --data notice=0 http://127.0.0.1:8080/wp-admin/admin-ajax.php -D /tmp/relecture-ajax.txt
+          if grep -qiE "^location: " /tmp/relecture-ajax.txt; then
+            rate "La porte du verrou (admin-ajax.php) renvoie le coordinateur ailleurs." /tmp/relecture-ajax.txt
+          fi
+
+          # Sa page : l'écran dans le thème, sans barre d'administration.
+          curl -sS -o /tmp/relecture.html -D /tmp/relecture-page.txt -b /tmp/relecture.cookies "$PAGE"
+          grep -q 'class="na-rel"' /tmp/relecture.html && grep -q 'na-rel-sommaire' /tmp/relecture.html \
+            || rate "La page ne porte pas l'écran de relecture pour le coordinateur." /tmp/relecture.html
+          if grep -q 'id="wpadminbar"' /tmp/relecture.html; then
+            rate "Le coordinateur voit la barre d'administration." /tmp/relecture-page.txt
+          fi
+          grep -q 'id="na-rel-styles"' /tmp/relecture.html \
+            || rate "Les styles de l'écran manquent à la page." /tmp/relecture-page.txt
+
+          wp user delete coordinatrice --yes > /dev/null
+          wp option delete notice_archeomed_relecture > /dev/null
+          wp post delete "$ID" --force > /dev/null
+          echo "Page de relecture : connexion exigée, coordinateur tenu hors de l'administration."
+
       - name: La file des termes et le reste, éprouvés par PHP
         working-directory: /tmp/wp
         run: |
