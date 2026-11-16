@@ -777,12 +777,15 @@ saisie et dit quelle figure décrire.
 - **Les avis qui bloquent.** Depuis la 3.64, le navigateur refuse l'envoi tant
   que ces points ne sont pas réglés, et les liste dans le récapitulatif :
   les appels de figure (la figure 2 appelée avant la 1, une figure jamais
-  appelée, une figure appelée sans être jointe) et un texte alternatif qui
+  appelée, une figure appelée sans être jointe, des figures jointes qu'aucun
+  appel ne nomme) et un texte alternatif qui
   reprend le titre ou la légende, n'est qu'un nom de fichier, ou ne dit rien
   (« Photo 3 »). **Ne bloquent pas** : la définition de l'image, les données
   d'un graphique, la longueur et la couleur du texte alternatif, tous les avis
-  du texte (ponctuation, ordinaux, sigles…). Une case, dans le récapitulatif,
-  confirme que ces points sont justes et laisse partir la notice : un texte cite
+  du texte (ponctuation, ordinaux, sigles…). Le récapitulatif les range à part,
+  sous « À vérifier avant l'envoi », après « À corriger » où vont les vraies
+  erreurs. Une case, « J'ai vérifié ces points : ma notice est correcte
+  ainsi. L'envoyer telle quelle. », laisse partir la notice : un texte cite
   parfois les figures d'un autre article, ce que le formulaire ne peut pas savoir.
   Le serveur ne refuse rien de tout cela : seul le navigateur arrête, et une
   notice envoyée sans lui part quand même.

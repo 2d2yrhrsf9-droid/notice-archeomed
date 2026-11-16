@@ -6868,6 +6868,12 @@ class Notice_Archeomed_Pactols {
 					for (var rang = 1; rang <= combien; rang++) {
 						if (!appeles[rang]) { avis.push('La fig.' + NBSP + rang + ' n’est appelée nulle part dans le texte.'); }
 					}
+				} else if (combien > 0) {
+					// Comme au serveur : trois figures jointes et pas un appel, c'est
+					// le cas le plus courant, et il passait sans rien dire.
+					avis.push(1 === combien
+						? 'Le texte n’appelle pas la figure jointe' + NBSP + ': appelez-la, par exemple «' + NBSP + '(fig.' + NBSP + '1)' + NBSP + '».'
+						: 'Le texte n’appelle aucune des ' + enLettres(combien) + ' jointes' + NBSP + ': appelez chacune, par exemple «' + NBSP + '(fig.' + NBSP + '1)' + NBSP + '».');
 				}
 				return avis;
 			}
@@ -7558,6 +7564,14 @@ class Notice_Archeomed_Pactols {
 				retirerDuRecap(cle);
 				if (!Object.keys(erreurs).length) { document.title = titreDeLaPage; }
 			}
+			// Le titre d'une liste du cadre, selon ce qu'elle tient : ce qu'il faut
+			// corriger, ce qu'il suffit de vérifier, ou, dans le cadre rendu par
+			// le serveur, les points restants.
+			function titreDeListe(groupe, n) {
+				if (groupe === 'corriger') { return 'À corriger (' + n + ')'; }
+				if (groupe === 'verifier') { return 'À vérifier avant l’envoi (' + n + ')'; }
+				return n > 1 ? 'Il reste ' + n + ' points à corriger' : 'Il reste un point à corriger';
+			}
 			// Le récapitulatif suit les corrections. Il affichait « Il reste 13
 			// points à corriger » quand on les avait tous corrigés, alors que les
 			// messages sous les champs, eux, s'effaçaient : on ne savait plus
@@ -7577,15 +7591,22 @@ class Notice_Archeomed_Pactols {
 					// Réannoncer tout le cadre à chaque correction serait du bruit :
 					// il a été lu en entier quand il s'est ouvert.
 					boite.removeAttribute('role');
-					var n = ul.querySelectorAll('li').length;
-					var h = boite.querySelector('h2');
-					if (n) {
-						if (h) { h.textContent = n > 1 ? 'Il reste ' + n + ' points à corriger' : 'Il reste un point à corriger'; }
-						return;
-					}
-					if (h) { h.remove(); }
-					ul.remove();
-					if (vide(boite.textContent)) { boite.hidden = true; }
+					[].slice.call(boite.querySelectorAll('ul')).forEach(function (liste) {
+						var n = liste.querySelectorAll('li').length;
+						var h = liste.previousElementSibling && liste.previousElementSibling.tagName === 'H2' ? liste.previousElementSibling : null;
+						var groupe = liste.getAttribute('data-groupe');
+						if (n) {
+							if (h) { h.textContent = titreDeListe(groupe, n); }
+							return;
+						}
+						if (h) { h.remove(); }
+						if (groupe === 'verifier') {
+							var conf = boite.querySelector('.na-confirmer');
+							if (conf) { conf.remove(); }
+						}
+						liste.remove();
+					});
+					if (!boite.querySelector('ul') && vide(boite.textContent)) { boite.hidden = true; }
 				});
 			}
 			// Le message s'efface dès que le champ est juste.
@@ -7656,15 +7677,29 @@ class Notice_Archeomed_Pactols {
 				});
 				return liste;
 			}
+			// Deux listes : ce qui est faux et doit se corriger, puis ce que le
+			// formulaire ne peut pas trancher (les appels de figure, les textes
+			// alternatifs) et que l'auteur vérifie avant d'envoyer tel quel.
+			// Réunis sous « Il reste N points à corriger », les seconds
+			// passaient pour des erreurs, et la case qui les confirmait se
+			// lisait de deux façons.
 			function montrerRecap(liste) {
 				recap.innerHTML = '';
-				var h = document.createElement('h2');
-				h.textContent = liste.length > 1 ? 'Il reste ' + liste.length + ' points à corriger' : 'Il reste un point à corriger';
-				var ul = document.createElement('ul');
-				liste.forEach(function (er) { ul.appendChild(lienVers(er.cle, er.message)); });
-				recap.appendChild(h);
-				recap.appendChild(ul);
-				if (liste.some(function (er) { return er.bloquant; })) {
+				var groupes = {
+					corriger: liste.filter(function (er) { return !er.bloquant; }),
+					verifier: liste.filter(function (er) { return er.bloquant; })
+				};
+				['corriger', 'verifier'].forEach(function (groupe) {
+					if (!groupes[groupe].length) { return; }
+					var h = document.createElement('h2');
+					h.textContent = titreDeListe(groupe, groupes[groupe].length);
+					var ul = document.createElement('ul');
+					ul.setAttribute('data-groupe', groupe);
+					groupes[groupe].forEach(function (er) { ul.appendChild(lienVers(er.cle, er.message)); });
+					recap.appendChild(h);
+					recap.appendChild(ul);
+				});
+				if (groupes.verifier.length) {
 					var conf = document.createElement('p');
 					conf.className = 'na-confirmer';
 					var etiquette = document.createElement('label');
@@ -7674,14 +7709,14 @@ class Notice_Archeomed_Pactols {
 					coche.checked = avisConfirmes;
 					coche.addEventListener('change', function () { avisConfirmes = coche.checked; });
 					etiquette.appendChild(coche);
-					etiquette.appendChild(document.createTextNode(' Les points sur les figures ci-dessus sont justes (par exemple, un renvoi à une figure d’un autre article)' + NBSP + ': envoyer quand même.'));
+					etiquette.appendChild(document.createTextNode(' J’ai vérifié ces points' + NBSP + ': ma notice est correcte ainsi (par exemple, elle renvoie à la figure d’un autre article). L’envoyer telle quelle.'));
 					conf.appendChild(etiquette);
 					recap.appendChild(conf);
 				}
 				recap.setAttribute('role', 'alert');
 				recap.hidden = false;
 				if (messageServeur) { messageServeur.hidden = true; }
-				document.title = 'Erreur' + NBSP + ': ' + titreDeLaPage;
+				document.title = (groupes.corriger.length ? 'Erreur' : 'À vérifier') + NBSP + ': ' + titreDeLaPage;
 				recap.scrollIntoView({ block: 'start' });
 				try { recap.focus({ preventScroll: true }); } catch (e) { recap.focus(); }
 			}

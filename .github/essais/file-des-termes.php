@@ -685,9 +685,12 @@ na_verifier( array( "La fig.\u{00A0}2 est appelée avant la fig.\u{00A0}1\u{00A0
 $avis_fig = $C::appels_de_figure( 'Voir fig. 1-2 et la figure 3.', 2 );
 na_verifier( 1 === count( $avis_fig ) && false !== strpos( $avis_fig[0], 'fig. 3' ),
 	'un appel à une figure qui n\'est pas jointe', $avis_fig );
+$sans_appel = $C::appels_de_figure( 'Aucun appel ici.', 3 );
 na_verifier( array( 'La fig. 2 n’est appelée nulle part dans le texte.' ) === $C::appels_de_figure( 'Voir fig. 1.', 2 )
-	&& array() === $C::appels_de_figure( 'Aucun appel ici.', 2 ),
-	'une figure jamais appelée, et rien sans appel du tout' );
+	&& 1 === count( $sans_appel ) && false !== strpos( $sans_appel[0], 'aucune des trois figures jointes' )
+	&& 1 === count( $C::appels_de_figure( 'Aucun appel ici.', 1 ) )
+	&& array() === $C::appels_de_figure( 'Aucun appel ici.', 0 ),
+	'une figure jamais appelée ; un texte qui n\'appelle aucune des figures jointes ; rien sans figure', $sans_appel );
 $ordinaux = $C::ordinaux_fautifs( array( 'Au XIIème siècle, la 1ère phase, la 2nde tour, la Mère.' ) );
 na_verifier( array( '« XIIème » s’abrège « XIIe ».', '« 1ère » s’abrège « 1re ».', '« 2nde » s’abrège « 2de ».' ) === $ordinaux,
 	'les ordinaux fautifs, et « Mère » laissée tranquille', $ordinaux );

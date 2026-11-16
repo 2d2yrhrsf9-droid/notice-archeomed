@@ -272,8 +272,8 @@ class Notice_Archeomed_Controles {
 
 	/**
 	 * Les appels de figure du texte, confrontés aux figures jointes : « fig. 3 »
-	 * quand deux figures seulement sont jointes, ou une figure que le texte
-	 * n'appelle jamais.
+	 * quand deux figures seulement sont jointes, une figure que le texte
+	 * n'appelle jamais, ou un texte qui n'en appelle aucune.
 	 */
 	public static function appels_de_figure( $texte, $combien ) {
 		$appeles = array();
@@ -315,6 +315,13 @@ class Notice_Archeomed_Controles {
 					$avis[] = sprintf( 'La fig. %d n’est appelée nulle part dans le texte.', $rang );
 				}
 			}
+		} elseif ( $combien > 0 ) {
+			// Des figures jointes et pas un appel : le cas le plus courant, qui
+			// passait sans rien dire.
+			$avis[] = 1 === $combien
+				? "Le texte n’appelle pas la figure jointe\u{00A0}: appelez-la, par exemple «\u{00A0}(fig.\u{00A0}1)\u{00A0}»."
+				: sprintf( "Le texte n’appelle aucune des %s jointes\u{00A0}: appelez chacune, par exemple «\u{00A0}(fig.\u{00A0}1)\u{00A0}».",
+					self::en_lettres( $combien ) );
 		}
 		return $avis;
 	}
