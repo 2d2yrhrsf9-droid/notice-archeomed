@@ -210,7 +210,7 @@ class Notice_Archeomed_Candidats {
 
 	/** Enregistre statuts et notes : droit de régler, jeton, valeurs bornées. */
 	public function enregistrer() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Accès refusé.', 'notice-archeomed' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( self::ACTION );
@@ -280,7 +280,7 @@ class Notice_Archeomed_Candidats {
 	 * qu'un tableur réglé en français l'ouvre en colonnes et avec ses accents.
 	 */
 	public function tableur() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Accès refusé.', 'notice-archeomed' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( self::ACTION_TABLEUR );

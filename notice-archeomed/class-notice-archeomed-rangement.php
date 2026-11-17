@@ -95,7 +95,7 @@ class Notice_Archeomed_Rangement {
 	 * notices attendent un rangement que rien ne permet.
 	 */
 	public static function signaler_le_blocage() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			return;
 		}
 		self::signaler_les_laissees();

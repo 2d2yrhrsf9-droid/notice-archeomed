@@ -730,7 +730,7 @@ jobs:
             if ( 1 !== count( $ids ) ) { echo "::error::une notice envoyée attendue\n"; exit( 1 ); }
             $id = (int) $ids[0];
             $compte = (int) wp_insert_user( array( "user_login" => "relectrice", "user_pass" => wp_generate_password( 24 ),
-              "user_email" => "relectrice@example.org", "display_name" => "Jeanne Martin", "role" => $R::ROLE_REDACTION ) );
+              "user_email" => "relectrice@example.org", "display_name" => "Jeanne Martin", "role" => $R::ROLE_DIRECTION ) );
             $R::regler( true, array() );
             $version = max( 1, (int) get_post_meta( $id, "_na_version", true ) );
             $attendus = function () use ( $id ) { wp_cache_delete( $id, "post_meta" ); return array_map( "intval", (array) get_post_meta( $id, "_na_relecture_a_deposer", false ) ); };

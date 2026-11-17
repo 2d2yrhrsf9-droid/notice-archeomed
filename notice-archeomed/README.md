@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.84
+# Formulaire des notices d’archéologie médiévale — version 3.85
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1269,9 +1269,9 @@ tout se passe sur cette page : pas de barre d'administration, la connexion
 le mène à la page, et toute adresse de `wp-admin` l'y renvoie — sauf
 `admin-ajax.php` et `admin-post.php`, que le verrou et les gestes de l'écran
 emploient. Il ne peut donc pas ouvrir son profil : un mot de passe oublié se
-refait par le lien de la page de connexion. La rédaction relit sur la même
-page ; le menu « Relecture » de l'administration n'est plus qu'un lien vers
-elle.
+refait par le lien de la page de connexion. La direction de la revue relit
+sur la même page ; le menu « Relecture » de l'administration n'est plus
+qu'un lien vers elle.
 
 **Elle s'ouvre quand la campagne est close.** Rien ne fermait une campagne :
 l'onglet « Relecture » des réglages porte donc une case « La campagne est
@@ -1287,9 +1287,17 @@ l'est en dépubliant la page du formulaire.
 - « Coordinateur de rubrique (Chronique) » : lire son profil et relire
   (`na_relire`), rien d'autre. L'onglet « Relecture » associe un ou plusieurs
   coordinateurs à chaque rubrique ;
-- « Rédaction de la Chronique (relecture) » : la capacité `na_relire_tout`,
-  qui ouvre toutes les rubriques avec le même écran. Les administrateurs du
-  site l'ont d'office.
+- « Direction de la revue » : la capacité `na_relire_tout`, qui ouvre toutes
+  les rubriques avec le même écran, et `na_regler`, qui ouvre les réglages de
+  l'extension — tous leurs onglets, Annuaire compris. C'est tout : ni
+  articles, ni pages, ni comptes, ni réglages du site. La direction a dans
+  l'administration un menu « Réglages » et l'entrée « Relecture » ; toute
+  autre page, tableau de bord et profil compris, la renvoie aux réglages, et
+  la connexion la mène à la page de relecture. Les administrateurs du site
+  relisent tout d'office, et gardent les réglages par `manage_options`.
+
+Le rôle « Rédaction de la Chronique (relecture) » des versions antérieures à
+la 3.85 disparaît à la mise à jour : ses comptes passent à la direction.
 
 Il n'y a pas de lien anonyme. Le droit se
 juge à chaque requête sur la notice elle-même — sa rubrique en base —, jamais
@@ -1312,12 +1320,12 @@ et le serveur les refuse quoi que poste la requête :
 
 - les **courriels des responsables** ne sont pas dans la page d'un
   coordinateur — pas même masqués : le serveur ne les y écrit pas. La
-  rédaction les lit, sans champ pour les changer ;
+  direction les lit, sans champ pour les changer ;
 - une **illustration** ne s'ajoute ni ne se remplace. Elle se retire, avec un
   motif obligatoire (redondante, qualité insuffisante, autorisation manquante,
   au-delà du nombre admis par les normes, ou « autre » avec une précision).
   Retirée, elle n'est que masquée : ses fichiers et ses textes restent, à son
-  rang, et la rédaction la rétablit d'une case. Le fascicule, le dossier
+  rang, et la direction la rétablit d'une case. Le fascicule, le dossier
   Métopes et le Word de relecture ne la portent plus, et les figures qui
   restent se numérotent à la suite : un rappel invite alors à vérifier les
   appels « (fig. N) » du texte, avec ce que le contrôle des appels y trouve ;
@@ -1338,12 +1346,28 @@ que règlent les normes. Il ne se saisit pas : il suit les champs du lieu, et
 change avec eux. La sous-rubrique (A, B, C) ne se montre que pour une notice de la
 rubrique V, comme au dépôt.
 
-La rédaction voit toutes les rubriques, et l'écran le lui rappelle ; un
-coordinateur ne voit que celles que les réglages lui confient, et les
-notices qui y renvoient.
+Un coordinateur ne voit que les rubriques que les réglages lui confient, et
+les notices qui y renvoient.
 
 Deux boutons : « Enregistrer », qui reste sur la notice, et « Suivante », qui
 enregistre puis ouvre la notice suivante du sommaire.
+
+**Ce que voit la direction.** Toutes les notices, et l'écran le lui
+rappelle. Le sommaire est celui du fascicule entier : chaque rubrique y est
+repliée sous un triangle, avec le compte de ses notices validées (« 3
+validées sur 12 ») ; un clic la déplie. La rubrique de la notice ouverte est
+dépliée d'elle-même, et une rubrique dont toutes les notices sont validées
+passe au vert. Un troisième bouton, « Valider », enregistre la notice, la
+marque validée et ouvre la suivante — à la fin d'une rubrique, la première
+de la rubrique d'après.
+
+**La notice validée est la version définitive.** Elle ne se corrige plus :
+ni par l'écran, ni par le lien « Corriger cette notice » du courriel, ni
+depuis sa fiche, et le serveur refuse tout enregistrement qui la changerait.
+Un coordinateur peut encore lui laisser une remarque. Pour la reprendre, la
+direction la **rouvre** d'un bouton, avec un motif : la notice retrouve
+l'état qu'elle avait avant la validation, et la réouverture reste au
+journal, avec qui, quand et pourquoi. Il faut ensuite la valider de nouveau.
 
 **Le verrou.** Une notice ouverte est verrouillée pour les autres, au nom de
 qui l'a ouverte. Le verrou est pris par une écriture conditionnelle, se
@@ -1353,14 +1377,15 @@ rempart reste le numéro de version : deux enregistrements partis de la même
 version ne s'écrasent pas, le second est rendu au conflit.
 
 **Les états.** À relire ; relue par le coordinateur ; à soumettre à
-l'auteur ; soumise à l'auteur ; accord reçu ; validée par la rédaction. Le
+l'auteur ; soumise à l'auteur ; accord reçu ; validée par la direction. Le
 coordinateur marque une notice « relue », ou coche « modification de fond »,
 qui la fait passer à « à soumettre à l'auteur » : une correction de forme
 passe sans accord, une modification de fond demande l'accord écrit de
-l'auteur. Tout le reste relève de la rédaction, qui peut rouvrir une notice
-validée. À partir de « soumise à l'auteur », le coordinateur ne corrige plus.
+l'auteur. Tout le reste relève de la direction ; la validation ne se fait
+que par le bouton « Valider », et la réouverture que par « Rouvrir la
+notice ». À partir de « soumise à l'auteur », le coordinateur ne corrige plus.
 
-**Aucun courriel ne part de lui-même vers l'auteur.** La rédaction voit la
+**Aucun courriel ne part de lui-même vers l'auteur.** La direction voit la
 notice « à soumettre », et un bouton « Soumettre à l'auteur » envoie au
 responsable un courriel avec le Word où se lisent toutes les modifications
 depuis sa version. Un courriel refusé ne change ni la notice ni son état : on
@@ -1368,7 +1393,7 @@ recommence. Le serveur refuse l'envoi pour toute notice qui n'est pas « à
 soumettre à l'auteur » : rien ne part sans modification de fond, même par
 une requête rejouée.
 
-**La remarque à la rédaction** est un champ à part, hors de la saisie, donc
+**La remarque à la direction** est un champ à part, hors de la saisie, donc
 hors de tout ce qui se publie. Chaque remarque reste au journal, datée et
 signée.
 
@@ -1383,8 +1408,8 @@ emplacements existants, pourvu qu'il ne vise ni la rubrique de la notice ni
 une rubrique déjà visée, et retirer n'importe lequel. Le coordinateur d'une
 rubrique de renvoi voit la notice en lecture seule, dans un bloc à part de
 son sommaire, dès que le renvoi est posé ; il peut laisser une remarque à la
-rédaction, et retirer le renvoi vers sa propre rubrique. Changer la rubrique
-principale reste à la rédaction.
+direction, et retirer le renvoi vers sa propre rubrique. Changer la rubrique
+principale reste à la direction.
 
 **Les versions.** Chaque enregistrement garde la version précédente
 (`_na_relecture_version`, une ligne par version, avec la date et l'auteur) et
@@ -1399,8 +1424,9 @@ enregistrée quand même et le Word attend. Il ne porte aucune image.
 
 **Le fascicule reste vierge de tout suivi** : il se fabrique, comme avant, de
 la dernière version de chaque notice. La version corrigée par le coordinateur
-est la dernière avant la relecture de la rédaction, qui corrige ensuite avec
-le même écran ; ses enregistrements sont versionnés de la même façon.
+est la dernière avant la relecture de la direction, qui corrige ensuite avec
+le même écran ; ses enregistrements sont versionnés de la même façon. La
+version que la direction valide est la version définitive.
 
 ## Tenir la charge : accepter vite, expédier ensuite
 

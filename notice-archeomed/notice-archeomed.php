@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.84
+ * Version: 3.85
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -115,7 +115,7 @@ register_activation_hook(
 add_action(
 	'admin_notices',
 	function () {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			return;
 		}
 		// Le gabarit de référence d'abord : c'est lui qui met les notices en
@@ -1895,9 +1895,10 @@ class Notice_Archeomed_Pactols {
 	 * son identifiant, ou zéro.
 	 *
 	 * Supprimée ou mise à la corbeille, elle ne se rouvre pas. Ouverte par la
-	 * rédaction, elle ne se corrige que par la même personne, toujours
-	 * administratrice : le lien recopié dans un autre navigateur ne donne
-	 * rien.
+	 * direction, elle ne se corrige que par la même personne, toujours de la
+	 * direction : le lien recopié dans un autre navigateur ne donne rien.
+	 * Validée, elle ne se corrige plus du tout, ni par un formulaire ouvert
+	 * avant la validation : c'est sa version définitive.
 	 */
 	private function contexte_valide( $garde ) {
 		if ( ! is_array( $garde ) || empty( $garde['corrige_id'] ) ) {
@@ -1910,7 +1911,10 @@ class Notice_Archeomed_Pactols {
 			return 0;
 		}
 		$par = isset( $garde['par_la_redaction'] ) ? (int) $garde['par_la_redaction'] : 0;
-		if ( $par > 0 && ( get_current_user_id() !== $par || ! current_user_can( 'manage_options' ) ) ) {
+		if ( $par > 0 && ( get_current_user_id() !== $par || ! Notice_Archeomed_Relecture::peut_tout() ) ) {
+			return 0;
+		}
+		if ( 'validee' === Notice_Archeomed_Relecture::etat_de( $id ) ) {
 			return 0;
 		}
 		// La campagne close, les notices sont en relecture : le lien de
@@ -10501,7 +10505,7 @@ class Notice_Archeomed_Pactols {
 	 * l'on ne s'en apercevrait qu'à la relecture.
 	 */
 	public function deposer_la_feuille() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_feuille' );

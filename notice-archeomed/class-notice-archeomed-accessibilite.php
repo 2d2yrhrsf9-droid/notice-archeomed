@@ -186,7 +186,7 @@ class Notice_Archeomed_Accessibilite {
 	 */
 	public function enregistrer_le_controle() {
 		check_ajax_referer( self::ACTION );
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_send_json_error( array( 'message' => 'Droits insuffisants.' ), 403 );
 		}
 		$brut = isset( $_POST['resultat'] ) && is_string( $_POST['resultat'] )
@@ -204,7 +204,7 @@ class Notice_Archeomed_Accessibilite {
 
 	/** Le formulaire de l'audit Ara : on garde, puis on revient à l'onglet. */
 	public function enregistrer_l_audit() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( self::ACTION_ARA );
@@ -310,7 +310,7 @@ class Notice_Archeomed_Accessibilite {
 	 */
 	public function enregistrer_les_figures() {
 		$id = isset( $_POST['post'] ) ? (int) $_POST['post'] : 0;
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( self::ACTION_FIGURES . '_' . $id );
@@ -616,7 +616,7 @@ class Notice_Archeomed_Accessibilite {
 
 	/** Le script et le style de l'onglet, et seulement de lui. */
 	public function charger() {
-		if ( ! self::sur_l_onglet() || ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::sur_l_onglet() || ! Notice_Archeomed_Settings::peut_regler() ) {
 			return;
 		}
 		wp_register_script( 'na-accessibilite', false, array(), '1', true );

@@ -1,7 +1,7 @@
 <?php
 /**
  * La relecture des notices sur le site, par les coordinateurs de rubrique
- * puis par la rédaction.
+ * puis par la direction de la revue, qui valide chaque notice.
  *
  * Chaque coordinateur relisait sa partie dans un Word stylé, et en cassait
  * souvent les styles : une métadonnée ajoutée à la main, le fichier ouvert
@@ -16,12 +16,14 @@
  *
  * Elle s'ouvre quand la campagne est close, et les liens de correction des
  * auteurs se ferment au même instant. Un coordinateur ne voit que les
- * notices de ses rubriques, dans l'ordre du fascicule ; la rédaction les
- * voit toutes, avec le même écran. Une notice ouverte est verrouillée pour
- * les autres, chaque enregistrement garde la version d'avant, et le Word
- * de relecture — le suivi des modifications, signé du relecteur — part
- * sur sDrive par une tâche à part : une panne de sDrive ne coûte pas une
- * correction.
+ * notices de ses rubriques, dans l'ordre du fascicule ; la direction les
+ * voit toutes, dans un sommaire dont chaque rubrique se déplie. Elle
+ * corrige, puis valide : la version validée est la version définitive, et
+ * ne se corrige plus que si la direction la rouvre. Une notice ouverte
+ * est verrouillée pour les autres, chaque enregistrement garde la version
+ * d'avant, et le Word de relecture — le suivi des modifications, signé du
+ * relecteur — part sur sDrive par une tâche à part : une panne de sDrive
+ * ne coûte pas une correction.
  *
  * @package notice-archeomed
  */
@@ -35,13 +37,19 @@ class Notice_Archeomed_Relecture {
 	/** Le rôle d'un coordinateur de rubrique : lire son profil, relire, rien d'autre. */
 	const ROLE = 'na_coordinateur';
 
-	/** Le rôle de la rédaction, pour qui n'administre pas le site. */
+	/**
+	 * Le rôle de la direction de la revue : relire et valider toutes les
+	 * rubriques, régler la Chronique, rien d'autre dans l'administration.
+	 */
+	const ROLE_DIRECTION = 'na_direction';
+
+	/** L'ancien rôle de la rédaction, que la direction remplace. Ses comptes passent à la direction. */
 	const ROLE_REDACTION = 'na_redaction';
 
 	/** La capacité de relire les rubriques qu'on vous a confiées. */
 	const CAP = 'na_relire';
 
-	/** La capacité de la rédaction : toutes les rubriques, tous les états. */
+	/** La capacité de la direction : toutes les rubriques, tous les états. */
 	const CAP_TOUT = 'na_relire_tout';
 
 	/** L'option des réglages : campagne close, coordinateurs par rubrique. */
@@ -85,7 +93,7 @@ class Notice_Archeomed_Relecture {
 		'a_soumettre' => 'À soumettre à l’auteur',
 		'soumise'     => 'Soumise à l’auteur',
 		'accord'      => 'Accord reçu',
-		'validee'     => 'Validée par la rédaction',
+		'validee'     => 'Validée par la direction',
 	);
 
 	/** Les états où le coordinateur de la rubrique corrige encore. */
@@ -100,6 +108,9 @@ class Notice_Archeomed_Relecture {
 		add_filter( 'show_admin_bar', array( __CLASS__, 'sans_barre_d_administration' ) );
 		add_filter( 'login_redirect', array( __CLASS__, 'apres_la_connexion' ), 10, 3 );
 		add_action( 'admin_init', array( $this, 'sortir_de_l_administration' ) );
+		// Avant que WordPress ne refuse la page : son contrôle d'accès passe
+		// avant « admin_init ».
+		add_action( 'auth_redirect', array( __CLASS__, 'garder_la_direction' ) );
 		add_action( 'admin_menu', array( $this, 'poser_le_menu' ) );
 		add_action( 'admin_post_na_relecture', array( $this, 'recevoir' ) );
 		add_action( 'admin_post_na_relecture_reglages', array( $this, 'recevoir_les_reglages' ) );
@@ -107,6 +118,7 @@ class Notice_Archeomed_Relecture {
 		add_action( 'admin_post_na_relecture_apercu', array( $this, 'rendre_l_apercu' ) );
 		add_action( 'admin_post_na_relecture_lire', array( $this, 'rendre_la_lecture' ) );
 		add_action( 'admin_post_na_relecture_soumettre', array( $this, 'soumettre' ) );
+		add_action( 'admin_post_na_relecture_rouvrir', array( $this, 'recevoir_la_reouverture' ) );
 		add_action( 'wp_ajax_na_relecture_verrou', array( $this, 'tenir_le_verrou' ) );
 		add_action( 'wp_ajax_na_relecture_liberer', array( $this, 'rendre_le_verrou' ) );
 		add_action( self::HOOK, array( __CLASS__, 'en_tache' ), 10, 0 );
@@ -117,7 +129,7 @@ class Notice_Archeomed_Relecture {
 	// ── Les droits ─────────────────────────────────────────────────────────
 
 	/**
-	 * Les deux rôles, et la capacité de la rédaction pour l'administrateur.
+	 * Les deux rôles, et la capacité de la direction pour l'administrateur.
 	 *
 	 * Vérifiés à chaque chargement et non à l'activation seule : une mise à
 	 * jour par téléversement de l'archive ne repasse pas par l'activation,
@@ -128,9 +140,18 @@ class Notice_Archeomed_Relecture {
 		if ( null === get_role( self::ROLE ) ) {
 			add_role( self::ROLE, 'Coordinateur de rubrique (Chronique)', array( 'read' => true, self::CAP => true ) );
 		}
-		if ( null === get_role( self::ROLE_REDACTION ) ) {
-			add_role( self::ROLE_REDACTION, 'Rédaction de la Chronique (relecture)',
-				array( 'read' => true, self::CAP => true, self::CAP_TOUT => true ) );
+		if ( null === get_role( self::ROLE_DIRECTION ) ) {
+			add_role( self::ROLE_DIRECTION, 'Direction de la revue',
+				array( 'read' => true, self::CAP => true, self::CAP_TOUT => true, Notice_Archeomed_Settings::CAPACITE => true ) );
+		}
+		// La rédaction d'avant devient la direction : ses comptes changent de
+		// rôle, puis le rôle disparaît. Une fois, tant qu'il existe.
+		if ( null !== get_role( self::ROLE_REDACTION ) ) {
+			foreach ( get_users( array( 'role' => self::ROLE_REDACTION ) ) as $ancien ) {
+				$ancien->add_role( self::ROLE_DIRECTION );
+				$ancien->remove_role( self::ROLE_REDACTION );
+			}
+			remove_role( self::ROLE_REDACTION );
 		}
 		$administrateur = get_role( 'administrator' );
 		if ( null !== $administrateur && ! $administrateur->has_cap( self::CAP_TOUT ) ) {
@@ -173,7 +194,7 @@ class Notice_Archeomed_Relecture {
 		return null === $utilisateur ? wp_get_current_user() : get_userdata( (int) $utilisateur );
 	}
 
-	/** Ce compte relit-il pour la rédaction : toutes les rubriques, tous les états ? */
+	/** Ce compte relit-il pour la direction : toutes les rubriques, tous les états ? */
 	public static function peut_tout( $utilisateur = null ) {
 		$compte = self::compte( $utilisateur );
 		return ( $compte instanceof WP_User ) && $compte->exists()
@@ -181,7 +202,7 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Les rubriques qu'un compte relit : toutes pour la rédaction, celles
+	 * Les rubriques qu'un compte relit : toutes pour la direction, celles
 	 * que les réglages lui confient pour un coordinateur, aucune sinon.
 	 */
 	public static function rubriques_de( $utilisateur = null ) {
@@ -209,7 +230,7 @@ class Notice_Archeomed_Relecture {
 
 	/**
 	 * Ce qu'un compte peut d'une notice, ou null s'il n'en peut rien :
-	 * { sorte, rubrique }. La sorte est « tout » pour la rédaction,
+	 * { sorte, rubrique }. La sorte est « tout » pour la direction,
 	 * « principale » pour le coordinateur de sa rubrique, « renvoi » pour
 	 * celui d'une rubrique où elle renvoie, qui la lit sans la corriger.
 	 *
@@ -260,12 +281,14 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Ce droit permet-il de corriger la notice dans cet état ? La rédaction
-	 * toujours ; le coordinateur de la rubrique tant que la notice n'est pas
-	 * partie vers l'auteur ni validée ; celui d'un renvoi jamais.
+	 * Ce droit permet-il de corriger la notice dans cet état ? La direction
+	 * tant qu'elle ne l'a pas validée ; le coordinateur de la rubrique tant
+	 * que la notice n'est pas partie vers l'auteur ni validée ; celui d'un
+	 * renvoi jamais. Une notice validée ne se corrige plus : il faut la
+	 * rouvrir.
 	 */
 	public static function peut_corriger( $droit, $etat ) {
-		if ( ! is_array( $droit ) ) {
+		if ( ! is_array( $droit ) || 'validee' === $etat ) {
 			return false;
 		}
 		return 'tout' === $droit['sorte']
@@ -445,15 +468,19 @@ class Notice_Archeomed_Relecture {
 	/**
 	 * Enregistre ce que le formulaire de relecture a posté pour une notice,
 	 * au nom d'un compte : la saisie corrigée, l'état, la remarque à la
-	 * rédaction, et la ligne du journal qui les dit.
+	 * direction, et la ligne du journal qui les dit.
 	 *
 	 * Le droit se relit ici, sur la notice : un identifiant forgé ne donne
 	 * rien. Le coordinateur d'un renvoi ne peut que retirer le renvoi vers
 	 * sa rubrique et laisser une remarque ; celui de la rubrique ne peut
 	 * faire avancer l'état que vers « relue » ou « à soumettre à l'auteur ».
+	 * La direction valide par « suite = valider » : la notice est alors
+	 * figée, et ce qui voudrait encore la changer est refusé (« figee ») —
+	 * un formulaire resté ouvert pendant qu'une autre la validait, par
+	 * exemple. Une remarque passe toujours.
 	 *
 	 * Rend ce que rend l'enregistrement de la saisie, avec l'état ; l'issue
-	 * peut être aussi « interdit » ou « verrouillee » (avec « par »).
+	 * peut être aussi « interdit », « figee » ou « verrouillee » (avec « par »).
 	 */
 	public static function enregistrer( $id, $lue, $utilisateur = null ) {
 		$id     = (int) $id;
@@ -466,6 +493,12 @@ class Notice_Archeomed_Relecture {
 		}
 		$etat          = self::etat_de( $id );
 		$rendu['etat'] = $etat;
+		$valider       = isset( $_POST['suite'] ) && 'valider' === $_POST['suite'];
+		$fige          = 'validee' === $etat;
+		if ( $fige && ( isset( $_POST['texte_notice'] ) || ! empty( $_POST['retirer_renvoi'] ) || $valider ) ) {
+			$rendu['issue'] = 'figee';
+			return $rendu;
+		}
 		$corrige       = ( 'renvoi' === $droit['sorte'] ) ? ! empty( $_POST['retirer_renvoi'] ) : self::peut_corriger( $droit, $etat );
 		$rendu['issue'] = 'inchangee';
 		if ( $corrige ) {
@@ -486,12 +519,15 @@ class Notice_Archeomed_Relecture {
 			}
 		}
 
-		// ── L'état. Le coordinateur ne le fait qu'avancer ; la rédaction le
-		// pose où elle veut, et rouvre une notice validée. ────────────────
+		// ── L'état. Le coordinateur ne le fait qu'avancer ; la direction le
+		// pose où elle veut avant de valider. Valider ne se fait que par son
+		// bouton, et une notice validée ne se rouvre que par le sien. ─────
 		$nouvel = $etat;
-		if ( 'tout' === $droit['sorte'] ) {
+		if ( 'tout' === $droit['sorte'] && ! $fige ) {
 			$demande = isset( $_POST['etat'] ) && is_string( $_POST['etat'] ) ? sanitize_key( wp_unslash( $_POST['etat'] ) ) : '';
-			if ( array_key_exists( $demande, self::ETATS ) ) {
+			if ( $valider ) {
+				$nouvel = 'validee';
+			} elseif ( array_key_exists( $demande, self::ETATS ) && 'validee' !== $demande ) {
 				$nouvel = $demande;
 			}
 		} elseif ( 'principale' === $droit['sorte'] && $corrige ) {
@@ -504,9 +540,15 @@ class Notice_Archeomed_Relecture {
 		if ( $nouvel !== $etat ) {
 			update_post_meta( $id, '_na_relecture_etat', $nouvel );
 		}
+		if ( 'validee' === $nouvel && ! $fige ) {
+			// L'état d'avant, que la réouverture rendra ; la notice figée
+			// n'a plus à être tenue.
+			update_post_meta( $id, '_na_relecture_avant_validation', $etat );
+			self::liberer_le_verrou( $id, $compte->ID );
+		}
 		$rendu['etat'] = $nouvel;
 
-		// ── La remarque à la rédaction : hors de la notice, donc hors de ce
+		// ── La remarque à la direction : hors de la notice, donc hors de ce
 		// qui se publie. Chacune reste au journal, datée et signée. ───────
 		$remarque = isset( $_POST['remarque'] ) && is_string( $_POST['remarque'] )
 			? trim( sanitize_textarea_field( wp_unslash( $_POST['remarque'] ) ) ) : '';
@@ -794,13 +836,24 @@ class Notice_Archeomed_Relecture {
 
 	/**
 	 * Ce compte ne fait-il que relire ? Un coordinateur n'a rien à faire
-	 * dans l'administration ; la rédaction, un administrateur, ou qui écrit
-	 * par ailleurs sur le site y gardent leur place.
+	 * dans l'administration ; un administrateur, ou qui écrit par ailleurs
+	 * sur le site, y garde sa place. La direction a sa propre garde.
 	 */
 	public static function est_coordinateur_seul( $utilisateur = null ) {
 		$compte = self::compte( $utilisateur );
 		return ( $compte instanceof WP_User ) && $compte->exists() && user_can( $compte, self::CAP )
 			&& ! self::peut_tout( $compte ) && ! user_can( $compte, 'edit_posts' );
+	}
+
+	/**
+	 * Ce compte est-il la direction, sans rien administrer d'autre ? Il
+	 * règle la Chronique et relit ; le reste de l'administration lui est
+	 * fermé.
+	 */
+	public static function est_direction_seule( $utilisateur = null ) {
+		$compte = self::compte( $utilisateur );
+		return ( $compte instanceof WP_User ) && $compte->exists()
+			&& Notice_Archeomed_Settings::par_son_menu( $compte ) && ! user_can( $compte, 'edit_posts' );
 	}
 
 	/**
@@ -848,6 +901,16 @@ class Notice_Archeomed_Relecture {
 	 */
 	public static function apres_la_connexion( $vers, $demande, $compte ) {
 		$page = self::page();
+		// La direction qui ne demandait rien de précis va relire ; sans page
+		// de relecture, aux réglages. Le tableau de bord ne lui sert à rien.
+		if ( ( $compte instanceof WP_User ) && self::est_direction_seule( $compte ) ) {
+			$rien = ! is_string( $demande ) || '' === $demande
+				|| untrailingslashit( $demande ) === untrailingslashit( admin_url() );
+			if ( ! $rien ) {
+				return $vers;
+			}
+			return '' !== $page ? $page : admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+		}
 		if ( '' === $page || ! ( $compte instanceof WP_User ) || ! self::est_coordinateur_seul( $compte ) ) {
 			return $vers;
 		}
@@ -868,6 +931,49 @@ class Notice_Archeomed_Relecture {
 		return '' !== $page ? $page : home_url( '/' );
 	}
 
+	/**
+	 * Où renvoyer la direction qui ouvre une page de l'administration : une
+	 * chaîne vide pour les réglages et l'entrée « Relecture », qui sont sa
+	 * place, et pour « options.php », qui enregistre les réglages ; les
+	 * réglages sinon. L'ancienne adresse des réglages, sous le menu des
+	 * notices reçues, mène à la nouvelle avec son onglet.
+	 *
+	 * « admin-post.php » et « admin-ajax.php » ne passent pas par ici :
+	 * chaque geste y contrôle son droit.
+	 */
+	public static function renvoi_de_la_direction( $utilisateur, $porte, $parametres ) {
+		if ( ! self::est_direction_seule( $utilisateur ) ) {
+			return '';
+		}
+		$porte = (string) $porte;
+		$page  = isset( $parametres['page'] ) && is_scalar( $parametres['page'] ) ? sanitize_key( (string) $parametres['page'] ) : '';
+		if ( 'options.php' === $porte
+			|| ( 'admin.php' === $porte && in_array( $page, array( Notice_Archeomed_Settings::PAGE_SLUG, self::PAGE ), true ) ) ) {
+			return '';
+		}
+		$reglages = admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+		if ( 'edit.php' === $porte && Notice_Archeomed_Settings::PAGE_SLUG === $page ) {
+			$garder = array();
+			foreach ( (array) $parametres as $cle => $valeur ) {
+				if ( is_string( $cle ) && is_scalar( $valeur ) && ! in_array( $cle, array( 'post_type', 'page' ), true ) ) {
+					$garder[ sanitize_key( $cle ) ] = rawurlencode( (string) $valeur );
+				}
+			}
+			return add_query_arg( $garder, $reglages );
+		}
+		return $reglages;
+	}
+
+	/** La direction n'entre que dans ses pages de l'administration. */
+	public static function garder_la_direction() {
+		global $pagenow;
+		$vers = self::renvoi_de_la_direction( null, (string) $pagenow, wp_unslash( $_GET ) );
+		if ( '' !== $vers ) {
+			wp_safe_redirect( $vers );
+			exit;
+		}
+	}
+
 	/** Le coordinateur qui ouvre l'administration est ramené à sa page. */
 	public function sortir_de_l_administration() {
 		global $pagenow;
@@ -880,9 +986,15 @@ class Notice_Archeomed_Relecture {
 
 	/**
 	 * L'entrée « Relecture » du menu d'administration : un lien vers la page
-	 * du site, pour la rédaction qui part de là.
+	 * du site, pour qui part de là.
 	 */
 	public function poser_le_menu() {
+		// La direction n'a que ses deux entrées : le tableau de bord et le
+		// profil la renverraient aux réglages.
+		if ( self::est_direction_seule() ) {
+			remove_menu_page( 'index.php' );
+			remove_menu_page( 'profile.php' );
+		}
 		add_menu_page(
 			__( 'Relecture de la Chronique', 'notice-archeomed' ),
 			__( 'Relecture', 'notice-archeomed' ),
@@ -910,7 +1022,7 @@ class Notice_Archeomed_Relecture {
 			return;
 		}
 		echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
-			'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et rédaction relisent.',
+			'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et direction relisent.',
 			self::SHORTCODE ) ) . '</p></div>';
 	}
 
@@ -1011,7 +1123,7 @@ class Notice_Archeomed_Relecture {
 		}
 		if ( ! self::campagne_close() ) {
 			echo '<p>' . esc_html__( 'La relecture s’ouvrira quand la campagne sera close.', 'notice-archeomed' );
-			if ( current_user_can( 'manage_options' ) ) {
+			if ( Notice_Archeomed_Settings::peut_regler() ) {
 				echo ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'relecture' ) ) . '">' . esc_html__( 'Régler la relecture', 'notice-archeomed' ) . '</a>';
 			}
 			echo '</p></div>';
@@ -1022,21 +1134,25 @@ class Notice_Archeomed_Relecture {
 			return;
 		}
 		$rubrique = self::rubrique_demandee( $siennes, $_GET, 'na_rubrique' );
-		$sommaire = self::sommaire( $rubrique );
 		$id       = isset( $_GET['na_notice'] ) && is_scalar( $_GET['na_notice'] ) ? absint( $_GET['na_notice'] ) : 0;
 		$droit    = $id ? self::droit_sur( $id ) : null;
+		$tout     = self::peut_tout();
+		// La direction lit la notice sous sa rubrique, quoi que dise l'adresse.
+		if ( $tout && null !== $droit && in_array( $droit['rubrique'], $siennes, true ) ) {
+			$rubrique = $droit['rubrique'];
+		}
 
-		// La rédaction voit toutes les rubriques ; un coordinateur, celles que
+		// La direction voit toutes les rubriques ; un coordinateur, celles que
 		// les réglages lui confient, et rien d'autre. On le dit à qui essaie
-		// l'écran depuis un compte de la rédaction.
-		if ( self::peut_tout() ) {
-			echo '<p class="na-rel-note">' . esc_html__( 'Vous voyez toutes les rubriques, comme la rédaction. Un coordinateur ne voit que celles qui lui sont confiées dans les réglages de la relecture, et les notices qui y renvoient.', 'notice-archeomed' );
-			if ( current_user_can( 'manage_options' ) ) {
+		// l'écran depuis un compte de la direction.
+		if ( $tout ) {
+			echo '<p class="na-rel-note">' . esc_html__( 'Vous voyez toutes les rubriques. Un coordinateur ne voit que celles qui lui sont confiées dans les réglages de la relecture, et les notices qui y renvoient.', 'notice-archeomed' );
+			if ( Notice_Archeomed_Settings::peut_regler() ) {
 				echo ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'relecture' ) ) . '">' . esc_html__( 'Confier les rubriques', 'notice-archeomed' ) . '</a>';
 			}
 			echo '</p>';
 		}
-		if ( count( $siennes ) > 1 ) {
+		if ( ! $tout && count( $siennes ) > 1 ) {
 			echo '<nav class="na-rel-onglets" aria-label="' . esc_attr__( 'Rubriques', 'notice-archeomed' ) . '">';
 			foreach ( $siennes as $une ) {
 				echo '<a class="na-rel-onglet' . ( $une === $rubrique ? ' na-rel-onglet--actif' : '' ) . '" href="' . esc_url( self::url( $une ) ) . '"'
@@ -1045,7 +1161,11 @@ class Notice_Archeomed_Relecture {
 			echo '</nav>';
 		}
 		echo '<div class="na-rel-cadre">';
-		$this->afficher_le_sommaire( $rubrique, $sommaire, $id );
+		if ( $tout ) {
+			$this->afficher_le_sommaire_de_tout( $rubrique, $id );
+		} else {
+			$this->afficher_le_sommaire( $rubrique, self::sommaire( $rubrique ), $id );
+		}
 		echo '<div class="na-rel-notice">';
 		if ( $id && null === $droit ) {
 			echo '<p>' . esc_html__( 'Cette notice n’est pas de vos rubriques.', 'notice-archeomed' ) . '</p>';
@@ -1075,29 +1195,72 @@ class Notice_Archeomed_Relecture {
 			if ( '' !== $titre ) {
 				echo '<h2 class="na-rel-renvois">' . esc_html( $titre ) . '</h2>';
 			}
-			$liste = false;
-			foreach ( $sommaire[ $bloc ] as $entree ) {
-				if ( $entree['famille'] !== $famille ) {
-					echo ( $liste ? '</ol>' : '' ) . '<h3>' . esc_html( $entree['famille'] ) . '</h3><ol>';
-					$famille = $entree['famille'];
-					$liste   = true;
-				} elseif ( ! $liste ) {
-					echo '<ol>';
-					$liste = true;
-				}
-				$etat   = self::etat_de( $entree['id'] );
-				$verrou = self::verrou_de( $entree['id'] );
-				$tenant = ( $verrou['par'] && $verrou['par'] !== get_current_user_id() ) ? get_userdata( $verrou['par'] ) : null;
-				echo '<li' . ( (int) $entree['id'] === (int) $ouverte ? ' class="na-rel-ouverte"' : '' ) . '>'
-					. '<a href="' . esc_url( self::url( $rubrique, $entree['id'] ) ) . '"' . ( (int) $entree['id'] === (int) $ouverte ? ' aria-current="true"' : '' ) . '>'
-					. esc_html( $entree['titre'] ) . '</a>'
-					. ' <span class="na-rel-etat na-rel-etat--' . esc_attr( $etat ) . '">' . esc_html( self::ETATS[ $etat ] ) . '</span>'
-					. ( $tenant ? ' <span class="na-rel-verrou">' . esc_html( sprintf( 'ouverte par %s', $tenant->display_name ) ) . '</span>' : '' )
-					. '</li>';
-			}
-			echo '</ol>';
+			$this->lister_les_notices( $rubrique, $sommaire[ $bloc ], $ouverte, $famille );
 		}
 		echo '</nav>';
+	}
+
+	/**
+	 * Le sommaire de la direction : tout le fascicule, une rubrique par
+	 * volet replié, qu'un clic sur son triangle déplie. Seule la rubrique de
+	 * la notice ouverte l'est d'emblée. Chaque volet dit combien de ses
+	 * notices sont validées. Pas de renvois : chaque notice y est déjà, sous
+	 * sa propre rubrique.
+	 */
+	private function afficher_le_sommaire_de_tout( $courante, $ouverte ) {
+		$plugin = self::plugin();
+		echo '<nav class="na-rel-sommaire na-rel-sommaire--tout" aria-label="' . esc_attr__( 'Sommaire du fascicule', 'notice-archeomed' ) . '">';
+		echo '<h2>' . esc_html__( 'Sommaire du fascicule', 'notice-archeomed' ) . '</h2>';
+		foreach ( $plugin->rubriques() as $rubrique ) {
+			$entrees  = $plugin->sommaire_de_la_rubrique( $rubrique );
+			$validees = 0;
+			foreach ( $entrees as $entree ) {
+				$validees += 'validee' === self::etat_de( $entree['id'] ) ? 1 : 0;
+			}
+			$faite = ! empty( $entrees ) && count( $entrees ) === $validees;
+			echo '<details class="na-rel-rubrique' . ( $faite ? ' na-rel-rubrique--faite' : '' ) . '"' . ( $rubrique === $courante ? ' open' : '' ) . '>'
+				. '<summary><span class="na-rel-rubrique-nom">' . esc_html( $rubrique ) . '</span> <span class="na-rel-compte">'
+				. esc_html( empty( $entrees ) ? 'aucune notice'
+					: sprintf( $validees > 1 ? '%1$d validées sur %2$d' : '%1$d validée sur %2$d', $validees, count( $entrees ) ) )
+				. '</span></summary>';
+			if ( ! empty( $entrees ) ) {
+				$famille = null;
+				$this->lister_les_notices( $rubrique, $entrees, $ouverte, $famille );
+			}
+			echo '</details>';
+		}
+		echo '</nav>';
+	}
+
+	/**
+	 * Les notices d'un bloc du sommaire, sous leurs sous-rubriques, avec
+	 * l'état de chacune et qui la tient ouverte. La sous-rubrique en cours
+	 * passe d'un bloc à l'autre, pour ne pas se redire.
+	 */
+	private function lister_les_notices( $rubrique, $entrees, $ouverte, &$famille ) {
+		$liste = false;
+		foreach ( $entrees as $entree ) {
+			if ( $entree['famille'] !== $famille ) {
+				echo ( $liste ? '</ol>' : '' ) . '<h3>' . esc_html( $entree['famille'] ) . '</h3><ol>';
+				$famille = $entree['famille'];
+				$liste   = true;
+			} elseif ( ! $liste ) {
+				echo '<ol>';
+				$liste = true;
+			}
+			$etat   = self::etat_de( $entree['id'] );
+			$verrou = self::verrou_de( $entree['id'] );
+			$tenant = ( $verrou['par'] && $verrou['par'] !== get_current_user_id() ) ? get_userdata( $verrou['par'] ) : null;
+			echo '<li' . ( (int) $entree['id'] === (int) $ouverte ? ' class="na-rel-ouverte"' : '' ) . '>'
+				. '<a href="' . esc_url( self::url( $rubrique, $entree['id'] ) ) . '"' . ( (int) $entree['id'] === (int) $ouverte ? ' aria-current="true"' : '' ) . '>'
+				. esc_html( $entree['titre'] ) . '</a>'
+				. ' <span class="na-rel-etat na-rel-etat--' . esc_attr( $etat ) . '">' . esc_html( self::ETATS[ $etat ] ) . '</span>'
+				. ( $tenant ? ' <span class="na-rel-verrou">' . esc_html( sprintf( 'ouverte par %s', $tenant->display_name ) ) . '</span>' : '' )
+				. '</li>';
+		}
+		if ( $liste ) {
+			echo '</ol>';
+		}
 	}
 
 	/** La notice ouverte : son en-tête, le formulaire ou la lecture seule, puis son histoire. */
@@ -1130,6 +1293,21 @@ class Notice_Archeomed_Relecture {
 				. '<input type="hidden" name="notice" value="' . (int) $id . '"><input type="hidden" name="rubrique" value="' . esc_attr( (string) ( array_search( $rubrique, $plugin->rubriques(), true ) + 1 ) ) . '">';
 			wp_nonce_field( 'na_relecture_soumettre_' . (int) $id );
 			echo '<p><button type="submit" class="na-rel-bouton">' . esc_html__( 'Soumettre à l’auteur', 'notice-archeomed' ) . '</button></p></form></div>';
+		}
+		if ( 'validee' === $etat ) {
+			echo '<div class="na-rel-message na-rel-message--success"><p><strong>' . esc_html__( 'Validée — version définitive.', 'notice-archeomed' ) . '</strong> ';
+			if ( 'tout' === $droit['sorte'] ) {
+				echo esc_html__( 'Elle ne se corrige plus. Pour la reprendre, rouvrez-la : la réouverture reste au journal, avec son motif.', 'notice-archeomed' ) . '</p>';
+				echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="na-rel-form na-rel-rouvrir"><input type="hidden" name="action" value="na_relecture_rouvrir">'
+					. '<input type="hidden" name="notice" value="' . (int) $id . '"><input type="hidden" name="rubrique" value="' . esc_attr( (string) ( array_search( $rubrique, $plugin->rubriques(), true ) + 1 ) ) . '">';
+				wp_nonce_field( 'na_relecture_rouvrir_' . (int) $id );
+				echo '<p class="na-rel-champ"><label for="na-rel-motif">' . esc_html__( 'Motif de la réouverture', 'notice-archeomed' ) . '</label>'
+					. '<textarea id="na-rel-motif" name="motif" rows="2"></textarea></p>'
+					. '<p><button type="submit" class="na-rel-bouton">' . esc_html__( 'Rouvrir la notice', 'notice-archeomed' ) . '</button></p></form>';
+			} else {
+				echo esc_html__( 'La direction l’a validée : elle ne se corrige plus, mais une remarque peut encore lui être laissée.', 'notice-archeomed' ) . '</p>';
+			}
+			echo '</div>';
 		}
 		$rappels = $plugin->appels_a_verifier( $id );
 		$masquee = false;
@@ -1209,7 +1387,7 @@ class Notice_Archeomed_Relecture {
 	/**
 	 * Le formulaire de relecture : celui du dépôt, sans ses explications.
 	 * Les courriels des responsables n'y sont pas pour un coordinateur ; la
-	 * rédaction les lit, sans pouvoir les changer ici.
+	 * direction les lit, sans pouvoir les changer ici.
 	 */
 	private function afficher_le_formulaire( $id, $notice, $droit, $rubrique, $etat ) {
 		$plugin = self::plugin();
@@ -1232,7 +1410,7 @@ class Notice_Archeomed_Relecture {
 		} else {
 			echo '<p class="na-rel-champ"><span class="na-rel-libelle">' . esc_html__( 'Rubrique principale', 'notice-archeomed' ) . '</span> ' . esc_html( $principale ) . '</p>';
 		}
-		// La matière ne divise que la rubrique V. La rédaction, qui peut
+		// La matière ne divise que la rubrique V. La direction, qui peut
 		// changer la rubrique, la voit paraître quand elle choisit V.
 		$en_v = Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === Notice_Archeomed_Pactols::rubrique_actuelle( $principale );
 		if ( $en_v || $tout ) {
@@ -1328,7 +1506,7 @@ class Notice_Archeomed_Relecture {
 			self::champ( $qui . '_nom', 'Nom', $valeur( $qui . '_nom' ) );
 			self::champ( $qui . '_inst', 'Institution', $valeur( $qui . '_inst' ) );
 			// Le courriel : jamais dans la page d'un coordinateur, et pour
-			// la rédaction un texte, non un champ — il ne se change pas ici.
+			// la direction un texte, non un champ — il ne se change pas ici.
 			if ( $tout && '' !== $valeur( $qui . '_email' ) ) {
 				echo '<p class="na-rel-champ"><span class="na-rel-libelle">' . esc_html__( 'Courriel', 'notice-archeomed' ) . '</span> ' . esc_html( $valeur( $qui . '_email' ) ) . '</p>';
 			}
@@ -1351,6 +1529,10 @@ class Notice_Archeomed_Relecture {
 		if ( $tout ) {
 			echo '<p class="na-rel-champ"><label for="na-rel-etat">' . esc_html__( 'État', 'notice-archeomed' ) . '</label><select id="na-rel-etat" name="etat">';
 			foreach ( self::ETATS as $cle => $libelle ) {
+				// « Validée » ne se choisit pas : elle a son bouton.
+				if ( 'validee' === $cle ) {
+					continue;
+				}
 				echo '<option value="' . esc_attr( $cle ) . '"' . selected( $cle, $etat, false ) . '>' . esc_html( $libelle ) . '</option>';
 			}
 			echo '</select></p>';
@@ -1358,9 +1540,12 @@ class Notice_Archeomed_Relecture {
 			echo '<p><label><input type="checkbox" name="relue" value="1"' . checked( 'a_relire' !== $etat, true, false ) . ( 'a_relire' !== $etat ? ' disabled' : '' ) . '> ' . esc_html__( 'Notice relue', 'notice-archeomed' ) . '</label></p>'
 				. '<p><label><input type="checkbox" name="fond" value="1"' . checked( 'a_soumettre' === $etat, true, false ) . ( 'a_soumettre' === $etat ? ' disabled' : '' ) . '> ' . esc_html__( 'Modification de fond (accord de l’auteur nécessaire)', 'notice-archeomed' ) . '</label></p>';
 		}
-		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html__( 'Remarque à la rédaction', 'notice-archeomed' ) . '</label>'
+		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html( $tout ? __( 'Remarque', 'notice-archeomed' ) : __( 'Remarque à la direction', 'notice-archeomed' ) ) . '</label>'
 			. '<textarea id="na-rel-remarque" name="remarque" rows="3"></textarea></p></fieldset>';
+		// Valider enregistre ce qui est corrigé, fige la notice et passe à la
+		// suivante : c'est la version définitive.
 		echo '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="na-rel-bouton na-rel-bouton--principal">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
+			. ( $tout ? '<button type="submit" name="suite" value="valider" class="na-rel-bouton na-rel-bouton--valider">' . esc_html__( 'Valider', 'notice-archeomed' ) . '</button> ' : '' )
 			. '<button type="submit" name="suite" value="suivante" class="na-rel-bouton">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p>';
 		echo '</form>';
 		$this->poser_le_script( $id );
@@ -1416,9 +1601,10 @@ class Notice_Archeomed_Relecture {
 
 	/**
 	 * La notice en lecture seule : pour le coordinateur d'une rubrique de
-	 * renvoi, pour une notice qu'un autre tient ouverte, ou qui n'est plus
-	 * au coordinateur. On peut y laisser une remarque à la rédaction, et le
-	 * coordinateur d'un renvoi y retire le renvoi vers sa rubrique.
+	 * renvoi, pour une notice qu'un autre tient ouverte, qui n'est plus au
+	 * coordinateur, ou que la direction a validée. On peut y laisser une
+	 * remarque, et le coordinateur d'un renvoi y retire le renvoi vers sa
+	 * rubrique — tant que la notice n'est pas validée.
 	 */
 	private function afficher_la_lecture( $id, $notice, $droit, $rubrique ) {
 		$plugin = self::plugin();
@@ -1429,7 +1615,7 @@ class Notice_Archeomed_Relecture {
 			. '<input type="hidden" name="version" value="' . (int) $notice['version'] . '">'
 			. '<input type="hidden" name="rubrique" value="' . esc_attr( (string) ( array_search( $rubrique, $plugin->rubriques(), true ) + 1 ) ) . '">';
 		wp_nonce_field( 'na_relecture_' . (int) $id );
-		if ( 'renvoi' === $droit['sorte'] ) {
+		if ( 'renvoi' === $droit['sorte'] && 'validee' !== self::etat_de( $id ) ) {
 			foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
 				if ( isset( $notice['d'][ $champ ] ) && $notice['d'][ $champ ] === $droit['rubrique'] ) {
 					echo '<p><label><input type="checkbox" name="retirer_renvoi[' . esc_attr( $champ ) . ']" value="1"> '
@@ -1437,7 +1623,7 @@ class Notice_Archeomed_Relecture {
 				}
 			}
 		}
-		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html__( 'Remarque à la rédaction', 'notice-archeomed' ) . '</label>'
+		echo '<p class="na-rel-champ"><label for="na-rel-remarque">' . esc_html( 'tout' === $droit['sorte'] ? __( 'Remarque', 'notice-archeomed' ) : __( 'Remarque à la direction', 'notice-archeomed' ) ) . '</label>'
 			. '<textarea id="na-rel-remarque" name="remarque" rows="3"></textarea></p>'
 			. '<p class="na-rel-boutons"><button type="submit" name="suite" value="rester" class="na-rel-bouton na-rel-bouton--principal">' . esc_html__( 'Enregistrer', 'notice-archeomed' ) . '</button> '
 			. '<button type="submit" name="suite" value="suivante" class="na-rel-bouton">' . esc_html__( 'Suivante', 'notice-archeomed' ) . '</button></p></form>';
@@ -1459,7 +1645,7 @@ class Notice_Archeomed_Relecture {
 					echo '<br>' . esc_html( $quoi );
 				}
 				if ( '' !== $ligne['remarque'] ) {
-					echo '<br><em>' . esc_html__( 'Remarque à la rédaction :', 'notice-archeomed' ) . '</em> ' . nl2br( esc_html( $ligne['remarque'] ) );
+					echo '<br><em>' . esc_html__( 'Remarque :', 'notice-archeomed' ) . '</em> ' . nl2br( esc_html( $ligne['remarque'] ) );
 				}
 				echo '</li>';
 			}
@@ -1515,6 +1701,12 @@ class Notice_Archeomed_Relecture {
 			. '.na-rel .na-rel-sommaire h2{font-size:1em;margin:.4em 0}.na-rel .na-rel-sommaire h3{font-size:.92em;margin:1em 0 .3em}'
 			. '.na-rel .na-rel-sommaire ol{margin:0 0 0 1.4em;padding:0}.na-rel .na-rel-sommaire li{margin:0 0 .5em}'
 			. '.na-rel-sommaire .na-rel-ouverte a{font-weight:700}'
+			. '.na-rel-rubrique{border-top:1px solid #dcdcde;padding:.3em 0}'
+			. '.na-rel .na-rel-rubrique>summary{display:list-item;cursor:pointer;font-weight:700;font-size:.95em;padding:.2em 0}'
+			. '.na-rel-compte{display:block;font-weight:400;font-size:.85em;color:#50575e}'
+			. '.na-rel-rubrique--faite .na-rel-compte{color:#007017}'
+			. '.na-rel .na-rel-bouton--valider{border-color:#007017;color:#007017}'
+			. '.na-rel .na-rel-bouton--valider:hover,.na-rel .na-rel-bouton--valider:focus{background:#007017;border-color:#007017;color:#fff}'
 			. '.na-rel .na-rel-renvois{border-top:1px solid #c3c4c7;padding-top:.8em;margin-top:1.2em}'
 			. '.na-rel-notice{flex:1 1 auto;min-width:0;max-width:60em}'
 			. '.na-rel .na-rel-titre{font-size:1.4em;line-height:1.3;margin:0 0 .3em}'
@@ -1808,7 +2000,7 @@ class Notice_Archeomed_Relecture {
 			});
 
 			// La matière ne vaut que pour la rubrique V : elle paraît quand la
-			// rédaction choisit V, et se vide quand elle en sort.
+			// direction choisit V, et se vide quand elle en sort.
 			var matiere = document.getElementById('na-rel-matiere-bloc');
 			var principale = document.getElementById('na-rel-rubrique_principale');
 			if (matiere && principale) {
@@ -1969,21 +2161,29 @@ class Notice_Archeomed_Relecture {
 			case 'motif':
 				$lignes[] = 'Retirer une illustration demande un motif, et une précision pour « Autre » : rien n’est enregistré.';
 				break;
+			case 'figee':
+				$lignes[] = 'La notice a été validée par la direction : elle ne se corrige plus. Rien n’est enregistré.';
+				break;
 			default:
 				$lignes[] = 'Cette notice n’est pas de vos rubriques : rien n’est enregistré.';
 		}
+		$valide = $bon && 'validee' === $rendu['etat'] && isset( $_POST['suite'] ) && 'valider' === $_POST['suite'];
+		if ( $valide ) {
+			$lignes[] = 'La notice est validée : c’est sa version définitive.';
+		}
 		$vers = $id;
-		if ( $bon && isset( $_POST['suite'] ) && 'suivante' === $_POST['suite'] ) {
+		if ( $bon && isset( $_POST['suite'] ) && in_array( $_POST['suite'], array( 'suivante', 'valider' ), true ) ) {
 			self::liberer_le_verrou( $id, get_current_user_id() );
-			$sommaire = self::sommaire( $rubrique );
-			$suite    = array_merge( wp_list_pluck( $sommaire['notices'], 'id' ), wp_list_pluck( $sommaire['renvois'], 'id' ) );
-			$rang     = array_search( $id, array_map( 'intval', $suite ), true );
+			$suite = self::ordre_de_lecture( $rubrique );
+			$rang  = array_search( $id, array_map( 'intval', wp_list_pluck( $suite, 'id' ) ), true );
 			if ( false !== $rang && isset( $suite[ $rang + 1 ] ) ) {
-				$vers = (int) $suite[ $rang + 1 ];
+				$vers     = (int) $suite[ $rang + 1 ]['id'];
+				$rubrique = $suite[ $rang + 1 ]['rubrique'];
 			} elseif ( false === $rang && ! empty( $suite ) ) {
-				$vers = (int) $suite[0];
+				$vers     = (int) $suite[0]['id'];
+				$rubrique = $suite[0]['rubrique'];
 			} else {
-				$lignes[] = 'C’était la dernière notice de la rubrique.';
+				$lignes[] = self::peut_tout() ? 'C’était la dernière notice du fascicule.' : 'C’était la dernière notice de la rubrique.';
 			}
 		}
 		self::dire( $bon ? 'success' : 'error', $lignes );
@@ -1992,7 +2192,7 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Le bouton « Soumettre à l'auteur » de la rédaction : le courriel part
+	 * Le bouton « Soumettre à l'auteur » de la direction : le courriel part
 	 * avec le Word à suivi de modifications, et la notice passe à « soumise
 	 * à l'auteur ». Un courriel refusé laisse tout en l'état, et se dit.
 	 */
@@ -2039,6 +2239,75 @@ class Notice_Archeomed_Relecture {
 		self::noter_au_journal( $id, $utilisateur, array( 'courriel à l’auteur, avec le Word à suivi de modifications',
 			'état : ' . self::ETATS[ $etat ] . ' → ' . self::ETATS['soumise'] ), $etat, 'soumise' );
 		return '';
+	}
+
+	/**
+	 * Rouvre une notice validée : elle reprend l'état qu'elle avait avant la
+	 * validation, et se corrige de nouveau. Réservé à la direction ; la
+	 * ligne du journal garde qui l'a rouverte, quand, et pourquoi. Rend une
+	 * chaîne vide, ou ce qui l'a empêché.
+	 */
+	public static function rouvrir_la_notice( $id, $utilisateur = null, $motif = '' ) {
+		$id     = (int) $id;
+		$compte = self::compte( $utilisateur );
+		if ( ! self::peut_tout( $compte ) || null === self::droit_sur( $id, $compte ) ) {
+			return 'seule la direction rouvre une notice validée';
+		}
+		if ( 'validee' !== self::etat_de( $id ) ) {
+			return 'la notice n’est pas validée';
+		}
+		$avant = (string) get_post_meta( $id, '_na_relecture_avant_validation', true );
+		$avant = ( array_key_exists( $avant, self::ETATS ) && 'validee' !== $avant ) ? $avant : 'a_relire';
+		update_post_meta( $id, '_na_relecture_etat', $avant );
+		delete_post_meta( $id, '_na_relecture_avant_validation' );
+		self::noter_au_journal( $id, $compte, array( 'rouverte après validation',
+			'état : ' . self::ETATS['validee'] . ' → ' . self::ETATS[ $avant ] ), 'validee', $avant, (string) $motif );
+		return '';
+	}
+
+	/** Le bouton « Rouvrir » d'une notice validée. */
+	public function recevoir_la_reouverture() {
+		$id = isset( $_POST['notice'] ) ? absint( $_POST['notice'] ) : 0;
+		if ( ! self::peut_tout() ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_relecture_rouvrir_' . $id );
+		$motif = isset( $_POST['motif'] ) && is_string( $_POST['motif'] )
+			? trim( sanitize_textarea_field( wp_unslash( $_POST['motif'] ) ) ) : '';
+		$motif = function_exists( 'mb_substr' ) ? mb_substr( $motif, 0, 2000 ) : substr( $motif, 0, 2000 );
+		$refus = self::rouvrir_la_notice( $id, null, $motif );
+		self::dire( '' === $refus ? 'success' : 'error', '' === $refus
+			? 'La notice est rouverte : elle se corrige de nouveau, et devra être validée encore.'
+			: 'Rien n’est changé : ' . $refus . '.' );
+		wp_safe_redirect( self::url( self::rubrique_demandee( self::rubriques_de(), $_POST ), null === self::droit_sur( $id ) ? 0 : $id ) );
+		exit;
+	}
+
+	/**
+	 * Les notices dans l'ordre où l'on passe de l'une à la suivante : pour
+	 * la direction, toutes, rubrique après rubrique ; pour un coordinateur,
+	 * celles de la rubrique, puis les renvois vers elle.
+	 */
+	private static function ordre_de_lecture( $rubrique ) {
+		$plugin = self::plugin();
+		if ( null === $plugin ) {
+			return array();
+		}
+		if ( self::peut_tout() ) {
+			$ordre = array();
+			foreach ( $plugin->rubriques() as $une ) {
+				foreach ( $plugin->sommaire_de_la_rubrique( $une ) as $entree ) {
+					$ordre[] = array( 'id' => (int) $entree['id'], 'rubrique' => $une );
+				}
+			}
+			return $ordre;
+		}
+		$sommaire = self::sommaire( $rubrique );
+		$ordre    = array();
+		foreach ( array_merge( $sommaire['notices'], $sommaire['renvois'] ) as $entree ) {
+			$ordre[] = array( 'id' => (int) $entree['id'], 'rubrique' => $rubrique );
+		}
+		return $ordre;
 	}
 
 	/** Rend le Word de relecture d'une version à qui peut lire la notice. */
@@ -2120,7 +2389,7 @@ class Notice_Archeomed_Relecture {
 		echo '<h2>' . esc_html__( 'Campagne', 'notice-archeomed' ) . '</h2>'
 			. '<p><label><input type="checkbox" name="close" value="1"' . checked( $reglages['close'], true, false ) . '> '
 			. esc_html__( 'La campagne est close', 'notice-archeomed' ) . '</label></p>'
-			. '<p class="description" style="max-width:46em">' . esc_html__( 'Cochée, la relecture s’ouvre aux coordinateurs et à la rédaction, et les liens de correction envoyés aux auteurs ne corrigent plus : qui les suit lit que la campagne est close. Le dépôt de nouvelles notices, lui, reste ouvert tant que la page du formulaire est publiée.', 'notice-archeomed' ) . '</p>';
+			. '<p class="description" style="max-width:46em">' . esc_html__( 'Cochée, la relecture s’ouvre aux coordinateurs et à la direction, et les liens de correction envoyés aux auteurs ne corrigent plus : qui les suit lit que la campagne est close. Le dépôt de nouvelles notices, lui, reste ouvert tant que la page du formulaire est publiée.', 'notice-archeomed' ) . '</p>';
 		echo '<h2>' . esc_html__( 'Coordinateurs de rubrique', 'notice-archeomed' ) . '</h2>';
 		if ( empty( $comptes ) ) {
 			echo '<p>' . esc_html__( 'Aucun compte n’a le rôle « Coordinateur de rubrique (Chronique) ». Créez les comptes des coordinateurs avec ce rôle, puis revenez les associer à leur rubrique.', 'notice-archeomed' ) . '</p>';
@@ -2137,14 +2406,14 @@ class Notice_Archeomed_Relecture {
 			}
 			echo '</tbody></table>';
 		}
-		echo '<p class="description" style="max-width:46em">' . esc_html__( 'La rédaction relit toutes les rubriques : les administrateurs du site, et les comptes du rôle « Rédaction de la Chronique (relecture) ».', 'notice-archeomed' ) . '</p>';
+		echo '<p class="description" style="max-width:46em">' . esc_html__( 'La direction de la revue relit toutes les rubriques et valide chaque notice : les comptes du rôle « Direction de la revue », et les administrateurs du site.', 'notice-archeomed' ) . '</p>';
 		submit_button( __( 'Enregistrer', 'notice-archeomed' ) );
 		echo '</form>';
 	}
 
 	/** Enregistre l'onglet « Relecture ». */
 	public function recevoir_les_reglages() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_relecture_reglages' );

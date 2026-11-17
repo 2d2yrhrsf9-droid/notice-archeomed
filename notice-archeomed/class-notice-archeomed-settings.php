@@ -25,6 +25,12 @@ class Notice_Archeomed_Settings {
 	const OPTION_GROUP = 'notice_archeomed_settings';
 	const OPTION_NAME  = 'notice_archeomed_options';
 	const PAGE_SLUG    = 'notice-archeomed';
+
+	/**
+	 * Le droit de régler la Chronique sans administrer le site : celui de la
+	 * direction de la revue. Un administrateur l'a de fait.
+	 */
+	const CAPACITE = 'na_regler';
 	// Assez pour une rédaction ; assez peu pour qu'une liste devenue illisible
 	// se remarque avant d'être un annuaire.
 	const MAX_DESTINATAIRES = 10;
@@ -135,6 +141,7 @@ class Notice_Archeomed_Settings {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_post_na_essai', array( $this, 'faire_un_essai' ) );
+		add_filter( 'option_page_capability_' . self::OPTION_GROUP, array( __CLASS__, 'capacite_du_formulaire' ) );
 		add_action( self::HOOK_DISQUE, array( __CLASS__, 'remesurer_le_disque' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'signaler_le_disque' ) );
 	}
@@ -284,8 +291,9 @@ class Notice_Archeomed_Settings {
 	 * la clé » doit mener à la clé, non au premier onglet de la page.
 	 */
 	public static function url( $onglet = '' ) {
-		$url = admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT
-			. '&page=' . self::PAGE_SLUG );
+		$url = self::par_son_menu()
+			? admin_url( 'admin.php?page=' . self::PAGE_SLUG )
+			: admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT . '&page=' . self::PAGE_SLUG );
 		return ( '' !== $onglet && array_key_exists( $onglet, self::onglets() ) )
 			? add_query_arg( 'tab', $onglet, $url ) : $url;
 	}
@@ -321,6 +329,35 @@ class Notice_Archeomed_Settings {
 		);
 	}
 
+	/** Ce compte peut-il régler la Chronique ? */
+	public static function peut_regler( $utilisateur = null ) {
+		$compte = null === $utilisateur ? wp_get_current_user() : ( $utilisateur instanceof WP_User ? $utilisateur : get_userdata( (int) $utilisateur ) );
+		return ( $compte instanceof WP_User ) && $compte->exists()
+			&& ( user_can( $compte, self::CAPACITE ) || user_can( $compte, 'manage_options' ) );
+	}
+
+	/**
+	 * Ce compte règle-t-il sans administrer ? Il n'a pas le menu des notices
+	 * reçues : les réglages ont alors leur propre entrée, et leur adresse
+	 * change avec elle.
+	 */
+	public static function par_son_menu( $utilisateur = null ) {
+		if ( null === $utilisateur && ! did_action( 'init' ) ) {
+			return false;
+		}
+		$compte = null === $utilisateur ? wp_get_current_user() : ( $utilisateur instanceof WP_User ? $utilisateur : get_userdata( (int) $utilisateur ) );
+		return ( $compte instanceof WP_User ) && $compte->exists()
+			&& user_can( $compte, self::CAPACITE ) && ! user_can( $compte, 'manage_options' );
+	}
+
+	/**
+	 * Ce qu'« options.php » exige pour enregistrer les réglages : la gestion
+	 * du site pour qui l'a, le droit de régler la Chronique sinon.
+	 */
+	public static function capacite_du_formulaire( $capacite ) {
+		return current_user_can( 'manage_options' ) ? 'manage_options' : self::CAPACITE;
+	}
+
 	/** L'onglet demandé dans l'adresse, ou le premier. */
 	private static function onglet_demande() {
 		$onglet = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
@@ -336,6 +373,20 @@ class Notice_Archeomed_Settings {
 	 * liste des notices reçues —, et c'est là qu'on les cherche.
 	 */
 	public function add_menu() {
+		// Sans la gestion du site, pas de menu des notices reçues : sous lui,
+		// l'entrée aurait été déplacée par WordPress, ou refusée.
+		if ( self::par_son_menu() ) {
+			add_menu_page(
+				__( 'Réglages de la Chronique', 'notice-archeomed' ),
+				__( 'Réglages', 'notice-archeomed' ),
+				self::CAPACITE,
+				self::PAGE_SLUG,
+				array( $this, 'render_page' ),
+				'dashicons-admin-generic',
+				27
+			);
+			return;
+		}
 		add_submenu_page(
 			'edit.php?post_type=' . Notice_Archeomed_File::CPT,
 			__( 'Réglages de la Chronique', 'notice-archeomed' ),
@@ -886,7 +937,7 @@ class Notice_Archeomed_Settings {
 	 * de fichiers, et la rédaction doit l'avoir appris avant.
 	 */
 	public static function signaler_le_disque() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::peut_regler() ) {
 			return;
 		}
 		$part = self::part_du_disque();
@@ -1080,7 +1131,7 @@ class Notice_Archeomed_Settings {
 	 * page qu'on recharge n'est plus qu'une lecture.
 	 */
 	public function faire_un_essai() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_essai' );
@@ -1202,7 +1253,7 @@ class Notice_Archeomed_Settings {
 	}
 
 	public function render_page() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::peut_regler() ) {
 			return;
 		}
 		$onglet = self::onglet_demande();

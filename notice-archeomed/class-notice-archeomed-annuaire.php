@@ -472,7 +472,7 @@ class Notice_Archeomed_Annuaire {
 
 	/** Les adresses ne sortent que pour qui règle l'extension. */
 	private static function verifier( $action ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Accès refusé.', 'notice-archeomed' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( $action );

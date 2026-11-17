@@ -3066,7 +3066,7 @@ $paquet->nettoyer();
 
 WP_CLI::log( 'La relecture par les coordinateurs' );
 // Trois notices dans la rubrique I, une dans la II ; un coordinateur par
-// rubrique, et la rédaction. Tout passe par les fonctions que l'écran
+// rubrique, et la direction. Tout passe par les fonctions que l'écran
 // appelle : le droit se juge sur la notice, jamais sur la requête.
 require_once ABSPATH . 'wp-admin/includes/user.php';
 $R = 'Notice_Archeomed_Relecture';
@@ -3079,7 +3079,15 @@ $compte_rel = function ( $identifiant, $nom, $role ) {
 };
 $coord_1 = $compte_rel( 'coord-un', 'Jeanne Martin', $R::ROLE );
 $coord_2 = $compte_rel( 'coord-deux', 'Paul Durand', $R::ROLE );
-$redac   = $compte_rel( 'redaction-essai', 'Rédaction Essai', $R::ROLE_REDACTION );
+// L'ancien rôle de la rédaction passe à la direction : son compte d'abord.
+add_role( $R::ROLE_REDACTION, 'Rédaction (Chronique)', array( 'read' => true, $R::CAP => true, $R::CAP_TOUT => true ) );
+$redac = $compte_rel( 'redaction-essai', 'Direction Essai', $R::ROLE_REDACTION );
+$R::assurer_les_roles();
+$migre = new WP_User( $redac );
+na_verifier( in_array( $R::ROLE_DIRECTION, $migre->roles, true ) && ! in_array( $R::ROLE_REDACTION, $migre->roles, true )
+	&& null === get_role( $R::ROLE_REDACTION ) && Notice_Archeomed_Settings::peut_regler( $migre ) && Notice_Archeomed_Settings::par_son_menu( $migre )
+	&& $R::est_direction_seule( $migre ) && ! user_can( $migre, 'manage_options' ) && ! get_role( 'administrator' )->has_cap( Notice_Archeomed_Settings::CAPACITE ),
+	'un compte de l\'ancienne rédaction passe à la direction : il relit tout et règle le plugin, sans administrer le site', $migre->roles );
 $ark_four = 'https://ark.frantiq.fr/ark:/26678/pcrtFourEssai';
 $notice_rel = function ( $ajouts ) use ( $saisie_styles, $file_rel, $rubs_rel ) {
 	$d = array_merge( $saisie_styles, array(
@@ -3141,7 +3149,7 @@ $redaction_autre = na_appel( $plugin, 'contexte_valide', array( $garde_redaction
 wp_set_current_user( 0 );
 na_verifier( $rel_a === $redaction_avant && $rel_a === $redaction_apres && 0 === $redaction_autre
 	&& false !== strpos( Notice_Archeomed_File::lien_pour_corriger( $rel_a ), 'na_corriger=1' ),
-	'le lien « modifier » du courriel de la rédaction ouvre la notice avant comme après la clôture, pour elle seule',
+	'le lien « modifier » du courriel reçu par la revue ouvre la notice avant comme après la clôture, pour la direction seule',
 	array( $redaction_avant, $redaction_apres, $redaction_autre ) );
 set_transient( 'na_reprise_jetonclos1', $garde_rel, HOUR_IN_SECONDS );
 $reprise_rel = new ReflectionProperty( $plugin, 'reprise' );
@@ -3159,9 +3167,9 @@ $droit_1 = $R::droit_sur( $rel_a, $coord_1 );
 $droit_r = $R::droit_sur( $rel_a, $redac );
 na_verifier( is_array( $droit_1 ) && 'principale' === $droit_1['sorte'] && null === $R::droit_sur( $rel_a, $coord_2 )
 	&& null === $R::droit_sur( $rel_d, $coord_1 ) && is_array( $droit_r ) && 'tout' === $droit_r['sorte'],
-	'un coordinateur ne peut rien d\'une notice hors de sa rubrique ; la rédaction les relit toutes' );
+	'un coordinateur ne peut rien d\'une notice hors de sa rubrique ; la direction les relit toutes' );
 na_verifier( array( $rubs_rel[0] ) === $R::rubriques_de( $coord_1 ) && $rubs_rel === $R::rubriques_de( $redac ) && array() === $R::rubriques_de( 0 ),
-	'chacun a ses rubriques : celle qu\'on lui confie, toutes pour la rédaction, aucune sans compte' );
+	'chacun a ses rubriques : celle qu\'on lui confie, toutes pour la direction, aucune sans compte' );
 $_POST = wp_slash( array( 'texte_notice' => '<p>Texte forgé.</p>', 'remarque' => 'Remarque forgée.' ) );
 $forge = $R::enregistrer( $rel_a, 1, $coord_2 );
 $d_forge = $lire_rel( $rel_a );
@@ -3185,7 +3193,7 @@ na_verifier( ! in_array( $rel_d, array_map( 'intval', wp_list_pluck( $sommaire_r
 $verrou_1 = $R::prendre_le_verrou( $rel_a, $coord_1 );
 $verrou_2 = $R::prendre_le_verrou( $rel_a, $redac );
 $verrou_3 = $R::prendre_le_verrou( $rel_a, $coord_1 );
-$_POST    = wp_slash( array( 'texte_notice' => '<p>La rédaction passe outre.</p>' ) );
+$_POST    = wp_slash( array( 'texte_notice' => '<p>La direction passe outre.</p>' ) );
 $refus_verrou = $R::enregistrer( $rel_a, 1, $redac );
 na_verifier( $verrou_1['tenu'] && ! $verrou_2['tenu'] && $coord_1 === $verrou_2['par'] && $verrou_3['tenu']
 	&& 'verrouillee' === $refus_verrou['issue'] && 'Jeanne Martin' === $refus_verrou['par'] && 1 === $file_rel->version_de( $rel_a ),
@@ -3258,9 +3266,9 @@ $dit_rel     = implode( ' | ', $journal_rel[0]['quoi'] );
 na_verifier( 1 === count( $journal_rel ) && 'Jeanne Martin' === $journal_rel[0]['par'] && $coord_1 === $journal_rel[0]['par_id']
 	&& false !== strpos( $dit_rel, 'figure 2 retirée' ) && false !== strpos( $dit_rel, 'Redondante' ) && false !== strpos( $dit_rel, 'termes retirés : église' )
 	&& false !== strpos( $dit_rel, 'À relire → Relue par le coordinateur' ) && 'La figure 2 double la première.' === $journal_rel[0]['remarque'],
-	'le journal dit qui, quand, quoi : la figure et le mot-clé retirés, le motif, l\'état, la remarque à la rédaction', $journal_rel );
+	'le journal dit qui, quand, quoi : la figure et le mot-clé retirés, le motif, l\'état, la remarque à la direction', $journal_rel );
 na_verifier( 'relue' === $R::etat_de( $rel_a ) && ! isset( $d_relu['remarque'] ) && false === strpos( wp_json_encode( $d_relu ), 'double la première' ),
-	'la notice est marquée relue, et la remarque à la rédaction reste hors de la saisie publiée' );
+	'la notice est marquée relue, et la remarque à la direction reste hors de la saisie publiée' );
 na_verifier( array( 2 ) === array_map( 'intval', (array) get_post_meta( $rel_a, '_na_relecture_a_deposer', false ) ),
 	'le Word de relecture attend sDrive hors de la requête : sans sDrive, la correction est enregistrée quand même' );
 $R::en_tache();
@@ -3270,7 +3278,7 @@ $_POST = wp_slash( array( 'etat' => 'validee', 'garde_action' => array( 2 => 're
 $coord_valide = $R::enregistrer( $rel_a, 2, $coord_1 );
 $d_coord      = $lire_rel( $rel_a );
 na_verifier( 'relue' === $R::etat_de( $rel_a ) && null !== Notice_Archeomed_Pactols::figure_masquee( $d_coord['illustrations'][1] ) && 'inchangee' === $coord_valide['issue'],
-	'le coordinateur ne valide pas une notice et ne rétablit pas une figure : ce sont les gestes de la rédaction', $coord_valide );
+	'le coordinateur ne valide pas une notice et ne rétablit pas une figure : ce sont les gestes de la direction', $coord_valide );
 $_POST = wp_slash( array( 'fond' => '1' ) );
 $R::enregistrer( $rel_a, 2, $coord_1 );
 na_verifier( 'a_soumettre' === $R::etat_de( $rel_a ), 'la case « modification de fond » fait passer la notice à « à soumettre à l\'auteur »', $R::etat_de( $rel_a ) );
@@ -3295,7 +3303,7 @@ if ( '' !== $word_coord ) {
 	@unlink( $word_coord );
 }
 na_verifier( '' !== $xml_coord && false === strpos( $xml_coord, 'a@example.org' ) && false !== strpos( $xml_word, 'a@example.org' ),
-	'le Word rendu à un coordinateur ne porte pas le courriel des responsables ; celui de la rédaction, si' );
+	'le Word rendu à un coordinateur ne porte pas le courriel des responsables ; celui de la direction, si' );
 na_verifier( 'notice_v2_relecture_Jeanne_Martin.docx' === $R::nom_du_word( 0, 2, 'Jeanne Martin' ), 'le Word de relecture porte la version et le nom du relecteur', $R::nom_du_word( 0, 2, 'Jeanne Martin' ) );
 na_verifier( 'Saint_Lo_Le_Goff' === Notice_Archeomed_Nommage::tige_du_word( array( 'commune' => 'Saint-Lô', 'resp_nom' => 'Le Goff' ) )
 	&& 'Vire' === Notice_Archeomed_Nommage::tige_du_word( array( 'commune' => 'Vire', 'resp_nom' => '  ' ) )
@@ -3314,7 +3322,7 @@ $page_rel = $plugin->page_a_lire( $rel_a, function ( $rang ) {
 na_verifier( false !== strpos( $page_rel, 'Plan du four' ) && false === strpos( $page_rel, 'zénithale' ) && false === strpos( $page_rel, 'a@example.org' ),
 	'la lecture seule ne montre ni la figure masquée ni le courriel des responsables' );
 
-// L'écran d'un coordinateur ne reçoit pas les courriels ; celui de la rédaction, si.
+// L'écran d'un coordinateur ne reçoit pas les courriels ; celui de la direction, si.
 $ecran_rel = ( new ReflectionClass( $R ) )->newInstanceWithoutConstructor();
 $notice_ecran = $plugin->notice_a_relire( $rel_a );
 $rendre_rel = function ( $compte ) use ( $ecran_rel, $rel_a, $notice_ecran, $rubs_rel, $R ) {
@@ -3328,13 +3336,15 @@ $page_redac = $rendre_rel( $redac );
 wp_set_current_user( 0 );
 na_verifier( false === strpos( $page_coord, 'a@example.org' ) && false !== strpos( $page_redac, 'a@example.org' )
 	&& false === strpos( $page_redac, 'name="resp_email"' ) && false !== strpos( $page_coord, 'name="resp_nom"' ),
-	'le formulaire du coordinateur ne porte pas les courriels ; la rédaction les lit, sans champ pour les changer' );
+	'le formulaire du coordinateur ne porte pas les courriels ; la direction les lit, sans champ pour les changer' );
 na_verifier( false !== strpos( $page_coord, 'Vous pouvez retirer une illustration si elle ne vous semble pas utile.' )
 	&& false === strpos( $page_coord, 'type="file"' ) && false !== strpos( $page_coord, 'value="suivante"' ) && false !== strpos( $page_coord, 'name="garde_motif[1]"' )
-	&& false === strpos( $page_coord, 'name="rubrique_principale"' ) && false !== strpos( $page_redac, 'name="rubrique_principale"' ),
+	&& false === strpos( $page_coord, 'name="rubrique_principale"' ) && false !== strpos( $page_redac, 'name="rubrique_principale"' )
+	&& false !== strpos( $page_redac, 'value="valider"' ) && false === strpos( $page_coord, 'value="valider"' )
+	&& false === strpos( $page_redac, '<option value="validee"' ),
 	'le formulaire dit qu\'on peut retirer une illustration, sans champ pour en ajouter, avec ses deux boutons' );
 
-// La rédaction : soumettre à l'auteur, rétablir, valider, rouvrir.
+// La direction : soumettre à l'auteur, rétablir, valider, rouvrir.
 $R::liberer_le_verrou( $rel_a, $coord_1 );
 $courriel_rel = array( 'part' => false, 'vu' => array() );
 $poste_rel    = function ( $rendu, $atts ) use ( &$courriel_rel ) {
@@ -3356,7 +3366,7 @@ na_verifier( '' !== $refus_envoi && 'a_soumettre' === $etat_refus && 2 === $file
 	'un courriel à l\'auteur qui ne part pas ne change ni l\'état ni la notice', $refus_envoi );
 na_verifier( '' === $envoi_rel && 'soumise' === $R::etat_de( $rel_a ) && 'a@example.org' === $courriel_rel['vu']['to']
 	&& 1 === count( (array) $courriel_rel['vu']['attachments'] ),
-	'la rédaction soumet la notice à l\'auteur d\'un geste : un courriel au responsable, le Word joint, l\'état « soumise »', $envoi_rel );
+	'la direction soumet la notice à l\'auteur d\'un geste : un courriel au responsable, le Word joint, l\'état « soumise »', $envoi_rel );
 na_verifier( '' !== $envoi_rejoue && array() === $vu_rejoue && false !== strpos( $envoi_rejoue, 'à soumettre' ) && 'soumise' === $R::etat_de( $rel_a ),
 	'le serveur refuse de soumettre une notice qui n\'est pas « à soumettre à l\'auteur » : aucun courriel ne part', $envoi_rejoue );
 $_POST = wp_slash( array( 'texte_notice' => '<p>Le coordinateur revient après coup.</p>' ) );
@@ -3364,16 +3374,47 @@ $trop_tard = $R::enregistrer( $rel_a, 2, $coord_1 );
 $d_tard    = $lire_rel( $rel_a );
 na_verifier( 'inchangee' === $trop_tard['issue'] && false === strpos( $d_tard['texte_notice'], 'après coup' ),
 	'une notice soumise à l\'auteur ne se corrige plus par le coordinateur', $trop_tard );
-$_POST = wp_slash( array( 'etat' => 'validee', 'garde_action' => array( 2 => 'retablir' ), 'rubrique_principale' => $rubs_rel[0] ) );
+$_POST = wp_slash( array( 'etat' => 'validee', 'rubrique_principale' => $rubs_rel[0] ) );
+$par_le_menu = $R::enregistrer( $rel_a, 2, $redac );
+$R::liberer_le_verrou( $rel_a, $redac );
+na_verifier( 'inchangee' === $par_le_menu['issue'] && 'soumise' === $R::etat_de( $rel_a ), 'la validation ne passe pas par la liste des états', $par_le_menu );
+$_POST = wp_slash( array( 'suite' => 'valider', 'garde_action' => array( 2 => 'retablir' ), 'rubrique_principale' => $rubs_rel[0] ) );
 $retabli   = $R::enregistrer( $rel_a, 2, $redac );
 $d_retabli = $lire_rel( $rel_a );
 na_verifier( 'enregistree' === $retabli['issue'] && 3 === $retabli['version'] && null === Notice_Archeomed_Pactols::figure_masquee( $d_retabli['illustrations'][1] )
 	&& 'validee' === $R::etat_de( $rel_a ) && array( 1, 2, 3 ) === array_keys( $R::versions_gardees( $rel_a ) ),
-	'la rédaction rétablit la figure avec le même écran, valide la notice, et son enregistrement est versionné de même', $retabli );
+	'la direction rétablit la figure avec le même écran, valide la notice, et son enregistrement est versionné de même', array( $par_le_menu, $retabli ) );
+$verrou_valide = $R::verrou_de( $rel_a );
+na_verifier( 0 === $verrou_valide['par'], 'valider libère la notice', $verrou_valide );
+
+// Une notice validée est figée : rien ne la corrige, ni l'écran, ni le lien du courriel.
+$_POST = wp_slash( array( 'etat' => 'a_relire' ) );
+$etat_fige = $R::enregistrer( $rel_a, 3, $redac );
+$_POST = wp_slash( array( 'texte_notice' => '<p>La direction récrit la notice validée.</p>' ) );
+$texte_fige = $R::enregistrer( $rel_a, 3, $redac );
+$R::liberer_le_verrou( $rel_a, $redac );
+$d_fige = $lire_rel( $rel_a );
+wp_set_current_user( $redac );
+$lien_fige = na_appel( $plugin, 'contexte_valide', array( array( 'corrige_id' => $rel_a, 'vivant' => true, 'par_la_redaction' => $redac ) ) );
+wp_set_current_user( 0 );
+na_verifier( 'validee' === $R::etat_de( $rel_a ) && 'figee' === $texte_fige['issue'] && false === strpos( $d_fige['texte_notice'], 'récrit' )
+	&& 3 === $file_rel->version_de( $rel_a ) && 0 === $lien_fige && false === $R::peut_corriger( $R::droit_sur( $rel_a, $redac ), 'validee' ),
+	'une notice validée ne se corrige plus : ni son état ni son texte ne changent, et le lien du courriel ne l\'ouvre plus', array( $etat_fige, $texte_fige, $lien_fige ) );
+
+// La réouverture : la direction seule, avec un motif, au journal.
+$refus_reouv = $R::rouvrir_la_notice( $rel_a, $coord_1, 'Le coordinateur voudrait reprendre.' );
+$reouv       = $R::rouvrir_la_notice( $rel_a, $redac, 'Une coquille dans le titre.' );
+$journal_reouv = $R::journal_de( $rel_a );
+$ligne_reouv   = end( $journal_reouv );
+$rejoue_reouv  = $R::rouvrir_la_notice( $rel_a, $redac, '' );
+na_verifier( '' !== $refus_reouv && '' === $reouv && 'soumise' === $R::etat_de( $rel_a ) && '' !== $rejoue_reouv
+	&& in_array( 'rouverte après validation', (array) $ligne_reouv['quoi'], true ) && 'Une coquille dans le titre.' === $ligne_reouv['remarque']
+	&& 'Direction Essai' === $ligne_reouv['par'],
+	'seule la direction rouvre une notice validée : elle reprend son état d\'avant, et le journal garde qui, quand et pourquoi', array( $refus_reouv, $reouv, $ligne_reouv ) );
 $_POST = wp_slash( array( 'etat' => 'a_relire' ) );
 $R::enregistrer( $rel_a, 3, $redac );
 $R::liberer_le_verrou( $rel_a, $redac );
-na_verifier( 'a_relire' === $R::etat_de( $rel_a ) && 5 <= count( $R::journal_de( $rel_a ) ), 'la rédaction rouvre une notice validée, et chaque changement d\'état est au journal', count( $R::journal_de( $rel_a ) ) );
+na_verifier( 'a_relire' === $R::etat_de( $rel_a ) && 6 <= count( $R::journal_de( $rel_a ) ), 'rouverte, la notice change d\'état de nouveau, et chaque changement est au journal', count( $R::journal_de( $rel_a ) ) );
 
 // Les renvois : ajout par le coordinateur de la rubrique, retrait par chacun des deux.
 $_POST = wp_slash( array( 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rubs_rel[0] ) );
@@ -3399,7 +3440,7 @@ $journal_renvoi = $R::journal_de( $rel_a );
 $derniere_rel   = end( $journal_renvoi );
 na_verifier( 'inchangee' === $lecture_seule['issue'] && false === strpos( $d_lecture['texte_notice'], 'récrit' ) && '' === $d_lecture['renvoi_2']
 	&& 'À rapprocher de Lisieux.' === $derniere_rel['remarque'] && 'Paul Durand' === $derniere_rel['par'],
-	'le coordinateur d\'une rubrique de renvoi lit sans corriger ni ajouter de renvoi, et laisse une remarque à la rédaction', $lecture_seule );
+	'le coordinateur d\'une rubrique de renvoi lit sans corriger ni ajouter de renvoi, et laisse une remarque à la direction', $lecture_seule );
 $_POST = wp_slash( array( 'retirer_renvoi' => array( 'renvoi_1' => '1' ), 'texte_notice' => '<p>Et récrit encore.</p>' ) );
 $retrait_renvoi = $R::enregistrer( $rel_a, 4, $coord_2 );
 $d_retrait      = $lire_rel( $rel_a );
@@ -3450,11 +3491,21 @@ na_verifier( $adresse_rel === $R::renvoi_de_l_administration( $coord_1, 'index.p
 	'un coordinateur qui ouvre l\'administration est renvoyé à la page de relecture, sauf par les deux portes que l\'écran emploie' );
 na_verifier( '' === $R::renvoi_de_l_administration( $redac, 'index.php' ) && '' === $R::renvoi_de_l_administration( $admin_rel, 'index.php' )
 	&& '' === $R::renvoi_de_l_administration( $abonne_rel, 'index.php' ),
-	'la rédaction, un administrateur et un compte sans rapport avec la relecture gardent l\'administration' );
+	'la direction, un administrateur et un compte sans rapport avec la relecture ne sont pas renvoyés à la relecture' );
+$reglages_dir = admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+na_verifier( '' === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => Notice_Archeomed_Settings::PAGE_SLUG ) )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => $R::PAGE ) ) && '' === $R::renvoi_de_la_direction( $redac, 'options.php', array() )
+	&& $reglages_dir === $R::renvoi_de_la_direction( $redac, 'index.php', array() ) && $reglages_dir === $R::renvoi_de_la_direction( $redac, 'profile.php', array() )
+	&& $reglages_dir === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => 'post' ) )
+	&& add_query_arg( 'tab', 'annuaire', $reglages_dir ) === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => Notice_Archeomed_File::CPT, 'page' => Notice_Archeomed_Settings::PAGE_SLUG, 'tab' => 'annuaire' ) )
+	&& '' === $R::renvoi_de_la_direction( $admin_rel, 'index.php', array() ) && '' === $R::renvoi_de_la_direction( $coord_1, 'index.php', array() ),
+	'la direction n\'entre que dans les réglages et la relecture ; l\'ancienne adresse des réglages mène à la nouvelle' );
 na_verifier( $adresse_rel === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $coord_1 ) )
 	&& $R::url( $rubs_rel[0], $rel_a ) === $R::apres_la_connexion( admin_url(), $R::url( $rubs_rel[0], $rel_a ), get_userdata( $coord_1 ) )
-	&& admin_url() === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $redac ) ),
-	'après sa connexion, un coordinateur arrive sur la page de relecture, ou sur la notice qu\'il demandait' );
+	&& $adresse_rel === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $redac ) )
+	&& $reglages_dir === $R::apres_la_connexion( $reglages_dir, $reglages_dir, get_userdata( $redac ) )
+	&& admin_url() === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $admin_rel ) ),
+	'après sa connexion, un coordinateur ou la direction arrive sur la page de relecture, ou sur la page qu\'il demandait' );
 wp_set_current_user( $coord_1 );
 $barre_coord = $R::sans_barre_d_administration( true );
 $_GET        = array( 'na_notice' => (string) $rel_a );
@@ -3472,12 +3523,12 @@ $ecran_abonne = do_shortcode( '[' . $R::SHORTCODE . ']' );
 wp_set_current_user( 0 );
 $ecran_anonyme = do_shortcode( '[' . $R::SHORTCODE . ']' );
 $_GET          = array();
-na_verifier( false === $barre_coord && true === $barre_redac, 'un coordinateur n\'a pas de barre d\'administration sur le site ; la rédaction garde la sienne' );
+na_verifier( false === $barre_coord && true === $barre_redac, 'un coordinateur n\'a pas de barre d\'administration sur le site ; la direction garde la sienne' );
 na_verifier( false !== strpos( $ecran_coord, 'na-rel-sommaire' ) && false !== strpos( $ecran_coord, 'name="resp_nom"' ) && false !== strpos( $ecran_coord, 'name="commune_ark[]"' )
 	&& false !== strpos( $ecran_coord, 'Journal et versions' ) && false === strpos( $ecran_coord, '<script' ) && false === strpos( $ecran_coord, 'wp-admin/admin.php' ),
 	'le shortcode rend au coordinateur le sommaire, le formulaire et le journal, ses scripts renvoyés au pied de page' );
 na_verifier( false === strpos( $ecran_coord, 'a@example.org' ) && false === strpos( $ecran_coord, 'example.org' ) && false !== strpos( $ecran_redac, 'a@example.org' ),
-	'le HTML rendu au coordinateur ne contient aucun courriel des responsables ; celui de la rédaction les montre' );
+	'le HTML rendu au coordinateur ne contient aucun courriel des responsables ; celui de la direction les montre' );
 na_verifier( false === strpos( $ecran_autre, 'name="resp_nom"' ) && false !== strpos( $ecran_autre, 'Cette notice n’est pas de vos rubriques.' ) && false === strpos( $ecran_autre, 'Lisieux' ),
 	'une notice d\'une autre rubrique, demandée par son numéro dans l\'adresse, ne se montre pas' );
 na_verifier( false === strpos( $ecran_abonne, 'na-rel-sommaire' ) && false !== strpos( $ecran_abonne, 'réservée aux relecteurs' ) && false === strpos( $ecran_abonne, 'Falaise' )

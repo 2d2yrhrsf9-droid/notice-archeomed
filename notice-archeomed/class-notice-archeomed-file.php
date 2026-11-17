@@ -109,7 +109,9 @@ class Notice_Archeomed_File {
 		add_action( 'admin_post_na_reessayer', array( $this, 'reessayer' ) );
 		add_action( 'admin_post_na_diagnostic', array( $this, 'diagnostiquer' ) );
 		add_action( 'admin_post_na_corriger', array( $this, 'corriger' ) );
-		add_action( 'load-post.php', array( $this, 'corriger_depuis_le_courriel' ) );
+		// Avant la garde de la direction, qui ne la laisse pas sur la fiche,
+		// et avant le contrôle d'accès de la fiche elle-même.
+		add_action( 'auth_redirect', array( $this, 'corriger_depuis_le_courriel' ), 5 );
 	}
 
 	/** Ce que la version en cours attend d'avoir écrit dans chaque notice. */
@@ -602,7 +604,7 @@ class Notice_Archeomed_File {
 
 	/**
 	 * Ouvre le formulaire public, rempli de la saisie de la notice, pour que
-	 * la rédaction la corrige comme l'auteur l'aurait fait : un mot-clé de
+	 * la direction la corrige comme l'auteur l'aurait fait : un mot-clé de
 	 * plus, un autre de moins, une période mal choisie.
 	 *
 	 * Rien ne se corrigeait sur le site : il fallait écrire à l'auteur, ou
@@ -610,7 +612,7 @@ class Notice_Archeomed_File {
 	 * document, les fascicules et les dossiers Métopes — restait fausse.
 	 */
 	public function corriger() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Relecture::peut_tout() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
@@ -633,9 +635,13 @@ class Notice_Archeomed_File {
 		return admin_url( 'post.php?post=' . (int) $id . '&action=edit&na_corriger=1' );
 	}
 
-	/** Au chargement de la fiche, si l'adresse vient du courriel. */
+	/**
+	 * Au chargement de la fiche, si l'adresse vient du courriel. La
+	 * direction n'a pas accès aux fiches : on la mène au formulaire avant
+	 * que WordPress ne le lui refuse.
+	 */
 	public function corriger_depuis_le_courriel() {
-		if ( empty( $_GET['na_corriger'] ) || ! current_user_can( 'manage_options' ) ) {
+		if ( ! isset( $GLOBALS['pagenow'] ) || 'post.php' !== $GLOBALS['pagenow'] || empty( $_GET['na_corriger'] ) || ! Notice_Archeomed_Relecture::peut_tout() ) {
 			return;
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
@@ -645,10 +651,17 @@ class Notice_Archeomed_File {
 		$this->ouvrir_dans_le_formulaire( $id );
 	}
 
-	/** Mène au formulaire public, rempli de la saisie de la notice. */
+	/**
+	 * Mène au formulaire public, rempli de la saisie de la notice. Une notice
+	 * que la direction a validée ne s'y rouvre pas : c'est sa version
+	 * définitive, qui ne change qu'après réouverture.
+	 */
 	private function ouvrir_dans_le_formulaire( $id ) {
 		if ( ! $id || self::CPT !== get_post_type( $id ) || 'private' !== get_post_status( $id ) ) {
 			wp_die( esc_html__( 'Notice inconnue.', 'notice-archeomed' ) );
+		}
+		if ( 'validee' === Notice_Archeomed_Relecture::etat_de( $id ) ) {
+			wp_die( esc_html__( 'Cette notice est validée par la direction : elle ne se corrige plus. Rouvrez-la dans la relecture.', 'notice-archeomed' ) );
 		}
 		$plugin = $this->plugin();
 		if ( null === $plugin || ! $this->a_un_document( $id ) ) {

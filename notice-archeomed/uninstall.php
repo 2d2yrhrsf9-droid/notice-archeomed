@@ -47,10 +47,12 @@ foreach ( array(
 	delete_option( $option );
 }
 
-// Les deux rôles de la relecture, et la capacité donnée à l'administrateur :
-// un rôle sans extension resterait proposé à la création d'un compte. Qui
-// le portait garde son compte, sans rôle.
+// Les rôles de la relecture — l'ancien de la rédaction aussi, s'il restait —
+// et la capacité donnée à l'administrateur : un rôle sans extension
+// resterait proposé à la création d'un compte. Qui le portait garde son
+// compte, sans rôle.
 remove_role( 'na_coordinateur' );
+remove_role( 'na_direction' );
 remove_role( 'na_redaction' );
 $administrateur = get_role( 'administrator' );
 if ( null !== $administrateur ) {
