@@ -1061,6 +1061,10 @@ class Notice_Archeomed_Relecture {
 	private function afficher_le_sommaire( $rubrique, $sommaire, $ouverte ) {
 		echo '<nav class="na-rel-sommaire" aria-label="' . esc_attr__( 'Sommaire de la rubrique', 'notice-archeomed' ) . '">';
 		echo '<h2>' . esc_html( $rubrique ) . '</h2>';
+		// La sous-rubrique ne s'écrit que lorsqu'elle change, d'un bloc à
+		// l'autre aussi : sous les renvois, la redire quand c'est la même que
+		// celle de la dernière notice chargeait le sommaire sans rien apprendre.
+		$famille = null;
 		foreach ( array( 'notices' => '', 'renvois' => __( 'Renvois vers cette rubrique (lecture seule)', 'notice-archeomed' ) ) as $bloc => $titre ) {
 			if ( empty( $sommaire[ $bloc ] ) ) {
 				if ( 'notices' === $bloc ) {
@@ -1071,11 +1075,15 @@ class Notice_Archeomed_Relecture {
 			if ( '' !== $titre ) {
 				echo '<h2 class="na-rel-renvois">' . esc_html( $titre ) . '</h2>';
 			}
-			$famille = null;
+			$liste = false;
 			foreach ( $sommaire[ $bloc ] as $entree ) {
 				if ( $entree['famille'] !== $famille ) {
-					echo ( null !== $famille ? '</ol>' : '' ) . '<h3>' . esc_html( $entree['famille'] ) . '</h3><ol>';
+					echo ( $liste ? '</ol>' : '' ) . '<h3>' . esc_html( $entree['famille'] ) . '</h3><ol>';
 					$famille = $entree['famille'];
+					$liste   = true;
+				} elseif ( ! $liste ) {
+					echo '<ol>';
+					$liste = true;
 				}
 				$etat   = self::etat_de( $entree['id'] );
 				$verrou = self::verrou_de( $entree['id'] );
