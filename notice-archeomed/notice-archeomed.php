@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.73
+ * Version: 3.74
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -15810,7 +15810,7 @@ class Notice_Archeomed_Pactols {
 			$neuf->definir_le_titre( trim( $this->titre_de_liste( $saisies[1] ) . ' — relecture, version ' . (int) $version ) );
 			$chemin = $neuf->write_to( trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp',
 				'notice-archeomed-' . wp_generate_password( 8, false, false ) . '-'
-					. Notice_Archeomed_Relecture::nom_du_word( (int) $version, $par ) );
+					. Notice_Archeomed_Relecture::nom_du_word( $id, (int) $version, $par ) );
 			if ( '' === $chemin ) {
 				$erreur = $neuf->get_error();
 			}
@@ -15863,7 +15863,7 @@ class Notice_Archeomed_Pactols {
 		$parti = false;
 		try {
 			$parti = wp_mail( $d['resp_email'], 'Votre notice relue : accord demandé — ' . $titre, $corps, $entetes,
-				array( Notice_Archeomed_Relecture::nom_du_word( max( $numeros ), 'pour accord' ) => $word ) );
+				array( Notice_Archeomed_Relecture::nom_du_word( $id, max( $numeros ), 'pour accord' ) => $word ) );
 		} catch ( Throwable $e ) {
 			$this->derniere_erreur_mail = $e->getMessage();
 		}

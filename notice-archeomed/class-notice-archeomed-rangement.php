@@ -771,7 +771,8 @@ class Notice_Archeomed_Rangement {
 		if ( '' === $document || ! file_exists( $document ) ) {
 			return 'il ne se refait pas d’après la saisie';
 		}
-		$distant = $dossier . '/notice_v' . (int) $version . '.' . ( strtolower( pathinfo( $document, PATHINFO_EXTENSION ) ) ?: 'docx' );
+		$tige    = Notice_Archeomed_Nommage::tige_du_word( get_post_meta( $id, '_na_donnees', true ) );
+		$distant = $dossier . '/' . $tige . '_v' . (int) $version . '.' . ( strtolower( pathinfo( $document, PATHINFO_EXTENSION ) ) ?: 'docx' );
 		$refus   = Notice_Archeomed_Sdrive::deposer( $document, $distant );
 		if ( '' === $refus ) {
 			$cle           = 'word:v' . (int) $version;

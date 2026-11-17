@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.73
+# Formulaire des notices d’archéologie médiévale — version 3.74
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -965,9 +965,12 @@ feuille de styles fera évoluer.
 Le disque du serveur ne suffit pas à une campagne. Une fois le site relié à
 sDrive (onglet **Diagnostic**, bouton « Relier le site à sDrive », puis « Parcourir
 sDrive » pour choisir le dossier) et le numéro réglé, chaque notice envoyée
-range ses fichiers dans `<dossier>/<numéro>/originaux/<référence>/` :
-originaux, JPEG tirés par le navigateur, autorisations, Word de chaque
-version et `a-deposer.txt`. Les versions successives s'y gardent ; seule la
+range ses fichiers dans `<dossier>/<numéro>/originaux/<Commune>/` (`Caen_2`
+pour une deuxième notice de Caen) : originaux, JPEG tirés par le navigateur,
+autorisations, Word de chaque version et `a-deposer.txt`. Le Word porte la
+commune et le nom de famille du responsable d'opération, `Caen_Dupont_v1.docx`,
+pour qu'on le reconnaisse sorti du dossier ; ceux rangés avant la 3.74 gardent
+leur nom `notice_v1.docx`. Les versions successives s'y gardent ; seule la
 dernière va au fascicule.
 
 Le rangement se fait par la file, après l'envoi : l'auteur n'attend pas. Le
@@ -1260,8 +1263,8 @@ paraît aussi dans l'historique de la fiche. De deux versions gardées se tire
 un **Word à suivi de modifications** : des `w:ins` et des `w:del` signés du
 relecteur, mot par mot. Il se télécharge depuis l'écran — sans les adresses
 des responsables pour un coordinateur — et se dépose dans le dossier de la
-notice sur sDrive sous le nom `notice_v3_relecture_Jeanne_Martin.docx`, à
-côté des `notice_v1.docx` du rangement, par une tâche à part
+notice sur sDrive sous le nom `Caen_Dupont_v3_relecture_Jeanne_Martin.docx`,
+à côté des `Caen_Dupont_v1.docx` du rangement, par une tâche à part
 (`na_deposer_les_relectures`) : sDrive en panne, la correction est
 enregistrée quand même et le Word attend. Il ne porte aucune image.
 

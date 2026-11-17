@@ -3067,7 +3067,12 @@ if ( '' !== $word_coord ) {
 }
 na_verifier( '' !== $xml_coord && false === strpos( $xml_coord, 'a@example.org' ) && false !== strpos( $xml_word, 'a@example.org' ),
 	'le Word rendu à un coordinateur ne porte pas le courriel des responsables ; celui de la rédaction, si' );
-na_verifier( 'notice_v2_relecture_Jeanne_Martin.docx' === $R::nom_du_word( 2, 'Jeanne Martin' ), 'le Word de relecture porte la version et le nom du relecteur', $R::nom_du_word( 2, 'Jeanne Martin' ) );
+na_verifier( 'notice_v2_relecture_Jeanne_Martin.docx' === $R::nom_du_word( 0, 2, 'Jeanne Martin' ), 'le Word de relecture porte la version et le nom du relecteur', $R::nom_du_word( 0, 2, 'Jeanne Martin' ) );
+na_verifier( 'Saint_Lo_Le_Goff' === Notice_Archeomed_Nommage::tige_du_word( array( 'commune' => 'Saint-Lô', 'resp_nom' => 'Le Goff' ) )
+	&& 'Vire' === Notice_Archeomed_Nommage::tige_du_word( array( 'commune' => 'Vire', 'resp_nom' => '  ' ) )
+	&& 'notice' === Notice_Archeomed_Nommage::tige_du_word( '' )
+	&& 0 === strpos( $R::nom_du_word( $rel_a, 2, 'Jeanne Martin' ), 'Vire_' ) && '_v2_relecture_Jeanne_Martin.docx' === substr( $R::nom_du_word( $rel_a, 2, 'Jeanne Martin' ), -32 ),
+	'le Word porte la commune et le nom du responsable d’opération, « notice » à défaut', $R::nom_du_word( $rel_a, 2, 'Jeanne Martin' ) );
 $fascicule_relu = $xml_du_docx( na_appel( $plugin, 'fabriquer_le_fascicule', array( $rubs_rel[0],
 	na_appel( $plugin, 'donnees_des_notices', array( $plugin->ids_de_la_rubrique( $rubs_rel[0] ) ) ), &$erreur_rel ) ) );
 na_verifier( '' !== $fascicule_relu && false === strpos( $fascicule_relu, '<w:ins' ) && false === strpos( $fascicule_relu, '<w:del' )

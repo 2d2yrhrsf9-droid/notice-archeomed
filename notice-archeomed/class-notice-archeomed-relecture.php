@@ -397,12 +397,15 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Le nom du Word de relecture d'une version : « notice_v3_relecture_
-	 * Jeanne_Martin.docx ». Il porte la version et le nom du relecteur, à
-	 * côté des « notice_v1.docx » que le rangement dépose.
+	 * Le nom du Word de relecture d'une version : « Caen_Dupont_v3_relecture_
+	 * Jeanne_Martin.docx ». Il porte la commune, le responsable d'opération,
+	 * la version et le nom du relecteur, à côté des « Caen_Dupont_v1.docx »
+	 * que le rangement dépose.
 	 */
-	public static function nom_du_word( $version, $par ) {
-		return 'notice_v' . (int) $version . '_relecture_' . Notice_Archeomed_Nommage::assainir( (string) $par, 'relecteur' ) . '.docx';
+	public static function nom_du_word( $id, $version, $par ) {
+		$d = (int) $id > 0 ? get_post_meta( (int) $id, '_na_donnees', true ) : array();
+		return Notice_Archeomed_Nommage::tige_du_word( $d ) . '_v' . (int) $version . '_relecture_'
+			. Notice_Archeomed_Nommage::assainir( (string) $par, 'relecteur' ) . '.docx';
 	}
 
 	/**
@@ -714,7 +717,7 @@ class Notice_Archeomed_Relecture {
 			if ( '' === $word ) {
 				return 'Word de la version ' . $version . ' : ' . $erreur;
 			}
-			$distant = $dossier . '/' . self::nom_du_word( $version, $gardee['par'] );
+			$distant = $dossier . '/' . self::nom_du_word( $id, $version, $gardee['par'] );
 			$refus   = Notice_Archeomed_Sdrive::deposer( $word, $distant );
 			@unlink( $word );
 			if ( '' !== $refus ) {
@@ -2049,7 +2052,7 @@ class Notice_Archeomed_Relecture {
 		$gardee = self::version_gardee( $id, $version );
 		nocache_headers();
 		header( 'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document' );
-		header( 'Content-Disposition: attachment; filename="' . rawurlencode( self::nom_du_word( $version, null !== $gardee ? $gardee['par'] : '' ) ) . '"' );
+		header( 'Content-Disposition: attachment; filename="' . rawurlencode( self::nom_du_word( $id, $version, null !== $gardee ? $gardee['par'] : '' ) ) . '"' );
 		header( 'Content-Length: ' . filesize( $chemin ) );
 		readfile( $chemin );
 		@unlink( $chemin );

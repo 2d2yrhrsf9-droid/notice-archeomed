@@ -103,8 +103,11 @@ foreach ( $ids as $id ) {
 	// Le Word de chaque version, refait et rangé, puis effacé du serveur.
 	$version = max( 1, (int) get_post_meta( $id, '_na_version', true ) );
 	foreach ( array_unique( array( 1, $version ) ) as $v ) {
-		if ( empty( $table[ 'word:v' . $v ] ) || ! is_file( $racine . '/' . $dossier . '/notice_v' . $v . '.docx' ) ) {
+		$word = empty( $table[ 'word:v' . $v ]['distant'] ) ? '' : (string) $table[ 'word:v' . $v ]['distant'];
+		if ( '' === $word || ! is_file( $racine . '/' . $word ) ) {
 			$fautes( $id, 'le Word de la version ' . $v . ' n’est pas sur sDrive.' );
+		} elseif ( $v === $version && $dossier . '/' . Notice_Archeomed_Nommage::tige_du_word( $d ) . '_v' . $v . '.docx' !== $word ) {
+			$fautes( $id, 'le Word de la version ' . $v . ' ne porte pas la commune et le responsable : ' . $word );
 		}
 	}
 	$document = (string) get_post_meta( $id, '_na_document', true );

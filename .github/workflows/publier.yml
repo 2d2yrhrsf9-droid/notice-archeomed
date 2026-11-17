@@ -752,7 +752,7 @@ jobs:
             wp_clear_scheduled_hook( $R::HOOK );
             $R::en_tache();
             $dossier = (string) get_post_meta( $id, "_na_sdrive_dossier", true );
-            $fichier = "/tmp/sdrive/Revue AM/" . $dossier . "/" . $R::nom_du_word( $version + 1, "Jeanne Martin" );
+            $fichier = "/tmp/sdrive/Revue AM/" . $dossier . "/" . $R::nom_du_word( $id, $version + 1, "Jeanne Martin" );
             if ( array() !== $attendus() ) { $echecs[] = "le Word attend encore : " . get_post_meta( $id, "_na_relecture_raison", true ); }
             if ( "" === $dossier || ! is_file( $fichier ) ) { $echecs[] = "le Word de relecture n’est pas dans le dossier de la notice : " . $fichier; }
             else {

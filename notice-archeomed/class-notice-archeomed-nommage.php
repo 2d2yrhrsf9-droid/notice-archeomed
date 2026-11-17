@@ -55,6 +55,23 @@ class Notice_Archeomed_Nommage {
 	}
 
 	/**
+	 * La tige du Word d'une notice : sa commune et le nom de famille du
+	 * responsable d'opération, « Caen_Dupont ». On le reconnaît sorti de son
+	 * dossier, ce que « notice » ne permettait pas. « notice » reste quand
+	 * ni l'une ni l'autre n'est saisie.
+	 */
+	public static function tige_du_word( $d ) {
+		$parts = array();
+		foreach ( array( 'commune', 'resp_nom' ) as $champ ) {
+			$part = is_array( $d ) && isset( $d[ $champ ] ) && is_scalar( $d[ $champ ] ) ? self::assainir( (string) $d[ $champ ], '' ) : '';
+			if ( '' !== $part ) {
+				$parts[] = $part;
+			}
+		}
+		return empty( $parts ) ? 'notice' : implode( '_', $parts );
+	}
+
+	/**
 	 * La tige d'un nom : la règle appliquée à ce qui ne porte pas d'extension.
 	 */
 	public static function assainir( $tige, $defaut = 'fichier' ) {
