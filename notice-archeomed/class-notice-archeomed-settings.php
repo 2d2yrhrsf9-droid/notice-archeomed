@@ -144,6 +144,21 @@ class Notice_Archeomed_Settings {
 		add_filter( 'option_page_capability_' . self::OPTION_GROUP, array( __CLASS__, 'capacite_du_formulaire' ) );
 		add_action( self::HOOK_DISQUE, array( __CLASS__, 'remesurer_le_disque' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'signaler_le_disque' ) );
+		add_filter( 'user_has_cap', array( __CLASS__, 'aux_administrateurs' ) );
+	}
+
+	/**
+	 * Qui gère le site gère aussi la Chronique, sans qu'on touche à son rôle.
+	 *
+	 * Les notices, leurs fiches et les réglages demandent tous le même droit,
+	 * celui de la direction de la revue ; l'administrateur le reçoit ici, à
+	 * chaque contrôle, et non par une écriture dans les rôles du site.
+	 */
+	public static function aux_administrateurs( $droits ) {
+		if ( ! empty( $droits['manage_options'] ) ) {
+			$droits[ self::CAPACITE ] = true;
+		}
+		return $droits;
 	}
 
 	/**
@@ -291,9 +306,7 @@ class Notice_Archeomed_Settings {
 	 * la clé » doit mener à la clé, non au premier onglet de la page.
 	 */
 	public static function url( $onglet = '' ) {
-		$url = self::par_son_menu()
-			? admin_url( 'admin.php?page=' . self::PAGE_SLUG )
-			: admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT . '&page=' . self::PAGE_SLUG );
+		$url = admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT . '&page=' . self::PAGE_SLUG );
 		return ( '' !== $onglet && array_key_exists( $onglet, self::onglets() ) )
 			? add_query_arg( 'tab', $onglet, $url ) : $url;
 	}
@@ -337,20 +350,6 @@ class Notice_Archeomed_Settings {
 	}
 
 	/**
-	 * Ce compte règle-t-il sans administrer ? Il n'a pas le menu des notices
-	 * reçues : les réglages ont alors leur propre entrée, et leur adresse
-	 * change avec elle.
-	 */
-	public static function par_son_menu( $utilisateur = null ) {
-		if ( null === $utilisateur && ! did_action( 'init' ) ) {
-			return false;
-		}
-		$compte = null === $utilisateur ? wp_get_current_user() : ( $utilisateur instanceof WP_User ? $utilisateur : get_userdata( (int) $utilisateur ) );
-		return ( $compte instanceof WP_User ) && $compte->exists()
-			&& user_can( $compte, self::CAPACITE ) && ! user_can( $compte, 'manage_options' );
-	}
-
-	/**
 	 * Ce qu'« options.php » exige pour enregistrer les réglages : la gestion
 	 * du site pour qui l'a, le droit de régler la Chronique sinon.
 	 */
@@ -373,25 +372,13 @@ class Notice_Archeomed_Settings {
 	 * liste des notices reçues —, et c'est là qu'on les cherche.
 	 */
 	public function add_menu() {
-		// Sans la gestion du site, pas de menu des notices reçues : sous lui,
-		// l'entrée aurait été déplacée par WordPress, ou refusée.
-		if ( self::par_son_menu() ) {
-			add_menu_page(
-				__( 'Réglages de la Chronique', 'notice-archeomed' ),
-				__( 'Réglages', 'notice-archeomed' ),
-				self::CAPACITE,
-				self::PAGE_SLUG,
-				array( $this, 'render_page' ),
-				'dashicons-admin-generic',
-				27
-			);
-			return;
-		}
+		// Le même droit que les notices reçues : la direction de la revue a
+		// le menu entier, comme l'administrateur.
 		add_submenu_page(
 			'edit.php?post_type=' . Notice_Archeomed_File::CPT,
 			__( 'Réglages de la Chronique', 'notice-archeomed' ),
 			__( 'Réglages', 'notice-archeomed' ),
-			'manage_options',
+			self::CAPACITE,
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
 		);

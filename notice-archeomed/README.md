@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.86
+# Formulaire des notices d’archéologie médiévale — version 3.87
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1290,13 +1290,15 @@ l'est en dépubliant la page du formulaire.
   (`na_relire`), rien d'autre. L'onglet « Relecture » associe un ou plusieurs
   coordinateurs à chaque rubrique ;
 - « Direction de la revue » : la capacité `na_relire_tout`, qui ouvre toutes
-  les rubriques avec le même écran, et `na_regler`, qui ouvre les réglages de
-  l'extension — tous leurs onglets, Annuaire compris. C'est tout : ni
+  les rubriques avec le même écran, et `na_regler`, qui ouvre l'extension
+  entière : le menu « Chronique » avec ses deux sous-menus, « Notices
+  reçues » (la liste, les fiches, les téléchargements, les relances) et
+  « Réglages » (tous les onglets, Annuaire compris). C'est tout : ni
   articles, ni pages, ni comptes, ni réglages du site. La direction a dans
-  l'administration un menu « Réglages » et l'entrée « Relecture » ; toute
-  autre page, tableau de bord et profil compris, la renvoie aux réglages, et
-  la connexion la mène à la page de relecture. Les administrateurs du site
-  relisent tout d'office, et gardent les réglages par `manage_options`.
+  l'administration le menu « Chronique » et l'entrée « Relecture » ; toute
+  autre page, tableau de bord et profil compris, la renvoie aux notices
+  reçues, et la connexion la mène à la page de relecture. Les
+  administrateurs du site ont tout cela d'office, par `manage_options`.
 
 Le rôle « Rédaction de la Chronique (relecture) » des versions antérieures à
 la 3.85 disparaît à la mise à jour : ses comptes passent à la direction.

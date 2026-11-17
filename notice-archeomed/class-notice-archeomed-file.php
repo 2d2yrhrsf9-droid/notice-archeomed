@@ -243,22 +243,22 @@ class Notice_Archeomed_File {
 				'menu_icon'           => self::icone_du_menu(),
 				'capability_type'     => 'post',
 				// Les notices portent des noms, des courriels et des fichiers
-				// d'auteurs : seule la gestion de l'extension (« manage_options »)
-				// les lit, les corbeille ou les supprime. Avec les droits d'un
-				// article, tout Éditeur du site les voyait, alors que les
-				// téléchargements exigeaient déjà ce droit.
+				// d'auteurs : seuls la direction de la revue et l'administrateur
+				// (droit « na_regler ») les lisent, les corbeillent ou les
+				// suppriment. Avec les droits d'un article, tout Éditeur du site
+				// les voyait, alors que les téléchargements exigeaient déjà ce droit.
 				'capabilities'        => array(
 					'create_posts'           => 'do_not_allow',
-					'edit_posts'             => 'manage_options',
-					'edit_others_posts'      => 'manage_options',
-					'edit_private_posts'     => 'manage_options',
-					'edit_published_posts'   => 'manage_options',
-					'publish_posts'          => 'manage_options',
-					'read_private_posts'     => 'manage_options',
-					'delete_posts'           => 'manage_options',
-					'delete_others_posts'    => 'manage_options',
-					'delete_private_posts'   => 'manage_options',
-					'delete_published_posts' => 'manage_options',
+					'edit_posts'             => Notice_Archeomed_Settings::CAPACITE,
+					'edit_others_posts'      => Notice_Archeomed_Settings::CAPACITE,
+					'edit_private_posts'     => Notice_Archeomed_Settings::CAPACITE,
+					'edit_published_posts'   => Notice_Archeomed_Settings::CAPACITE,
+					'publish_posts'          => Notice_Archeomed_Settings::CAPACITE,
+					'read_private_posts'     => Notice_Archeomed_Settings::CAPACITE,
+					'delete_posts'           => Notice_Archeomed_Settings::CAPACITE,
+					'delete_others_posts'    => Notice_Archeomed_Settings::CAPACITE,
+					'delete_private_posts'   => Notice_Archeomed_Settings::CAPACITE,
+					'delete_published_posts' => Notice_Archeomed_Settings::CAPACITE,
 				),
 				'map_meta_cap'        => true,
 				// Rien à rédiger : le titre modifiable invitait à retoucher une
@@ -517,7 +517,7 @@ class Notice_Archeomed_File {
 	 * sixième d'une série perdue.
 	 */
 	public function reessayer() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
@@ -583,7 +583,7 @@ class Notice_Archeomed_File {
 	 * l'utilisateur en cours, et garde le résultat pour l'afficher.
 	 */
 	public function diagnostiquer() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
@@ -693,7 +693,7 @@ class Notice_Archeomed_File {
 	 * ce qui est parti et ce qui reste.
 	 */
 	public function expedier_maintenant() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_expedier_maintenant' );
@@ -1040,10 +1040,10 @@ class Notice_Archeomed_File {
 	/**
 	 * À qui la copie de la notice est partie au dernier envoi, et ce que le
 	 * serveur de courriel a répondu pour chaque adresse. Les adresses ne se
-	 * montrent qu'à qui gère le site.
+	 * montrent qu'à qui gère la Chronique.
 	 */
 	private function afficher_les_copies( $id ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			return;
 		}
 		$trace = get_post_meta( $id, '_na_copies', true );
@@ -2398,7 +2398,7 @@ class Notice_Archeomed_File {
 					__( 'Ouvrir la fiche de « %s »', 'notice-archeomed' ), $titre ) ) . '">'
 				. esc_html__( 'Ouvrir la fiche', 'notice-archeomed' ) . '</a>';
 		}
-		if ( 'trash' === $post->post_status || ! current_user_can( 'manage_options' ) ) {
+		if ( 'trash' === $post->post_status || ! Notice_Archeomed_Settings::peut_regler() ) {
 			return $actions;
 		}
 		$ajouts = array();
@@ -2605,7 +2605,7 @@ class Notice_Archeomed_File {
 	 * reliait l'échec à l'adresse manquante.
 	 */
 	public function signaler_l_adresse_manquante() {
-		if ( ! current_user_can( 'manage_options' ) || self::quelqu_un_recoit_les_notices() ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() || self::quelqu_un_recoit_les_notices() ) {
 			return;
 		}
 		$comptes  = $this->compter_les_etats();
@@ -2656,7 +2656,7 @@ class Notice_Archeomed_File {
 	 */
 	public function signaler_les_echecs() {
 		// Sans destinataire, le bandeau de l'adresse porte déjà ce compte.
-		if ( ! current_user_can( 'manage_options' ) || ! self::quelqu_un_recoit_les_notices() ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() || ! self::quelqu_un_recoit_les_notices() ) {
 			return;
 		}
 		$ecran = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
@@ -2693,7 +2693,7 @@ class Notice_Archeomed_File {
 	public function signaler_les_retards() {
 		// « Les envoyer maintenant » échouerait tant que personne ne les
 		// reçoit : le bandeau de l'adresse le dit à sa place.
-		if ( ! current_user_can( 'manage_options' ) || ! self::quelqu_un_recoit_les_notices() ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() || ! self::quelqu_un_recoit_les_notices() ) {
 			return;
 		}
 		$attente = $this->en_attente( 50 );
@@ -2736,7 +2736,7 @@ class Notice_Archeomed_File {
 	 * vider la file, diagnostiquer.
 	 */
 	public function rendre_compte() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			return;
 		}
 		$ecran = function_exists( 'get_current_screen' ) ? get_current_screen() : null;

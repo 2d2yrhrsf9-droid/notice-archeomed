@@ -846,14 +846,15 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Ce compte est-il la direction, sans rien administrer d'autre ? Il
-	 * règle la Chronique et relit ; le reste de l'administration lui est
-	 * fermé.
+	 * Ce compte est-il la direction, sans rien administrer d'autre ? Il a
+	 * toute la Chronique — les notices reçues, leurs fiches, les réglages —
+	 * et relit ; le reste de l'administration lui est fermé.
 	 */
 	public static function est_direction_seule( $utilisateur = null ) {
 		$compte = self::compte( $utilisateur );
 		return ( $compte instanceof WP_User ) && $compte->exists()
-			&& Notice_Archeomed_Settings::par_son_menu( $compte ) && ! user_can( $compte, 'edit_posts' );
+			&& user_can( $compte, Notice_Archeomed_Settings::CAPACITE )
+			&& ! user_can( $compte, 'manage_options' ) && ! user_can( $compte, 'edit_posts' );
 	}
 
 	/**
@@ -902,14 +903,14 @@ class Notice_Archeomed_Relecture {
 	public static function apres_la_connexion( $vers, $demande, $compte ) {
 		$page = self::page();
 		// La direction qui ne demandait rien de précis va relire ; sans page
-		// de relecture, aux réglages. Le tableau de bord ne lui sert à rien.
+		// de relecture, aux notices reçues. Le tableau de bord ne lui sert à rien.
 		if ( ( $compte instanceof WP_User ) && self::est_direction_seule( $compte ) ) {
 			$rien = ! is_string( $demande ) || '' === $demande
 				|| untrailingslashit( $demande ) === untrailingslashit( admin_url() );
 			if ( ! $rien ) {
 				return $vers;
 			}
-			return '' !== $page ? $page : admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
+			return '' !== $page ? $page : self::notices_recues();
 		}
 		if ( '' === $page || ! ( $compte instanceof WP_User ) || ! self::est_coordinateur_seul( $compte ) ) {
 			return $vers;
@@ -931,12 +932,18 @@ class Notice_Archeomed_Relecture {
 		return '' !== $page ? $page : home_url( '/' );
 	}
 
+	/** La liste des notices reçues, première entrée du menu de la Chronique. */
+	private static function notices_recues() {
+		return admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT );
+	}
+
 	/**
 	 * Où renvoyer la direction qui ouvre une page de l'administration : une
-	 * chaîne vide pour les réglages et l'entrée « Relecture », qui sont sa
-	 * place, et pour « options.php », qui enregistre les réglages ; les
-	 * réglages sinon. L'ancienne adresse des réglages, sous le menu des
-	 * notices reçues, mène à la nouvelle avec son onglet.
+	 * chaîne vide pour ce qui est la Chronique — la liste des notices reçues
+	 * et ce qui s'y range, dont les réglages, la fiche d'une notice,
+	 * l'entrée « Relecture » et « options.php », qui enregistre les
+	 * réglages ; la liste des notices sinon. L'adresse des réglages du temps
+	 * où ils avaient leur propre menu mène à la nouvelle, avec son onglet.
 	 *
 	 * « admin-post.php » et « admin-ajax.php » ne passent pas par ici :
 	 * chaque geste y contrôle son droit.
@@ -945,29 +952,45 @@ class Notice_Archeomed_Relecture {
 		if ( ! self::est_direction_seule( $utilisateur ) ) {
 			return '';
 		}
-		$porte = (string) $porte;
-		$page  = isset( $parametres['page'] ) && is_scalar( $parametres['page'] ) ? sanitize_key( (string) $parametres['page'] ) : '';
+		$porte      = (string) $porte;
+		$parametres = (array) $parametres;
+		$page       = isset( $parametres['page'] ) && is_scalar( $parametres['page'] ) ? sanitize_key( (string) $parametres['page'] ) : '';
+		$type       = isset( $parametres['post_type'] ) && is_scalar( $parametres['post_type'] ) ? sanitize_key( (string) $parametres['post_type'] ) : '';
+		// La fiche s'ouvre par « post », s'enregistre par « post_ID ».
+		$fiche = 0;
+		foreach ( array( 'post', 'post_ID' ) as $cle ) {
+			if ( ! $fiche && isset( $parametres[ $cle ] ) && is_scalar( $parametres[ $cle ] ) ) {
+				$fiche = absint( $parametres[ $cle ] );
+			}
+		}
 		if ( 'options.php' === $porte
-			|| ( 'admin.php' === $porte && in_array( $page, array( Notice_Archeomed_Settings::PAGE_SLUG, self::PAGE ), true ) ) ) {
+			|| ( 'admin.php' === $porte && self::PAGE === $page )
+			|| ( 'edit.php' === $porte && Notice_Archeomed_File::CPT === $type )
+			|| ( 'post.php' === $porte && $fiche && Notice_Archeomed_File::CPT === get_post_type( $fiche ) ) ) {
 			return '';
 		}
-		$reglages = admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
-		if ( 'edit.php' === $porte && Notice_Archeomed_Settings::PAGE_SLUG === $page ) {
-			$garder = array();
-			foreach ( (array) $parametres as $cle => $valeur ) {
-				if ( is_string( $cle ) && is_scalar( $valeur ) && ! in_array( $cle, array( 'post_type', 'page' ), true ) ) {
+		if ( 'admin.php' === $porte && Notice_Archeomed_Settings::PAGE_SLUG === $page ) {
+			$reglages = Notice_Archeomed_Settings::url();
+			$garder   = array();
+			foreach ( $parametres as $cle => $valeur ) {
+				if ( is_string( $cle ) && is_scalar( $valeur ) && 'page' !== $cle ) {
 					$garder[ sanitize_key( $cle ) ] = rawurlencode( (string) $valeur );
 				}
 			}
 			return add_query_arg( $garder, $reglages );
 		}
-		return $reglages;
+		return self::notices_recues();
 	}
 
 	/** La direction n'entre que dans ses pages de l'administration. */
 	public static function garder_la_direction() {
 		global $pagenow;
-		$vers = self::renvoi_de_la_direction( null, (string) $pagenow, wp_unslash( $_GET ) );
+		$parametres = wp_unslash( $_GET );
+		// Du formulaire, seule compte la fiche qu'il enregistre.
+		if ( isset( $_POST['post_ID'] ) && is_scalar( $_POST['post_ID'] ) ) {
+			$parametres['post_ID'] = absint( $_POST['post_ID'] );
+		}
+		$vers = self::renvoi_de_la_direction( null, (string) $pagenow, $parametres );
 		if ( '' !== $vers ) {
 			wp_safe_redirect( $vers );
 			exit;
@@ -989,8 +1012,8 @@ class Notice_Archeomed_Relecture {
 	 * du site, pour qui part de là.
 	 */
 	public function poser_le_menu() {
-		// La direction n'a que ses deux entrées : le tableau de bord et le
-		// profil la renverraient aux réglages.
+		// La direction n'a que la Chronique et la relecture : le tableau de
+		// bord et le profil la renverraient aux notices reçues.
 		if ( self::est_direction_seule() ) {
 			remove_menu_page( 'index.php' );
 			remove_menu_page( 'profile.php' );

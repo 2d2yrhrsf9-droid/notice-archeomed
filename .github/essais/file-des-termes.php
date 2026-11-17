@@ -3113,9 +3113,14 @@ $redac = $compte_rel( 'redaction-essai', 'Direction Essai', $R::ROLE_REDACTION )
 $R::assurer_les_roles();
 $migre = new WP_User( $redac );
 na_verifier( in_array( $R::ROLE_DIRECTION, $migre->roles, true ) && ! in_array( $R::ROLE_REDACTION, $migre->roles, true )
-	&& null === get_role( $R::ROLE_REDACTION ) && Notice_Archeomed_Settings::peut_regler( $migre ) && Notice_Archeomed_Settings::par_son_menu( $migre )
+	&& null === get_role( $R::ROLE_REDACTION ) && Notice_Archeomed_Settings::peut_regler( $migre )
 	&& $R::est_direction_seule( $migre ) && ! user_can( $migre, 'manage_options' ) && ! get_role( 'administrator' )->has_cap( Notice_Archeomed_Settings::CAPACITE ),
 	'un compte de l\'ancienne rédaction passe à la direction : il relit tout et règle le plugin, sans administrer le site', $migre->roles );
+$admin_cf = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ) );
+na_verifier( ! empty( $admin_cf ) && user_can( (int) $admin_cf[0], Notice_Archeomed_Settings::CAPACITE ) && ! $R::est_direction_seule( (int) $admin_cf[0] )
+	&& user_can( $migre, get_post_type_object( Notice_Archeomed_File::CPT )->cap->edit_posts )
+	&& ! user_can( $coord_1, get_post_type_object( Notice_Archeomed_File::CPT )->cap->edit_posts ),
+	'la direction a le menu des notices reçues, comme l\'administrateur, que son rôle n\'ait pas à changer ; un coordinateur ne l\'a pas' );
 $ark_four = 'https://ark.frantiq.fr/ark:/26678/pcrtFourEssai';
 $notice_rel = function ( $ajouts ) use ( $saisie_styles, $file_rel, $rubs_rel ) {
 	$d = array_merge( $saisie_styles, array(
@@ -3520,18 +3525,28 @@ na_verifier( $adresse_rel === $R::renvoi_de_l_administration( $coord_1, 'index.p
 na_verifier( '' === $R::renvoi_de_l_administration( $redac, 'index.php' ) && '' === $R::renvoi_de_l_administration( $admin_rel, 'index.php' )
 	&& '' === $R::renvoi_de_l_administration( $abonne_rel, 'index.php' ),
 	'la direction, un administrateur et un compte sans rapport avec la relecture ne sont pas renvoyés à la relecture' );
-$reglages_dir = admin_url( 'admin.php?page=' . Notice_Archeomed_Settings::PAGE_SLUG );
-na_verifier( '' === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => Notice_Archeomed_Settings::PAGE_SLUG ) )
-	&& '' === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => $R::PAGE ) ) && '' === $R::renvoi_de_la_direction( $redac, 'options.php', array() )
-	&& $reglages_dir === $R::renvoi_de_la_direction( $redac, 'index.php', array() ) && $reglages_dir === $R::renvoi_de_la_direction( $redac, 'profile.php', array() )
-	&& $reglages_dir === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => 'post' ) )
-	&& add_query_arg( 'tab', 'annuaire', $reglages_dir ) === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => Notice_Archeomed_File::CPT, 'page' => Notice_Archeomed_Settings::PAGE_SLUG, 'tab' => 'annuaire' ) )
+$reglages_dir = Notice_Archeomed_Settings::url();
+$liste_dir    = admin_url( 'edit.php?post_type=' . Notice_Archeomed_File::CPT );
+$article_dir  = wp_insert_post( array( 'post_title' => 'Un article', 'post_status' => 'publish', 'post_type' => 'post' ) );
+na_verifier( Notice_Archeomed_File::CPT === get_post_type( $rel_a )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => Notice_Archeomed_File::CPT ) )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => Notice_Archeomed_File::CPT, 'page' => Notice_Archeomed_Settings::PAGE_SLUG, 'tab' => 'annuaire' ) )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'post.php', array( 'post' => (string) $rel_a, 'action' => 'edit' ) )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'post.php', array( 'post_ID' => $rel_a ) )
+	&& '' === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => $R::PAGE ) ) && '' === $R::renvoi_de_la_direction( $redac, 'options.php', array() ),
+	'la direction entre dans la Chronique entière : la liste des notices, leurs fiches, les réglages, la relecture' );
+na_verifier( $liste_dir === $R::renvoi_de_la_direction( $redac, 'index.php', array() ) && $liste_dir === $R::renvoi_de_la_direction( $redac, 'profile.php', array() )
+	&& $liste_dir === $R::renvoi_de_la_direction( $redac, 'edit.php', array( 'post_type' => 'post' ) )
+	&& $liste_dir === $R::renvoi_de_la_direction( $redac, 'post.php', array( 'post' => (string) $article_dir, 'action' => 'edit' ) )
+	&& add_query_arg( 'tab', 'annuaire', $reglages_dir ) === $R::renvoi_de_la_direction( $redac, 'admin.php', array( 'page' => Notice_Archeomed_Settings::PAGE_SLUG, 'tab' => 'annuaire' ) )
 	&& '' === $R::renvoi_de_la_direction( $admin_rel, 'index.php', array() ) && '' === $R::renvoi_de_la_direction( $coord_1, 'index.php', array() ),
-	'la direction n\'entre que dans les réglages et la relecture ; l\'ancienne adresse des réglages mène à la nouvelle' );
+	'hors de la Chronique, la direction revient aux notices reçues ; l\'adresse des réglages de la 3.85 mène à la nouvelle' );
+wp_delete_post( $article_dir, true );
 na_verifier( $adresse_rel === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $coord_1 ) )
 	&& $R::url( $rubs_rel[0], $rel_a ) === $R::apres_la_connexion( admin_url(), $R::url( $rubs_rel[0], $rel_a ), get_userdata( $coord_1 ) )
 	&& $adresse_rel === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $redac ) )
 	&& $reglages_dir === $R::apres_la_connexion( $reglages_dir, $reglages_dir, get_userdata( $redac ) )
+	&& $liste_dir === $R::apres_la_connexion( $liste_dir, $liste_dir, get_userdata( $redac ) )
 	&& admin_url() === $R::apres_la_connexion( admin_url(), admin_url(), get_userdata( $admin_rel ) ),
 	'après sa connexion, un coordinateur ou la direction arrive sur la page de relecture, ou sur la page qu\'il demandait' );
 wp_set_current_user( $coord_1 );

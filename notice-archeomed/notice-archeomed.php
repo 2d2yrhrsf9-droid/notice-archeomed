@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.86
+ * Version: 3.87
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -702,7 +702,7 @@ class Notice_Archeomed_Pactols {
 	 * feuille de styles Métopes — ce qu'un fichier archivé ne ferait pas.
 	 */
 	public function telecharger_le_document() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
@@ -731,7 +731,7 @@ class Notice_Archeomed_Pactols {
 	 * seule façon d'assembler une rubrique, et non deux qui divergeraient.
 	 */
 	public function telecharger_le_paquet() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_paquet' );
@@ -832,7 +832,7 @@ class Notice_Archeomed_Pactols {
 	 * des notices, qui dit où en est l'export.
 	 */
 	public function demander_l_export() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_export' );
@@ -856,7 +856,7 @@ class Notice_Archeomed_Pactols {
 	 * une visite : c'est elle qui fait passer la tâche.
 	 */
 	public function etat_des_exports() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_send_json_error( null, 403 );
 		}
 		check_ajax_referer( 'na_export_etat' );
@@ -1007,7 +1007,7 @@ class Notice_Archeomed_Pactols {
 	 * ni les doublons ni les communes qui se suivent mal.
 	 */
 	public function telecharger_le_fascicule() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_fascicule' );
@@ -13298,7 +13298,7 @@ class Notice_Archeomed_Pactols {
 	 * demande d'être entré dans l'administration.
 	 */
 	public function telecharger_une_illustration() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! Notice_Archeomed_Settings::peut_regler() ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$id = isset( $_GET['post'] ) ? (int) $_GET['post'] : 0;
