@@ -1279,6 +1279,34 @@ remove_filter( 'pre_http_request', $refuse_proxy, 10 );
 na_verifier( false === $essai_pactols['ok'] && false !== strpos( $essai_pactols['message'], 'proxy' ),
 	'l\'essai dit que le proxy refuse Pactols', $essai_pactols );
 
+WP_CLI::log( 'La sortie vers Cloudflare' );
+$cf_vu     = array();
+$cf_reponse = null;
+$cf_simul  = function ( $pre, $args, $url ) use ( &$cf_vu, &$cf_reponse ) {
+	if ( false === strpos( $url, 'challenges.cloudflare.com' ) ) {
+		return $pre;
+	}
+	$cf_vu[] = $args['body'];
+	return $cf_reponse;
+};
+add_filter( 'pre_http_request', $cf_simul, 10, 3 );
+$cf_reponse = new WP_Error( 'http_request_failed', 'cURL error 56: Received HTTP code 403 from proxy after CONNECT' );
+$essai_cf   = na_appel( $pages_reglages, 'test_cloudflare', array( '' ) );
+na_verifier( false === $essai_cf['ok'] && false !== strpos( $essai_cf['message'], 'proxy' ) && false !== strpos( $essai_cf['message'], 'challenges.cloudflare.com' ),
+	'l\'essai dit que le proxy refuse Cloudflare', $essai_cf );
+na_verifier( 1 === count( $cf_vu ) && '' !== $cf_vu[0]['secret'], 'sans clé, l\'essai interroge quand même Cloudflare', $cf_vu );
+$cf_reponse = array( 'response' => array( 'code' => 200, 'message' => 'OK' ), 'headers' => array(), 'cookies' => array(), 'body' => '{"success":false,"error-codes":["invalid-input-secret"]}' );
+$essai_cf   = na_appel( $pages_reglages, 'test_cloudflare', array( '' ) );
+na_verifier( true === $essai_cf['ok'] && false !== strpos( $essai_cf['message'], 'joignable' ) && false !== strpos( $essai_cf['message'], 'enregistrez' ),
+	'sans clé, Cloudflare joint suffit, et l\'essai demande la clé', $essai_cf );
+$essai_cf = na_appel( $pages_reglages, 'test_cloudflare', array( 'cle-mauvaise' ) );
+na_verifier( false === $essai_cf['ok'] && false !== strpos( $essai_cf['message'], 'refuse la clé' ), 'une clé refusée se dit', $essai_cf );
+$cf_reponse = array( 'response' => array( 'code' => 200, 'message' => 'OK' ), 'headers' => array(), 'cookies' => array(), 'body' => '{"success":false,"error-codes":["invalid-input-response"]}' );
+$essai_cf   = na_appel( $pages_reglages, 'test_cloudflare', array( 'cle-bonne' ) );
+na_verifier( true === $essai_cf['ok'] && false !== strpos( $essai_cf['message'], 'reconnue' ) && 'cle-bonne' === end( $cf_vu )['secret'],
+	'une clé reconnue se dit', $essai_cf );
+remove_filter( 'pre_http_request', $cf_simul, 10 );
+
 WP_CLI::log( 'La liaison à sDrive' );
 // Un sDrive simulé, qui répond comme le vrai : la demande, son relevé
 // avant puis après l'autorisation, la révocation, et le dossier en WebDAV.

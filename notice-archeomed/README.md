@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.85
+# Formulaire des notices d’archéologie médiévale — version 3.86
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -203,8 +203,10 @@ l'adresse plutôt que de relancer un envoi qui échouerait. C'est donc le
 premier réglage à faire après l'installation.
 
 Si l'on choisit Cloudflare Turnstile dans l'onglet **Formulaire**, il faut
-aussi y coller sa clé secrète ; un bouton « Tester la clé » la vérifie sans
-envoyer de notice. La pièce de puzzle, choisie par défaut, ne demande rien.
+aussi y coller sa clé secrète. Le bouton « Tester Cloudflare », visible quelle
+que soit la protection, dit si le serveur joint Cloudflare (un proxy peut
+l'empêcher) et, si une clé est enregistrée, si Cloudflare la reconnaît ; il
+n'envoie aucune notice. La pièce de puzzle, choisie par défaut, ne demande rien.
 
 Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
 Normes éditoriales, Styles Métopes, Formulaire, Accessibilité, Candidats à

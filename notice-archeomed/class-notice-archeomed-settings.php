@@ -763,42 +763,53 @@ class Notice_Archeomed_Settings {
 	}
 
 	/**
-	 * Teste la clé secrète auprès de Cloudflare. On envoie volontairement un
-	 * jeton invalide : si la clé est bonne, l'API répond « invalid-input-response » ;
-	 * si la clé est mauvaise, elle répond « invalid-input-secret ». C'est donc
-	 * un moyen de valider la clé sans avoir à résoudre un défi.
+	 * Le serveur joint-il Cloudflare, et reconnaît-il la clé secrète ?
+	 *
+	 * On interroge l'adresse même où Turnstile vérifie chaque dépôt, avec un
+	 * jeton volontairement faux : une clé bonne répond « invalid-input-response »,
+	 * une clé mauvaise « invalid-input-secret ». Cela éprouve la clé sans
+	 * résoudre de défi. Sans clé, l'essai dit seulement si l'on passe : c'est
+	 * ce que le proxy de l'hébergement empêche, et ce qu'il faut savoir avant
+	 * de choisir Turnstile.
 	 */
-	private function test_secret( $secret ) {
-		if ( '' === trim( $secret ) ) {
-			return array( 'ok' => false, 'message' => 'Aucune clé secrète enregistrée.' );
-		}
+	private function test_cloudflare( $secret ) {
+		$secret   = trim( (string) $secret );
 		$response = wp_remote_post(
 			'https://challenges.cloudflare.com/turnstile/v0/siteverify',
 			array(
 				'timeout' => 10,
 				'body'    => array(
-					'secret'   => $secret,
+					'secret'   => '' !== $secret ? $secret : 'essai-sans-cle',
 					'response' => 'test-invalide-verification-cle',
 				),
 			)
 		);
 		if ( is_wp_error( $response ) ) {
+			$message = $response->get_error_message();
+			$proxy   = false !== stripos( $message, 'proxy' ) || false !== stripos( $message, 'error 56' );
 			return array(
 				'ok'      => false,
-				'message' => 'Impossible de joindre Cloudflare : ' . $response->get_error_message(),
+				'message' => 'Cloudflare n’est pas joignable depuis ce serveur — ' . $message . '.'
+					. ( $proxy ? ' C’est le proxy de l’hébergement qui refuse la sortie : il faut demander l’ouverture de challenges.cloudflare.com.' : '' )
+					. ' Tant que l’essai échoue, Turnstile ne vérifierait aucun dépôt : le formulaire se rabattrait sur la pièce de puzzle.',
 			);
 		}
-		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		$code  = (int) wp_remote_retrieve_response_code( $response );
+		$body  = json_decode( wp_remote_retrieve_body( $response ), true );
+		$joint = 'Cloudflare est joignable depuis ce serveur (code HTTP ' . $code . ').';
 		if ( ! is_array( $body ) ) {
-			return array( 'ok' => false, 'message' => 'Réponse inattendue de Cloudflare.' );
+			return array( 'ok' => false, 'message' => $joint . ' Mais sa réponse n’est pas celle qu’on attend : la vérification de Turnstile ne marcherait pas.' );
+		}
+		if ( '' === $secret ) {
+			return array( 'ok' => true, 'message' => $joint . ' Turnstile peut servir ; enregistrez d’abord sa clé secrète, puis refaites l’essai.' );
 		}
 		$codes = isset( $body['error-codes'] ) ? (array) $body['error-codes'] : array();
 		if ( in_array( 'invalid-input-secret', $codes, true ) || in_array( 'missing-input-secret', $codes, true ) ) {
-			return array( 'ok' => false, 'message' => 'Cloudflare refuse cette clé secrète. Vérifiez qu\'elle correspond bien au site déclaré.' );
+			return array( 'ok' => false, 'message' => $joint . ' Mais il refuse la clé secrète enregistrée : vérifiez qu’elle correspond bien au site déclaré.' );
 		}
 		// Tout autre code signifie que la clé a été acceptée et que seul le
-		// jeton de test a été rejeté, ce qui est le résultat attendu.
-		return array( 'ok' => true, 'message' => 'La clé secrète est reconnue par Cloudflare.' );
+		// jeton de l'essai a été rejeté, ce qui est le résultat attendu.
+		return array( 'ok' => true, 'message' => $joint . ' La clé secrète est reconnue : Turnstile peut servir.' );
 	}
 
 	/**
@@ -1169,7 +1180,7 @@ class Notice_Archeomed_Settings {
 		$vers   = isset( $_POST['na_essai_vers'] )
 			? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
 		if ( 'turnstile' === $quoi ) {
-			$resultat = $this->test_secret( self::get( 'turnstile_secret' ) );
+			$resultat = $this->test_cloudflare( self::get( 'turnstile_secret' ) );
 		} elseif ( 'envoi' === $quoi ) {
 			$resultat = $plugin ? $plugin->tester_l_envoi( $vers ) : $absent;
 		} elseif ( 'etapes' === $quoi ) {
@@ -1910,11 +1921,11 @@ class Notice_Archeomed_Settings {
 		</div>
 		<?php self::fermer_les_reglages(); ?>
 
-		<div id="na-turnstile-essai"<?php echo $turnstile_sert ? '' : ' hidden'; ?>>
-			<h2>Vérifier la clé secrète</h2>
-			<p>Cet essai demande à Cloudflare si la clé secrète <strong>enregistrée</strong> est reconnue, et dit du même coup si le serveur peut le joindre. Il n’envoie aucune notice.</p>
+		<div id="na-turnstile-essai">
+			<h2>Joindre Cloudflare</h2>
+			<p>Cet essai dit si le serveur joint Cloudflare, sans quoi Turnstile ne protège rien, et, si une clé secrète est <strong>enregistrée</strong>, si Cloudflare la reconnaît. Il se fait avant de choisir Turnstile, quelle que soit la protection retenue. Il n’envoie aucune notice.</p>
 			<?php self::ouvrir_un_essai(); ?>
-				<button type="submit" class="button" name="na_quoi" value="turnstile">Tester la clé secrète</button>
+				<button type="submit" class="button" name="na_quoi" value="turnstile">Tester Cloudflare</button>
 			</form>
 			<?php
 			if ( 'turnstile' === $essai['quoi'] ) {
@@ -1925,7 +1936,7 @@ class Notice_Archeomed_Settings {
 		<script>
 		(function () {
 			var radios = document.querySelectorAll('input[name="<?php echo esc_js( self::OPTION_NAME ); ?>[protection]"]');
-			var blocs = [document.getElementById('na-turnstile'), document.getElementById('na-turnstile-essai')];
+			var blocs = [document.getElementById('na-turnstile')];
 			radios.forEach(function (r) {
 				r.addEventListener('change', function () {
 					var sert = r.checked && r.value !== 'locale';
