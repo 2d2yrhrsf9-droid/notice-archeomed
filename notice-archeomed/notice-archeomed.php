@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.87
+ * Version: 3.88
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3409,6 +3409,7 @@ class Notice_Archeomed_Pactols {
 			@keyframes na-va-et-vient { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 			.na-form#na-form .na-envoi-mot { max-width: var(--na-mesure); margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-encre); }
 			.na-form#na-form .na-donnees { max-width: var(--na-mesure); margin-top: var(--na-e5); font-size: 13px; line-height: 1.5; color: #555; }
+			.na-form#na-form .na-credit { max-width: var(--na-mesure); margin-top: var(--na-e3); font-size: 11px; line-height: 1.4; color: #777; }
 
 			/* ── Messages ── */
 			.na-form#na-form .na-message, .na-form#na-form .na-js-error, .na-form#na-form .na-recap {
@@ -4034,6 +4035,7 @@ class Notice_Archeomed_Pactols {
 						<p class="na-envoi-mot">Envoi en cours. Avec des illustrations lourdes et une connexion lente, cela peut prendre deux ou trois minutes. Ne fermez pas cette page.</p>
 					</div>
 					<p class="na-donnees">Les informations transmises via ce formulaire sont utilisées uniquement pour l’instruction éditoriale des notices destinées à la Chronique d’<em>Archéologie médiévale</em>. Elles sont adressées à la rédaction de la revue et ne sont pas utilisées à d’autres fins. Elles sont conservées pendant la durée nécessaire au traitement éditorial de la notice. Pour toute demande relative à ces données, vous pouvez contacter la rédaction à l’adresse indiquée sur le site.</p>
+					<p class="na-credit">Ce formulaire est une extension WordPress développée par la rédaction de la revue à l’aide de l’IA.</p>
 				</div>
 			</section>
 		</form>
