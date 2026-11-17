@@ -1034,6 +1034,29 @@ na_verifier( false !== strpos( $courriel_xii, '<span style="font-variant: small-
 	&& false !== strpos( $courriel_xii, '<span class="na-pc" style="font-variant:small-caps">Moyen Âge</span>' )
 	&& false !== strpos( $courriel_xii, "Âge</span>\u{00A0}: fin" ) && false !== strpos( $courriel_xii, 'REFXII' ),
 	'le courriel et la fiche montrent le texte aux normes, petites capitales et référence comprises', $courriel_xii );
+$courriel_t1 = na_appel( $plugin, 'build_notice', array( array_merge( $saisie_styles, array(
+	'texte_notice' => '<h3>Le site</h3><p>Le mur.</p>', 'illustrations' => array( array( 'rang' => 1, 'titre' => 'Plan',
+		'legende' => 'Le plan.', 'credits' => '', 'type' => '' ) ) ) ) ) );
+na_verifier( false !== strpos( $courriel_t1, 'CAEN (Calvados)' )
+	&& false !== strpos( $courriel_t1, '<h3 style="font-size:15px;font-weight:bold;margin:14px 0 4px;">Le site</h3>' )
+	&& false !== strpos( $courriel_t1, '<!--na-figure-1--><strong>Fig. 1</strong> — Plan' ),
+	'le titre du courriel met la commune en capitales, l\'intertitre T1 n\'y est qu\'en gras, et chaque figure marque la place de son aperçu', $courriel_t1 );
+$t1_png  = trailingslashit( get_temp_dir() ) . 'na-essai-apercu.png';
+file_put_contents( $t1_png, base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' ) );
+$t1_tif  = trailingslashit( get_temp_dir() ) . 'na-essai-original.tif';
+file_put_contents( $t1_tif, 'II*' );
+$t1_corps   = '<p><!--na-figure-1--><strong>Fig. 1</strong></p><p><!--na-figure-2--><strong>Fig. 2</strong></p>';
+$t1_joindre = array( '/doc.docx', 'Caen_fig1_apercu.png' => $t1_png, 'Caen_fig2.tif' => $t1_tif );
+$t1_args    = array( &$t1_corps, &$t1_joindre, array( 1 => $t1_png, 2 => $t1_tif ) );
+$t1_integrees = na_appel( $plugin, 'figures_dans_le_corps', $t1_args );
+na_verifier( 1 === count( $t1_integrees ) && 'na-figure-1@archeomed' === $t1_integrees[0]['cid']
+	&& 'Caen_fig1_apercu.png' === $t1_integrees[0]['nom']
+	&& false !== strpos( $t1_corps, '<img src="cid:na-figure-1@archeomed" width="1"' ) && false !== strpos( $t1_corps, '<!--na-figure-2-->' )
+	&& ! isset( $t1_joindre['Caen_fig1_apercu.png'] ) && isset( $t1_joindre['Caen_fig2.tif'] ) && 2 === count( $t1_joindre ),
+	'l\'aperçu d\'une figure se pose dans le corps au-dessus de sa légende et quitte les pièces jointes ; un TIFF reste joint',
+	array( $t1_corps, $t1_joindre ) );
+@unlink( $t1_png );
+@unlink( $t1_tif );
 
 WP_CLI::log( 'Le titre et les figures sous les normes' );
 $doc_titre = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
@@ -1664,14 +1687,14 @@ na_verifier( false !== strpos( $rendu_servi, 'a déjà servi' ) && false !== str
 
 WP_CLI::log( 'La limite annoncée des illustrations' );
 // L'annonce ne promet jamais plus que ce que le serveur accepte : trois
-// fichiers de 2 Mo font 6 Mo, non les 20 du plafond général.
+// fichiers de 2 Mo font 6 Mo, non les 40 du plafond général.
 $deux_mo = function () {
 	return 2 * MB_IN_BYTES;
 };
 add_filter( 'upload_size_limit', $deux_mo, 99 );
 $rendu_limite = $plugin->render_form();
 remove_filter( 'upload_size_limit', $deux_mo, 99 );
-na_verifier( false !== strpos( $rendu_limite, '6&nbsp;Mo en tout, 2&nbsp;Mo par fichier' ) && false === strpos( $rendu_limite, '20&nbsp;Mo en tout' ),
+na_verifier( false !== strpos( $rendu_limite, '6&nbsp;Mo en tout, 2&nbsp;Mo par fichier' ) && false === strpos( $rendu_limite, '40&nbsp;Mo en tout' ),
 	'trois fichiers de 2 Mo s\'annoncent « 6 Mo en tout, 2 Mo par fichier »',
 	preg_match( '#[\d,]+&nbsp;Mo en tout[^<)]*#', $rendu_limite, $m_limite ) ? $m_limite[0] : '' );
 
@@ -1845,7 +1868,10 @@ delete_transient( 'na_sceau_' . substr( $sceau['preuve'], 0, 40 ) );
 na_verifier( false === $sceau_deplace && true === $sceau_premier && false === $sceau_second,
 	'le sceau du puzzle tient à l\'heure d\'affichage de la page, et ne sert qu\'une fois',
 	array( $sceau_deplace, $sceau_premier, $sceau_second ) );
-$ts_forge   = time() - 30;
+// Vingt secondes, et non trente : les dépôts joués plus haut ont pris
+// trente secondes et plus. Dans la même seconde, l'un d'eux pouvait avoir
+// déjà servi le même sceau, une fois sur cinquante-neuf encoches.
+$ts_forge   = time() - 20;
 $defi_forge = na_appel( $plugin, 'defi_du_puzzle', array( $ts_forge ) );
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = array(
@@ -2694,7 +2720,8 @@ $ann_ids[] = na_notice( array( 'commune' => 'Vire', 'resp_nom' => ' Durand ', 'r
 	'resp_email' => 'ELODIE@annuaire.test', 'resp_inst' => 'CNRS UMR 6273' ) );
 $ann_ids[] = na_notice( array( 'commune' => 'Bayeux', 'resp_nom' => 'Aubry', 'resp_prenom' => 'Bernard', 'resp_email' => 'bernard@annuaire.test',
 	'coresp_nom' => 'd’Arc', 'coresp_prenom' => 'Jeanne', 'coresp_email' => 'jeanne@annuaire.test', 'coresp_inst' => 'Université de Caen',
-	'coauteur_nom' => 'Sans', 'coauteur_prenom' => 'Adresse', 'coauteur_email' => 'pas-une-adresse' ) );
+	'coauteur_nom' => 'Sans', 'coauteur_prenom' => 'Adresse', 'coauteur_email' => 'pas-une-adresse',
+	'deposant_prenom' => 'Chloé', 'deposant_nom' => 'Bon', 'deposant_email' => 'chloe@annuaire.test' ) );
 $ann_ids[] = na_notice( array( 'commune' => 'Lisieux', 'resp_nom' => 'Éluard', 'resp_prenom' => "Paul\n\tÉmile",
 	'resp_email' => 'paul@annuaire.test', 'resp_inst' => '@lab' ) );
 $ann_ids[] = na_notice( array( 'commune' => 'Falaise', 'resp_nom' => 'Zorro', 'resp_prenom' => 'Diego', 'resp_email' => 'zorro@annuaire.test' ) );
@@ -2705,18 +2732,19 @@ update_post_meta( $ann_ids[5], '_na_remplace', 'annref' );
 $annuaire = array_values( array_filter( Notice_Archeomed_Annuaire::recenser(), function ( $p ) {
 	return '@annuaire.test' === strtolower( substr( $p['courriel'], -14 ) );
 } ) );
-na_verifier( array( 'Aubry', 'd’Arc', 'Durand', 'Éluard' ) === array_column( $annuaire, 'nom' )
-	&& 'ELODIE@annuaire.test' === $annuaire[2]['courriel'] && 'CNRS UMR 6273' === $annuaire[2]['institution']
-	&& 2 === count( $annuaire[2]['notices'] ) && 'ANN-Caen' === $annuaire[2]['notices'][ $ann_ids[0] ]
-	&& array( 'co-responsable' ) === array_keys( $annuaire[1]['roles'] ) && 'Paul Émile' === $annuaire[3]['prenom'],
-	'une ligne par adresse, sans égard à la casse, au nom de la notice la plus récente, classée par nom sans égard aux accents ni à l\'apostrophe ; ni adresse invalide, ni notice remplacée',
+na_verifier( array( 'Aubry', 'Bon', 'd’Arc', 'Durand', 'Éluard' ) === array_column( $annuaire, 'nom' )
+	&& 'ELODIE@annuaire.test' === $annuaire[3]['courriel'] && 'CNRS UMR 6273' === $annuaire[3]['institution']
+	&& 2 === count( $annuaire[3]['notices'] ) && 'ANN-Caen' === $annuaire[3]['notices'][ $ann_ids[0] ]
+	&& array( 'co-responsable' ) === array_keys( $annuaire[2]['roles'] ) && 'Paul Émile' === $annuaire[4]['prenom']
+	&& array( 'déposant' ) === array_keys( $annuaire[1]['roles'] ) && '' === $annuaire[1]['institution'],
+	'une ligne par adresse, sans égard à la casse, au nom de la notice la plus récente, classée par nom sans égard aux accents ni à l\'apostrophe ; le déposant y est ; ni adresse invalide, ni notice remplacée',
 	$annuaire );
-na_verifier( array( 'bernard@annuaire.test Bernard Aubry', 'jeanne@annuaire.test Jeanne d’Arc', 'ELODIE@annuaire.test Élodie Durand',
+na_verifier( array( 'bernard@annuaire.test Bernard Aubry', 'chloe@annuaire.test Chloé Bon', 'jeanne@annuaire.test Jeanne d’Arc', 'ELODIE@annuaire.test Élodie Durand',
 	'paul@annuaire.test Paul Émile Éluard' ) === Notice_Archeomed_Annuaire::lignes_sympa( $annuaire ),
 	'le fichier pour Sympa porte une ligne par personne : l\'adresse, le prénom, le nom', Notice_Archeomed_Annuaire::lignes_sympa( $annuaire ) );
 $ann_tableur = Notice_Archeomed_Annuaire::lignes_du_tableur( $annuaire );
-na_verifier( 5 === count( $ann_tableur ) && 'Nom' === $ann_tableur[0][0] && "'@lab" === $ann_tableur[4][3]
-	&& 'co-responsable' === $ann_tableur[2][4] && false !== strpos( $ann_tableur[3][5], 'ANN-Caen' ),
+na_verifier( 6 === count( $ann_tableur ) && 'Nom' === $ann_tableur[0][0] && "'@lab" === $ann_tableur[5][3]
+	&& 'co-responsable' === $ann_tableur[3][4] && false !== strpos( $ann_tableur[4][5], 'ANN-Caen' ),
 	'le tableur porte une ligne par personne, et une cellule qui commence par « @ » ne devient pas une formule', $ann_tableur );
 ob_start();
 Notice_Archeomed_Annuaire::onglet();
@@ -2725,6 +2753,74 @@ na_verifier( isset( Notice_Archeomed_Settings::onglets()['annuaire'] ) && false 
 	&& false !== strpos( $rendu_annuaire, 'action=na_annuaire_tableur' ) && false !== strpos( $rendu_annuaire, 'mailto:jeanne@annuaire.test' )
 	&& false !== strpos( $rendu_annuaire, '(co-responsable)' ) && false === strpos( $rendu_annuaire, 'zorro@annuaire.test' ),
 	'l\'onglet Annuaire montre les personnes, leurs notices, et les deux liens d\'export', $rendu_annuaire );
+na_verifier( false !== strpos( $rendu_annuaire, 'name="courriel" value="jeanne@annuaire.test"' )
+	&& false !== strpos( $rendu_annuaire, 'value="' . Notice_Archeomed_Annuaire::ACTION_RETIRER . '"' )
+	&& 1 === substr_count( $rendu_annuaire, 'name="_wpnonce"' ) && false === strpos( $rendu_annuaire, 'id="_wpnonce"' )
+	&& false === strpos( $rendu_annuaire, 'Retirées de l’annuaire' ),
+	'chaque ligne de l\'annuaire porte un bouton pour la retirer, sous un seul jeton', $rendu_annuaire );
+
+// Retirer une personne : l'onglet et les deux exports l'écartent, ses
+// notices ne changent pas, et une nouvelle notice ne la ramène pas.
+WP_CLI::log( 'Retirer une personne de l\'annuaire' );
+$ann_utilisateur = get_current_user_id();
+wp_set_current_user( 1 );
+$ann_sortie = function ( $vers ) {
+	throw new RuntimeException( (string) $vers );
+};
+$ann_mourir = function () {
+	return function () {
+		throw new RuntimeException( 'wp_die' );
+	};
+};
+add_filter( 'wp_redirect', $ann_sortie );
+add_filter( 'wp_die_handler', $ann_mourir );
+$ann_jouer = function ( $post ) {
+	$_POST = $_REQUEST = $post;
+	try {
+		( new Notice_Archeomed_Annuaire() )->retirer_ou_retablir();
+	} catch ( RuntimeException $e ) {
+		return $e->getMessage();
+	}
+	return '';
+};
+$ann_jeton  = wp_create_nonce( Notice_Archeomed_Annuaire::ACTION_RETIRER );
+$ann_faux   = $ann_jouer( array( '_wpnonce' => 'faux', 'sens' => 'retirer', 'courriel' => 'jeanne@annuaire.test' ) );
+na_verifier( 'wp_die' === $ann_faux && array() === Notice_Archeomed_Annuaire::retires(),
+	'sans jeton, personne n\'est retiré', $ann_faux );
+$ann_vers = $ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retirer', 'courriel' => 'JEANNE@annuaire.test',
+	'nom' => 'd’Arc', 'prenom' => 'Jeanne' ) );
+$ann_apres = array_column( array_filter( Notice_Archeomed_Annuaire::recenser(), function ( $p ) {
+	return '@annuaire.test' === strtolower( substr( $p['courriel'], -14 ) );
+} ), 'courriel' );
+na_verifier( false !== strpos( $ann_vers, 'tab=annuaire' ) && false !== strpos( $ann_vers, 'na_annuaire=retire' )
+	&& ! in_array( 'jeanne@annuaire.test', $ann_apres, true ) && in_array( 'bernard@annuaire.test', $ann_apres, true )
+	&& 'Jeanne' === Notice_Archeomed_Annuaire::retires()['jeanne@annuaire.test']['prenom']
+	&& 'jeanne@annuaire.test' === get_post_meta( $ann_ids[2], '_na_donnees', true )['coresp_email'],
+	'une personne retirée sort de l\'annuaire, garde son nom dans la liste des retirées, et sa notice ne change pas',
+	array( $ann_vers, $ann_apres, Notice_Archeomed_Annuaire::retires() ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Lisieux', 'resp_nom' => 'd’Arc', 'resp_prenom' => 'Jeanne', 'resp_email' => 'Jeanne@Annuaire.test' ) );
+$ann_sympa = implode( "\n", Notice_Archeomed_Annuaire::lignes_sympa( Notice_Archeomed_Annuaire::recenser() ) );
+$ann_csv   = wp_json_encode( Notice_Archeomed_Annuaire::lignes_du_tableur( Notice_Archeomed_Annuaire::recenser() ) );
+$_GET['na_annuaire'] = 'retire';
+ob_start();
+Notice_Archeomed_Annuaire::onglet();
+$rendu_retire = ob_get_clean();
+unset( $_GET['na_annuaire'] );
+na_verifier( false === stripos( $ann_sympa, 'jeanne@annuaire.test' ) && false === stripos( $ann_csv, 'jeanne@annuaire.test' )
+	&& false === stripos( $rendu_retire, 'mailto:jeanne@annuaire.test' ) && false !== strpos( $rendu_retire, 'Retirées de l’annuaire (1)' )
+	&& false !== strpos( $rendu_retire, 'name="courriel" value="JEANNE@annuaire.test"' ) && false !== strpos( $rendu_retire, 'value="retablir"' )
+	&& false !== strpos( $rendu_retire, 'Ses notices n’ont pas changé' ) && 2 === substr_count( $rendu_retire, 'name="_wpnonce"' ),
+	'une adresse retirée ne revient ni dans les exports ni dans l\'onglet, même avec une nouvelle notice, et se rétablit d\'un bouton',
+	$rendu_retire );
+$ann_vers = $ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retablir', 'courriel' => 'JEANNE@annuaire.test' ) );
+na_verifier( false !== strpos( $ann_vers, 'na_annuaire=retabli' ) && array() === Notice_Archeomed_Annuaire::retires()
+	&& in_array( 'jeanne@annuaire.test', array_map( 'strtolower', array_column( Notice_Archeomed_Annuaire::recenser(), 'courriel' ) ), true ),
+	'une adresse rétablie revient dans l\'annuaire', array( $ann_vers, Notice_Archeomed_Annuaire::retires() ) );
+remove_filter( 'wp_redirect', $ann_sortie );
+remove_filter( 'wp_die_handler', $ann_mourir );
+$_POST = $_REQUEST = array();
+wp_set_current_user( $ann_utilisateur );
+delete_option( Notice_Archeomed_Annuaire::OPTION_RETIRES );
 foreach ( $ann_ids as $ann_id ) {
 	wp_delete_post( $ann_id, true );
 }

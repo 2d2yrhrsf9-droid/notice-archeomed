@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.80
+ * Version: 3.81
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -171,7 +171,13 @@ class Notice_Archeomed_Pactols {
 	// Modèle RTF portant la feuille de styles Métopes, livré avec le plugin.
 	const RTF_TEMPLATE        = 'modele-metopes.rtf';
 	const DOCX_TEMPLATE       = 'modele-metopes.docx';
-	const MAX_TOTAL_FILESIZE  = 20971520;
+	// Les illustrations d'une notice, toutes ensemble. Vingt méga-octets
+	// tant que PHP coupait à vingt-cinq ; quarante depuis que le serveur de la
+	// revue accepte soixante-quatre, sans aller jusque-là : une figure ne pèse
+	// sur le disque que le temps d'être rangée sur sDrive, mais une panne de
+	// sDrive les y garderait toutes. Le courriel n'en dépend pas : il ne
+	// porte que les aperçus.
+	const MAX_TOTAL_FILESIZE  = 41943040;
 	// Les plafonds, et pourquoi ils sont si hauts.
 	//
 	// Une adresse IP ne désigne pas une personne. L'Inrap, une DRAC, une
@@ -355,7 +361,7 @@ class Notice_Archeomed_Pactols {
 	private $fichiers_refuses = false;
 
 	// Ce que tous les dépôts peuvent écrire en une heure. Une campagne n'en
-	// approche pas : trois cents notices par an, de quelques Mo à vingt.
+	// approche pas : trois cents notices par an, de quelques Mo à quarante.
 	const MAX_POIDS_PAR_HEURE = 500 * MB_IN_BYTES;
 
 	public function __construct() {
@@ -1539,7 +1545,7 @@ class Notice_Archeomed_Pactols {
 		$garde = array();
 		$simples = array(
 			'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2',
-			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_email',
+			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'annee',
@@ -1931,7 +1937,7 @@ class Notice_Archeomed_Pactols {
 		$saisie = array();
 		foreach ( array(
 			'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2',
-			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_email',
+			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'annee',
@@ -2206,6 +2212,9 @@ class Notice_Archeomed_Pactols {
 			'imagick'    => Notice_Archeomed_Paquet::imagick_disponible(),
 			// Le lecteur de PDF (pdf.js) ne se charge que si un auteur choisit un PDF.
 			'pdfjs'      => Notice_Archeomed_Paquet::imagick_disponible() ? '' : plugins_url( 'assets/pdfjs/', __FILE__ ),
+			// Le même, pour la seule vignette de la carte quand le serveur
+			// convertit : chargé au premier PDF choisi, jamais avant.
+			'lecteurPdf' => plugins_url( 'assets/pdfjs/', __FILE__ ),
 			// Le lecteur de TIFF, chargé à la demande quand Imagick est là : un
 			// TIFF trop lourd se passe encore en JPEG dans le navigateur.
 			'utif'       => array(
@@ -3028,6 +3037,8 @@ class Notice_Archeomed_Pactols {
 			/* ── Champ : libellé, aide, saisie, erreur ── */
 			.na-form#na-form .na-champ { margin-top: var(--na-e5); }
 			.na-form#na-form .na-sous-groupe .na-champ { margin-top: var(--na-e4); }
+			.na-form#na-form .na-deposant { margin-top: var(--na-e5); padding-top: var(--na-e4); border-top: 1px solid var(--na-filet-doux); }
+			.na-form#na-form .na-deposant-titre { margin: 0 0 var(--na-e1); font-weight: 600; }
 			.na-form#na-form label, .na-form#na-form .na-libelle { display: block; margin: 0 0 var(--na-e1); padding: 0;
 				font-size: var(--na-t-m); font-weight: 600; line-height: 1.35; color: var(--na-encre);
 				text-transform: none; letter-spacing: normal; }
@@ -3170,7 +3181,7 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .ql-toolbar.ql-snow button.na-bouton-titre { width: auto; min-width: 2.25rem; padding: 0 .375rem;
 				font-family: var(--na-serif); font-size: var(--na-t-s); font-weight: 700; color: var(--na-encre); }
 			.na-form#na-form .ql-toolbar.ql-snow button.na-bouton-titre.ql-active { color: var(--na-accent); }
-			.na-form#na-form .ql-editor h3 { margin: 1em 0 .4em; font-family: var(--na-serif); font-size: var(--na-t-l); font-weight: 700; }
+			.na-form#na-form .ql-editor h3 { margin: 1em 0 .4em; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: 700; letter-spacing: normal; text-transform: none; color: inherit; }
 			.na-form#na-form .ql-editor h4 { margin: .9em 0 .3em; font-family: var(--na-serif); font-size: var(--na-t-m); font-weight: 700; font-style: italic; }
 			.na-form#na-form .ql-toolbar.ql-snow button.ql-petitescapitales { width: auto; min-width: 2.25rem; padding: 0 .375rem;
 				font: inherit; font-size: var(--na-t-m); font-weight: 700; font-variant: small-caps; color: var(--na-encre); }
@@ -3687,16 +3698,38 @@ class Notice_Archeomed_Pactols {
 							aria-describedby="na-resp-email-aide" value="<?php echo esc_attr( $this->repris( 'resp_email' ) ); ?>">
 					</div>
 					<div class="na-champ">
-						<label for="na-deposant-email">Votre adresse, si vous déposez pour le responsable <span class="na-facultatif">(facultatif)</span></label>
-						<p class="na-help" id="na-deposant-email-aide">Vous recevrez vous aussi la copie et le lien de correction. Cette adresse n’est pas publiée.</p>
-						<input type="email" id="na-deposant-email" name="deposant_email" autocomplete="email" spellcheck="false"
-							aria-describedby="na-deposant-email-aide" value="<?php echo esc_attr( $this->repris( 'deposant_email' ) ); ?>">
-					</div>
-					<div class="na-champ">
 						<label for="na-resp-inst">Institution de rattachement <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-resp-inst-aide">Celle du responsable, telle qu’elle doit paraître après son nom dans la notice&nbsp;: son employeur ou son laboratoire. Elle peut différer de l’opérateur.</p>
 						<input type="text" id="na-resp-inst" name="resp_inst" required autocomplete="organization"
 							aria-describedby="na-resp-inst-aide" value="<?php echo esc_attr( $this->repris( 'resp_inst' ) ); ?>">
+					</div>
+					<?php
+					// Qui dépose pour le responsable se nomme : il figure ainsi sur la
+					// fiche et dans l'annuaire, et non plus comme une adresse seule.
+					// La saisie automatique vise une section à part, pour que le
+					// navigateur ne mette pas son identité dans les champs du
+					// responsable.
+					?>
+					<div class="na-deposant" role="group" aria-labelledby="na-deposant-titre">
+						<p class="na-deposant-titre" id="na-deposant-titre">Si vous déposez pour le responsable <span class="na-facultatif">(facultatif)</span></p>
+						<p class="na-help" id="na-deposant-email-aide">Vous recevrez vous aussi la copie et le lien de correction. Vos coordonnées ne sont pas publiées.</p>
+						<div class="na-half">
+							<div class="na-champ">
+								<label for="na-deposant-prenom">Votre prénom</label>
+								<input type="text" id="na-deposant-prenom" name="deposant_prenom" autocomplete="section-deposant given-name"
+									value="<?php echo esc_attr( $this->repris( 'deposant_prenom' ) ); ?>">
+							</div>
+							<div class="na-champ">
+								<label for="na-deposant-nom">Votre nom</label>
+								<input type="text" id="na-deposant-nom" name="deposant_nom" autocomplete="section-deposant family-name"
+									value="<?php echo esc_attr( $this->repris( 'deposant_nom' ) ); ?>">
+							</div>
+						</div>
+						<div class="na-champ">
+							<label for="na-deposant-email">Votre adresse électronique</label>
+							<input type="email" id="na-deposant-email" name="deposant_email" autocomplete="section-deposant email" spellcheck="false"
+								aria-describedby="na-deposant-email-aide" value="<?php echo esc_attr( $this->repris( 'deposant_email' ) ); ?>">
+						</div>
 					</div>
 				</fieldset>
 				<?php
@@ -5557,12 +5590,14 @@ class Notice_Archeomed_Pactols {
 			// reste dans « originaux ».
 			function chargerPdfJs() {
 				if (window.pdfjsLib) { return Promise.resolve(window.pdfjsLib); }
+				var racine = CONV.pdfjs || CONV.lecteurPdf;
+				if (!racine) { return Promise.reject(new Error('pdfjs')); }
 				return new Promise(function (ok, ko) {
 					var s = document.createElement('script');
-					s.src = CONV.pdfjs + 'pdf.min.js';
+					s.src = racine + 'pdf.min.js';
 					s.onload = function () {
 						if (!window.pdfjsLib) { ko(new Error('pdfjs')); return; }
-						window.pdfjsLib.GlobalWorkerOptions.workerSrc = CONV.pdfjs + 'pdf.worker.min.js';
+						window.pdfjsLib.GlobalWorkerOptions.workerSrc = racine + 'pdf.worker.min.js';
 						ok(window.pdfjsLib);
 					};
 					s.onerror = function () { ko(new Error('pdfjs')); };
@@ -5662,6 +5697,56 @@ class Notice_Archeomed_Pactols {
 				if (!el || !el.parentNode || !e.conv || e.conv.etat !== 'ok') { return; }
 				el.parentNode.replaceChild(vignetteDe(e.vignette, f.name), el);
 				e.statutEl = null;
+			}
+			// Quand le serveur convertit le TIFF et le PDF, la carte n'avait plus
+			// d'image : la vignette venait de la conversion faite ici. Le
+			// navigateur en tire une pour l'écran seulement, rien n'en part avec
+			// le dépôt. Ce qu'il ne sait pas lire garde « Pas d'aperçu », sans
+			// refus : le serveur, lui, le lira.
+			var VIGNETTE_COTE = 1200;
+			function tirerLaVignette(f) {
+				var e = etatDe(f), ext = extOf(f.name);
+				if (e.vignette || e.vignetteEnCours || !ALLEGER_BASE || !(window.URL && URL.createObjectURL)) { return; }
+				e.vignetteEnCours = true;
+				if (e.statutEl) { e.statutEl.textContent = 'Aperçu du ' + ext.toUpperCase() + ' en préparation…'; }
+				var travail;
+				if (ext === 'pdf') {
+					travail = Promise.all([chargerPdfJs(), lireLeBuffer(f)]).then(function (r) {
+						return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false, enableXfa: false }).promise;
+					}).then(function (pdf) {
+						return pdf.getPage(1).then(function (page) {
+							var v1 = page.getViewport({ scale: 1 });
+							var vue = page.getViewport({ scale: VIGNETTE_COTE / Math.max(v1.width, v1.height) });
+							var c = document.createElement('canvas');
+							c.width = Math.max(1, Math.round(vue.width));
+							c.height = Math.max(1, Math.round(vue.height));
+							return page.render({ canvasContext: c.getContext('2d'), viewport: vue, background: '#ffffff' }).promise.then(function () {
+								try { pdf.destroy(); } catch (x) {}
+								return c;
+							});
+						});
+					});
+				} else {
+					travail = chargerUtif().then(function () { return decoderLeTiff(f); }).then(function (t) {
+						var echelle = Math.min(1, VIGNETTE_COTE / Math.max(t.w, t.h));
+						var c = reduireLeCanvas(t.plein, Math.round(t.w * echelle), Math.round(t.h * echelle));
+						t.plein.width = t.plein.height = 1;
+						return c;
+					});
+				}
+				travail.then(function (c) { return enJpeg(c, 0.85); }).then(function (b) {
+					e.vignetteEnCours = false;
+					if (selected.indexOf(f) === -1) { return; }
+					e.vignette = URL.createObjectURL(b);
+					var el = e.statutEl;
+					if (el && el.parentNode) {
+						el.parentNode.replaceChild(vignetteDe(e.vignette, f.name), el);
+						e.statutEl = null;
+					}
+				}).catch(function () {
+					e.vignetteEnCours = false;
+					if (e.statutEl) { e.statutEl.textContent = 'Pas d’aperçu pour ce format (' + ext.toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.'; }
+				});
 			}
 			// La vignette est un bouton : on la clique pour voir l'image en grand,
 			// et décrire dans la légende ce qu'elle montre vraiment. La fenêtre se
@@ -6525,8 +6610,8 @@ class Notice_Archeomed_Pactols {
 						});
 					}
 					// Une vignette, pour qu'on sache de quelle image on écrit la
-					// légende : « Figure 1 », c'est ce que le texte cite. Un TIFF ne
-					// s'affiche pas dans un navigateur ; il garde son seul nom.
+					// légende : « Figure 1 », c'est ce que le texte cite. Un TIFF ou un
+					// PDF ne s'affiche pas tel quel : sa vignette se dessine à part.
 					if (f.aPart) {
 						groupe.appendChild(champsDeLEnvoi(f, idx));
 					}
@@ -6534,8 +6619,9 @@ class Notice_Archeomed_Pactols {
 						if (!etat.vignette) { etat.vignette = URL.createObjectURL(f); }
 						groupe.appendChild(vignetteDe(etat.vignette, f.name));
 					}
-					else if (etat.conv && etat.conv.etat === 'ok' && etat.vignette) {
-						// Un TIFF converti : la vignette est tirée de sa basse définition.
+					else if (etat.vignette && !(etat.conv && etat.conv.etat === 'cours')) {
+						// Un TIFF converti : la vignette est tirée de sa basse définition ;
+						// lu par le serveur, d'une image faite pour l'écran.
 						groupe.appendChild(vignetteDe(etat.vignette, f.name));
 					}
 					else {
@@ -6547,6 +6633,7 @@ class Notice_Archeomed_Pactols {
 						sans.setAttribute('role', 'status');
 						sans.textContent = (etat.conv && etat.conv.etat === 'cours')
 							? 'Conversion du ' + extOf(f.name).toUpperCase() + ' en cours…'
+							: etat.vignetteEnCours ? 'Aperçu du ' + extOf(f.name).toUpperCase() + ' en préparation…'
 							: 'Pas d’aperçu pour ce format (' + extOf(f.name).toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
 						etat.statutEl = sans;
 						groupe.appendChild(sans);
@@ -7002,6 +7089,7 @@ class Notice_Archeomed_Pactols {
 				refusGardes = '';
 				majConseilsDuTexte();
 				ajoutes.forEach(function (f) { if (etatDe(f).conv && etatDe(f).conv.etat === 'cours') { lancerLaConversion(f); } });
+				ajoutes.forEach(function (f) { if (!aConvertir(f) && /^(tiff?|pdf)$/.test(extOf(f.name))) { tirerLaVignette(f); } });
 				// La définition se lit dans l'en-tête, sans charger l'image.
 				ajoutes.forEach(function (f) {
 					lireLaDefinition(f).then(function (px) {
@@ -9987,7 +10075,9 @@ class Notice_Archeomed_Pactols {
 			if ( '' !== $item['titre'] ) {
 				$parts[] = esc_html( $item['titre'] );
 			}
-			$lignes[] = implode( ' — ', $parts );
+			// La marque où le courriel de la rédaction pose l'aperçu de la
+			// figure, au-dessus de sa légende ; ailleurs, elle ne se voit pas.
+			$lignes[] = '<!--na-figure-' . (int) $item['rang'] . '-->' . implode( ' — ', $parts );
 			if ( '' !== $item['legende'] ) {
 				$lignes[] = esc_html( $item['legende'] );
 			}
@@ -10010,7 +10100,6 @@ class Notice_Archeomed_Pactols {
 
 	private function build_notice( $d ) {
 		$departement = $this->sans_parentheses( $d['departement'] );
-		$commune_dept = $this->lieux_en_ligne( $d ) . ' (' . $departement . ')';
 
 		// Police sans-serif type Arial pour tout le mail.
 		$font = 'font-family:Arial,Helvetica,sans-serif;';
@@ -10102,7 +10191,9 @@ class Notice_Archeomed_Pactols {
 			$contacts[] = esc_html( $can ) . ' : <a href="mailto:' . esc_attr( $d['coauteur_email'] ) . '">' . esc_html( $d['coauteur_email'] ) . '</a>';
 		}
 		if ( ! empty( $d['deposant_email'] ) && is_email( $d['deposant_email'] ) ) {
-			$contacts[] = 'Déposée par : <a href="mailto:' . esc_attr( $d['deposant_email'] ) . '">' . esc_html( $d['deposant_email'] ) . '</a>';
+			$dn = isset( $d['deposant_prenom'], $d['deposant_nom'] ) ? trim( $d['deposant_prenom'] . ' ' . $d['deposant_nom'] ) : '';
+			$contacts[] = 'Déposée par : ' . ( '' !== $dn ? esc_html( $dn ) . ' : ' : '' )
+				. '<a href="mailto:' . esc_attr( $d['deposant_email'] ) . '">' . esc_html( $d['deposant_email'] ) . '</a>';
 		}
 		$contacts_block = '';
 		if ( ! empty( $contacts ) ) {
@@ -10134,7 +10225,9 @@ class Notice_Archeomed_Pactols {
 		// Ligne 1 : Commune (département), lieu-dit (italique)
 		// Ligne 2 : Nature de l'opération : <valeur> (titre en maigre)
 		// Ligne 3+ : texte rédigé, terminé par " (responsable…)" collé au point final.
-		$loc_line = esc_html( $commune_dept );
+		// Les communes en capitales, comme à l'aperçu du titre dans le
+		// formulaire et dans le volume.
+		$loc_line = esc_html( mb_strtoupper( $this->lieux_en_ligne( $d ), 'UTF-8' ) . ' (' . $departement . ')' );
 		if ( '' !== $d['lieu_dit'] ) {
 			// Un point sépare, comme dans le document et dans le volume : la
 			// copie de l'auteur et le fichier joint ne doivent pas se
@@ -10207,6 +10300,9 @@ class Notice_Archeomed_Pactols {
 		$html .= '<div style="' . $style_corps . 'margin:0;">' . $loc_line . '<br>' . $nature_line . '</div>';
 		// On neutralise la marge haute du premier paragraphe du texte pour resserrer l'espace.
 		$texte_html = preg_replace( '#^(\s*<p)(\s|>)#i', '$1 style="margin-top:0;"$2', $texte_html, 1 );
+		// L'intertitre T1 en simple gras, à la taille du texte : sans style,
+		// les messageries le grossissaient comme un titre de page.
+		$texte_html = preg_replace( '#<h3(\s[^>]*)?>#i', '<h3 style="font-size:15px;font-weight:bold;margin:14px 0 4px;">', $texte_html );
 		$html .= '<div style="' . $style_corps . '">' . $texte_html . '</div>';
 		$suffixe = array();
 		$bloc_illustrations = $this->illustrations_block( $d );
@@ -11337,7 +11433,7 @@ class Notice_Archeomed_Pactols {
 	private static function entrees_attendues() {
 		$une_ligne = array(
 			'departement', 'lieu_dit', 'annee', 'num_autorisation', 'id_patriarche',
-			'resp_prenom', 'resp_nom', 'resp_inst', 'resp_email', 'deposant_email',
+			'resp_prenom', 'resp_nom', 'resp_inst', 'resp_email', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_inst', 'coresp_email',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst', 'coauteur_email',
 			'rapport_lien', 'originaux_lien', 'originaux_jusqua',
@@ -11409,9 +11505,10 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom' => 'le prénom du responsable', 'resp_nom' => 'le nom du responsable', 'resp_inst' => 'l’institution du responsable',
 			'coresp_prenom' => 'le prénom du co-responsable', 'coresp_nom' => 'le nom du co-responsable', 'coresp_inst' => 'l’institution du co-responsable',
 			'coauteur_prenom' => 'le prénom du co-auteur', 'coauteur_nom' => 'le nom du co-auteur', 'coauteur_inst' => 'l’institution du co-auteur',
+			'deposant_prenom' => 'votre prénom', 'deposant_nom' => 'votre nom',
 			'commentaires' => 'le message à la rédaction',
 		);
-		$bornes = array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'id_patriarche' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'commentaires' => 3000 );
+		$bornes = array( 'departement' => 120, 'lieu_dit' => 200, 'annee' => 20, 'num_autorisation' => 120, 'id_patriarche' => 120, 'resp_prenom' => 100, 'resp_nom' => 100, 'resp_inst' => 200, 'coresp_prenom' => 100, 'coresp_nom' => 100, 'coresp_inst' => 200, 'coauteur_prenom' => 100, 'coauteur_nom' => 100, 'coauteur_inst' => 200, 'deposant_prenom' => 100, 'deposant_nom' => 100, 'commentaires' => 3000 );
 		$d      = array();
 		foreach ( (array) $champs as $f ) {
 			$d[ $f ] = isset( $_POST[ $f ] ) ? sanitize_textarea_field( self::chevrons_a_garder( wp_unslash( $_POST[ $f ] ) ) ) : '';
@@ -11556,6 +11653,7 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom', 'resp_nom', 'resp_inst',
 			'coresp_prenom', 'coresp_nom', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst',
+			'deposant_prenom', 'deposant_nom',
 			'commentaires',
 		);
 		$d = array_merge( $d, $this->textes_postes( $text_fields ) );
@@ -11942,13 +12040,15 @@ class Notice_Archeomed_Pactols {
 		// une base indisponible au moment du dépôt —, rien n'est rangé nulle
 		// part : on joint tout, et un refus garde la notice de côté plutôt que
 		// d'en perdre une figure.
-		$joindre = $existants;
-		$legeres = array();
+		$joindre  = $existants;
+		$legeres  = array();
+		$par_rang = array();
 		if ( $id ) {
 			$joindre = $this->pieces_du_courriel( $id, $d, $existants, $document,
-				strlen( $notice ), $restees, $legeres );
+				strlen( $notice ), $restees, $legeres, $par_rang );
 		}
 		$corps = $notice;
+		$integrees = $this->figures_dans_le_corps( $corps, $joindre, $par_rang );
 		if ( $id ) {
 			$corps = $this->correction_pour_la_redaction( $id, $d, $subject ) . $corps;
 		}
@@ -11982,8 +12082,17 @@ class Notice_Archeomed_Pactols {
 		// Un seul envoi pour toute la rédaction : les pièces jointes pèsent
 		// jusqu'à vingt méga-octets, et les répéter par destinataire ferait
 		// payer la liste au poids.
+		$integrer = function ( $mailer ) use ( $integrees ) {
+			foreach ( $integrees as $f ) {
+				$mailer->addEmbeddedImage( $f['fichier'], $f['cid'], $f['nom'] );
+			}
+		};
+		if ( ! empty( $integrees ) ) {
+			add_action( 'phpmailer_init', $integrer );
+		}
 		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
 			$headers, $joindre );
+		remove_action( 'phpmailer_init', $integrer );
 		if ( ! $sent ) {
 			// « wp_mail » rend faux sans dire pourquoi. Le crochet
 			// « wp_mail_failed » porte l'erreur de PHPMailer — la vraie
@@ -12070,10 +12179,23 @@ class Notice_Archeomed_Pactols {
 		$objet_copie = ( ! empty( $d['remplace'] ) || null !== $corrigee )
 			? 'Copie de votre notice corrigée - Archéologie médiévale'
 			: 'Copie de votre notice - Archéologie médiévale';
+		// Chaque copie garde son sort sur la fiche : un déposant qui disait ne
+		// rien avoir reçu ne laissait aucune trace où chercher pourquoi.
+		$copies = array();
 		foreach ( $destinataires as $dest ) {
-			wp_mail( $dest, $objet_copie,
+			$this->derniere_erreur_mail = '';
+			$partie = wp_mail( $dest, $objet_copie,
 				$wrap_open . $intro . $notice . $wrap_close, $headers_conf,
 				$pour_les_auteurs );
+			$copies[] = array( 'a' => $dest, 'partie' => (bool) $partie,
+				'raison' => $partie ? '' : $this->derniere_erreur_mail );
+			if ( ! $partie ) {
+				error_log( 'Notice Archeomed: copie refusée vers ' . $dest
+					. ( '' !== $this->derniere_erreur_mail ? ' — ' . $this->derniere_erreur_mail : '' ) );
+			}
+		}
+		if ( $id ) {
+			update_post_meta( $id, '_na_copies', array( 'le' => current_time( 'mysql' ), 'copies' => $copies ) );
 		}
 		return true;
 	}
@@ -12502,9 +12624,10 @@ class Notice_Archeomed_Pactols {
 	 * requête coupée laissait derrière elle.
 	 */
 	private function pieces_du_courriel( $id, $d, $existants, $document, $poids_du_corps,
-		&$restees, &$legeres ) {
+		&$restees, &$legeres, &$par_rang = array() ) {
 		$restees   = array();
 		$legeres   = array();
+		$par_rang  = array();
 		$originaux = self::illustrations_rangees( (int) $id );
 		$apercus   = $this->apercus_de( $id, $d );
 		$budget    = $this->budget_du_courriel( $poids_du_corps );
@@ -12541,6 +12664,7 @@ class Notice_Archeomed_Pactols {
 				// au sort, et ne disait ni de quelle image il s'agit ni où
 				// elle va.
 				$joindre[ $this->nom_de_piece( $d, $rang, $piece, $legere ? '_apercu' : '' ) ] = $piece;
+				$par_rang[ $rang ] = $piece;
 				if ( $legere ) {
 					$legeres[] = $piece;
 				}
@@ -12577,6 +12701,38 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		return $joindre;
+	}
+
+	/**
+	 * Les figures du courriel de la rédaction, posées dans le corps au-dessus
+	 * de leur légende, et non plus en pièces jointes que la messagerie range
+	 * au bas du message, loin du texte qui les décrit.
+	 *
+	 * Seules les images qu'un navigateur affiche y vont ; un TIFF reste joint.
+	 * Une notice composée avant la marque n'en a pas : ses figures restent
+	 * jointes, comme avant. Le poids est le même, le budget reste juste.
+	 */
+	private function figures_dans_le_corps( &$corps, &$joindre, $par_rang ) {
+		$integrees = array();
+		foreach ( $par_rang as $rang => $piece ) {
+			$marque = '<!--na-figure-' . (int) $rang . '-->';
+			$cle    = array_search( $piece, $joindre, true );
+			if ( false === strpos( $corps, $marque ) || false === $cle
+				|| ! preg_match( '/\.(jpe?g|png|gif)$/i', $piece ) ) {
+				continue;
+			}
+			$cid    = 'na-figure-' . (int) $rang . '@archeomed';
+			$taille = @getimagesize( $piece );
+			$large  = $taille ? min( 600, (int) $taille[0] ) : 600;
+			$corps  = str_replace( $marque, '<img src="cid:' . esc_attr( $cid ) . '" width="' . $large
+				. '" alt="' . esc_attr( 'Aperçu — ' . Notice_Archeomed_Normes::numero_de_figure( (int) $rang ) ) . '"'
+				. ' style="display:block;width:' . $large . 'px;max-width:100%;height:auto;margin:10px 0 6px;border:1px solid #ddd;">',
+				$corps );
+			$integrees[] = array( 'fichier' => $piece, 'cid' => $cid,
+				'nom' => is_string( $cle ) ? $cle : basename( $piece ) );
+			unset( $joindre[ $cle ] );
+		}
+		return $integrees;
 	}
 
 	/**
@@ -14682,6 +14838,7 @@ class Notice_Archeomed_Pactols {
 			'le responsable'              => array( 'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst' ),
 			'le co-responsable'           => array( 'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst' ),
 			'le co-auteur'                => array( 'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst' ),
+			'la personne qui a déposé'    => array( 'deposant_prenom', 'deposant_nom', 'deposant_email' ),
 			'la nature'                   => array( 'nature', 'nature_items' ),
 			'les périodes'                => array( 'pactols_periods_items' ),
 			'les mots-clés'               => array( 'pactols_subjects_items' ),

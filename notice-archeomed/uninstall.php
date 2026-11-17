@@ -41,6 +41,7 @@ foreach ( array(
 	Notice_Archeomed_Sdrive::REFUS,
 	'na_disque_connu',
 	'na_disque_recu',
+	'na_annuaire_retires',
 ) as $option ) {
 	delete_option( $option );
 }

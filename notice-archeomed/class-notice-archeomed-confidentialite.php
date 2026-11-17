@@ -26,8 +26,9 @@ class Notice_Archeomed_Confidentialite {
 		'Responsable d’opération' => array( 'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst' ),
 		'Co-responsable'          => array( 'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst' ),
 		'Co-auteur'               => array( 'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst' ),
-		// Qui a déposé pour le responsable ne laisse que son adresse.
-		'Personne ayant déposé'   => array( '', '', 'deposant_email', '' ),
+		// Qui a déposé pour le responsable n'a pas d'institution ; avant la
+		// version 3.81, il ne laissait que son adresse.
+		'Personne ayant déposé'   => array( 'deposant_prenom', 'deposant_nom', 'deposant_email', '' ),
 	);
 
 	public function __construct() {
@@ -147,7 +148,7 @@ class Notice_Archeomed_Confidentialite {
 			return;
 		}
 		$texte  = '<h3>' . esc_html__( 'Dépôt des notices d’archéologie médiévale', 'notice-archeomed' ) . '</h3>';
-		$texte .= '<p>' . esc_html__( 'Le formulaire de dépôt recueille le nom, le prénom, l’institution et l’adresse de courriel du responsable d’opération, du co-responsable et du co-auteur, l’adresse de courriel de qui dépose pour le responsable s’il la donne, le texte de la notice, ses illustrations et les autorisations de reproduction jointes.', 'notice-archeomed' ) . '</p>';
+		$texte .= '<p>' . esc_html__( 'Le formulaire de dépôt recueille le nom, le prénom, l’institution et l’adresse de courriel du responsable d’opération, du co-responsable et du co-auteur, le nom, le prénom et l’adresse de courriel de qui dépose pour le responsable s’il les donne, le texte de la notice, ses illustrations et les autorisations de reproduction jointes.', 'notice-archeomed' ) . '</p>';
 		$texte .= '<p>' . esc_html__( 'Ces informations sont conservées sur ce site et adressées par courriel à la rédaction de la revue ; une copie est envoyée aux personnes citées. Elles servent à l’instruction éditoriale des notices.', 'notice-archeomed' ) . '</p>';
 		$texte .= '<p>' . esc_html__( 'Pendant la saisie, un brouillon est gardé dans le navigateur, sur l’appareil de l’auteur, trente jours au plus ; il est effacé après l’envoi.', 'notice-archeomed' ) . '</p>';
 		$texte .= '<p>' . esc_html__( 'La recherche des lieux et des mots-clés interroge directement, depuis le navigateur, le service Pactols du réseau Frantiq ; l’adresse IP du visiteur lui est donc transmise. Selon la protection choisie, le service Turnstile de Cloudflare vérifie qu’un visiteur n’est pas un robot.', 'notice-archeomed' ) . '</p>';

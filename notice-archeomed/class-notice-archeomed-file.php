@@ -997,6 +997,7 @@ class Notice_Archeomed_File {
 				. $valeur . '</td></tr>';
 		}
 		echo '</tbody></table>';
+		$this->afficher_les_copies( $id );
 		$this->afficher_les_corrections( $id );
 
 		// Le téléchargement est le bouton principal d'une notice partie, en
@@ -1021,6 +1022,39 @@ class Notice_Archeomed_File {
 				. esc_url( get_delete_post_link( $id ) ) . '">'
 				. esc_html__( 'Mettre cette notice à la corbeille', 'notice-archeomed' ) . '</a></p>';
 		}
+	}
+
+	/**
+	 * À qui la copie de la notice est partie au dernier envoi, et ce que le
+	 * serveur de courriel a répondu pour chaque adresse. Les adresses ne se
+	 * montrent qu'à qui gère le site.
+	 */
+	private function afficher_les_copies( $id ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$trace = get_post_meta( $id, '_na_copies', true );
+		echo '<h3 style="margin:14px 0 6px;font-size:1em">'
+			. esc_html__( 'Copies aux auteurs', 'notice-archeomed' ) . '</h3>';
+		if ( ! is_array( $trace ) || empty( $trace['copies'] ) ) {
+			echo '<p class="description">' . esc_html( 'envoyee' === (string) get_post_meta( $id, '_na_etat', true )
+				? __( 'Aucune trace : la notice est partie avant la version 3.81, qui les note.', 'notice-archeomed' )
+				: __( 'Elles partent avec la notice.', 'notice-archeomed' ) ) . '</p>';
+			return;
+		}
+		echo '<ul style="margin:0">';
+		foreach ( (array) $trace['copies'] as $c ) {
+			$a = isset( $c['a'] ) ? (string) $c['a'] : '';
+			echo '<li>' . esc_html( $a ) . ' — ' . ( ! empty( $c['partie'] )
+				? esc_html__( 'acceptée par le serveur de courriel', 'notice-archeomed' )
+				: '<strong>' . esc_html__( 'refusée', 'notice-archeomed' ) . '</strong>'
+					. ( ! empty( $c['raison'] ) ? ' : <code>' . esc_html( $c['raison'] ) . '</code>' : '' ) )
+				. '</li>';
+		}
+		echo '</ul><p class="description">' . esc_html( sprintf(
+			/* translators: %s : date du dernier envoi. */
+			__( 'Dernier envoi : %s. Une copie acceptée peut encore finir dans les indésirables du destinataire.', 'notice-archeomed' ),
+			self::date_lisible( isset( $trace['le'] ) ? $trace['le'] : '', true ) ) ) . '</p>';
 	}
 
 	/**
@@ -2023,6 +2057,19 @@ class Notice_Archeomed_File {
 			if ( '' !== $courriel ) {
 				echo '<br><a href="mailto:' . esc_attr( $courriel ) . '">'
 					. esc_html( $courriel ) . '</a>';
+			}
+			// Le lien n'écrivait qu'au responsable : correspondant, coauteur
+			// et déposant étaient à recopier depuis la fiche.
+			$d = get_post_meta( $id, '_na_donnees', true );
+			$adresses = is_array( $d ) ? array_values( array_unique( array_filter( array_map(
+				function ( $c ) use ( $d ) { return isset( $d[ $c ] ) ? (string) $d[ $c ] : ''; },
+				array( 'resp_email', 'coresp_email', 'coauteur_email', 'deposant_email' ) ), 'is_email' ) ) ) : array();
+			if ( count( $adresses ) > 1 ) {
+				echo '<br><a href="' . esc_url( 'mailto:' . implode( ',', $adresses ), array( 'mailto' ) ) . '" title="'
+					. esc_attr( implode( ', ', $adresses ) ) . '">'
+					. esc_html( sprintf(
+						/* translators: %d : nombre d'adresses de la notice. */
+						__( 'Écrire aux %d adresses de la notice', 'notice-archeomed' ), count( $adresses ) ) ) . '</a>';
 			}
 			return;
 		}

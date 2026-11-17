@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.80
+# Formulaire des notices d’archéologie médiévale — version 3.81
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -227,9 +227,31 @@ bouton « + Ajouter un destinataire » en ajoute une, la croix la retire, et
 une adresse effacée disparaît à l'enregistrement. Dix destinataires au plus.
 
 Les notices partent en un seul courriel adressé à tous ceux qui les
-reçoivent : les pièces jointes pèsent jusqu'à vingt méga-octets, et les
+reçoivent : il pèse jusqu'au poids réglé (dix méga-octets par défaut), et le
 répéter par destinataire ferait payer la liste au poids. Les destinataires se
 voient donc les uns les autres, ce qui est le cas d'une rédaction.
+
+**Ce que porte le courriel d'une notice.** Le titre donne la commune en
+capitales, comme la notice imprimée. Depuis la version 3.81, l'aperçu de
+chaque figure (mille pixels, cent cinquante Ko au plus) s'affiche **dans le
+corps du message, au-dessus de sa légende**, et non plus en pièce jointe à
+la fin ; le titre de premier niveau de l'aperçu est en gras, sans les
+capitales du document. Partent aussi le Word et les autorisations de
+reproduction. Les originaux ne partent que si la figure n'a pas d'aperçu :
+ils sont sur la fiche, ou sur sDrive. Ce qui ne tient pas dans le poids
+réglé reste sur le site, et le courriel le dit. Les notices déjà en file
+avant la mise à jour gardent leurs figures en pièces jointes.
+
+**Les copies aux auteurs.** Chaque adresse de la notice reçoit sa copie :
+le responsable, et selon les cas le co-responsable, les co-auteurs et qui
+dépose pour le responsable. Qui dépose laisse depuis la 3.81 son nom et son prénom, en plus de
+son adresse ; le courriel de la rédaction les donne à la ligne « Déposée
+par ». La fiche de la notice dit, sous **Copies aux auteurs**, à quelles
+adresses la copie est partie au dernier envoi et ce que le serveur de
+courriel a répondu pour chacune — réservé à qui règle l'extension. Une copie
+acceptée peut encore finir dans les indésirables du destinataire. Dans la
+file, un lien « Écrire aux N adresses de la notice » écrit d'un coup au
+responsable, au co-responsable, aux co-auteurs et au déposant.
 
 **Reprise de l'ancien réglage.** Les installations qui n'avaient qu'une
 adresse unique la retrouvent en tête de liste, cochée pour les deux sortes :
@@ -433,7 +455,7 @@ rangées l'une après l'autre (`PlanarConfiguration` 2) est refusé.
 
 ### Un TIFF trop lourd, passé en JPEG
 
-Depuis la version 3.73, un TIFF refusé pour son poids — plus de 20 Mo, ou ce
+Depuis la version 3.73, un TIFF refusé pour son poids — plus que la limite par fichier, ou ce
 qui ferait dépasser la limite de l'ensemble — n'est plus un cul-de-sac. Le
 refus se dit **là où l'on ajoute les figures**, sous la dernière carte ou sous
 la zone de dépôt, et la page y descend ; il se lisait auparavant au-dessus des
@@ -688,8 +710,12 @@ portent un astérisque, dans tout le formulaire. Un champ libre commun recevait
 tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
 image.
 
-La carte montre une vignette de l'image (d'un JPEG, d'un PNG, ou d'un TIFF
-une fois converti). Un clic l'agrandit dans une fenêtre par-dessus la page, à
+La carte montre une vignette de l'image : d'un JPEG, d'un PNG, d'un TIFF
+ou d'un PDF. Le TIFF et le PDF ne s'affichent pas tels quels : le navigateur
+en dessine une vignette pour l'écran seulement (UTIF.js ou pdf.js, chargés à
+ce moment, première page du PDF). Avec Imagick, c'est le serveur qui
+convertit, et rien de cette vignette ne part ; sans lui, c'est la conversion
+du navigateur qui la donne. Un clic l'agrandit dans une fenêtre par-dessus la page, à
 la taille de l'écran : la légende et le texte alternatif s'écrivent mieux
 devant l'image entière. Échap, le bouton « Fermer » ou un clic à côté la
 referment.
@@ -964,7 +990,9 @@ sort sur trente-deux caractères. Sur Apache, le `.htaccess` suffit ; sur
 nginx, qui l'ignore, c'est le nom imprévisible qui protège. Le téléchargement
 lui-même passe par l'administration et demande d'y être entré.
 
-**Surveillez la place.** Trois fichiers de vingt méga-octets par notice, sur
+**Surveillez la place.** Quarante méga-octets d'illustrations par notice au
+plus (`MAX_TOTAL_FILESIZE`, vingt avant la version 3.81, quand PHP coupait à
+vingt-cinq ; le serveur de la revue en accepte soixante-quatre), sur
 une campagne de plusieurs milliers de sollicitations, cela se compte en
 dizaines de giga-octets. La fiche indique le poids conservé, et supprimer une
 notice efface ses illustrations avec elle.
@@ -1044,8 +1072,16 @@ le responsable d'opération, et pour les notices anciennes le co-responsable
 et les co-auteurs. Une ligne par adresse, classée par nom puis par prénom,
 sans égard aux accents ni aux capitales ; le nom et l'institution sont ceux
 de la notice la plus récente. Les notices qu'une correction remplace ne
-comptent pas. Qui dépose pour le responsable ne laisse que son adresse et
-n'y figure pas.
+comptent pas. Qui dépose pour le responsable y figure comme déposant ;
+avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans
+nom.
+
+Chaque ligne porte un bouton **Retirer** — qui ne veut plus d'envois, une
+adresse morte. La personne sort de l'onglet et des deux exports ; **ses
+notices ne changent pas**. L'adresse retirée est notée à part
+(`na_annuaire_retires`), avec le nom qu'elle portait, et reste écartée même
+si elle revient dans une nouvelle notice. Les retirées se listent sous le
+tableau, chacune avec un bouton **Rétablir**.
 
 Deux boutons l'emportent :
 

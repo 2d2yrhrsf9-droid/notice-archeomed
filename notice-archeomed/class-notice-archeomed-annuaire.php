@@ -11,8 +11,16 @@
  * gestionnaire des listes du CNRS, accepte tel quel pour ajouter plusieurs
  * abonnés, et un tableur.
  *
- * Qui dépose pour le responsable ne laisse que son adresse : il n'est pas
- * dans l'annuaire, qui ne nomme que des auteurs.
+ * Qui dépose pour le responsable y figure aussi, sous le rôle de déposant :
+ * depuis la version 3.81, il laisse son nom avec son adresse. Avant, il ne
+ * laissait que l'adresse, et sa ligne reste sans nom.
+ *
+ * Une personne peut en être retirée — qui ne veut plus d'envois, une
+ * adresse morte. Les notices n'en sont pas touchées : l'annuaire se
+ * recalcule sur elles à chaque affichage, et l'adresse retirée est notée à
+ * part pour qu'il l'écarte, des exports comme de l'onglet. Elle le reste
+ * quand la personne dépose une nouvelle notice, jusqu'à ce qu'on la
+ * rétablisse.
  *
  * @package notice-archeomed
  */
@@ -29,16 +37,24 @@ class Notice_Archeomed_Annuaire {
 	/** L'action qui rend l'annuaire en tableur. */
 	const ACTION_TABLEUR = 'na_annuaire_tableur';
 
+	/** L'action qui retire une personne de l'annuaire, ou l'y remet. */
+	const ACTION_RETIRER = 'na_annuaire_retirer';
+
+	/** Les adresses retirées : adresse en minuscules ⇒ nom, prénom, date. */
+	const OPTION_RETIRES = 'na_annuaire_retires';
+
 	/** Les personnes d'une notice : préfixe des champs ⇒ rôle. */
 	const ROLES = array(
 		'resp'     => 'responsable',
 		'coresp'   => 'co-responsable',
 		'coauteur' => 'co-auteur',
+		'deposant' => 'déposant',
 	);
 
 	public function __construct() {
 		add_action( 'admin_post_' . self::ACTION_SYMPA, array( $this, 'fichier_sympa' ) );
 		add_action( 'admin_post_' . self::ACTION_TABLEUR, array( $this, 'tableur' ) );
+		add_action( 'admin_post_' . self::ACTION_RETIRER, array( $this, 'retirer_ou_retablir' ) );
 	}
 
 	/**
@@ -48,7 +64,8 @@ class Notice_Archeomed_Annuaire {
 	 * Le nom, le prénom et l'institution sont ceux de la notice la plus
 	 * récente qui les donne : une personne qui a changé de laboratoire
 	 * paraît sous le nouveau. Les notices qu'une correction remplace ne sont
-	 * pas comptées. La saisie se lit par paquets de deux cents.
+	 * pas comptées, ni les adresses retirées. La saisie se lit par paquets
+	 * de deux cents.
 	 */
 	public static function recenser() {
 		global $wpdb;
@@ -111,7 +128,7 @@ class Notice_Archeomed_Annuaire {
 			}
 		} while ( count( (array) $lignes ) === 200 );
 
-		$personnes = array_values( $personnes );
+		$personnes = array_values( array_diff_key( $personnes, self::retires() ) );
 		usort( $personnes, function ( $a, $b ) {
 			$ordre = strcmp( self::cle_de_tri( $a['nom'] ), self::cle_de_tri( $b['nom'] ) );
 			if ( 0 === $ordre ) {
@@ -120,6 +137,44 @@ class Notice_Archeomed_Annuaire {
 			return 0 !== $ordre ? $ordre : strcmp( $a['courriel'], $b['courriel'] );
 		} );
 		return $personnes;
+	}
+
+	/** Les adresses retirées, en minuscules, avec le nom qu'elles portaient. */
+	public static function retires() {
+		$retires = get_option( self::OPTION_RETIRES, array() );
+		return is_array( $retires ) ? $retires : array();
+	}
+
+	/**
+	 * Retire une adresse de l'annuaire, avec le nom et le prénom qu'il lui
+	 * montrait, pour qu'on la reconnaisse dans la liste des retirées.
+	 */
+	public static function retirer( $courriel, $nom = '', $prenom = '' ) {
+		$courriel = trim( (string) $courriel );
+		if ( ! is_email( $courriel ) ) {
+			return false;
+		}
+		$retires = self::retires();
+		$retires[ strtolower( $courriel ) ] = array(
+			'courriel' => $courriel,
+			'nom'      => sanitize_text_field( (string) $nom ),
+			'prenom'   => sanitize_text_field( (string) $prenom ),
+			'date'     => current_time( 'mysql' ),
+		);
+		update_option( self::OPTION_RETIRES, $retires, false );
+		return true;
+	}
+
+	/** Remet une adresse retirée dans l'annuaire. */
+	public static function retablir( $courriel ) {
+		$retires = self::retires();
+		$cle     = strtolower( trim( (string) $courriel ) );
+		if ( ! isset( $retires[ $cle ] ) ) {
+			return false;
+		}
+		unset( $retires[ $cle ] );
+		update_option( self::OPTION_RETIRES, $retires, false );
+		return true;
 	}
 
 	/** Un champ texte de la saisie, sans les blancs qui l'entourent. */
@@ -172,11 +227,21 @@ class Notice_Archeomed_Annuaire {
 	/** L'onglet. */
 	public static function onglet() {
 		$personnes = self::recenser();
+		$retires   = self::retires();
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- simple avis après redirection.
+		$fait = isset( $_GET['na_annuaire'] ) ? sanitize_key( wp_unslash( $_GET['na_annuaire'] ) ) : '';
+		if ( 'retire' === $fait || 'retabli' === $fait ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( 'retire' === $fait
+				? "La personne est retirée de l’annuaire et des exports. Ses notices n’ont pas changé."
+				: "La personne est rétablie dans l’annuaire." ) . '</p></div>';
+		}
 		echo '<h2>' . esc_html__( 'Annuaire des auteurs', 'notice-archeomed' ) . '</h2>';
 		echo '<p class="description" style="max-width:46em">' . esc_html(
-			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable ne laisse que son adresse\u{00A0}: il n’est pas ici." ) . '</p>';
+			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable y figure comme déposant\u{00A0}; avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans nom." ) . '</p>';
 		if ( empty( $personnes ) ) {
-			echo '<p>' . esc_html__( 'Aucune notice reçue pour l’instant.', 'notice-archeomed' ) . '</p>';
+			echo '<p>' . esc_html( empty( $retires ) ? 'Aucune notice reçue pour l’instant.'
+				: 'Personne à montrer : toutes les adresses des notices sont retirées.' ) . '</p>';
+			self::liste_des_retires( $retires );
 			return;
 		}
 		echo '<p>' . esc_html( sprintf( _n( '%s personne.', '%s personnes.', count( $personnes ), 'notice-archeomed' ),
@@ -190,13 +255,22 @@ class Notice_Archeomed_Annuaire {
 		echo '<p class="description" style="max-width:46em">' . esc_html(
 			"Les auteurs ont donné leur adresse pour l’instruction de leur notice. Les inscrire à une liste de diffusion est un autre usage\u{00A0}: mieux vaut le leur dire dans le premier envoi, avec le moyen de se désabonner." ) . '</p>';
 
+		// Un seul formulaire pour tout le tableau : chaque bouton porte son
+		// adresse, et le jeton ne s'écrit qu'une fois.
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
+			. '<input type="hidden" name="action" value="' . esc_attr( self::ACTION_RETIRER ) . '">'
+			. '<input type="hidden" name="sens" value="retirer">';
+		echo self::jeton(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- échappé dans jeton().
 		echo '<table class="widefat striped" style="max-width:80em"><caption class="screen-reader-text">'
 			. esc_html__( 'Les auteurs des notices, classés par nom', 'notice-archeomed' ) . '</caption><thead><tr>';
 		foreach ( array( 'Nom', 'Prénom', 'Courriel', 'Institution', 'Notices' ) as $titre ) {
 			echo '<th scope="col">' . esc_html( $titre ) . '</th>';
 		}
+		echo '<th scope="col"><span class="screen-reader-text">' . esc_html__( 'Retirer', 'notice-archeomed' ) . '</span></th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $personnes as $p ) {
+			$qui = trim( $p['prenom'] . ' ' . $p['nom'] );
+			$qui = '' !== $qui ? $qui . ' (' . $p['courriel'] . ')' : $p['courriel'];
 			$notices = array();
 			foreach ( $p['notices'] as $id => $libelle ) {
 				$lien      = get_edit_post_link( $id, '' );
@@ -209,9 +283,81 @@ class Notice_Archeomed_Annuaire {
 				. '<td>' . esc_html( $p['institution'] ) . '</td>'
 				. '<td>' . implode( ', ', $notices )
 				. ( array( 'responsable' ) !== $roles ? ' <span class="description">(' . esc_html( implode( ', ', $roles ) ) . ')</span>' : '' )
-				. '</td></tr>';
+				. '</td><td>'
+				// Le nom part avec l'adresse : la liste des retirées le montre.
+				. '<button type="submit" class="button-link button-link-delete" name="courriel" value="' . esc_attr( $p['courriel'] ) . '"'
+				. ' data-nom="' . esc_attr( $p['nom'] ) . '" data-prenom="' . esc_attr( $p['prenom'] ) . '"'
+				. ' aria-label="' . esc_attr( 'Retirer ' . $qui . ' de l’annuaire' ) . '"'
+				. ' data-question="' . esc_attr( 'Retirer ' . $qui . ' de l’annuaire et des exports ? Ses notices ne changent pas ; on peut la rétablir plus bas.' ) . '"'
+				. ' onclick="if(!confirm(this.dataset.question)){return false;}this.form.nom.value=this.dataset.nom;this.form.prenom.value=this.dataset.prenom;">'
+				. esc_html__( 'Retirer', 'notice-archeomed' ) . '</button></td></tr>';
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table><input type="hidden" name="nom" value=""><input type="hidden" name="prenom" value=""></form>';
+		self::liste_des_retires( $retires );
+	}
+
+	/**
+	 * Le jeton des deux formulaires, sans l'identifiant que lui donnerait
+	 * wp_nonce_field() : deux fois sur la page, il serait en double.
+	 */
+	private static function jeton() {
+		return '<input type="hidden" name="_wpnonce" value="' . esc_attr( wp_create_nonce( self::ACTION_RETIRER ) ) . '">';
+	}
+
+	/** Les adresses retirées, chacune avec de quoi la rétablir. */
+	private static function liste_des_retires( $retires ) {
+		if ( empty( $retires ) ) {
+			return;
+		}
+		uasort( $retires, function ( $a, $b ) {
+			$ordre = strcmp( self::cle_de_tri( $a['nom'] ?? '' ), self::cle_de_tri( $b['nom'] ?? '' ) );
+			return 0 !== $ordre ? $ordre : strcmp( (string) ( $a['courriel'] ?? '' ), (string) ( $b['courriel'] ?? '' ) );
+		} );
+		echo '<h3>' . esc_html( sprintf( 'Retirées de l’annuaire (%s)', number_format_i18n( count( $retires ) ) ) ) . '</h3>';
+		echo '<p class="description" style="max-width:46em">' . esc_html(
+			"Ces adresses n’apparaissent ni ci-dessus ni dans les exports, même si elles reviennent dans une nouvelle notice." ) . '</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
+			. '<input type="hidden" name="action" value="' . esc_attr( self::ACTION_RETIRER ) . '">'
+			. '<input type="hidden" name="sens" value="retablir">';
+		echo self::jeton(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- échappé dans jeton().
+		echo '<table class="widefat striped" style="max-width:60em"><caption class="screen-reader-text">'
+			. esc_html__( 'Les adresses retirées de l’annuaire', 'notice-archeomed' ) . '</caption><thead><tr>';
+		foreach ( array( 'Nom', 'Prénom', 'Courriel', 'Retirée le' ) as $titre ) {
+			echo '<th scope="col">' . esc_html( $titre ) . '</th>';
+		}
+		echo '<th scope="col"><span class="screen-reader-text">' . esc_html__( 'Rétablir', 'notice-archeomed' ) . '</span></th></tr></thead><tbody>';
+		foreach ( $retires as $cle => $r ) {
+			$courriel = isset( $r['courriel'] ) ? (string) $r['courriel'] : (string) $cle;
+			echo '<tr><th scope="row">' . esc_html( '' !== ( $r['nom'] ?? '' ) ? $r['nom'] : '—' ) . '</th>'
+				. '<td>' . esc_html( $r['prenom'] ?? '' ) . '</td>'
+				. '<td>' . esc_html( $courriel ) . '</td>'
+				. '<td>' . esc_html( ! empty( $r['date'] ) ? mysql2date( 'j F Y', $r['date'] ) : '' ) . '</td>'
+				. '<td><button type="submit" class="button-link" name="courriel" value="' . esc_attr( $courriel ) . '"'
+				. ' aria-label="' . esc_attr( 'Rétablir ' . $courriel . ' dans l’annuaire' ) . '">'
+				. esc_html__( 'Rétablir', 'notice-archeomed' ) . '</button></td></tr>';
+		}
+		echo '</tbody></table></form>';
+	}
+
+	/**
+	 * Retire une personne de l'annuaire, ou l'y remet, puis revient à
+	 * l'onglet. Droit de régler et jeton exigés.
+	 */
+	public function retirer_ou_retablir() {
+		self::verifier( self::ACTION_RETIRER );
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- jeton vérifié ci-dessus.
+		$courriel = isset( $_POST['courriel'] ) ? sanitize_email( wp_unslash( $_POST['courriel'] ) ) : '';
+		$sens     = isset( $_POST['sens'] ) && 'retablir' === $_POST['sens'] ? 'retablir' : 'retirer';
+		$nom      = isset( $_POST['nom'] ) ? wp_unslash( $_POST['nom'] ) : '';
+		$prenom   = isset( $_POST['prenom'] ) ? wp_unslash( $_POST['prenom'] ) : '';
+		// phpcs:enable
+		if ( 'retablir' === $sens ) {
+			$fait = self::retablir( $courriel ) ? 'retabli' : '';
+		} else {
+			$fait = self::retirer( $courriel, is_string( $nom ) ? $nom : '', is_string( $prenom ) ? $prenom : '' ) ? 'retire' : '';
+		}
+		wp_safe_redirect( add_query_arg( 'na_annuaire', $fait, Notice_Archeomed_Settings::url( 'annuaire' ) ) );
+		exit;
 	}
 
 	/** Rend le fichier pour Sympa, en UTF-8 et sans marque d'ordre. */

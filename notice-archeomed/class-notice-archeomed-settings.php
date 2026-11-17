@@ -1025,7 +1025,7 @@ class Notice_Archeomed_Settings {
 			'constate' => $au_moins . size_format( $disque['notices'] ) . ', ' . (int) $disque['fichiers'] . ' fichier' . ( 1 === (int) $disque['fichiers'] ? '' : 's' ),
 			'etat'     => 'note',
 			'ecart'    => '',
-			'pourquoi' => 'Les illustrations déposées et les originaux gardés. Une notice pèse de quelques Mo à vingt Mo ; une campagne de 300 notices en demande, selon une estimation, de 1 à 2,5 Go.',
+			'pourquoi' => 'Les aperçus des illustrations, et les originaux qui attendent d’être rangés sur sDrive. Une notice arrive avec quarante Mo au plus ; rangée, elle ne laisse que ses aperçus, quelques centaines de Ko.',
 		);
 		if ( $plafond > 0 ) {
 			$part  = $disque['site'] / $plafond;
