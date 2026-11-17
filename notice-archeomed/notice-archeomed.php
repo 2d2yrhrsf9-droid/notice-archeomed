@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.76
+ * Version: 3.77
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3111,6 +3111,9 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-apercu-titre { margin-top: var(--na-e1); font-size: var(--na-t-l); font-weight: 400; line-height: 1.35; overflow-wrap: anywhere; }
 			.na-form#na-form .na-apercu-titre em { font-style: italic; font-weight: 400; }
 			.na-form#na-form .na-apercu-titre .na-manque { font-weight: 400; color: var(--na-indice); }
+			/* La commune en capitales, comme dans la revue : par le style seul,
+			   pour qu'un lecteur d'écran lise le nom et non des lettres. */
+			.na-form#na-form .na-apercu-titre .na-apercu-commune { text-transform: uppercase; }
 
 			/* ── Nature de l'opération ── */
 			.na-form#na-form .na-familles { display: grid; gap: var(--na-e3); }
@@ -4672,14 +4675,15 @@ class Notice_Archeomed_Pactols {
 				if (/\.$/.test(lieuDit) && !/\.\.\.$/.test(lieuDit) && !/(^|\s)(\S{1,3}|\S+\.\S*)\.$/.test(lieuDit)) {
 					lieuDit = lieuDit.slice(0, -1).trim();
 				}
-				function morceau(texte, manque, italique) {
+				function morceau(texte, manque, italique, classe) {
 					var el = document.createElement(italique ? 'em' : 'span');
 					el.textContent = texte;
-					if (manque) { el.className = 'na-manque'; }
+					el.className = ((manque ? 'na-manque ' : '') + (classe || '')).trim();
 					apercuTitre.appendChild(el);
 				}
 				apercuTitre.innerHTML = '';
-				morceau(lieux.length ? lieux.join(', ') : 'Commune', !lieux.length);
+				// La commune paraît en capitales dans la revue.
+				morceau(lieux.length ? lieux.join(', ') : 'Commune', !lieux.length, false, 'na-apercu-commune');
 				morceau(' (', false);
 				morceau(dept || 'département', !dept);
 				// Le signe et l'italique du lieu-dit suivent les normes de la revue.
