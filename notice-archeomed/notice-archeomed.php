@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.79
+ * Version: 3.80
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -5459,6 +5459,55 @@ class Notice_Archeomed_Pactols {
 				var court = Math.round(Math.min(CONV.hr.largeurCm, CONV.hr.hauteurCm) * CONV.hr.dpi / 2.54);
 				return Math.min(grand / Math.max(w, h), court / Math.min(w, h));
 			}
+			// UTIF ne lit le CMYK qu'en 8 bits par couche : un CMYK en 16 bits,
+			// tel que Photoshop l'enregistre pour l'impression, sortait rayé,
+			// dédoublé et teinté. Les images en 8 et en 16 bits se lisent donc
+			// ici, quelles que soient leurs couleurs ; UTIF garde le reste (1, 2
+			// ou 4 bits, palette). Après UTIF.decodeImage, un échantillon de
+			// 16 bits a son octet fort en second, quel que soit l'ordre du
+			// fichier. Une couche de transparence se pose sur du blanc, puisque
+			// le JPEG n'en a pas.
+			// Le CMYK vers le RVB sans profil ICC : la formule de pdf.js (licence
+			// Apache 2.0), ajustée sur les encres d'imprimerie américaines
+			// (SWOP). Le calcul simple, 255 × (1 − c) × (1 − k), donnait un papier
+			// ancien vert au lieu de beige.
+			var leRvb = [0, 0, 0];
+			function rvbDuCmjn(c, m, y, k) {
+				leRvb[0] = 255 + c * (-4.387332384609988 * c + 54.48615194189176 * m + 18.82290502165302 * y + 212.25662451639585 * k - 285.2331026137004)
+					+ m * (1.7149763477362134 * m - 5.6096736904047315 * y - 17.873870861415444 * k - 5.497006427196366)
+					+ y * (-2.5217340131683033 * y - 21.248923337353073 * k + 17.5119270841813) - k * (21.86122147463605 * k + 189.48180835922747);
+				leRvb[1] = 255 + c * (8.841041422036149 * c + 60.118027045597366 * m + 6.871425592049007 * y + 31.159100130055922 * k - 79.2970844816548)
+					+ m * (-15.310361306967817 * m + 17.575251261109482 * y + 131.35250912493976 * k - 190.9453302588951)
+					+ y * (4.444339102852739 * y + 9.8632861493405 * k - 24.86741582555878) - k * (20.737325471181034 * k + 187.80453709719578);
+				leRvb[2] = 255 + c * (0.8842522430003296 * c + 8.078677503112928 * m + 30.89978309703729 * y - 0.23883238689178934 * k - 14.183576799673286)
+					+ m * (10.49593273432072 * m + 63.02378494754052 * y + 50.606957656360734 * k - 112.23884253719248)
+					+ y * (0.03296041114873217 * y + 115.60384449646641 * k - 193.58209356861505) - k * (22.33816807309886 * k + 180.12613974708367);
+				return leRvb;
+			}
+			function rgbaDuTiff(ifd) {
+				var bps = ifd.t258 ? ifd.t258[0] : 1, intp = ifd.t262 ? ifd.t262[0] : 2;
+				var spp = ifd.t277 ? ifd.t277[0] : (ifd.t258 ? ifd.t258.length : 1);
+				var couleurs = { 0: 1, 1: 1, 2: 3, 5: 4 }[intp];
+				if ((bps !== 8 && bps !== 16) || !couleurs) { return UTIF.toRGBA8(ifd); }
+				// Les couches rangées l'une après l'autre ne se lisent pas.
+				if (ifd.t284 && ifd.t284[0] === 2) { throw new Error('illisible'); }
+				var n = ifd.width * ifd.height, octets = bps / 8, d = ifd.data;
+				if (spp < couleurs || !d || d.length < n * spp * octets) { throw new Error('illisible'); }
+				var alpha = spp > couleurs && ifd.t338 ? ifd.t338[0] : 0; // 1 : prémultipliée ; 2 : non
+				var out = new Uint8ClampedArray(n * 4), pas = spp * octets, fort = octets - 1;
+				for (var i = 0, o = fort, q = 0; i < n; i++, o += pas, q += 4) {
+					var r, g, b;
+					if (intp === 2) { r = d[o]; g = d[o + octets]; b = d[o + 2 * octets]; }
+					else if (intp === 5) { var rvb = rvbDuCmjn(d[o] / 255, d[o + octets] / 255, d[o + 2 * octets] / 255, d[o + 3 * octets] / 255); r = rvb[0]; g = rvb[1]; b = rvb[2]; } else { r = g = b = intp === 0 ? 255 - d[o] : d[o]; }
+					if (alpha) {
+						var a = d[o + couleurs * octets], blanc = 255 - a;
+						if (alpha === 2) { r = r * a / 255; g = g * a / 255; b = b * a / 255; }
+						r += blanc; g += blanc; b += blanc;
+					}
+					out[q] = r; out[q + 1] = g; out[q + 2] = b; out[q + 3] = 255;
+				}
+				return out;
+			}
 			// Le TIFF lu en entier, dans un canvas à sa pleine définition, avec la
 			// densité qu'il déclare (0 s'il n'en dit rien).
 			function decoderLeTiff(f) {
@@ -5468,7 +5517,7 @@ class Notice_Archeomed_Pactols {
 					if (!w || !h) { throw new Error('illisible'); }
 					if (w * h > CONV.pixelsMax) { throw new Error('grand'); }
 					UTIF.decodeImage(buf, ifd);
-					var rgba = UTIF.toRGBA8(ifd);
+					var rgba = rgbaDuTiff(ifd);
 					// Un décodage manqué laisse l'image vide : rien d'opaque nulle part.
 					var opaque = false;
 					for (var p = 3; p < rgba.length; p += 4 * 997) { if (rgba[p] !== 0) { opaque = true; break; } }

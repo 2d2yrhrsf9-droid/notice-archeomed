@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.79
+# Formulaire des notices d’archéologie médiévale — version 3.80
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -421,8 +421,15 @@ JPEG** : un TIFF ou un PDF que le navigateur ne sait pas lire (compression
 rare, fichier abîmé, PDF protégé, lecture qui dépasse une minute), de plus de 36
 millions de pixels, ou qui ferait dépasser la limite de taille une fois converti.
 Un navigateur sans canvas ou sans `DataTransfer` refuse aussi la conversion. Les
-profils colorimétriques ne sont pas gérés (un TIFF en CMYK donne des couleurs
-approximatives).
+profils colorimétriques ne sont pas gérés : un TIFF en CMYK passe par la formule
+de pdf.js (encres SWOP), et ses couleurs restent approchées.
+
+Les TIFF en 8 et en 16 bits par couche (gris, RVB, CMYK, avec ou sans couche de
+transparence, posée sur du blanc) se lisent dans le formulaire même
+(`rgbaDuTiff`) : UTIF ne lit le CMYK qu'en 8 bits, et un CMYK en 16 bits,
+celui que Photoshop enregistre pour l'impression, sortait rayé et dédoublé.
+UTIF garde les images en 1, 2 ou 4 bits et à palette. Un TIFF aux couches
+rangées l'une après l'autre (`PlanarConfiguration` 2) est refusé.
 
 ### Un TIFF trop lourd, passé en JPEG
 
