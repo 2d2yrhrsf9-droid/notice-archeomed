@@ -15368,6 +15368,28 @@ class Notice_Archeomed_Pactols {
 		}
 		update_post_meta( $id, '_na_fichiers', array_merge( $illustrations, array_values( $autorisations ) ) );
 
+		// Une figure remplacée ou ajoutée a sa version allégée tout de suite,
+		// comme au dépôt. Laissée à la tâche, elle attendait une visite du
+		// site — deux pour une correction d'auteur, qui passe d'abord par la
+		// file — et la relecture disait « Pas d'aperçu » d'un JPEG qu'on
+		// venait d'envoyer. Un échec ne coûte pas la correction : la tâche
+		// reprend ce qui manque.
+		try {
+			$a_faire = array();
+			foreach ( $illustrations as $i => $chemin ) {
+				$a_faire[ $i ] = isset( $apercus[ $i + 1 ] ) ? '' : $chemin;
+			}
+			if ( array_filter( $a_faire ) ) {
+				$faits = $this->fabriquer_les_apercus( $a_faire, $d, $conversions );
+				if ( ! empty( $faits ) ) {
+					$apercus = $faits + $apercus;
+					update_post_meta( $id, '_na_apercus', $apercus );
+				}
+			}
+		} catch ( Throwable $e ) {
+			error_log( 'Notice Archeomed: aperçus de la correction ' . $id . ' non fabriqués (' . get_class( $e ) . ' : ' . $e->getMessage() . ').' );
+		}
+
 		// ── La notice ──────────────────────────────────────────────────────
 		$this->file()->mettre_a_jour( $id, $d, $notice );
 		$utilisateur = wp_get_current_user();
