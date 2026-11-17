@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.78
+ * Version: 3.79
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3278,6 +3278,19 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-illus-total { font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
 			.na-form#na-form .na-illus-vignette { display: block; max-width: 8rem; max-height: 6rem; width: auto; height: auto;
 				margin: 0 0 var(--na-e3); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r1); }
+			/* La vignette se clique pour voir l'image en grand. */
+			.na-form#na-form button.na-illus-agrandir { display: block; width: auto; min-height: 0; margin: 0 0 var(--na-e3); padding: 0;
+				font: inherit; text-transform: none; letter-spacing: normal; background: none; border: 0; border-radius: var(--na-r1);
+				box-shadow: none; cursor: zoom-in; -webkit-appearance: none; appearance: none; }
+			.na-form#na-form button.na-illus-agrandir .na-illus-vignette { margin: 0; }
+			.na-form#na-form button.na-illus-agrandir:hover .na-illus-vignette { border-color: var(--na-accent); }
+			.na-form#na-form dialog.na-agrandie { width: auto; max-width: min(96vw, 80rem); max-height: 94vh; margin: auto; padding: var(--na-e3);
+				color: var(--na-encre); background: var(--na-papier); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r2); }
+			.na-form#na-form dialog.na-agrandie::backdrop { background: rgba(20, 16, 14, .8); }
+			.na-form#na-form dialog.na-agrandie img { display: block; max-width: 100%; max-height: calc(94vh - 5rem); width: auto; height: auto; margin: 0 auto; }
+			.na-form#na-form dialog.na-agrandie .na-agrandie-bas { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+				gap: var(--na-e2); margin: var(--na-e2) 0 0; font-size: var(--na-t-s); color: var(--na-sourd); overflow-wrap: anywhere; }
+			.na-form#na-form dialog.na-agrandie .na-agrandie-bas button { margin: 0; }
 			/* Le champ d'autorisation était le seul bouton natif de la page, gris
 			   et étranger au reste : il prend l'allure du bouton de dépôt. */
 			.na-form#na-form .na-illus-autorisation input[type=file] { display: block; width: 100%; min-width: 0; max-width: 100%; font: inherit;
@@ -5598,10 +5611,61 @@ class Notice_Archeomed_Pactols {
 			function majLeStatutDeConversion(f) {
 				var e = etatDe(f), el = e.statutEl;
 				if (!el || !el.parentNode || !e.conv || e.conv.etat !== 'ok') { return; }
-				var im = document.createElement('img');
-				im.src = e.vignette; im.alt = ''; im.className = 'na-illus-vignette';
-				el.parentNode.replaceChild(im, el);
+				el.parentNode.replaceChild(vignetteDe(e.vignette, f.name), el);
 				e.statutEl = null;
+			}
+			// La vignette est un bouton : on la clique pour voir l'image en grand,
+			// et décrire dans la légende ce qu'elle montre vraiment. La fenêtre se
+			// ferme par Échap, par son bouton, ou d'un clic à côté de l'image.
+			var agrandie = null;
+			function vignetteDe(src, nom) {
+				var b = document.createElement('button');
+				b.type = 'button';
+				b.className = 'na-illus-agrandir';
+				b.setAttribute('aria-label', 'Voir en grand ' + guillemets(nom));
+				var im = document.createElement('img');
+				im.src = src; im.alt = ''; im.className = 'na-illus-vignette';
+				b.appendChild(im);
+				b.addEventListener('click', function () { voirEnGrand(src, nom, b); });
+				return b;
+			}
+			function voirEnGrand(src, nom, retour) {
+				if (!agrandie) {
+					agrandie = document.createElement('dialog');
+					if (typeof agrandie.showModal !== 'function') {
+						// Un navigateur sans fenêtre de dialogue : l'image dans un onglet.
+						agrandie = null;
+						window.open(src, '_blank', 'noopener');
+						return;
+					}
+					agrandie.className = 'na-agrandie';
+					agrandie.appendChild(document.createElement('img'));
+					var bas = document.createElement('p');
+					bas.className = 'na-agrandie-bas';
+					bas.appendChild(document.createElement('span'));
+					var fermer = document.createElement('button');
+					fermer.type = 'button';
+					fermer.className = 'na-bouton-lien';
+					fermer.textContent = 'Fermer';
+					fermer.addEventListener('click', function () { agrandie.close(); });
+					bas.appendChild(fermer);
+					agrandie.appendChild(bas);
+					agrandie.addEventListener('click', function (e) { if (e.target === agrandie) { agrandie.close(); } });
+					// L'image quittée ne reste pas en mémoire de la fenêtre, et le
+					// clavier revient à la vignette : Safari ne le fait pas de lui-même.
+					agrandie.addEventListener('close', function () {
+						agrandie.querySelector('img').removeAttribute('src');
+						if (agrandie.retour && document.body.contains(agrandie.retour)) { agrandie.retour.focus(); }
+					});
+					form.appendChild(agrandie);
+				}
+				var img = agrandie.querySelector('img');
+				img.src = src;
+				img.alt = 'Image ' + guillemets(nom) + ' en grand';
+				agrandie.querySelector('.na-agrandie-bas span').textContent = nom;
+				agrandie.setAttribute('aria-label', nom);
+				agrandie.retour = retour;
+				agrandie.showModal();
 			}
 			function lancerLaConversion(f) {
 				(extOf(f.name) === 'pdf' ? convertirLePdf(f) : convertirLeTiff(f)).then(function (r) {
@@ -6419,19 +6483,11 @@ class Notice_Archeomed_Pactols {
 					}
 					else if (/^image\/(jpeg|png)$/.test(f.type) && window.URL && URL.createObjectURL) {
 						if (!etat.vignette) { etat.vignette = URL.createObjectURL(f); }
-						var im = document.createElement('img');
-						im.src = etat.vignette;
-						im.alt = '';
-						im.className = 'na-illus-vignette';
-						groupe.appendChild(im);
+						groupe.appendChild(vignetteDe(etat.vignette, f.name));
 					}
 					else if (etat.conv && etat.conv.etat === 'ok' && etat.vignette) {
 						// Un TIFF converti : la vignette est tirée de sa basse définition.
-						var imc = document.createElement('img');
-						imc.src = etat.vignette;
-						imc.alt = '';
-						imc.className = 'na-illus-vignette';
-						groupe.appendChild(imc);
+						groupe.appendChild(vignetteDe(etat.vignette, f.name));
 					}
 					else {
 						// Un TIFF en cours de conversion, ou un format qui ne s'affiche pas

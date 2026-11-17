@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.78
+# Formulaire des notices d’archéologie médiévale — version 3.79
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -680,6 +680,12 @@ empêché de voir**, le texte alternatif, obligatoire. Les champs obligatoires
 portent un astérisque, dans tout le formulaire. Un champ libre commun recevait
 tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
 image.
+
+La carte montre une vignette de l'image (d'un JPEG, d'un PNG, ou d'un TIFF
+une fois converti). Un clic l'agrandit dans une fenêtre par-dessus la page, à
+la taille de l'écran : la légende et le texte alternatif s'écrivent mieux
+devant l'image entière. Échap, le bouton « Fermer » ou un clic à côté la
+referment.
 
 ### La taille d'impression
 
