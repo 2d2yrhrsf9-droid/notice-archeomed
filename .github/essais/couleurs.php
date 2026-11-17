@@ -20,6 +20,9 @@ $verifier = function ( $condition, $quoi ) use ( &$echecs ) {
 	echo ( $condition ? 'ok    ' : 'ÉCHEC ' ) . $quoi . "\n";
 	if ( ! $condition ) {
 		$echecs[] = $quoi;
+		// En annotation, l'échec se lit sur la page de la vérification
+		// sans ouvrir le journal.
+		echo '::error::' . $quoi . "\n";
 	}
 };
 

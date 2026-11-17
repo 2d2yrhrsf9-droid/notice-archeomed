@@ -5793,13 +5793,11 @@ class Notice_Archeomed_Pactols {
 			// le dépôt. Ce qu'il ne sait pas lire garde « Pas d'aperçu », sans
 			// refus : le serveur, lui, le lira.
 			var VIGNETTE_COTE = 1200;
-			function tirerLaVignette(f) {
-				var e = etatDe(f), ext = extOf(f.name);
-				if (e.vignette || e.vignetteEnCours || !ALLEGER_BASE || !(window.URL && URL.createObjectURL)) { return; }
-				e.vignetteEnCours = true;
-				if (e.statutEl) { e.statutEl.textContent = 'Aperçu du ' + ext.toUpperCase() + ' en préparation…'; }
+			// L'image d'écran d'un TIFF ou d'un PDF, en JPEG : la première page,
+			// réduite à VIGNETTE_COTE pixels de côté.
+			function dessinerLaVignette(f) {
 				var travail;
-				if (ext === 'pdf') {
+				if (extOf(f.name) === 'pdf') {
 					travail = Promise.all([chargerPdfJs(), lireLeBuffer(f)]).then(function (r) {
 						return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false, enableXfa: false }).promise;
 					}).then(function (pdf) {
@@ -5823,7 +5821,14 @@ class Notice_Archeomed_Pactols {
 						return c;
 					});
 				}
-				travail.then(function (c) { return enJpeg(c, 0.85); }).then(function (b) {
+				return travail.then(function (c) { return enJpeg(c, 0.85); });
+			}
+			function tirerLaVignette(f) {
+				var e = etatDe(f), ext = extOf(f.name);
+				if (e.vignette || e.vignetteEnCours || !ALLEGER_BASE || !(window.URL && URL.createObjectURL)) { return; }
+				e.vignetteEnCours = true;
+				if (e.statutEl) { e.statutEl.textContent = 'Aperçu du ' + ext.toUpperCase() + ' en préparation…'; }
+				dessinerLaVignette(f).then(function (b) {
 					e.vignetteEnCours = false;
 					if (selected.indexOf(f) === -1) { return; }
 					e.vignette = URL.createObjectURL(b);
@@ -6103,6 +6108,39 @@ class Notice_Archeomed_Pactols {
 					} catch (x) {}
 				});
 			}
+			// Le fichier qui remplace une figure déjà déposée se montre sur sa
+			// carte, comme celui d'une figure nouvelle : on voit d'un coup d'œil
+			// si l'on a pris la bonne image. « image » est l'image d'écran déjà
+			// tirée — la basse définition d'un TIFF converti ici ; sans elle, un
+			// JPEG se montre tel quel, un TIFF ou un PDF se dessine à part.
+			function montrerLeRemplacant(g, f, image, statut) {
+				if (g.vignetteUrl) { try { URL.revokeObjectURL(g.vignetteUrl); } catch (x) {} }
+				g.vignetteUrl = null;
+				if (g.vignetteEl && g.vignetteEl.parentNode) { g.vignetteEl.parentNode.removeChild(g.vignetteEl); }
+				g.vignetteEl = null;
+				if (!f || !(window.URL && URL.createObjectURL)) { return; }
+				var ext = extOf(f.name);
+				var poser = function (el) { g.vignetteEl = el; g.remplacement.appendChild(el); };
+				if (image || ext === 'jpg' || ext === 'jpeg' || /^image\/(jpeg|png)$/.test(f.type)) {
+					g.vignetteUrl = URL.createObjectURL(image || f);
+					poser(vignetteDe(g.vignetteUrl, f.name));
+					return;
+				}
+				var sans = document.createElement('p');
+				sans.className = 'na-illus-sans-apercu';
+				sans.setAttribute('role', 'status');
+				var aucun = 'Pas d’aperçu pour ce format (' + ext.toUpperCase() + ')' + NBSP + ': le fichier est bien reçu.';
+				poser(sans);
+				if (statut) { sans.textContent = statut; return; }
+				if (!ALLEGER_BASE) { sans.textContent = aucun; return; }
+				sans.textContent = 'Aperçu du ' + ext.toUpperCase() + ' en préparation…';
+				dessinerLaVignette(f).then(function (b) {
+					if (g.vignetteEl !== sans || !(g.fichier.files && g.fichier.files[0] === f)) { return; }
+					montrerLeRemplacant(g, f, b);
+				}).catch(function () {
+					if (g.vignetteEl === sans) { sans.textContent = aucun; }
+				});
+			}
 			function majGardees() {
 				var n = 0;
 				gardees.forEach(function (g) {
@@ -6151,6 +6189,7 @@ class Notice_Archeomed_Pactols {
 					if (refus) { g.fichier.value = ''; f = null; }
 					refuses.textContent = refus;
 					poserLaConversionGardee(g);
+					montrerLeRemplacant(g, f, null, f && aConvertir(f) ? 'Conversion du ' + extOf(f.name).toUpperCase() + ' en cours…' : '');
 					if (f && aConvertir(f)) {
 						g.conv = { etat: 'cours' };
 						(extOf(f.name) === 'pdf' ? convertirLePdf(f) : convertirLeTiff(f)).then(function (r) {
@@ -6158,6 +6197,7 @@ class Notice_Archeomed_Pactols {
 							g.conv = { etat: 'ok', hr: r.hr, br: r.br, pages: r.pages || 0 };
 							if (totalSelectedSize() > MAX_TOTAL_SIZE) { throw new Error('plafond'); }
 							poserLaConversionGardee(g);
+							montrerLeRemplacant(g, f, r.br);
 							renderFileList();
 							annoncer(guillemets(f.name) + ' est converti.' + (r.pages > 1 ? ' Seule la première page de ce PDF est retenue.' : ''));
 						}).catch(function (erreur) {
@@ -6165,6 +6205,7 @@ class Notice_Archeomed_Pactols {
 							g.conv = null;
 							g.fichier.value = '';
 							poserLaConversionGardee(g);
+							montrerLeRemplacant(g, null);
 							renderFileList();
 							refuses.textContent = messageDeConversion(f, erreur);
 						});
