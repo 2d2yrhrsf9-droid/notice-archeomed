@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.81
+ * Version: 3.82
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -2221,6 +2221,9 @@ class Notice_Archeomed_Pactols {
 				add_query_arg( 'ver', '2.1.0', plugins_url( 'assets/utif/pako_inflate.min.js', __FILE__ ) ),
 				add_query_arg( 'ver', '3.1.0', plugins_url( 'assets/utif/UTIF.js', __FILE__ ) ),
 			),
+			// Little CMS (lcms-wasm 1.0.5), chargé au premier TIFF qui porte
+			// un profil de couleur : les autres n'en ont pas l'usage.
+			'lcms'       => plugins_url( 'assets/lcms/', __FILE__ ),
 			'pixelsMax'  => 36000000,
 			'hr'         => array(
 				'dpi'       => (int) Notice_Archeomed_Settings::get( 'hr_photo_dpi' ),
@@ -2583,6 +2586,8 @@ class Notice_Archeomed_Pactols {
 			'coresp_email'        => array( 'na-coresp-email', 'Saisissez une adresse électronique complète pour le co-responsable, par exemple prenom.nom@exemple.fr' ),
 			'coauteur_email'      => array( 'na-coauteur-email', 'Saisissez une adresse électronique complète pour le co-auteur, par exemple prenom.nom@exemple.fr' ),
 			'deposant_email'      => array( 'na-deposant-email', 'Saisissez votre adresse électronique complète, par exemple prenom.nom@exemple.fr, ou laissez ce champ vide' ),
+			'pactols_periods'     => array( 'na-kw-period-champ', 'Ajoutez au moins une période, choisie dans la liste ou gardée telle quelle (deux fois Entrée)' ),
+			'pactols_subjects'    => array( 'na-kw-subject-champ', 'Ajoutez au moins un sujet, choisi dans la liste ou gardé tel quel (deux fois Entrée)' ),
 			'texte'               => array( 'na-texte', 'Saisissez ou collez le texte de la notice' ),
 			// Les champs d'une figure ne sont dans la page qu'une fois son
 			// fichier choisi : le lien y mène quand il existe.
@@ -2606,8 +2611,6 @@ class Notice_Archeomed_Pactols {
 			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en une ou deux phrases ce qu’on voit sur la figure 3, pour les lecteurs qui ne voient pas l’image' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
-			'pactols_periods'     => array( 'na-kw-period-champ', 'Ajoutez au moins une période, choisie dans la liste ou gardée telle quelle (deux fois Entrée)' ),
-			'pactols_subjects'    => array( 'na-kw-subject-champ', 'Ajoutez au moins un sujet, choisi dans la liste ou gardé tel quel (deux fois Entrée)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
 		);
 		// Les figures déjà déposées d'une notice qu'on corrige : leur carte
@@ -3783,7 +3786,31 @@ class Notice_Archeomed_Pactols {
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s3">
-				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
+				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Mots-clés</h2>
+				<div class="na-sous-groupe" role="group" aria-labelledby="na-s3" aria-describedby="na-kw-aide">
+					<p class="na-help" id="na-kw-aide">Ils servent à retrouver la notice. Une période et un sujet au moins&nbsp;; les autres lieux peuvent rester vides. Tapez trois lettres au moins, puis choisissez dans la liste, qui vient du thésaurus Pactols&nbsp;: seuls les termes choisis ainsi indexent la notice. Deux à cinq par liste suffisent (dix au plus). Un terme absent de la liste peut être gardé tel quel en appuyant deux fois sur Entrée&nbsp;; il reste visible pour la rédaction, mais n’indexe pas la notice.</p>
+					<div class="na-pactols-grid">
+						<?php
+						echo $this->pactols_categorie_html( 'period', 'Périodes',
+							'Un siècle se cherche en chiffres romains ou arabes (« XII<sup>e</sup> » ou « 12<sup>e</sup> »), une époque par son nom (« haut Moyen Âge »).', 'Chercher une période', 'pactols_periods', true );
+						echo $this->pactols_categorie_html( 'subject', 'Sujets',
+							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects', true );
+						// La commune de la notice est déjà demandée plus haut : ce qu'on
+						// attend ici, ce sont les autres lieux — la région, le pays, un
+						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
+						echo $this->pactols_categorie_html( 'place', 'Autres lieux',
+							'Région, pays ou ensemble géographique&nbsp;: Normandie. La commune de l’opération est déjà dans le titre.',
+							'Chercher un lieu', 'pactols_places' );
+						?>
+					</div>
+					<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
+					<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
+					<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
+				</div>
+			</section>
+
+			<section class="na-section" aria-labelledby="na-s4">
+				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
 					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Un intertitre se pose par le bouton T1. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
@@ -3793,8 +3820,8 @@ class Notice_Archeomed_Pactols {
 				</div>
 			</section>
 
-			<section class="na-section" aria-labelledby="na-s4">
-				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
+			<section class="na-section" aria-labelledby="na-s5">
+				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
 				<p class="na-help" id="na-illus-aide">Trois fichiers au plus<?php echo ( $en_place && ! empty( $gardees ) ) ? ', figures déjà déposées comprises' : ''; ?>, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?> Appelez chaque figure dans le texte, à l’endroit qui en parle&nbsp;: (fig.&nbsp;1).</p>
 				<?php if ( $en_place && ! empty( $gardees ) ) : ?>
 				<?php
@@ -3945,30 +3972,6 @@ class Notice_Archeomed_Pactols {
 				</details>
 			</section>
 
-			<section class="na-section" aria-labelledby="na-s5">
-				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Mots-clés</h2>
-				<div class="na-sous-groupe" role="group" aria-labelledby="na-s5" aria-describedby="na-kw-aide">
-					<p class="na-help" id="na-kw-aide">Ils servent à retrouver la notice. Une période et un sujet au moins&nbsp;; les autres lieux peuvent rester vides. Tapez trois lettres au moins, puis choisissez dans la liste, qui vient du thésaurus Pactols&nbsp;: seuls les termes choisis ainsi indexent la notice. Deux à cinq par liste suffisent (dix au plus). Un terme absent de la liste peut être gardé tel quel en appuyant deux fois sur Entrée&nbsp;; il reste visible pour la rédaction, mais n’indexe pas la notice.</p>
-					<div class="na-pactols-grid">
-						<?php
-						echo $this->pactols_categorie_html( 'period', 'Périodes',
-							'Un siècle se cherche en chiffres romains ou arabes (« XII<sup>e</sup> » ou « 12<sup>e</sup> »), une époque par son nom (« haut Moyen Âge »).', 'Chercher une période', 'pactols_periods', true );
-						echo $this->pactols_categorie_html( 'subject', 'Sujets',
-							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects', true );
-						// La commune de la notice est déjà demandée plus haut : ce qu'on
-						// attend ici, ce sont les autres lieux — la région, le pays, un
-						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
-						echo $this->pactols_categorie_html( 'place', 'Autres lieux',
-							'Région, pays ou ensemble géographique&nbsp;: Normandie. La commune de l’opération est déjà dans le titre.',
-							'Chercher un lieu', 'pactols_places' );
-						?>
-					</div>
-					<input type="hidden" name="pactols_periods" id="pactols_periods" value="<?php echo esc_attr( $this->repris( 'pactols_periods' ) ); ?>">
-					<input type="hidden" name="pactols_subjects" id="pactols_subjects" value="<?php echo esc_attr( $this->repris( 'pactols_subjects' ) ); ?>">
-					<input type="hidden" name="pactols_places" id="pactols_places" value="<?php echo esc_attr( $this->repris( 'pactols_places' ) ); ?>">
-				</div>
-			</section>
-
 			<section class="na-section" aria-labelledby="na-s6">
 				<h2 class="na-section-titre" id="na-s6"><span class="na-section-num" aria-hidden="true">6</span> Envoi</h2>
 				<div class="na-champ">
@@ -4051,7 +4054,7 @@ class Notice_Archeomed_Pactols {
 			var CHAMPS = <?php echo wp_json_encode( $this->champs_du_formulaire(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
 			var MAX_FILES = <?php echo (int) self::MAX_FILES; ?>;
 			// Le texte alternatif d'une figure : un avis au-delà du seuil des
-			// normes (150 caractères par défaut), coupé au-delà de 300. Les
+			// normes (150 caractères par défaut), arrêté net à 300. Les
 			// avis d'accessibilité viennent du serveur — phrases, motifs,
 			// listes —, pour que le navigateur dise mot pour mot ce que la
 			// rédaction lira.
@@ -4059,7 +4062,6 @@ class Notice_Archeomed_Pactols {
 			// Ce que le serveur sait faire des images, et les mesures des JPEG que
 			// le navigateur fabrique à sa place quand il ne sait pas lire un TIFF.
 			var CONV = <?php echo wp_json_encode( $this->reglages_de_conversion(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
-			var ALT_CONSEILLE = A11Y.conseille;
 			var ALT_MAX = A11Y.max;
 			var DESCRIPTION_MAX = <?php echo (int) Notice_Archeomed_Controles::DESCRIPTION_MAX; ?>;
 			// Les mots d'une couleur qui porte seule l'information, comme au
@@ -5517,7 +5519,75 @@ class Notice_Archeomed_Pactols {
 					+ y * (0.03296041114873217 * y + 115.60384449646641 * k - 193.58209356861505) - k * (22.33816807309886 * k + 180.12613974708367);
 				return leRvb;
 			}
-			function rgbaDuTiff(ifd) {
+			// Le nom qu'un profil ICC se donne (« sRGB IEC61966-2.1 », « Coated
+			// FOGRA39 »…), lu dans son étiquette « desc » : en ASCII dans un
+			// profil de version 2, en UTF-16 dans un profil de version 4.
+			function descriptionIcc(p) {
+				try {
+					var v = new DataView(p.buffer, p.byteOffset, p.byteLength), n = Math.min(100, v.getUint32(128)), s = '', k;
+					for (var i = 0; i < n && 144 + 12 * i <= p.length; i++) {
+						if (v.getUint32(132 + 12 * i) !== 0x64657363) { continue; }
+						var off = v.getUint32(136 + 12 * i), type = v.getUint32(off);
+						if (type === 0x64657363) {
+							var l = Math.min(256, v.getUint32(off + 8));
+							for (k = 0; k < l && p[off + 12 + k]; k++) { s += String.fromCharCode(p[off + 12 + k]); }
+						} else if (type === 0x6d6c7563) {
+							var lg = Math.min(512, v.getUint32(off + 20)), deb = off + v.getUint32(off + 24);
+							for (k = 0; k + 1 < lg; k += 2) { s += String.fromCharCode(v.getUint16(deb + k)); }
+						}
+						return s;
+					}
+				} catch (e) { /* un profil tronqué n'a pas de nom */ }
+				return '';
+			}
+			// Little CMS, le moteur de couleur de GIMP et d'ImageMagick, compilé
+			// pour le navigateur. Il ne se charge qu'au premier profil à lire.
+			var lcmsPret = null;
+			function chargerLcms() {
+				if (!lcmsPret) {
+					lcmsPret = import(CONV.lcms + 'lcms.min.js').then(function (mod) {
+						return mod.instantiate({ locateFile: function (nom) { return CONV.lcms + nom; } }).then(function (l) {
+							return { l: l, mod: mod };
+						});
+					});
+					lcmsPret.catch(function () { lcmsPret = null; });
+				}
+				return lcmsPret;
+			}
+			// Une figure préparée pour l'imprimeur porte son profil ICC : FOGRA39
+			// pour un CMJN, Adobe RGB pour une photo. Sans lui, le CMJN passait au
+			// RVB par une formule réglée sur les encres américaines, et l'Adobe
+			// RGB perdait ses couleurs vives : l'auteur ne reconnaissait pas sa
+			// figure. Avec lui, Little CMS convertit vers le sRGB comme Photoshop
+			// (colorimétrie relative, compensation du point noir).
+			// Rend de quoi convertir une suite de pixels, ou null : sans profil,
+			// avec un sRGB, ou si Little CMS ne se charge pas, on fait comme avant.
+			function preparerLesCouleurs(ifd) {
+				var icc = ifd.t34675, intp = ifd.t262 ? ifd.t262[0] : 2, bps = ifd.t258 ? ifd.t258[0] : 1;
+				if (!icc || icc.length < 132 || !CONV.lcms || (bps !== 8 && bps !== 16) || (intp !== 2 && intp !== 5)) { return Promise.resolve(null); }
+				if (intp === 2 && /srgb/i.test(descriptionIcc(icc))) { return Promise.resolve(null); }
+				return chargerLcms().then(function (x) {
+					var l = x.l, mod = x.mod;
+					var source = l.cmsOpenProfileFromMem(new Uint8Array(icc), icc.length);
+					if (!source) { return null; }
+					// Un profil qui ne parle pas des couleurs de l'image ne sert à rien.
+					if (l.cmsGetColorSpace(source) !== (intp === 5 ? mod.cmsSigCmykData : mod.cmsSigRgbData)) {
+						l.cmsCloseProfile(source);
+						return null;
+					}
+					var srgb = l.cmsCreate_sRGBProfile();
+					var format = intp === 5 ? (bps === 16 ? mod.TYPE_CMYK_16 : mod.TYPE_CMYK_8) : (bps === 16 ? mod.TYPE_RGB_16 : mod.TYPE_RGB_8);
+					var t = l.cmsCreateTransform(source, format, srgb, mod.TYPE_RGB_8, mod.INTENT_RELATIVE_COLORIMETRIC, mod.cmsFLAGS_BLACKPOINTCOMPENSATION);
+					l.cmsCloseProfile(source);
+					l.cmsCloseProfile(srgb);
+					if (!t) { return null; }
+					return {
+						convertir: function (entree, n) { return l.cmsDoTransform(t, entree, n); },
+						fin: function () { l.cmsDeleteTransform(t); }
+					};
+				}).catch(function () { return null; });
+			}
+			function rgbaDuTiff(ifd, cms) {
 				var bps = ifd.t258 ? ifd.t258[0] : 1, intp = ifd.t262 ? ifd.t262[0] : 2;
 				var spp = ifd.t277 ? ifd.t277[0] : (ifd.t258 ? ifd.t258.length : 1);
 				var couleurs = { 0: 1, 1: 1, 2: 3, 5: 4 }[intp];
@@ -5528,9 +5598,24 @@ class Notice_Archeomed_Pactols {
 				if (spp < couleurs || !d || d.length < n * spp * octets) { throw new Error('illisible'); }
 				var alpha = spp > couleurs && ifd.t338 ? ifd.t338[0] : 0; // 1 : prémultipliée ; 2 : non
 				var out = new Uint8ClampedArray(n * 4), pas = spp * octets, fort = octets - 1;
+				// Little CMS reçoit les pixels par blocs : l'image entière, recopiée
+				// dans sa mémoire, la doublerait.
+				var BLOC = 65536, entree = cms ? new (octets === 2 ? Uint16Array : Uint8Array)(BLOC * couleurs) : null, rvbs = null;
 				for (var i = 0, o = fort, q = 0; i < n; i++, o += pas, q += 4) {
 					var r, g, b;
-					if (intp === 2) { r = d[o]; g = d[o + octets]; b = d[o + 2 * octets]; }
+					if (cms) {
+						var j = i % BLOC;
+						if (j === 0) {
+							var nb = Math.min(BLOC, n - i), e = nb === BLOC ? entree : entree.subarray(0, nb * couleurs);
+							for (var x = 0, s = i * pas, z = 0; x < nb; x++, s += pas) {
+								for (var c = 0; c < couleurs; c++, z++) {
+									e[z] = octets === 2 ? d[s + 2 * c] | (d[s + 2 * c + 1] << 8) : d[s + c];
+								}
+							}
+							rvbs = cms.convertir(e, nb);
+						}
+						r = rvbs[3 * j]; g = rvbs[3 * j + 1]; b = rvbs[3 * j + 2];
+					} else if (intp === 2) { r = d[o]; g = d[o + octets]; b = d[o + 2 * octets]; }
 					else if (intp === 5) { var rvb = rvbDuCmjn(d[o] / 255, d[o + octets] / 255, d[o + 2 * octets] / 255, d[o + 3 * octets] / 255); r = rvb[0]; g = rvb[1]; b = rvb[2]; } else { r = g = b = intp === 0 ? 255 - d[o] : d[o]; }
 					if (alpha) {
 						var a = d[o + couleurs * octets], blanc = 255 - a;
@@ -5550,7 +5635,11 @@ class Notice_Archeomed_Pactols {
 					if (!w || !h) { throw new Error('illisible'); }
 					if (w * h > CONV.pixelsMax) { throw new Error('grand'); }
 					UTIF.decodeImage(buf, ifd);
-					var rgba = rgbaDuTiff(ifd);
+					return preparerLesCouleurs(ifd).then(function (cms) {
+						try { return { ifd: ifd, rgba: rgbaDuTiff(ifd, cms), w: w, h: h }; } finally { if (cms) { cms.fin(); } }
+					});
+				}).then(function (lu) {
+					var ifd = lu.ifd, rgba = lu.rgba, w = lu.w, h = lu.h;
 					// Un décodage manqué laisse l'image vide : rien d'opaque nulle part.
 					var opaque = false;
 					for (var p = 3; p < rgba.length; p += 4 * 997) { if (rgba[p] !== 0) { opaque = true; break; } }
@@ -6336,6 +6425,30 @@ class Notice_Archeomed_Pactols {
 				var lignes = String(t || '').split(/\r?\n/).map(net).filter(function (l) { return l !== ''; });
 				return { alt: lignes.length ? lignes[0] : '', description: lignes.slice(1).join('\n') };
 			}
+			// Le texte alternatif ne dépasse pas sa limite : ce qui est tapé ou
+			// collé au-delà, dans le premier paragraphe, n'entre pas. La suite,
+			// à la ligne, reste libre. Rend vrai si le champ a été retouché.
+			function bornerLeTexteAlternatif(champ) {
+				var v = champ.value, lignes = v.split('\n'), i, debut = 0;
+				for (i = 0; i < lignes.length; i++) {
+					if (net(lignes[i]) !== '') { break; }
+					debut += lignes[i].length + 1;
+				}
+				if (i === lignes.length) { return false; }
+				var ligne = lignes[i], exces = points(net(ligne)).length - ALT_MAX;
+				if (exces <= 0) { return false; }
+				var fin = debut + ligne.length, curseur = champ.selectionEnd;
+				while (exces > 0) {
+					ligne = extrait(ligne, points(ligne).length - exces);
+					exces = points(net(ligne)).length - ALT_MAX;
+				}
+				lignes[i] = ligne;
+				champ.value = lignes.join('\n');
+				var retire = v.length - champ.value.length;
+				curseur = curseur > fin ? curseur - retire : Math.min(curseur, debut + ligne.length);
+				try { champ.setSelectionRange(curseur, curseur); } catch (e) { /* champ caché */ }
+				return true;
+			}
 			// Le titre, les crédits et le texte pour l'écoute sont obligatoires,
 			// et portent l'astérisque ; la légende est facultative, et le dit.
 			// Sans texte pour l'écoute, la figure n'existe pas pour qui ne la
@@ -6374,17 +6487,23 @@ class Notice_Archeomed_Pactols {
 				if (clef === 'alt') {
 					champ.maxLength = ALT_MAX + DESCRIPTION_MAX + 20;
 					champ.setAttribute('autocomplete', 'off');
-					// Un compteur sous le champ : la longueur conseillée du
-					// premier paragraphe — le texte alternatif — se voit avant
-					// l'avis.
+					// Un compteur sous le champ : le premier paragraphe — le
+					// texte alternatif — s'arrête à sa limite, et le compteur le
+					// dit avant qu'on y bute.
 					compteur = document.createElement('p');
 					compteur.className = 'na-help na-compteur';
 					compteur.id = id + '-compteur';
 					compter = function () {
 						var n = points(separerEcoute(champ.value).alt).length;
 						compteur.textContent = entier(n) + NBSP + '/' + NBSP + entier(ALT_MAX) + ' caractères'
-							+ (n > ALT_CONSEILLE ? ' — plus de ' + ALT_CONSEILLE + ', c’est long' : ', ' + ALT_CONSEILLE + ' au plus conseillés');
+							+ (n >= ALT_MAX ? ' — c’est la limite' + NBSP + '; le détail se met à la ligne' : '');
 					};
+					champ.addEventListener('input', function () {
+						if (bornerLeTexteAlternatif(champ)) {
+							if (!illusMeta[idx]) { illusMeta[idx] = {}; }
+							illusMeta[idx][clef] = champ.value;
+						}
+					});
 					champ.addEventListener('input', compter);
 					champ.setAttribute('aria-describedby', aide.id + ' ' + compteur.id);
 				}

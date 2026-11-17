@@ -9,21 +9,21 @@ Le code est commenté en français, en phrases : chaque fonction dit ce qu'elle 
 | | |
 |---|---|
 | Nature | Extension WordPress, sans dépendance installée par Composer ni par npm |
-| PHP | 7.2 au moins (essayé en 7.2, 7.4, 8.1, 8.3 et 8.4) |
+| PHP | 7.2 au moins (essayé en 7.2, 8.1, 8.3 et 8.4) |
 | WordPress | 5.6 au moins (essayé en 6.9 et en dernière version) |
-| Extensions PHP | `zip` (DOCX et dossiers ; sans elle, repli en RTF), `imagick` (versions allégées et conversions ; sans elle, les originaux voyagent), `mbstring` conseillée |
-| Bibliothèques chargées par le navigateur | Quill 2.0.3 (éditeur du texte, servi par le site lui-même, dossier `assets/quill/`), Turnstile de Cloudflare (selon la protection choisie), axe-core 4.10.2 (onglet Accessibilité seulement, cdnjs, avec empreinte SRI) |
-| Services joints par le serveur | Pactols (`pactols.frantiq.fr`, lecture des termes, coupable dans les réglages), Cloudflare (vérification Turnstile, si choisie), GitHub (mises à jour), le serveur de courriel |
+| Extensions PHP | `zip` (DOCX et dossiers ; sans elle, repli en RTF), `imagick` (aperçus et conversions ; sans elle, le navigateur convertit TIFF et PDF, et GD réduit JPEG et PNG), `mbstring` conseillée |
+| Bibliothèques chargées par le navigateur | Quill 2.0.3 (éditeur du texte, `assets/quill/`), UTIF.js (TIFF, `assets/utif/`), Little CMS 2 (lcms-wasm 1.0.5, profils de couleur, `assets/lcms/`) et pdf.js (PDF, `assets/pdfjs/`), chargés à la demande, tous servis par le site lui-même ; Turnstile de Cloudflare (selon la protection choisie), axe-core 4.10.2 (onglet Accessibilité seulement, cdnjs, avec empreinte SRI) |
+| Services joints par le serveur | Pactols (lecture des termes, coupable dans les réglages), Cloudflare (vérification Turnstile, si choisie), sDrive (WebDAV, si le site y est relié), GitHub (mises à jour), le serveur de courriel |
 | Shortcodes | `[notice_archeomed_pactols]` (le dépôt), `[relecture_archeomed]` (la relecture) |
 | Domaine de traduction | `notice-archeomed` (les textes sont écrits en français dans le code) |
 
-Le principe directeur : **accepter vite, expédier ensuite**. Le dépôt d'un auteur est inscrit en base en une fraction de seconde ; tout ce qui est lent — courriels, accusés de réception, lecture du thésaurus — se fait après, sous le planificateur de WordPress. Les versions allégées des figures et le document Word se fabriquent encore dans la requête du dépôt, mais dans un bloc qui attrape toute erreur : leur échec ne fait ni échouer ni doubler un dépôt déjà inscrit. Deux dépôts simultanés ne doivent jamais se gêner, et une notice ne doit jamais se perdre parce qu'un courriel échoue ou qu'une métadonnée manque.
+Le principe directeur : **accepter vite, expédier ensuite**. Le dépôt d'un auteur est inscrit en base en une fraction de seconde ; tout ce qui est lent — courriels, accusés de réception, lecture du thésaurus, rangement et export sur sDrive — se fait après, sous le planificateur de WordPress. Les versions allégées des figures et le document Word se fabriquent encore dans la requête du dépôt, mais dans un bloc qui attrape toute erreur : leur échec ne fait ni échouer ni doubler un dépôt déjà inscrit. Deux dépôts simultanés ne doivent jamais se gêner, et une notice ne doit jamais se perdre parce qu'un courriel échoue ou qu'une métadonnée manque.
 
 ## 2. Les fichiers
 
 ```
 notice-archeomed/                     le dossier de l'extension, tel qu'il est installé
-  notice-archeomed.php                classe principale Notice_Archeomed_Pactols (≈ 11 500 lignes)
+  notice-archeomed.php                classe principale Notice_Archeomed_Pactols (≈ 16 200 lignes)
   class-notice-archeomed-file.php     la file d'attente et l'administration des notices reçues
   class-notice-archeomed-settings.php la page de réglages et ses onglets
   class-notice-archeomed-docx.php     le générateur de DOCX à partir du gabarit Métopes
@@ -34,19 +34,27 @@ notice-archeomed/                     le dossier de l'extension, tel qu'il est i
   class-notice-archeomed-controles.php les avis donnés au dépôt, communs au serveur et au navigateur
   class-notice-archeomed-normes.php   les normes éditoriales, en réglages
   class-notice-archeomed-styles.php   la correspondance des blocs avec les styles Métopes, en réglages
+  class-notice-archeomed-sdrive.php   l'accès WebDAV à sDrive et la liaison du site
+  class-notice-archeomed-rangement.php le rangement des fichiers des notices sur sDrive
+  class-notice-archeomed-export.php   l'écriture du dossier Métopes sur sDrive
   class-notice-archeomed-accessibilite.php l'onglet Accessibilité et l'encart des figures sur la fiche
   class-notice-archeomed-candidats.php l'onglet Candidats à Pactols
   class-notice-archeomed-documentation.php l'onglet Documentation, qui affiche ces pages
+  class-notice-archeomed-confidentialite.php l'export et l'effacement des données personnelles
   class-notice-archeomed-relecture.php la relecture sur le site : droits, verrou, états, journal, versions
+  class-notice-archeomed-stockage.php l'onglet Stockage
+  class-notice-archeomed-annuaire.php l'onglet Annuaire et ses deux exports
   class-notice-archeomed-nommage.php  la règle des noms de fichiers
   class-notice-archeomed-maj.php      les mises à jour depuis GitHub
+  uninstall.php                       ce que la suppression de l'extension efface
+  index.php                           page vide, contre le listage du dossier
   modele-metopes.docx                 le gabarit Métopes livré (feuille de styles de référence)
   modele-metopes.rtf                  son pendant RTF
-  assets/                             icônes de l'extension
+  assets/                             icônes, Quill, UTIF.js, Little CMS, pdf.js, profil sRGB
   doc/                                la présentation et cette notice
   README.md                           les choix éditoriaux et fonctionnels, détaillés
 .github/workflows/publier.yml         intégration continue et publication des versions
-.github/essais/                       les essais de non-régression
+.github/essais/                       les essais de non-régression, et un faux sDrive
 verifier-la-syntaxe                   filet de syntaxe PHP sans PHP (Python)
 verifier-les-styles                   confronte les styles du code au stylage de référence
 empaqueter                            fabrique l'archive à téléverser
@@ -54,7 +62,7 @@ empaqueter                            fabrique l'archive à téléverser
 
 Le dépôt Git contient le dossier de l'extension et les outils qui l'entourent ; seul `notice-archeomed/` part dans l'archive installée.
 
-L'ordre des `require_once`, en tête de `notice-archeomed.php`, compte : les classes utilitaires (nommage, paquet, mises à jour, RTF, typographie, contrôles, normes, styles, DOCX) avant les réglages et la file, qui les emploient. Viennent ensuite les instanciations : `Notice_Archeomed_Settings`, `Notice_Archeomed_Accessibilite`, `Notice_Archeomed_Candidats`, `Notice_Archeomed_Documentation`, puis la file en **globale** `$notice_archeomed_file` (indispensable sous WP-CLI, qui charge WordPress dans une fonction : sans `global`, une seconde file naissait et doublait les crochets), puis le module de mises à jour (`$notice_archeomed_maj`), et, en fin de fichier, la classe principale en globale `$notice_archeomed_plugin`.
+L'ordre des `require_once`, en tête de `notice-archeomed.php`, compte : les classes utilitaires (nommage, paquet, mises à jour, RTF, typographie, contrôles, normes, styles, DOCX) et celles de sDrive (accès, rangement, export) avant les réglages et la file, qui les emploient ; puis le thésaurus, l'accessibilité, les candidats, la documentation, la confidentialité, la relecture, le stockage et l'annuaire. Viennent ensuite les instanciations : `Notice_Archeomed_Relecture`, `Notice_Archeomed_Settings`, `Notice_Archeomed_Accessibilite`, `Notice_Archeomed_Candidats`, `Notice_Archeomed_Annuaire`, `Notice_Archeomed_Documentation`, `Notice_Archeomed_Confidentialite`, puis la file en **globale** `$notice_archeomed_file` (indispensable sous WP-CLI, qui charge WordPress dans une fonction : sans `global`, une seconde file naissait et doublait les crochets), puis le module de mises à jour (`$notice_archeomed_maj`), et, en fin de fichier, la classe principale en globale `$notice_archeomed_plugin`.
 
 ## 3. Les classes et leurs responsabilités
 
@@ -62,24 +70,24 @@ L'ordre des `require_once`, en tête de `notice-archeomed.php`, compte : les cla
 
 Le nom est historique : la classe porte tout le formulaire, pas seulement Pactols. Ses grands blocs, dans l'ordre du fichier :
 
-- **Constantes** : gabarits, plafonds (`MAX_FILES` = 3, `MAX_TOTAL_FILESIZE` = 20 Mo — le plafond réel est le plus petit de celui-ci et de ceux de PHP, voir `plafonds_des_fichiers()`), quotas (`MAX_ATTEMPTS_PER_HOUR`, `MAX_SENDS_PER_IP`, `MAX_SENDS_PER_EMAIL`, `MAX_LOOKUPS_PER_HOUR`), extensions admises, constantes du puzzle, identifiants des thésaurus Pactols (`TH_1` pour sujets et périodes, `th17` pour les lieux), rubriques et matières.
-- **Listes métier** : `$rubriques` (sept rubriques), les natures d'opération avec leur ARK (`$natures`), les familles d'opérations, les matières de la rubrique V, les anciens libellés de rubrique (`RUBRIQUES_ANCIENNES`, pour relire les notices déposées avant un changement de nom).
+- **Constantes** : gabarits, plafonds (`MAX_FILES` = 3, `MAX_TOTAL_FILESIZE` = 40 Mo — le plafond réel est le plus petit de celui-ci et de ceux de PHP, voir `plafonds_des_fichiers()`), quotas (`MAX_ATTEMPTS_PER_HOUR`, `MAX_SENDS_PER_IP`, `MAX_SENDS_PER_EMAIL`, `MAX_LOOKUPS_PER_HOUR`, `MAX_SENDS_GLOBAL_PER_HOUR`, `MAX_RESERVES_PAR_IP`, `MAX_POIDS_PAR_HEURE`), extensions admises, constantes du puzzle, identifiants des thésaurus Pactols (`TH_1` pour sujets et périodes, `th17` pour les lieux), rubriques et sous-rubriques.
+- **Listes métier** : `$rubriques` (sept rubriques), les natures d'opération avec leur ARK (`$natures`), les familles d'opérations, les sous-rubriques de la rubrique V, les anciens libellés de rubrique (`RUBRIQUES_ANCIENNES`, pour relire les notices déposées avant un changement de nom).
 - **Protection** : `protection()`, `verifier_la_protection()`, le puzzle (`defi_du_puzzle()`, `verifier_le_puzzle()`, sceau HMAC lié à l'heure d'affichage `na_ts`, valable 24 h, retenu après un dépôt réussi pour ne servir qu'une fois ; Cloudflare injoignable, le transient `na_turnstile_injoignable` ajoute le puzzle à Turnstile), Turnstile (`verify_turnstile()`), et `protection_suspendue()` pour les sites d'essai.
-- **Formulaire** : `render_form()` (de la ligne ≈ 2 090 à ≈ 5 960 : HTML, CSS et JavaScript en ligne), `enqueue_assets()`, la reprise d'une saisie (`garder_la_saisie()`, `reprise()`, `repris*()`), les messages de retour (`messages_du_retour()`, `panneau_de_fin()`).
-- **Réception** : `handle_submission()` et ses `collect_*()`, `handle_uploads()`, `recevoir_les_autorisations()`, `champs_manquants()`, `entrees_attendues()` (ramène chaque champ à la forme attendue avant toute lecture), `refuser_l_envoi_trop_lourd()`.
-- **Fabrication** : `build_notice()` (le HTML du courriel), `remplir_le_document()` (le DOCX ou RTF d'une notice), `fabriquer_le_fascicule()`, `page_de_relecture()`, `indexation_de()` (blocs d'index TEI), la typographie et les siècles en HTML.
-- **Expédition** : `expedier_de_la_file()` (appelé par le planificateur), `expedier()`, `pieces_du_courriel()`, SMTP (`acheminer_par_smtp()`), les essais d'envoi et le diagnostic.
+- **Formulaire** : `render_form()` (de la ligne ≈ 2 940 à ≈ 8 600 : HTML, CSS et JavaScript en ligne, dont la conversion des TIFF et des PDF), `enqueue_assets()`, `reglages_de_conversion()` (ce que le navigateur doit savoir pour convertir), la reprise d'une saisie (`garder_la_saisie()`, `reprise()`, `repris*()`), les messages de retour (`messages_du_retour()`, `panneau_de_fin()`).
+- **Réception** : `handle_submission()` et ses `collect_*()`, `handle_uploads()`, `recevoir_les_autorisations()`, `champs_manquants()`, `entrees_attendues()` (ramène chaque champ à la forme attendue avant toute lecture), `refuser_l_envoi_trop_lourd()`, `recevoir_les_conversions()` (les JPEG tirés par le navigateur), `garder_le_disque()`, `noter_le_refus()`.
+- **Fabrication** : `build_notice()` (le HTML du courriel, titre en tête avec la commune en capitales), `remplir_le_document()` (le DOCX ou RTF d'une notice), `fabriquer_le_fascicule()`, `page_de_relecture()`, `indexation_de()` (blocs d'index TEI), la typographie et les siècles en HTML.
+- **Expédition** : `expedier_de_la_file()` (appelé par le planificateur), `expedier()`, `pieces_du_courriel()`, `figures_dans_le_corps()` (les aperçus posés dans le corps du message), SMTP (`acheminer_par_smtp()`), les essais d'envoi et le diagnostic.
 - **Thésaurus** : la file de résolution des termes (`resoudre_en_tache()`, `resoudre_les_termes()`, `mettre_en_attente()`…), les formes préférées.
-- **Fichiers** : rangement des illustrations et autorisations, versions allégées (aperçus), purge des fichiers temporaires, téléchargements protégés.
+- **Fichiers** : rangement des illustrations, des conversions et des autorisations (`archiver_les_conversions()`, `conversions_rangees()`), versions allégées (aperçus), purge des fichiers temporaires, téléchargements protégés, branchement des tâches de sDrive (`brancher_la_file()`).
 - **Téléchargements d'administration** : document d'une notice, fascicule, dossier Métopes, illustration.
 
 ### Notice_Archeomed_File (class-notice-archeomed-file.php)
 
-Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices reçues » : colonnes, tris, vues par état, recherche étendue, actions de ligne et groupées, fiche d'une notice (en-tête, notice, suivi, dépannage, illustrations), bandeaux d'alerte (adresse manquante, échecs, retards), récapitulatif quotidien, liens des fascicules et dossiers par rubrique, renvois entre rubriques, classement du volume, mise à niveau des notices anciennes (`rattraper_les_anciennes()`).
+Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices reçues » : colonnes, tris, vues par état, recherche étendue, actions de ligne et groupées, fiche d'une notice (en-tête, notice, suivi, dépannage, illustrations), bandeaux d'alerte (adresse manquante, échecs, retards), récapitulatif quotidien, liens des fascicules et dossiers par rubrique, renvois entre rubriques, classement du volume, mise à niveau des notices anciennes (`rattraper_les_anciennes()`). La liste donne, pour chaque notice, un lien « Écrire aux N adresses de la notice » ; la fiche montre la trace des copies envoyées aux auteurs (`_na_copies`).
 
 ### Les autres classes
 
-- **Notice_Archeomed_Settings** : la page de réglages (sous-menu du type `na_notice`), ses onglets (`onglets()`), l'option `notice_archeomed_options` et son nettoyage (`sanitize()`), les essais de la page (`faire_un_essai()` : Turnstile, envoi, essais successifs, poids, GitHub, Pactols), l'état de l'hébergement (`etat_du_serveur()`). `get()` lit une valeur en donnant la priorité à une constante de `wp-config.php`.
+- **Notice_Archeomed_Settings** : la page de réglages (sous-menu du type `na_notice`), ses onglets (`onglets()`), l'option `notice_archeomed_options` et son nettoyage (`sanitize()`), les essais de la page (`faire_un_essai()` : Turnstile, envoi, essais successifs, poids, GitHub, Pactols), l'état de l'hébergement (`etat_du_serveur()`), les derniers envois refusés (`tableau_des_refus()`), la mesure du disque face au plafond (`PLAFOND_DISQUE`). `get()` lit une valeur en donnant la priorité à une constante de `wp-config.php`.
 - **Notice_Archeomed_DOCX** : ouvre le gabarit, indexe ses styles (nom affiché ⇒ identifiant), construit `word/document.xml` paragraphe par paragraphe et recopie tout le reste du gabarit. Voir la section 8.
 - **Notice_Archeomed_RTF** : même interface, pour un hébergement sans ZipArchive. Le DOCX reste la voie normale.
 - **Notice_Archeomed_Paquet** : l'atelier d'un dossier Métopes (`style/`, `XML/`, `icono/hr`, `icono/br`, `icono/originaux`), les deux définitions de chaque image, le lisez-moi, l'archive zip ; la fabrication des aperçus (`apercu_du_document()`).
@@ -91,19 +99,25 @@ Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices re
 - **Notice_Archeomed_Candidats** : relevé des termes gardés hors de Pactols, statut et note de la rédaction, export CSV.
 - **Notice_Archeomed_Documentation** : rend ces fichiers Markdown dans l'onglet Documentation, par un convertisseur volontairement restreint (titres, paragraphes, listes, tableaux, code, liens, gras, italique).
 - **Notice_Archeomed_Relecture** : l'écran de relecture, posé sur une page publique par le shortcode `[relecture_archeomed]`, et tout ce qui l'entoure (section 16) : les deux rôles, le droit sur une notice (`droit_sur()`), le verrou, les états, le journal, les versions gardées, la tâche qui dépose les Word de relecture sur sDrive, l'onglet de réglages. La saisie elle-même se corrige dans la classe principale (`enregistrer_la_relecture()`), avec les fonctions de réception du dépôt.
+- **Notice_Archeomed_Sdrive** : l'accès WebDAV (déposer, télécharger, créer un dossier, relire une taille, effacer), la liaison du site par le flux de connexion de Nextcloud, le mot de passe d'application scellé, les dossiers du compte que liste le sélecteur « Parcourir », le compte des refus du mot de passe.
+- **Notice_Archeomed_Rangement** : la tâche qui range sur sDrive les fichiers des notices envoyées, sous un verrou et dans un budget de temps ; `dossier_de()` donne le dossier d'une notice, fixé au premier rangement.
+- **Notice_Archeomed_Export** : la tâche qui écrit le dossier Métopes d'une rubrique dans le dossier du numéro sur sDrive, une figure par pas, et tient la liste de ce que chaque rubrique y a écrit.
+- **Notice_Archeomed_Stockage** : l'onglet Stockage, la place prise catégorie par catégorie (originaux, aperçus, JPEG tirés des TIFF, autorisations, Word…), d'après les notices qui désignent chaque fichier.
+- **Notice_Archeomed_Annuaire** : l'onglet Annuaire, les personnes nommées dans les notices, une ligne par adresse, ses exports pour Sympa et en CSV, le retrait et le rétablissement d'une personne.
+- **Notice_Archeomed_Confidentialite** : l'export et l'effacement des données personnelles par les outils de WordPress (l'effacement ne supprime aucune notice).
 - **Notice_Archeomed_Nommage** : la règle des noms de fichiers (sans accent, sans espace, souligné pour séparateur) et la construction sur le modèle des réglages (`{numero}_{rubrique}_{commune}_{lieu_dit}_{annee}_Fig_{n}`).
 - **Notice_Archeomed_MiseAJour** : glisse la dernière release GitHub dans le transient des mises à jour de WordPress.
 
 ## 4. Le parcours d'un dépôt
 
 1. **Affichage.** Le shortcode (`afficher_le_formulaire()`) rend le formulaire et renvoie ses scripts en ligne au pied de page : dans le contenu, un thème à blocs changeait des `&&` en `&#038;&#038;` et le script tombait en erreur. L'intégration continue vérifie la syntaxe du script tel que la page le sert. `enqueue_assets()` ne charge Quill et la protection que sur une page qui porte le shortcode. Le navigateur garde un brouillon en `localStorage` (clé `na_brouillon_` + chemin de la page), effacé après un dépôt réussi.
-2. **Saisie.** Le JavaScript du formulaire : éditeur Quill (deux niveaux d'intertitre écrits `h3` et `h4`, gras, italique, exposant, petites capitales ; pas de notes), recherche Pactols directe depuis le navigateur (`/api/autocomplete`, `/openapi/v1/concept`), lieux et précision géographique (aucune proposition ou service muet sont annoncés), figures (glisser-déposer pour réordonner, mesure de la définition JPEG et TIFF lue dans le fichier, titre, crédits, nature et texte alternatif obligatoires, autorisation de reproduction, un champ unique « Pour un public empêché de voir » dont le premier paragraphe est le texte alternatif et la suite la description détaillée, et la nature de la figure — `illus_type`, obligatoire — qui adapte le conseil et les avis), avis annoncés au lecteur d'écran une fois paraître (rafale regroupée, jamais redits), avis en direct (ceux du texte une seconde après la dernière frappe, le paragraphe où se trouve le curseur exempté de l'avis de ponctuation tant qu'on y écrit ; les autres à la sortie du champ), compteur de mots, récapitulatif des erreurs avant envoi.
+2. **Saisie.** Le JavaScript du formulaire : rubrique, sous-rubrique (rubrique V seulement) et renvois se choisissent avant la nature de l'opération ; un aperçu du titre se compose à mesure, la commune en capitales par le seul style (`text-transform`), pour qu'un lecteur d'écran lise un nom et non des lettres ; éditeur Quill (un seul niveau d'intertitre, écrit `h3` — le `h4` des notices anciennes reste lu —, gras, italique, exposant, petites capitales ; pas de notes), recherche Pactols directe depuis le navigateur (`/api/autocomplete`, `/openapi/v1/concept`), une période et un sujet au moins, lieux et précision géographique (aucune proposition ou service muet sont annoncés), figures (glisser-déposer pour réordonner, mesure de la définition JPEG et TIFF lue dans le fichier et taille d'impression qui s'en déduit — « Imprimable jusqu'à 25 × 17 cm environ, à 300 ppp » —, vignette d'un TIFF ou d'un PDF dessinée par le navigateur et agrandie d'un clic, TIFF trop lourd passé en JPEG sur place, figure envoyée à part — une carte sans fichier, avec le lien de transfert, sa date d'expiration et le nom du fichier —, titre, crédits, nature et texte alternatif obligatoires, autorisation de reproduction, un champ unique « Pour un public empêché de voir » dont le premier paragraphe est le texte alternatif et la suite la description détaillée, et la nature de la figure — `illus_type`, obligatoire — qui adapte le conseil et les avis), avis annoncés au lecteur d'écran une fois paraître (rafale regroupée, jamais redits), avis en direct (ceux du texte une seconde après la dernière frappe, le paragraphe où se trouve le curseur exempté de l'avis de ponctuation tant qu'on y écrit ; les autres à la sortie du champ), compteur de mots, récapitulatif avant envoi qui sépare « À corriger » (les erreurs) de « À vérifier avant l'envoi » (les avis bloquants, que lève une case de confirmation).
 3. **Envoi.** Un POST classique (multipart) vers la page elle-même. `handle_submission()` est accroché à `init` et ne fait rien sans le champ `notice_archeomed_envoi`.
-4. **Contrôles d'entrée**, dans l'ordre : forme des champs (`entrees_attendues()`), jeton `notice_archeomed_submit`, pot de miel `na_website`, délai minimal de trois secondes (`na_ts`), quota de tentatives par adresse IP, protection (puzzle et/ou Turnstile).
+4. **Contrôles d'entrée**, dans l'ordre : forme des champs (`entrees_attendues()`), jeton `notice_archeomed_submit`, pot de miel `na_website`, délai minimal de trois secondes (`na_ts`), quota de tentatives par adresse IP, protection (puzzle et/ou Turnstile). Chaque refus est noté avec sa cause (`noter_le_refus()`, option `na_derniers_refus`) et se lit dans l'onglet Hébergement.
 5. **Collecte et nettoyage** de chaque champ, bornes de longueur (`limit_string()`, qui note les coupes pour l'auteur), normalisations (année, lieu-dit sans point final, département sans parenthèses), termes Pactols (ARK vérifiés par `Thesaurus::ark_propre()`, un terme sans ARK est marqué `libre`), texte HTML nettoyé (`clean_richtext()`).
-6. **Champs obligatoires** (`champs_manquants()`), quota d'envois, téléversements (`handle_uploads()` : extension, type MIME réel, PDF valide, plafonds) et autorisations.
+6. **Champs obligatoires** (`champs_manquants()`, période et sujet compris), quota d'envois, place sur le disque (`garder_le_disque()` : au-delà du seuil, la notice est reçue sans ses fichiers, chaque figure devenant « envoyée à part »), téléversements (`handle_uploads()` : extension, type MIME réel, PDF valide, plafonds), JPEG tirés par le navigateur (`recevoir_les_conversions()`) et autorisations.
 7. **Inscription.** `Notice_Archeomed_File::deposer()` crée le post `na_notice` (privé) et ses métadonnées, pose la marque `_na_preparation`, puis l'état `en_attente` — dans cet ordre, pour qu'aucune relance ne la prenne pendant sa préparation. La référence est tirée au hasard (six caractères).
-8. **Préparation**, dans la requête de l'auteur : les illustrations sont rangées à demeure (`archiver_les_illustrations()`), les autorisations aussi, les versions allégées fabriquées si Imagick est là, le Word fabriqué (`fabriquer_le_document()`), puis la marque `_na_preparation` est ôtée. Si la requête meurt, la marque vieillit (`ABANDON` = 600 s) et la file reprend la notice.
+8. **Préparation**, dans la requête de l'auteur : les illustrations sont rangées à demeure (`archiver_les_illustrations()`), les JPEG tirés par le navigateur et les autorisations aussi (`_na_conversions`, `_na_autorisations`), les versions allégées fabriquées (par Imagick, sinon par GD à partir d'un JPEG, d'un PNG ou d'une conversion du navigateur), le Word fabriqué (`fabriquer_le_document()`), puis la marque `_na_preparation` est ôtée. Si la requête meurt, la marque vieillit (`ABANDON` = 600 s) et la file reprend la notice.
 9. **Retour à l'auteur.** En envoi différé (le défaut), `programmer()` réserve l'expédition et l'auteur est redirigé vers le panneau de fin, avec sa référence. En envoi immédiat, l'expédition a lieu dans la requête, protégée par un `try/catch` : une erreur est consignée, jamais montrée à l'auteur, et la relance reprend la notice.
 10. **En cas de refus** (champ manquant, fichier refusé…), `redirect_result()` garde la saisie en transient (`na_reprise_<jeton>`) et redirige avec `notice_envoyee=0`, `notice_erreur`, `notice_champ(s)` et `notice_reprise` : le formulaire se rouvre rempli, les fichiers seuls sont à redéposer.
 11. **Base indisponible.** Si l'inscription échoue, la notice part directement par courriel avec ses originaux, pour ne pas la perdre.
@@ -127,12 +141,14 @@ Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices re
 
 Refuse une notice en préparation, fait fabriquer d'abord les versions allégées manquantes (tâche à part, une seule fois : `_na_apercus_tente`), prend la notice, refait le Word s'il a disparu, puis `expedier()` :
 
-- un seul courriel pour toute la rédaction (destinataires « notices » des réglages), `Reply-To` vers le responsable ;
-- pièces jointes composées par `pieces_du_courriel()` : le Word toujours, puis chaque figure dans son ordre, en version allégée si elle en a une, l'original sinon, sous le nom de sa figure (clé du tableau d'attachements de `wp_mail`), tant que le poids réglé n'est pas atteint (`budget_du_courriel()`, en méga-octets décimaux, encodage base 64 compté) ; ce qui ne tient pas est nommé dans un encadré avec le lien de la notice ;
-- si l'auteur a donné un lien vers ses originaux, un courriel d'alerte à part (`alerter_pour_les_originaux()`), dont l'objet dit le délai et la date d'expiration (`originaux_jusqua`) ; son échec est consigné sans faire échouer la notice ;
-- puis une copie à chaque personne citée, avec le Word et le lien de correction (valable un mois).
+- un seul courriel pour toute la rédaction (destinataires « notices » des réglages), `Reply-To` vers le responsable ; l'objet nomme la commune, le département, le lieu-dit et l'année, préfixé `[CORRECTION de …]` ou `[CORRIGÉE]` s'il y a lieu ; le titre du corps met la commune en capitales, comme la revue, et le corps dit qui a déposé (« Déposée par ») ;
+- pièces composées par `pieces_du_courriel()` : le Word toujours, puis chaque figure dans son ordre, en version allégée si elle en a une, l'original sinon, sous le nom de sa figure (clé du tableau d'attachements de `wp_mail`), tant que le poids réglé n'est pas atteint (`budget_du_courriel()`, en méga-octets décimaux, encodage base 64 compté) ; ce qui ne tient pas est nommé dans un encadré avec le lien de la notice ;
+- `figures_dans_le_corps()` pose ensuite les aperçus JPEG, PNG ou GIF dans le corps, au-dessus de leur légende (`<img src="cid:…">`, 600 px de large au plus, images jointes en ligne sur `phpmailer_init`) ; un TIFF reste en pièce jointe, et une notice composée avant cette marque garde ses figures jointes ; le Word et les autorisations restent des pièces jointes ; une figure envoyée à part n'a pas d'aperçu : le courriel donne son lien ;
+- sous la notice, le lien de correction de la rédaction et « Écrire aux responsables de la notice », un message adressé d'avance à toutes les adresses de la notice ;
+- si l'auteur a donné un lien de transfert (figure envoyée à part, ou lien vers ses originaux), un courriel d'alerte à part (`alerter_pour_les_originaux()`), dont l'objet dit le délai et la date d'expiration la plus proche ; son échec est consigné sans faire échouer la notice ;
+- puis une copie à chaque personne citée — responsable, co-responsable, co-auteur, déposant —, avec le Word et le lien de correction (valable un mois, vers la dernière page publiée qui porte le formulaire) ; le sort de chaque copie, partie ou refusée avec sa raison, est gardé dans `_na_copies` et se lit sur la fiche.
 
-Rendu vrai : état `envoyee`, note, effacement du Word temporaire. Rendu faux : `compter_un_essai()`. L'erreur réelle de PHPMailer est captée par `wp_mail_failed` et traduite pour la rédaction (`expliquer_l_erreur()`).
+Rendu vrai : état `envoyee`, note, effacement du Word temporaire, puis rangement sur sDrive réservé (`Notice_Archeomed_Rangement::programmer()`). Rendu faux : `compter_un_essai()`. L'erreur réelle de PHPMailer est captée par `wp_mail_failed` et traduite pour la rédaction (`expliquer_l_erreur()`).
 
 ### Tâches planifiées (WP-Cron)
 
@@ -141,11 +157,12 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | Crochet | Fréquence | Rôle |
 |---|---|---|
 | `na_expedier_notice` (argument : id) | ponctuelle | expédier une notice |
-| `na_relancer_les_notices` | toutes les cinq minutes (intervalle `na_cinq_minutes` ajouté par l'extension) | reprendre jusqu'à `PAR_PASSAGE` (5) notices en attente ; remettre en route la tâche des termes |
-| `na_recapituler_les_notices` | chaque jour à 7 h, heure du site | récapitulatif adressé aux destinataires « recap » |
+| `na_relancer_les_notices` | toutes les cinq minutes (intervalle `na_cinq_minutes` ajouté par l'extension) | reprendre jusqu'à `PAR_RELANCE` (15) notices en attente, en vingt secondes au plus, en respectant le délai d'une notice déjà manquée (`_na_pas_avant`, cinq minutes par essai) ; remettre en route la tâche des termes. `PAR_PASSAGE` (5) ne sert qu'au bouton « Expédier maintenant » |
+| `na_recapituler_les_notices` | chaque jour à 7 h, heure du site | récapitulatif adressé aux destinataires « recap », les notices dans l'ordre du volume avec leur état |
 | `na_fabriquer_les_apercus` (argument : id) | ponctuelle | versions allégées manquantes, puis reprogrammation de l'envoi |
 | `na_resoudre_les_termes` | tâche unique, réservée au besoin | lire dans Pactols les termes des notices en attente, par lots (`LOT_TERMES` = 50) et dans un budget de `BUDGET_TERMES` (10 s) |
-| `na_ranger_sur_sdrive` | tâche unique, réservée au besoin | ranger sur sDrive les notices envoyées ; un échec propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive (injoignable, 429, 507) arrête le passage sans en coûter |
+| `na_ranger_sur_sdrive` | tâche unique, réservée au besoin | ranger sur sDrive les notices envoyées ; un échec propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive (injoignable, 429, 507) arrête le passage sans en coûter et le reprend un quart d'heure plus tard, une heure si le compte est plein ; un passage coupé par le serveur compte comme un essai (`_na_sdrive_entame`) |
+| `na_exporter_sur_sdrive` | tâche unique, réservée au besoin | écrire le dossier Métopes d'une rubrique dans le dossier du numéro sur sDrive, une figure par pas, une rubrique à la fois (`na_export_attente`) ; une figure ou une rubrique est abandonnée après cinq passages manqués (`ESSAIS`) |
 | `na_deposer_les_relectures` | tâche unique, réservée au besoin | déposer sur sDrive les Word de relecture qui attendent ; même règle que le rangement : un refus propre à la notice lui coûte un essai (`ESSAIS` = 8), une panne de sDrive arrête le passage sans en coûter |
 | `na_mesurer_le_disque` | tâche unique, au plus tous les quarts d'heure | remesurer le disque pour l'estimation que lit le dépôt |
 
@@ -169,10 +186,13 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `_na_versions` | l'histoire des vingt dernières corrections : `version`, `le`, `par`, `champs` |
 | `_na_corrigee` | les points changés par une correction de l'auteur, à signaler à la rédaction (`[CORRIGÉE]` dans l'objet) ; effacée une fois le courriel parti |
 | `_na_etat`, `_na_prise`, `_na_essais`, `_na_erreur`, `_na_note`, `_na_envoyee_le` | la file |
+| `_na_pas_avant` | l'heure avant laquelle une notice déjà manquée n'est pas reprise (cinq minutes par essai) |
+| `_na_copies` | le sort des copies envoyées aux auteurs : `le`, puis par adresse `a`, `partie`, `raison` |
 | `_na_preparation` | marque posée pendant la préparation du dépôt |
 | `_na_fichiers` | les fichiers à joindre (chemins) |
 | `_na_document` | le Word temporaire, effacé après l'envoi (il se refait à la demande) |
 | `_na_illustrations` | les originaux rangés, dans l'ordre des figures |
+| `_na_conversions` | les JPEG tirés par le navigateur d'un TIFF ou d'un PDF (haute et basse définition), par rang |
 | `_na_autorisations` | les autorisations de reproduction, par rang de figure |
 | `_na_apercus`, `_na_apercus_tente` | les versions allégées par rang, et la marque de leur fabrication |
 | `_na_rubrique`, `_na_famille`, `_na_classement`, `_na_responsable`, `_na_courriel` | copies à plat pour trier, filtrer et chercher dans la liste |
@@ -183,11 +203,15 @@ WordPress inscrit un envoi par une lecture puis une écriture de son tableau de 
 | `_na_relecture_verrou` | qui tient la notice ouverte : « heure:compte » ; périmé au bout de `DUREE_DU_VERROU` (300 s) |
 | `_na_relecture_version` | une ligne par version gardée : `version`, `le`, `par`, `par_id`, `champs`, `donnees` (la saisie entière) |
 | `_na_relecture_journal` | une ligne par événement : `le`, `par`, `par_id`, `quoi`, `etat_avant`, `etat_apres`, `remarque`, `version` |
+| `_na_sdrive` | la table du rangement : chemin du serveur ⇒ copie sur sDrive, vérifiée par sa taille |
+| `_na_sdrive_dossier` | le dossier de la notice sur sDrive, fixé au premier rangement |
+| `_na_sdrive_apres`, `_na_sdrive_essais`, `_na_sdrive_raison`, `_na_sdrive_entame` | l'attente du rangement, ses essais, la raison du dernier échec, la marque d'un passage commencé |
+| `_na_sdrive_a_deposer` | l'empreinte du fichier `a-deposer.txt` déjà écrit, qui rappelle les figures envoyées à part |
 | `_na_relecture_a_deposer`, `_na_relecture_apres`, `_na_relecture_essais`, `_na_relecture_raison`, `_na_relecture_deposes` | l'attente du dépôt des Word de relecture sur sDrive, et ce qui y est déjà |
 
 ### La saisie (`_na_donnees`)
 
-Clés principales : `rubrique_principale`, `renvoi_1`, `renvoi_2`, `rubrique_matiere` ; `lieux` (liste `{nom, ark}`, le premier est la commune, recopiée dans `commune` et `commune_ark`), `departement`, `lieu_dit`, `annee` ; `nature` et `nature_items` (`{label, ark}`) ; `pactols_periods_items`, `pactols_subjects_items`, `pactols_places_items` (`{label, ark, idConcept, fullpath}`, plus `libre` pour un terme gardé hors de la liste) et leurs versions texte ; `num_autorisation`, `id_patriarche`, `rapport_lien`, `originaux_lien`, `originaux_jusqua` (AAAA-MM-JJ) ; `organismes` ; responsable, co-responsable et co-auteur (`*_prenom`, `*_nom`, `*_inst`, `*_email`) ; `texte_notice` (HTML restreint : `p`, `h3` et `h4` pour les intertitres, `br`, `em`, `strong`, `sup`, `sub`, `span` de petites capitales) ; `illustrations` (par figure : `rang`, `titre`, `legende`, `credits`, `alt`, `description`, `autorisation`, pixels) ; `commentaires` ; `remplace`.
+Clés principales : `rubrique_principale`, `renvoi_1`, `renvoi_2`, `rubrique_matiere` (la sous-rubrique de la rubrique V ; la clé garde son ancien nom) ; `lieux` (liste `{nom, ark}`, le premier est la commune, recopiée dans `commune` et `commune_ark`), `departement`, `lieu_dit`, `annee` ; `nature` et `nature_items` (`{label, ark}`) ; `pactols_periods_items`, `pactols_subjects_items`, `pactols_places_items` (`{label, ark, idConcept, fullpath}`, plus `libre` pour un terme gardé hors de la liste) et leurs versions texte ; `num_autorisation`, `id_patriarche`, `rapport_lien`, `originaux_lien`, `originaux_jusqua` (AAAA-MM-JJ) ; `organismes` ; responsable, co-responsable et co-auteur (`*_prenom`, `*_nom`, `*_inst`, `*_email`) ; déposant (`deposant_prenom`, `deposant_nom`, `deposant_email` ; le nom n'est demandé que depuis la 3.81) ; `texte_notice` (HTML restreint : `p`, `h3` et `h4` pour les intertitres, `br`, `em`, `strong`, `sup`, `sub`, `span` de petites capitales) ; `illustrations` (par figure : `rang`, `titre`, `legende`, `credits`, `alt`, `description`, `type`, `autorisation`, pixels, et pour une figure envoyée à part `a_part` : `lien`, `jusqua`, `fichier`, plus `refusee` quand c'est le manque de place qui l'a voulue) ; `commentaires` ; `remplace`.
 
 Une figure retirée à la relecture reste dans `illustrations`, à son rang, avec une clé `masquee` (`motif`, `precision`, `par`, `le`) : `preparer_la_saisie()` l'ôte de tout document et numérote les autres à la suite, `notices_a_assembler()` écarte ses fichiers du dossier.
 
@@ -203,17 +227,24 @@ Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `sais
 | `notice_archeomed_relecture` | la relecture : `close` (campagne close) et `coordinateurs` (rubrique ⇒ comptes) |
 | `na_etat_des_donnees` | version de la forme des données |
 | `na_essais_de_poids` | l'historique des essais de poids du courriel |
+| `na_sdrive` | la liaison à sDrive faite depuis l'onglet Hébergement (serveur, nom de connexion, identifiant interne, mot de passe d'application scellé, dossier) |
 | `na_sdrive_etat` | ce qu'a fait le dernier passage du rangement, ou la panne qui l'a arrêté |
+| `na_sdrive_verrou`, `na_export_verrou` | les verrous du rangement et de l'export, pris par une écriture qui ne réussit qu'une fois, périmés au bout de cinq minutes |
+| `na_export`, `na_export_attente`, `na_export_manifestes` | l'export en cours, les rubriques qui attendent leur tour, et ce que chaque rubrique a écrit dans chaque numéro |
 | `na_sdrive_refus` | les refus du mot de passe sDrive (401) reçus de suite ; à trois (`REFUS_MAX`), le rangement s'arrête jusqu'à une nouvelle liaison ou « Ranger maintenant » |
 | `na_disque_connu`, `na_disque_recu` | la dernière mesure du disque, et ce que les dépôts ont reçu depuis |
+| `na_derniers_refus` | les vingt derniers envois refusés : heure, raison, cause, âge de la page, connexion |
+| `na_annuaire_retires` | les adresses retirées de l'annuaire |
 
 ### Transients
 
-`na_reprise_<jeton>` (saisie gardée pour la reprendre, un mois au plus), `na_reprise_faite_<jeton>`, `na_pactols_<hash>` (réserve de l'autocomplétion relayée par le serveur), réserves du thésaurus (concept lu : un mois ; échec : une heure), compteurs de quotas, `na_essai_<utilisateur>` (résultat d'un essai des réglages), `na_diagnostic_*`, `na_assemblage*`, `na_maj_release` (dernière release GitHub, six heures).
+`na_reprise_<jeton>` (saisie gardée pour la reprendre, un mois au plus), `na_reprise_faite_<jeton>`, `na_turnstile_injoignable` (Cloudflare n'a pas répondu : le puzzle s'ajoute), `na_pactols_<hash>` (réserve de l'autocomplétion relayée par le serveur), réserves du thésaurus (concept lu : un mois ; échec : une heure), compteurs de quotas, `na_essai_<utilisateur>` (résultat d'un essai des réglages), `na_diagnostic_*`, `na_assemblage*`, `na_maj_release` (dernière release GitHub, six heures).
 
 ### Fichiers
 
 Les originaux, autorisations, versions allégées et une éventuelle feuille de styles déposée vivent dans `wp-content/uploads/notice-archeomed/`, protégé par un `.htaccess` (`Require all denied`) et un `index.php`. Ils ne se servent que par `admin-post` (`na_illustration`), après vérification du droit et du jeton. Les fichiers de travail passent par le répertoire temporaire (`notice-archeomed-tmp/`, ateliers de dossiers) et sont purgés : un jour en général, un mois pour ce qu'un envoi manqué a mis de côté. Supprimer une notice efface ses fichiers (`before_delete_post`).
+
+Relié à sDrive, le serveur ne garde d'une notice envoyée que ses aperçus : originaux, JPEG tirés par le navigateur et autorisations partent dans son dossier sur sDrive, avec le Word de chaque version, et la copie du serveur ne s'efface qu'une fois la taille du dépôt relue chez sDrive et le chemin retenu dans `_na_sdrive`. Un téléchargement depuis la fiche va alors chercher le fichier sur sDrive.
 
 ## 7. Réglages
 
@@ -223,7 +254,7 @@ Pour chaque clé : une constante de `wp-config.php` si elle existe (`NA_TURNSTIL
 
 ### Onglets
 
-Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Relecture · Courriel · Feuille de styles · Mises à jour · Hébergement · Documentation. Chaque onglet a son propre formulaire. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
+Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Relecture · Courriel · Feuille de styles · Mises à jour · Hébergement · Stockage · Annuaire · Documentation. Chaque onglet a son propre formulaire. L'onglet Hébergement a pour clé `diagnostic`, son ancien nom : il dit l'état du serveur, relie le site à sDrive (« Relier le site à sDrive », « Parcourir », « Ranger maintenant »), montre où en sont rangement et export, et liste les derniers envois refusés. Stockage dit la place prise par catégorie et les notices les plus lourdes ; Annuaire liste les personnes, s'emporte pour Sympa ou en CSV, et retire ou rétablit une personne. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
 
 ### Clés principales de `notice_archeomed_options`
 
@@ -263,9 +294,11 @@ Avis éventuels (« à supprimer ») ; titre (lieux, département, lieu-dit) ; m
 
 ### Fascicule, relecture et dossier Métopes
 
-- **Fascicule** (`na_fascicule`) : toutes les notices d'une rubrique dans l'ordre du volume (`classement_de()` : rubrique, matière pour la V, famille d'opérations, commune), avec les renvois des autres rubriques à leur place alphabétique.
+- **Fascicule** (`na_fascicule`) : toutes les notices d'une rubrique dans l'ordre du volume (`classement_de()` : rubrique, sous-rubrique pour la V, famille d'opérations, commune), avec les renvois des autres rubriques à leur place alphabétique.
 - **Page de relecture** : la même rubrique en HTML, figures comprises, pour relire dans un navigateur.
 - **Dossier Métopes** (`na_paquet`, `Notice_Archeomed_Paquet`) : une archive zip avec `style/` (le Word, images liées), `XML/` (fichier d'indexation), `icono/hr` (haute définition aux normes), `icono/br` (basse définition liée au Word), `icono/originaux`, et un lisez-moi qui dit tout ce qui n'a pas pu être fait. Les images sont nommées par `Notice_Archeomed_Nommage::construire()`.
+- **Export sur sDrive** (`na_export`, `Notice_Archeomed_Export`) : le même dossier, écrit sans archive dans le dossier du numéro, à côté de `originaux/`, par la tâche `na_exporter_sur_sdrive`, une figure après l'autre. Un nouvel export n'efface que ce que la rubrique y avait écrit (son manifeste), jamais `originaux/` ni ce qu'une autre rubrique a posé ; la liste des notices dit où il en est.
+- **Figure envoyée à part** : le Word porte à la place de l'aperçu un cadre rouge « à remplacer par l'original envoyé à part » ; le fichier `a-deposer.txt` du dossier de la notice sur sDrive rappelle, figure par figure, ce que la rédaction doit y déposer.
 - **Blocs d'index** (`indexation_de()`) : pour chaque terme lu, l'arbre des concepts du plus général au terme, avec étiquettes en toutes langues, en TEI, dans une enveloppe d'un espace de noms propre à l'extension (constante `ESPACE_INDEXATION`) qui nomme le style du paragraphe où coller chaque zone.
 
 ## 9. Pactols
@@ -304,15 +337,17 @@ Accessibilité : chaque champ a son étiquette et son `aria-describedby`, les er
 
 ### Les essais
 
-`.github/essais/file-des-termes.php` est un script WP-CLI (`wp eval-file`) qui charge l'extension dans un vrai WordPress et vérifie environ deux cents comportements : file et prise atomique, pièces du courriel, document Word (styles, ordre, XML valide), typographie (corpus `typographie.json`), siècles, normes, styles, avis, accessibilité, sigles, Pactols (avec un faux serveur), réglages, candidats… Chaque vérification est une ligne `na_verifier( condition, 'ce qui doit être vrai', $obtenu )`. Un essai calcule, nettoie ce qu'il a créé, puis vérifie.
+`.github/essais/file-des-termes.php` est un script WP-CLI (`wp eval-file`) qui charge l'extension dans un vrai WordPress et vérifie environ deux cents comportements : file et prise atomique, pièces du courriel, document Word (styles, ordre, XML valide), typographie (corpus `typographie.json`), siècles, normes, styles, avis, accessibilité, sigles, Pactols (avec un faux serveur), réglages, candidats, relecture, annuaire, conversions du navigateur, disque… Chaque vérification est une ligne `na_verifier( condition, 'ce qui doit être vrai', $obtenu )`. Un essai calcule, nettoie ce qu'il a créé, puis vérifie.
 
 Pour l'exécuter hors de l'intégration continue : un WordPress avec WP-CLI, l'extension installée et activée, puis `wp eval-file .github/essais/file-des-termes.php`. WordPress Playground (`@wp-playground/cli`) convient aussi, en montant le dossier de l'extension.
+
+sDrive s'éprouve sans sDrive : `.github/essais/faux-sdrive.php` est un petit serveur WebDAV qui répond comme lui, et sait aussi tomber en panne (507 pour un compte plein, 401 pour un mot de passe refusé). Les scripts `ranger` et `exporter` lancent le rangement et l'export en plusieurs passages contre lui ; `rangement-verification.php` et `export-verification.php` vérifient ensuite ce qui a été écrit, et que rien n'a été effacé du serveur avant d'être relu chez sDrive.
 
 **Toute correction de comportement s'accompagne de son essai**, et un essai doit échouer avant la correction.
 
 ### Intégration continue (`.github/workflows/publier.yml`)
 
-À chaque poussée : `analyser` (analyseur PHP 7.2 et 8.4, doublons, commentaires) puis `essayer` (matrice PHP 7.2 / WordPress 6.9, PHP 8.1, 8.3 et 8.4 / dernière version : installation, activation, affichage du formulaire, essais, désactivation, journal sans erreur fatale). Sur une étiquette `vX.Y` : `publier` vérifie que l'étiquette égale la version de l'en-tête, fabrique l'archive et publie la release avec `notice-archeomed.zip`.
+À chaque poussée : `analyser` (analyseur PHP 7.2 et 8.4, doublons, commentaires) puis `essayer` (matrice PHP 7.2 / WordPress 6.9, PHP 8.1, 8.3 et 8.4 / dernière version : installation, activation, affichage du formulaire, essais, désactivation, journal sans erreur fatale). Sur `main`, `charger` éprouve la concurrence (section 14), puis, contre le faux sDrive, le rangement et l'export en trois passages, les pannes, le sélecteur de dossier et le dépôt des Word de relecture. Sur une étiquette `vX.Y` : `publier` vérifie que l'étiquette égale la version de l'en-tête, fabrique l'archive et publie la release avec `notice-archeomed.zip`.
 
 ### Publier une version
 
@@ -337,12 +372,13 @@ Sur un site dont l'environnement est `local` ou `development` (`WP_ENVIRONMENT_T
 
 ## 14. Points d'attention
 
-- **Hébergement derrière un proxy** : Turnstile (Cloudflare) et la lecture de Pactols demandent une sortie HTTPS ; à défaut, protection locale et `pactols_serveur` = `non`.
+- **Hébergement derrière un proxy** : Turnstile (Cloudflare), la lecture de Pactols et sDrive demandent une sortie HTTPS ; à défaut, protection locale, `pactols_serveur` = `non`, et les fichiers restent sur le serveur. L'onglet Hébergement essaie chacune de ces sorties.
 - **Limites de PHP** : `upload_max_filesize` et `post_max_size` bornent les fichiers ; une requête plus lourde que `post_max_size` arrive vide, ce que `refuser_l_envoi_trop_lourd()` détecte et dit à l'auteur.
-- **Planificateur** : sans WP-Cron ni tâche système, rien ne part en différé.
+- **Planificateur** : sans WP-Cron ni tâche système, rien ne part en différé, et rien ne se range sur sDrive.
+- **Temps d'exécution** : le rangement et l'export partagent un budget de soixante secondes compté depuis le début de la requête (`Notice_Archeomed_Rangement::echeance()`), parce que le planificateur peut les lancer l'un après l'autre dans la même requête ; chacun garde une marge avant de commencer un fichier (25 s pour le rangement, 30 s pour une figure de l'export). Un passage coupé par le serveur compte comme un essai manqué.
 - **Concurrence** : éprouvée à chaque envoi sur `main` par le travail `charger` de l'intégration continue : un WordPress sur MariaDB, servi par huit processus PHP, reçoit vingt-cinq dépôts de deux figures à la même seconde, puis quatre passages du planificateur se disputent les notices ; il doit rester vingt-cinq notices, chacune sa référence, toutes expédiées une seule fois (`.github/essais/charge.php` et `charge-verification.php`). Puis les vingt-cinq sont corrigées par leur lien à la même seconde, cinq d'entre elles deux fois depuis deux pages ouvertes sur la même version : une seule des deux doit passer, et chaque notice être récrite en place, une version de plus, et repartir une seule fois (`corrections.php` et `corrections-verification.php`). Ce n'est pas une mesure de charge de la production : les environnements en SQLite (Playground) ne reproduisent pas les écritures simultanées, et la vérification anti-robot est suspendue pour l'essai.
 - **Évolutions de Métopes** : remplacer le gabarit, lancer `verifier-les-styles`, ajuster la correspondance dans l'onglet Styles Métopes plutôt que le code.
-- **Courriel** : le serveur de la revue refuse au-delà d'une dizaine de méga-octets ; l'essai de poids de l'onglet Courriel mesure la limite réelle.
+- **Courriel** : le serveur de la revue refuse au-delà d'une dizaine de méga-octets ; l'essai de poids de l'onglet Courriel mesure la limite réelle. Les aperçus posés dans le corps comptent dans ce poids comme des pièces jointes ; les originaux, eux, ne voyagent plus.
 
 ## 15. Exploitation
 
@@ -352,10 +388,10 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 
 - **PHP 7.2 au moins** (testé en 7.2, 8.1, 8.3 et 8.4) ; extensions `zip` (le document Word) et `imagick` (les versions allégées des figures ; à son défaut, ou s'il échoue, GD réduit les JPEG et les PNG, mais ni les TIFF ni les PDF). Aucune limite de temps ni de mémoire n'est posée à Imagick : elles valent pour le processus entier, non pour une image. GD, lui, déplie l'image entière : `Notice_Archeomed_Paquet::memoire_suffit()` compte cinq octets par pixel et 16 Mo de marge face à la limite relevée pour les images, et l'on renonce à l'aperçu plutôt que de faire tomber le processus. La conversion reçue du navigateur se vérifie alors à sa marque de fin de JPEG.
 - **WordPress 5.6 au moins**, base MySQL ou MariaDB.
-- **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, `max_execution_time` de 60 s au moins.
-- **Disque** : une notice arrive avec quarante Mo d'illustrations au plus (`MAX_TOTAL_FILESIZE`, vingt avant la 3.81) ; sans sDrive, elles restent sur le site, et trois cents notices dépasseraient le plafond. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes. Le dépôt ne parcourt pas le disque : il lit l'estimation (`disque_estime()` : dernière mesure plus `na_disque_recu`) et, au-delà de 85 % (`PART_SANS_FICHIERS`) ou de 500 Mo reçus dans l'heure, reçoit la notice sans ses fichiers (`garder_le_disque()`, paramètre `notice_sans_fichiers` à la page de fin). Bandeau d'administration dès 60 %. Relié à sDrive, le site n'y garde plus que les aperçus : originaux, JPEG convertis et autorisations sont rangés dans `<dossier>/<numéro>/originaux/<référence>/` après l'envoi, et effacés d'ici une fois leur copie vérifiée.
+- **Limites PHP** : `upload_max_filesize` et `post_max_size` à 25 Mo au moins, et au-delà de 40 Mo pour qu'une notice atteigne son plafond : le plafond réel est le plus petit de `MAX_TOTAL_FILESIZE` et de ceux de PHP (`plafonds_des_fichiers()`) ; `max_execution_time` de 60 s au moins, 120 s de préférence.
+- **Disque** : une notice arrive avec quarante Mo d'illustrations au plus (`MAX_TOTAL_FILESIZE`, vingt avant la 3.81) ; sans sDrive, elles restent sur le site, et trois cents notices dépasseraient le plafond. L'onglet Hébergement compte le dossier des notices et les téléversements du site, face à un plafond de 2 Go (filtre `notice_archeomed_plafond_disque`, `0` pour ne pas juger) ; la mesure est gardée quinze minutes. Le dépôt ne parcourt pas le disque : il lit l'estimation (`disque_estime()` : dernière mesure plus `na_disque_recu`) et, au-delà de 85 % (`PART_SANS_FICHIERS`) ou de 500 Mo reçus dans l'heure, reçoit la notice sans ses fichiers (`garder_le_disque()`, paramètre `notice_sans_fichiers` à la page de fin). Bandeau d'administration dès 60 %. Relié à sDrive, le site n'y garde plus que les aperçus : originaux, JPEG convertis et autorisations sont rangés après l'envoi dans `<dossier>/<numéro>/originaux/<rubrique>/<Commune>/` (la rubrique V partagée en ses sous-rubriques ; `Caen_2` pour une deuxième notice de la même commune), avec le Word de chaque version (`Commune_Nom_vN.docx`), et effacés d'ici une fois leur copie vérifiée. Le dossier d'une notice est fixé au premier rangement : changer sa commune ensuite ne le déplace pas.
 - **Planificateur** : WP-Cron actif (`DISABLE_WP_CRON` absent ou faux), ou une tâche système qui appelle `wp-cron.php` chaque minute. Sans lui, les courriels ne partent pas.
-- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers sDrive si les illustrations doivent y être rangées : l'essai de l'onglet Diagnostic dit si le proxy de l'hébergement laisse passer. Le site s'y relie depuis le même onglet, sans mot de passe tapé : l'administrateur autorise le site dans sDrive, qui lui rend un mot de passe d'application révocable, scellé dans la base avec les clés de `wp-config.php`. Le site demande aussi à sDrive l'identifiant interne du compte (`/ocs/v2.php/cloud/user`) : c'est lui qui nomme le dossier WebDAV quand la connexion passe par la fédération d'identité sous un autre nom ; à son défaut, le nom de connexion sert.
+- **Sortie HTTPS** : vers `challenges.cloudflare.com` (Turnstile, selon la protection choisie) ; la recherche Pactols se fait depuis le navigateur du visiteur, mais la résolution des termes à l'expédition (forme préférée, concept déprécié, chaîne ascendante) part du serveur, vers `pactols.frantiq.fr` ; à son défaut elle se retente, et la notice part sans. Vers sDrive si les illustrations doivent y être rangées : l'essai de l'onglet Hébergement dit si le proxy de l'hébergement laisse passer. Le site s'y relie depuis le même onglet, sans mot de passe tapé : l'administrateur autorise le site dans sDrive, qui lui rend un mot de passe d'application révocable, scellé dans la base avec les clés de `wp-config.php`. Le site demande aussi à sDrive l'identifiant interne du compte (`/ocs/v2.php/cloud/user`) : c'est lui qui nomme le dossier WebDAV quand la connexion passe par la fédération d'identité sous un autre nom ; à son défaut, le nom de connexion sert.
 
 ### Réglages posés dans `wp-config.php`
 
@@ -364,10 +400,10 @@ Ce qu'un hébergeur ou une équipe qui reprend le plugin doit savoir. Le détail
 | `NA_TURNSTILE_SECRET` | clé secrète Turnstile |
 | `NA_PROTECTION` | `aucune` suspend la vérification, **sur un site déclaré `local` ou `development` seulement** |
 | `NA_PROXYS` | relais de confiance (adresses ou blocs CIDR, séparés par des virgules), derrière lesquels l'adresse du visiteur se lit dans `X-Forwarded-For` ; sans elle, `REMOTE_ADDR` seul |
-| `NA_SDRIVE_WEBDAV`, `NA_SDRIVE_IDENTIFIANT`, `NA_SDRIVE_MOT_DE_PASSE`, `NA_SDRIVE_DOSSIER` | l'accès WebDAV à sDrive (mot de passe d'application, jamais celui de Janus), toutes quatre ou aucune ; elles priment sur la liaison faite dans l'onglet Diagnostic, inutile quand elles manquent |
+| `NA_SDRIVE_WEBDAV`, `NA_SDRIVE_IDENTIFIANT`, `NA_SDRIVE_MOT_DE_PASSE`, `NA_SDRIVE_DOSSIER` | l'accès WebDAV à sDrive (mot de passe d'application, jamais celui de Janus), toutes quatre ou aucune ; elles priment sur la liaison faite dans l'onglet Hébergement, inutile quand elles manquent |
 | `NA_SUPPRIMER_LES_NOTICES` | à `true` avant de supprimer l'extension : efface aussi les notices et leurs fichiers (sinon ils restent) |
 
-Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vérification quand Cloudflare est injoignable ; par défaut elle laisse passer, pour ne pas perdre de notice derrière un proxy qui le bloque.
+Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vérification quand Cloudflare est injoignable ; par défaut elle laisse passer, pour ne pas perdre de notice derrière un proxy qui le bloque. La pièce de puzzle s'y ajoute alors (transient `na_turnstile_injoignable`) le temps que la sortie revienne ; une page affichée avant la panne, sans puzzle, est encore admise pendant un jour.
 
 ### Cache et réseau
 
@@ -377,13 +413,14 @@ Le filtre `notice_archeomed_turnstile_ouvert` (à `__return_false`) ferme la vé
 
 ### Sauvegarde et restauration
 
-À sauvegarder : **la base de données** (les notices et leurs métadonnées y sont) **et le dossier `wp-content/uploads/notice-archeomed/`** (figures, autorisations, documents Word, paquets). Les originaux jusqu'à 20 Mo par notice : prévoir quelques Go par an. Restaurer les deux ensemble ; une notice dont le fichier manque s'affiche « fichier introuvable sur le serveur » dans sa fiche.
+À sauvegarder : **la base de données** (les notices et leurs métadonnées y sont) **et le dossier `wp-content/uploads/notice-archeomed/`** (figures, autorisations, aperçus, conversions). Les illustrations vont jusqu'à 40 Mo par notice : sans sDrive, prévoir plusieurs Go par an. Relié à sDrive, le site n'y garde que les aperçus ; les originaux et les Word sont sur sDrive, qui a ses propres sauvegardes, et la table `_na_sdrive` de chaque notice dit où ils sont. Restaurer les deux ensemble ; une notice dont le fichier manque s'affiche « fichier introuvable sur le serveur » dans sa fiche.
 
 ### Supervision
 
 - Le bandeau de l'administration signale les notices en échec ou en attente depuis plus de 30 minutes ; il ne se voit que si quelqu'un ouvre l'administration. Une sonde externe peut interroger la liste des notices en état `en_attente` ou `echec`.
 - Les incidents s'écrivent dans le journal PHP, préfixe `Notice Archeomed:`.
-- Plafonds : 300 tentatives et 15 envois par heure et par adresse (filtre `notice_archeomed_plafond_par_poste`), 10 saisies gardées après refus par heure et par adresse, 100 dépôts par heure toutes adresses confondues. Les compteurs sont rangés sous l'heure en cours (`cle_horaire()`). Un refus « quota » à répétition indique un robot, ou un relais non déclaré dans `NA_PROXYS`.
+- L'onglet Hébergement montre les vingt derniers envois refusés, avec leur cause (jeton refusé, champ piège rempli, heure d'affichage absente ou forgée, plafond atteint, protection, champs manquants…), l'âge de la page et si l'auteur était connecté : c'est là qu'on comprend la plainte d'un auteur dont le dépôt « ne passe pas ». Il dit aussi où en sont le rangement et l'export sur sDrive, et ce qui les bloque.
+- Plafonds : 300 tentatives et 15 envois par heure et par adresse (filtre `notice_archeomed_plafond_par_poste`), 10 saisies gardées après refus par heure et par adresse, 100 dépôts et 500 Mo de fichiers par heure toutes adresses confondues. Les compteurs sont rangés sous l'heure en cours (`cle_horaire()`). Un refus « quota » à répétition indique un robot, ou un relais non déclaré dans `NA_PROXYS`.
 
 ### Données personnelles
 
@@ -395,7 +432,15 @@ Supprimer l'extension efface les réglages et leurs secrets, les attentes en bas
 
 ### Imagick
 
-Sans l'extension `imagick`, le serveur ne lit ni TIFF ni PDF. Le **TIFF** se convertit dans le navigateur de l'auteur (UTIF.js) en deux JPEG, la haute définition (10 × 15 cm à 300 dpi) et la basse (2 500 px au plus, 1 Mo environ). Le **PDF** (pdf.js, chargé à la demande, `assets/pdfjs/`) donne les deux mêmes JPEG, tirés de sa première page ; le PDF d'origine reste dans `icono/originaux`. Le serveur range les JPEG à demeure (`_na_conversions`) et en tire le dossier Métopes, le Word, la relecture et l'aperçu du courriel. Un fichier mal lu ou trop lourd est refusé : l'auteur enregistre la figure en JPEG. `Notice_Archeomed_Paquet::imagick_disponible()` est le seul test d'Imagick ; la constante `NA_SANS_IMAGICK` le fait échouer sur un site d'essai. Un bandeau d'administration le signale, et l'onglet des réglages donne l'état du serveur (Imagick, GD, formats acceptés). Une mise à jour de PHP chez l'hébergeur peut retirer l'extension sans prévenir ; à redemander alors : l'installation de `php-imagick`, et, pour les PDF, Ghostscript autorisé par la politique d'ImageMagick.
+Avec l'extension `imagick`, le serveur lit le TIFF et le PDF et en tire lui-même les aperçus et les deux définitions du dossier Métopes. Sans elle, il ne lit ni l'un ni l'autre : le **TIFF** se convertit dans le navigateur de l'auteur (UTIF.js) en deux JPEG, la haute définition et la basse, aux mesures des réglages (10 × 15 cm à 300 ppp, puis 2 500 px au plus et 1 Mo environ, par défaut) ; le **PDF** (pdf.js, chargé à la demande, `assets/pdfjs/`) donne les deux mêmes JPEG, tirés de sa première page, et le PDF d'origine reste dans `icono/originaux`. Le serveur range les JPEG à demeure (`_na_conversions`) et en tire le dossier Métopes, le Word, la relecture et l'aperçu du courriel. `reglages_de_conversion()` dit au navigateur s'il doit convertir, et à quelles mesures.
+
+Avec ou sans Imagick, la **vignette** d'un TIFF ou d'un PDF sur la carte de la figure est dessinée par le navigateur, pour l'écran seulement ; avec Imagick, rien de cette vignette ne part. De même, un **TIFF trop lourd** se passe en JPEG dans le navigateur, d'un bouton, à sa pleine définition (qualité 0,92), puis par paliers jusqu'à la norme des photographies au plus bas ; au-delà de 36 millions de pixels, il est refusé.
+
+Le TIFF de 8 ou 16 bits par couche, en niveaux de gris, en RVB ou en CMYK, se lit par `rgbaDuTiff()` plutôt que par UTIF, qui ne lit le CMYK qu'en 8 bits : un CMYK de 16 bits, tel que Photoshop l'enregistre pour l'impression, sortait rayé et dédoublé. Un TIFF qui porte un profil ICC (étiquette 34675) passe au sRGB par Little CMS (lcms-wasm, `assets/lcms/`, chargé à la demande par `chargerLcms()`), en intention colorimétrique relative avec compensation du point noir (`preparerLesCouleurs()`) ; un RVB déjà sRGB n'est pas touché, et un CMYK sans profil lisible passe par la formule de pdf.js. Une couche de transparence se pose sur du blanc. Un TIFF aux couches rangées l'une après l'autre (`PlanarConfiguration` = 2) est refusé comme illisible. Un fichier mal lu ou trop lourd est refusé : l'auteur enregistre la figure en JPEG.
+
+Sur le serveur, `vers_le_srgb()` ramène au sRGB, avant les aperçus, une image en CMYK ou en RVB qui porte un autre profil que le sRGB, par le profil du plugin (`assets/srgb.icc`, écrit par `.github/essais/profil-icc`) et en intention perceptive ; un CMYK sans profil passe par la conversion d'ImageMagick. Il faut un ImageMagick construit avec Little CMS : l'onglet Hébergement le vérifie, et le travail `couleurs` de l'intégration continue l'éprouve sur un vrai Imagick.
+
+`Notice_Archeomed_Paquet::imagick_disponible()` est le seul test d'Imagick ; la constante `NA_SANS_IMAGICK` le fait échouer sur un site d'essai. Un bandeau d'administration le signale, et l'onglet Hébergement donne l'état du serveur (Imagick, GD, formats acceptés). Une mise à jour de PHP chez l'hébergeur peut retirer l'extension sans prévenir ; à redemander alors : l'installation de `php-imagick`, et, pour les PDF, Ghostscript autorisé par la politique d'ImageMagick.
 
 ### Mise à jour
 
@@ -431,7 +476,7 @@ Règles tenues par le serveur, quoi que poste la requête : aucun courriel de re
 
 `word_de_relecture( $id, $version )` compose deux documents par `remplir_le_document()` — la version et celle d'avant, toutes deux passées par `preparer_la_saisie()` — puis `Notice_Archeomed_DOCX::suivre_les_modifications()` les rapproche : alignement des paragraphes (plus longue sous-suite commune, début et fin communs écartés d'abord), puis des mots dans les paragraphes de même style qui se répondent. Un paragraphe entier porte la révision sur sa marque de fin (`w:rPr` de `w:pPr`) ; un texte supprimé sort en `w:delText`, hors de tout lien. La feuille de styles n'est pas touchée. Le fascicule et le dossier Métopes ne passent jamais par cette fonction.
 
-Le Word se refait à volonté des versions gardées : rien n'est conservé sur le serveur en attendant sDrive. La tâche `na_deposer_les_relectures` le dépose dans `Notice_Archeomed_Rangement::dossier_de( $id )`, sous `nom_du_word()`.
+Le Word se refait à volonté des versions gardées : aucun n'est conservé sur le site, même quand sDrive tarde à le prendre. La tâche `na_deposer_les_relectures` le dépose dans `Notice_Archeomed_Rangement::dossier_de( $id )`, sous `nom_du_word()`.
 
 ### Essais
 

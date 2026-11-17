@@ -666,10 +666,8 @@ class Notice_Archeomed_Paquet {
 	 * elle, reste telle que l'auteur l'a donnée : c'est un choix d'imprimeur.
 	 */
 	private static function pour_l_ecran( $image ) {
+		self::vers_le_srgb( $image );
 		try {
-			if ( Imagick::COLORSPACE_CMYK === $image->getImageColorspace() ) {
-				$image->transformImageColorspace( Imagick::COLORSPACE_SRGB );
-			}
 			switch ( $image->getImageOrientation() ) {
 				case Imagick::ORIENTATION_BOTTOMRIGHT:
 					$image->rotateImage( '#ffffff', 180 );
@@ -687,6 +685,91 @@ class Notice_Archeomed_Paquet {
 			// vaut une figure couchée qu'une figure absente.
 			unset( $e );
 		}
+	}
+
+	/**
+	 * Ramène au sRGB les couleurs d'une image d'écran, profil compris.
+	 *
+	 * Une figure préparée pour l'imprimeur porte souvent son profil ICC :
+	 * FOGRA39 pour un CMJN, Adobe RGB pour une photo. Le passage au sRGB
+	 * « à la formule », sans le lire, ternissait les couleurs et dessinait un
+	 * papier beige en vert : l'auteur ne reconnaissait pas sa figure. Avec le
+	 * profil, c'est le moteur de couleur d'ImageMagick qui convertit, comme
+	 * Photoshop le ferait. L'intention est perceptive : sur FOGRA39, elle ne
+	 * s'écarte pas d'un niveau sur deux cent cinquante-cinq de celle de
+	 * Photoshop, alors que la colorimétrie relative seule grisait les noirs.
+	 *
+	 * Si la conversion échoue — un ImageMagick sans moteur de couleur, un
+	 * profil abîmé —, un CMJN passe encore au sRGB par la formule, et perd
+	 * le profil qui ne le décrit plus.
+	 */
+	private static function vers_le_srgb( $image ) {
+		try {
+			$cmjn    = Imagick::COLORSPACE_CMYK === $image->getImageColorspace();
+			$profils = $image->getImageProfiles( 'icc', true );
+			$icc     = isset( $profils['icc'] ) ? (string) $profils['icc'] : '';
+			$autre   = ! $cmjn && Imagick::COLORSPACE_GRAY !== $image->getImageColorspace()
+				&& false === stripos( self::description_icc( $icc ), 'srgb' );
+			if ( '' !== $icc && ( $cmjn || $autre ) ) {
+				$srgb = @file_get_contents( __DIR__ . '/assets/srgb.icc' );
+				if ( is_string( $srgb ) && '' !== $srgb ) {
+					try {
+						$image->setImageRenderingIntent( Imagick::RENDERINGINTENT_PERCEPTUAL );
+						$image->profileImage( 'icc', $srgb );
+					} catch ( Exception $e ) {
+						unset( $e );
+					}
+				}
+			}
+			if ( Imagick::COLORSPACE_CMYK === $image->getImageColorspace() ) {
+				$image->transformImageColorspace( Imagick::COLORSPACE_SRGB );
+				if ( '' !== $icc ) {
+					$image->removeImageProfile( 'icc' );
+				}
+			}
+		} catch ( Exception $e ) {
+			// Une couleur approchée vaut mieux qu'un aperçu manquant.
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Le nom qu'un profil ICC se donne : « sRGB IEC61966-2.1 », « Coated
+	 * FOGRA39 »… Vide si on ne le trouve pas.
+	 *
+	 * C'est à lui qu'on reconnaît un profil sRGB, qu'il est inutile de
+	 * convertir. Le nom se lit dans l'étiquette « desc », en ASCII dans les
+	 * profils de version 2, en UTF-16 dans ceux de version 4.
+	 */
+	public static function description_icc( $icc ) {
+		$icc    = (string) $icc;
+		$taille = strlen( $icc );
+		if ( $taille < 132 ) {
+			return '';
+		}
+		$nombre = unpack( 'N', substr( $icc, 128, 4 ) );
+		$nombre = min( 100, (int) $nombre[1] );
+		for ( $i = 0; $i < $nombre && 132 + 12 * ( $i + 1 ) <= $taille; $i++ ) {
+			$entree = unpack( 'a4sig/Noff', substr( $icc, 132 + 12 * $i, 8 ) );
+			if ( 'desc' !== $entree['sig'] ) {
+				continue;
+			}
+			$debut = (int) $entree['off'];
+			if ( $debut < 0 || $debut + 28 > $taille ) {
+				return '';
+			}
+			$type = substr( $icc, $debut, 4 );
+			if ( 'desc' === $type ) {
+				$longueur = unpack( 'N', substr( $icc, $debut + 8, 4 ) );
+				return rtrim( (string) substr( $icc, $debut + 12, min( 256, (int) $longueur[1] ) ), "\0" );
+			}
+			if ( 'mluc' === $type ) {
+				$texte = unpack( 'Nlongueur/Noff', substr( $icc, $debut + 20, 8 ) );
+				return str_replace( "\0", '', (string) substr( $icc, $debut + (int) $texte['off'], min( 512, (int) $texte['longueur'] ) ) );
+			}
+			return '';
+		}
+		return '';
 	}
 
 	/**

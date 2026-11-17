@@ -807,10 +807,40 @@ jobs:
             fi
           done
 
+  # Les couleurs des aperçus. Le serveur ramène au sRGB une illustration qui
+  # porte un autre profil ; on l'éprouve ici sur un ImageMagick véritable,
+  # séparément des autres travaux, dont Imagick changerait les chemins. Le
+  # profil sRGB du plugin doit aussi être celui que son générateur écrit.
+  couleurs:
+    needs: analyser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Prendre le code
+        uses: actions/checkout@v4
+
+      - name: Installer PHP 8.3 avec Imagick
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: imagick
+          coverage: none
+
+      - name: Le profil sRGB est celui du générateur
+        run: |
+          python3 .github/essais/profil-icc srgb /tmp/srgb.icc
+          cmp /tmp/srgb.icc notice-archeomed/assets/srgb.icc
+
+      - name: Les couleurs passent au sRGB
+        run: |
+          python3 .github/essais/profil-icc lineaire /tmp/lineaire.icc
+          php .github/essais/couleurs.php /tmp/lineaire.icc
+
   publier:
     # Seule une étiquette publie, et seulement si le site d'essai a tenu.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [analyser, essayer, charger]
+    needs: [analyser, essayer, charger, couleurs]
     runs-on: ubuntu-latest
     permissions:
       # Le jeton fourni par GitHub suffit à créer une release : aucune clé à

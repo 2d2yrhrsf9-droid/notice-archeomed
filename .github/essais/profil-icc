@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Écrit un profil ICC d'écran RVB, de la forme la plus simple.
+
+Le serveur convertit vers le sRGB les aperçus d'une illustration qui porte
+un autre profil, et il lui faut pour cela le profil sRGB lui-même. Celui de
+la norme circule sous des licences diverses, et celui du Mac appartient à
+Apple : le plugin porte donc le sien, écrit ici. Il tient en trois couleurs
+primaires et une courbe, celles de la norme CEI 61966-2-1, et c'est tout ce
+qu'un profil de cette sorte contient.
+
+    profil-icc srgb  notice-archeomed/assets/srgb.icc
+    profil-icc lineaire  /tmp/lineaire.icc
+
+Le second est un profil d'essai : mêmes primaires, mais sans courbe. Un gris
+moyen y vaut un gris clair en sRGB, et l'on voit d'un coup d'œil si une
+image qui le porte a été convertie.
+
+Le fichier écrit ne dépend que des arguments : la vérification refait le
+sRGB et le compare à celui du plugin.
+"""
+import struct
+import sys
+
+# Les primaires du sRGB, ramenées à l'illuminant D50 par la transformation de
+# Bradford, comme la norme ICC le demande ; et le blanc D50 lui-même.
+ROUGE = (0.436066, 0.222488, 0.013916)
+VERT = (0.385147, 0.716873, 0.097076)
+BLEU = (0.143066, 0.060608, 0.714096)
+BLANC = (0.9642, 1.0, 0.8249)
+
+
+def s15f16(v):
+    return struct.pack('>i', int(round(v * 65536)))
+
+
+def xyz(v):
+    return b'XYZ ' + b'\0' * 4 + b''.join(s15f16(c) for c in v)
+
+
+def description(texte):
+    ascii_ = texte.encode('ascii') + b'\0'
+    return (b'desc' + b'\0' * 4 + struct.pack('>I', len(ascii_)) + ascii_
+            + struct.pack('>II', 0, 0) + struct.pack('>HB', 0, 0) + b'\0' * 67)
+
+
+def texte(t):
+    return b'text' + b'\0' * 4 + t.encode('ascii') + b'\0'
+
+
+def courbe_srgb(n=1024):
+    valeurs = []
+    for i in range(n):
+        v = i / (n - 1)
+        lin = v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+        valeurs.append(int(round(lin * 65535)))
+    return b'curv' + b'\0' * 4 + struct.pack('>I', n) + struct.pack('>%dH' % n, *valeurs)
+
+
+def courbe_identite():
+    return b'curv' + b'\0' * 4 + struct.pack('>I', 0)
+
+
+def profil(nom, courbe):
+    trc = courbe
+    etiquettes = [
+        (b'desc', description(nom)),
+        (b'cprt', texte('Domaine public')),
+        (b'wtpt', xyz(BLANC)),
+        (b'rXYZ', xyz(ROUGE)),
+        (b'gXYZ', xyz(VERT)),
+        (b'bXYZ', xyz(BLEU)),
+        (b'rTRC', trc),
+        (b'gTRC', trc),
+        (b'bTRC', trc),
+    ]
+    debut = 128 + 4 + 12 * len(etiquettes)
+    corps = b''
+    table = b''
+    places = {}
+    for sig, donnees in etiquettes:
+        # Les trois courbes, identiques, partagent la même place.
+        if donnees in places:
+            off = places[donnees]
+        else:
+            while (debut + len(corps)) % 4:
+                corps += b'\0'
+            off = debut + len(corps)
+            places[donnees] = off
+            corps += donnees
+        table += sig + struct.pack('>II', off, len(donnees))
+    while (debut + len(corps)) % 4:
+        corps += b'\0'
+    taille = debut + len(corps)
+    entete = (struct.pack('>I', taille) + b'\0' * 4 + struct.pack('>I', 0x02100000)
+              + b'mntr' + b'RGB ' + b'XYZ ' + b'\0' * 12 + b'acsp'
+              + b'\0' * 4 + struct.pack('>I', 0) + b'\0' * 8 + b'\0' * 8
+              + struct.pack('>I', 0) + b''.join(s15f16(c) for c in BLANC)
+              + b'\0' * 4 + b'\0' * 16 + b'\0' * 28)
+    assert len(entete) == 128
+    return entete + struct.pack('>I', len(etiquettes)) + table + corps
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] not in ('srgb', 'lineaire'):
+        sys.exit('usage : profil-icc srgb|lineaire FICHIER')
+    if sys.argv[1] == 'srgb':
+        octets = profil('sRGB IEC61966-2.1', courbe_srgb())
+    else:
+        octets = profil('Essai lineaire', courbe_identite())
+    with open(sys.argv[2], 'wb') as f:
+        f.write(octets)
+
+
+if __name__ == '__main__':
+    main()

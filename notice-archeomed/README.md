@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.81
+# Formulaire des notices d’archéologie médiévale — version 3.82
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -207,8 +207,10 @@ aussi y coller sa clé secrète ; un bouton « Tester la clé » la vérifie san
 envoyer de notice. La pièce de puzzle, choisie par défaut, ne demande rien.
 
 Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
-Formulaire, Courriel (avec le rythme d'envoi), Feuille de styles, Mises à
-jour, Hébergement, Stockage, Annuaire. Chacun s'enregistre pour son compte.
+Normes éditoriales, Styles Métopes, Formulaire, Accessibilité, Candidats à
+Pactols, Relecture, Courriel (avec le rythme d'envoi), Feuille de styles,
+Mises à jour, Hébergement, Stockage, Annuaire, Documentation. Chacun
+s'enregistre pour son compte.
 
 ## Qui reçoit quoi
 
@@ -442,9 +444,8 @@ Ce qui ne passe pas est **refusé, et l'auteur enregistre lui-même la figure en
 JPEG** : un TIFF ou un PDF que le navigateur ne sait pas lire (compression
 rare, fichier abîmé, PDF protégé, lecture qui dépasse une minute), de plus de 36
 millions de pixels, ou qui ferait dépasser la limite de taille une fois converti.
-Un navigateur sans canvas ou sans `DataTransfer` refuse aussi la conversion. Les
-profils colorimétriques ne sont pas gérés : un TIFF en CMYK passe par la formule
-de pdf.js (encres SWOP), et ses couleurs restent approchées.
+Un navigateur sans canvas ou sans `DataTransfer` refuse aussi la conversion.
+Les couleurs suivent le profil de l'image : voir « Les couleurs » ci-dessous.
 
 Les TIFF en 8 et en 16 bits par couche (gris, RVB, CMYK, avec ou sans couche de
 transparence, posée sur du blanc) se lisent dans le formulaire même
@@ -470,6 +471,32 @@ refusé avec sa raison.
 
 Cela marche avec ou sans Imagick : sans lui, le lecteur de TIFF est déjà
 chargé ; avec lui, il ne se charge qu'au premier TIFF à alléger.
+
+### Les couleurs
+
+Une figure préparée pour l'impression porte souvent un profil
+colorimétrique : un TIFF en CMJN enregistré par Photoshop décrit ses encres
+par le profil du papier (FOGRA39, par exemple). Depuis la version 3.82, ce
+profil est lu, et la vignette, la basse et la haute définition montrent les
+couleurs de l'original, non une approximation.
+
+- **Dans le navigateur**, un TIFF qui porte un profil passe au sRGB par
+  Little CMS (`assets/lcms/`, 360 Ko, chargé seulement pour un tel TIFF), en
+  intention colorimétrique relative avec compensation du point noir, comme
+  Photoshop le fait par défaut : le cyan pur d'un FOGRA39 sort à 0, 159, 227,
+  le noir à 29, 29, 27. Sur une figure réelle, l'écart moyen avec la
+  conversion de macOS (ColorSync) est d'un point sur 255 ; l'ancienne formule
+  laissait le rouge douze points trop bas. Cela vaut aussi pour « Passer en
+  JPEG ».
+- **Sur le serveur**, Imagick fait de même avec le profil sRGB du plugin
+  (`assets/srgb.icc`), en intention perceptive. Il lui faut un ImageMagick
+  construit avec Little CMS : l'onglet Hébergement le dit, à la ligne
+  « Imagick : profils de couleur ».
+- Un RVB qui porte déjà le profil sRGB, ou n'en porte aucun, n'est pas
+  touché. Un CMJN sans profil, ou dont le profil ne se lit pas, passe encore
+  par la formule de pdf.js (encres SWOP), et ses couleurs restent approchées.
+
+L'original, quand on le garde, part tel quel, profil compris.
 
 `icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
 a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.
@@ -792,12 +819,13 @@ obligatoires : sous le champ, et dans le récapitulatif, qui nomme la figure et
 son fichier. Le serveur refuse de même un envoi sans le script, garde la
 saisie et dit quelle figure décrire.
 
-- **Longueur.** Un compteur sous le champ. Au-delà d'un seuil, un avis, sans
-  refus : 150 caractères par défaut, réglable dans **Normes éditoriales ▸
-  L'accessibilité** (de 20 à 300) ; le formulaire, le compteur et le serveur
-  lisent ce même réglage. Le compteur le signale au-delà de 300, et
-  le serveur coupe au-delà en le nommant dans les avis — limite dure de la
-  rédaction, non réglable. Le RGAA 4.1, plus strict, « recommande fortement »
+- **Longueur.** Un compteur sous le champ, sur 300 caractères. Le premier
+  paragraphe s'arrête là : ce qui est tapé ou collé au-delà n'entre pas
+  (depuis la 3.82), et le compteur dit que le détail se met à la ligne. Le
+  serveur coupe de même à 300 en le nommant dans les avis — limite dure de la
+  rédaction, non réglable. Au-delà d'un seuil plus bas, le récapitulatif
+  donne un avis, sans refus : 150 caractères par défaut, réglable dans
+  **Normes éditoriales ▸ L'accessibilité** (de 20 à 300). Le RGAA 4.1, plus strict, « recommande fortement »
   80 caractères (glossaire, « Alternative courte et concise », test 1.3.9).
 - **Avis.** Le serveur n'en refuse aucun. Le navigateur, lui, en tient quelques-uns
   pour des points à corriger avant l'envoi (voir « Les avis qui bloquent » plus
@@ -1004,7 +1032,7 @@ feuille de styles fera évoluer.
 ### Sur sDrive, quand le site y est relié
 
 Le disque du serveur ne suffit pas à une campagne. Une fois le site relié à
-sDrive (onglet **Diagnostic**, bouton « Relier le site à sDrive », puis « Parcourir
+sDrive (onglet **Hébergement**, bouton « Relier le site à sDrive », puis « Parcourir
 sDrive » pour choisir le dossier) et le numéro réglé, chaque notice envoyée
 range ses fichiers dans `<dossier>/<numéro>/originaux/<rubrique>/<Commune>/`
 (`Caen_2` pour une deuxième notice de Caen dans la même rubrique), par exemple
@@ -1042,7 +1070,7 @@ La fiche, la correction et l'export rapatrient de sDrive, le temps de s'en
 servir, ce qui n'est plus sur le serveur. Supprimer une notice n'efface pas
 ce qui est rangé sur sDrive.
 
-L'onglet Diagnostic dit où vont les envois et l'export, combien de notices
+L'onglet Hébergement dit où vont les envois et l'export, combien de notices
 attendent d'être rangées, et où en est l'export de chaque rubrique.
 
 ### La place prise
@@ -1702,7 +1730,7 @@ sont écrits dans le journal PHP avec le préfixe `Notice Archeomed:`. En cas
 de comportement inattendu, c'est le premier endroit à consulter.
 
 Les vingt derniers envois refusés se lisent aussi dans **Réglages ›
-Diagnostic**, sous « Derniers envois refusés ». Le tableau ne montre ni
+Hébergement**, sous « Derniers envois refusés ». Le tableau ne montre ni
 adresse ni contenu, seulement :
 
 - l'heure du refus ;

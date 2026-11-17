@@ -970,6 +970,20 @@ class Notice_Archeomed_Settings {
 				'ecart'    => '',
 				'pourquoi' => 'Passe par Ghostscript, que la politique d\'ImageMagick désactive presque partout. « Accepté » dit seulement que le format est connu : seul un dépôt de PDF montre s\'il se lit.',
 			);
+			// Le moteur de couleur d'ImageMagick, Little CMS, lit les profils
+			// ICC. Sans lui, un CMJN passe au sRGB par une formule approchée.
+			$options  = method_exists( 'Imagick', 'getConfigureOptions' )
+				? (array) Imagick::getConfigureOptions( 'DELEGATES' ) : array();
+			$delegues = isset( $options['DELEGATES'] ) ? (string) $options['DELEGATES'] : '';
+			$lcms     = (bool) preg_match( '/\blcms/i', $delegues );
+			$lignes[] = array(
+				'quoi'     => 'Imagick : profils de couleur',
+				'requis'   => 'lus',
+				'constate' => '' === $delegues ? 'inconnu' : ( $lcms ? 'lus' : 'ignorés' ),
+				'etat'     => '' === $delegues ? 'note' : ( $lcms ? 'ok' : 'manque' ),
+				'ecart'    => ( '' === $delegues || $lcms ) ? '' : 'Little CMS à installer',
+				'pourquoi' => 'Une figure préparée pour l\'imprimeur (CMJN FOGRA39, Adobe RGB) garde ses couleurs dans les aperçus si ImageMagick lit son profil. Sans Little CMS, elles sont approchées.',
+			);
 		}
 
 		// — Ce que PHP laisse passer —
