@@ -3563,8 +3563,7 @@ class Notice_Archeomed_Pactols {
 				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
 				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
 					<label for="na-matiere">Sous-rubrique <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-matiere-aide">Choisissez selon ce que l’atelier fabriquait ou exploitait&nbsp;: céramique ou verre (A), pierre, minerai ou métal (B), autre chose (C).</p>
-					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
+					<select id="na-matiere" name="rubrique_matiere" aria-required="true">
 						<option value="">Choisir une sous-rubrique…</option>
 						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
 							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
