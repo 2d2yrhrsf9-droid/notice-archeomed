@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.74
+# Formulaire des notices d’archéologie médiévale — version 3.75
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -965,8 +965,14 @@ feuille de styles fera évoluer.
 Le disque du serveur ne suffit pas à une campagne. Une fois le site relié à
 sDrive (onglet **Diagnostic**, bouton « Relier le site à sDrive », puis « Parcourir
 sDrive » pour choisir le dossier) et le numéro réglé, chaque notice envoyée
-range ses fichiers dans `<dossier>/<numéro>/originaux/<Commune>/` (`Caen_2`
-pour une deuxième notice de Caen) : originaux, JPEG tirés par le navigateur,
+range ses fichiers dans `<dossier>/<numéro>/originaux/<rubrique>/<Commune>/`
+(`Caen_2` pour une deuxième notice de Caen dans la même rubrique), par exemple
+`AM99/originaux/IV_Sepultures_et_necropoles/Caen/`. La rubrique V se partage
+en ses sous-rubriques :
+`V_Installations_artisanales/B_Carrieres_mines_et_metallurgie/Caen/`. Le
+dossier se fixe au premier rangement : une rubrique changée ensuite ne le
+déplace pas, et les notices rangées avant la 3.75 restent directement sous
+`originaux/`. On y range originaux, JPEG tirés par le navigateur,
 autorisations, Word de chaque version et `a-deposer.txt`. Le Word porte la
 commune et le nom de famille du responsable d'opération, `Caen_Dupont_v1.docx`,
 pour qu'on le reconnaisse sorti du dossier ; ceux rangés avant la 3.74 gardent

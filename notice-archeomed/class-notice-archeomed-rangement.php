@@ -6,7 +6,8 @@
  * giga-octets pour trois cents notices de une à trois figures. Ce que
  * l'auteur a déposé — originaux, versions converties par son navigateur,
  * autorisations — part donc sur sDrive, avec le Word de chaque version,
- * dans « <numéro>/originaux/<référence>/ ». Le serveur ne garde que les
+ * dans « <numéro>/originaux/<rubrique>/<commune>/ », la rubrique V
+ * partagée en ses sous-rubriques. Le serveur ne garde que les
  * aperçus, qui suffisent au Word, au courriel et à la fiche.
  *
  * Rien ne se range pendant le dépôt : un auteur n'attend pas sDrive. Une
@@ -512,7 +513,10 @@ class Notice_Archeomed_Rangement {
 		if ( '' === $numero ) {
 			return '';
 		}
-		$base = Notice_Archeomed_Nommage::assainir( $numero, 'numero' ) . '/originaux/';
+		// Un dossier par rubrique, et dans la V par sous-rubrique : la
+		// rédaction y prend une rubrique d'un seul geste.
+		$d    = get_post_meta( (int) $id, '_na_donnees', true );
+		$base = Notice_Archeomed_Nommage::assainir( $numero, 'numero' ) . '/originaux/' . self::dossiers_de_rubrique( $d ) . '/';
 		// Une correction déposée à part rejoint le dossier de la notice
 		// qu'elle remplace : ses originaux sont les mêmes, à une figure près.
 		$remplace = strtoupper( trim( (string) get_post_meta( (int) $id, '_na_remplace', true ) ) );
@@ -535,7 +539,6 @@ class Notice_Archeomed_Rangement {
 		// Le nom de la commune, que la rédaction reconnaît d'un coup d'œil ;
 		// la référence tirée au sort ne disait rien. Deux notices de la même
 		// commune se numérotent : « Caen », « Caen_2 ».
-		$d       = get_post_meta( (int) $id, '_na_donnees', true );
 		$commune = is_array( $d ) && isset( $d['commune'] ) && is_string( $d['commune'] ) ? $d['commune'] : '';
 		$nom     = Notice_Archeomed_Nommage::assainir( $commune, '' );
 		if ( '' !== $nom ) {
@@ -548,6 +551,21 @@ class Notice_Archeomed_Rangement {
 			}
 		}
 		return $base . Notice_Archeomed_Nommage::assainir( '' !== $reference ? $reference : 'notice-' . (int) $id, 'notice-' . (int) $id );
+	}
+
+	/**
+	 * Les dossiers de la rubrique d'une notice : « IV_Sepultures_et_necropoles »,
+	 * ou pour la V « V_Installations_artisanales/B_Carrieres_mines_et_metallurgie ».
+	 * Une notice V d'avant les sous-rubriques reste au niveau de la V.
+	 */
+	public static function dossiers_de_rubrique( $d ) {
+		$rubrique = Notice_Archeomed_Pactols::rubrique_actuelle( is_array( $d ) && isset( $d['rubrique_principale'] ) ? $d['rubrique_principale'] : '' );
+		$chemin   = Notice_Archeomed_Nommage::assainir( $rubrique, 'Sans_rubrique' );
+		$lettre   = Notice_Archeomed_Pactols::matiere_de( $d );
+		if ( '' !== $lettre ) {
+			$chemin .= '/' . Notice_Archeomed_Nommage::assainir( $lettre . ' ' . Notice_Archeomed_Pactols::MATIERES[ $lettre ], $lettre );
+		}
+		return $chemin;
 	}
 
 	/**
