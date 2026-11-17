@@ -316,6 +316,7 @@ class Notice_Archeomed_Settings {
 			// liens déjà donnés mènent toujours au même endroit.
 			'diagnostic'    => __( 'Hébergement', 'notice-archeomed' ),
 			'stockage'      => __( 'Stockage', 'notice-archeomed' ),
+			'annuaire'      => __( 'Annuaire', 'notice-archeomed' ),
 			'documentation' => __( 'Documentation', 'notice-archeomed' ),
 		);
 	}
@@ -1552,6 +1553,12 @@ class Notice_Archeomed_Settings {
 	private function onglet_stockage( $essai ) {
 		unset( $essai );
 		Notice_Archeomed_Stockage::onglet();
+	}
+
+	/** Les auteurs des notices, et leur export pour la liste de diffusion. */
+	private function onglet_annuaire( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Annuaire::onglet();
 	}
 
 	/** Les termes gardés hors de Pactols, à proposer à Frantiq. */

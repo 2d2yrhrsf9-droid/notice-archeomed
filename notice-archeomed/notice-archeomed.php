@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.77
+ * Version: 3.78
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -36,11 +36,13 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-documentation
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-confidentialite.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-relecture.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-stockage.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-annuaire.php';
 
 new Notice_Archeomed_Relecture();
 new Notice_Archeomed_Settings();
 new Notice_Archeomed_Accessibilite();
 new Notice_Archeomed_Candidats();
+new Notice_Archeomed_Annuaire();
 new Notice_Archeomed_Documentation();
 new Notice_Archeomed_Confidentialite();
 

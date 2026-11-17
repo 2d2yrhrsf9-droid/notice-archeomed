@@ -2686,6 +2686,49 @@ foreach ( $sto_fichiers as $sto_f ) {
 wp_delete_post( $sto_id, true );
 wp_delete_post( $sto_vieux, true );
 
+WP_CLI::log( 'L\'annuaire' );
+$ann_ids   = array();
+$ann_ids[] = na_notice( array( 'commune' => 'Caen', 'resp_nom' => 'Durand', 'resp_prenom' => 'Élodie',
+	'resp_email' => 'elodie@annuaire.test', 'resp_inst' => 'Inrap' ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Vire', 'resp_nom' => ' Durand ', 'resp_prenom' => 'Élodie',
+	'resp_email' => 'ELODIE@annuaire.test', 'resp_inst' => 'CNRS UMR 6273' ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Bayeux', 'resp_nom' => 'Aubry', 'resp_prenom' => 'Bernard', 'resp_email' => 'bernard@annuaire.test',
+	'coresp_nom' => 'd’Arc', 'coresp_prenom' => 'Jeanne', 'coresp_email' => 'jeanne@annuaire.test', 'coresp_inst' => 'Université de Caen',
+	'coauteur_nom' => 'Sans', 'coauteur_prenom' => 'Adresse', 'coauteur_email' => 'pas-une-adresse' ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Lisieux', 'resp_nom' => 'Éluard', 'resp_prenom' => "Paul\n\tÉmile",
+	'resp_email' => 'paul@annuaire.test', 'resp_inst' => '@lab' ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Falaise', 'resp_nom' => 'Zorro', 'resp_prenom' => 'Diego', 'resp_email' => 'zorro@annuaire.test' ) );
+update_post_meta( $ann_ids[0], '_na_reference', 'ANN-Caen' );
+update_post_meta( $ann_ids[4], '_na_reference', 'ANNREF' );
+$ann_ids[] = na_notice( array( 'commune' => 'Falaise' ) );
+update_post_meta( $ann_ids[5], '_na_remplace', 'annref' );
+$annuaire = array_values( array_filter( Notice_Archeomed_Annuaire::recenser(), function ( $p ) {
+	return '@annuaire.test' === strtolower( substr( $p['courriel'], -14 ) );
+} ) );
+na_verifier( array( 'Aubry', 'd’Arc', 'Durand', 'Éluard' ) === array_column( $annuaire, 'nom' )
+	&& 'ELODIE@annuaire.test' === $annuaire[2]['courriel'] && 'CNRS UMR 6273' === $annuaire[2]['institution']
+	&& 2 === count( $annuaire[2]['notices'] ) && 'ANN-Caen' === $annuaire[2]['notices'][ $ann_ids[0] ]
+	&& array( 'co-responsable' ) === array_keys( $annuaire[1]['roles'] ) && 'Paul Émile' === $annuaire[3]['prenom'],
+	'une ligne par adresse, sans égard à la casse, au nom de la notice la plus récente, classée par nom sans égard aux accents ni à l\'apostrophe ; ni adresse invalide, ni notice remplacée',
+	$annuaire );
+na_verifier( array( 'bernard@annuaire.test Bernard Aubry', 'jeanne@annuaire.test Jeanne d’Arc', 'ELODIE@annuaire.test Élodie Durand',
+	'paul@annuaire.test Paul Émile Éluard' ) === Notice_Archeomed_Annuaire::lignes_sympa( $annuaire ),
+	'le fichier pour Sympa porte une ligne par personne : l\'adresse, le prénom, le nom', Notice_Archeomed_Annuaire::lignes_sympa( $annuaire ) );
+$ann_tableur = Notice_Archeomed_Annuaire::lignes_du_tableur( $annuaire );
+na_verifier( 5 === count( $ann_tableur ) && 'Nom' === $ann_tableur[0][0] && "'@lab" === $ann_tableur[4][3]
+	&& 'co-responsable' === $ann_tableur[2][4] && false !== strpos( $ann_tableur[3][5], 'ANN-Caen' ),
+	'le tableur porte une ligne par personne, et une cellule qui commence par « @ » ne devient pas une formule', $ann_tableur );
+ob_start();
+Notice_Archeomed_Annuaire::onglet();
+$rendu_annuaire = ob_get_clean();
+na_verifier( isset( Notice_Archeomed_Settings::onglets()['annuaire'] ) && false !== strpos( $rendu_annuaire, 'action=na_annuaire_sympa' )
+	&& false !== strpos( $rendu_annuaire, 'action=na_annuaire_tableur' ) && false !== strpos( $rendu_annuaire, 'mailto:jeanne@annuaire.test' )
+	&& false !== strpos( $rendu_annuaire, '(co-responsable)' ) && false === strpos( $rendu_annuaire, 'zorro@annuaire.test' ),
+	'l\'onglet Annuaire montre les personnes, leurs notices, et les deux liens d\'export', $rendu_annuaire );
+foreach ( $ann_ids as $ann_id ) {
+	wp_delete_post( $ann_id, true );
+}
+
 WP_CLI::log( 'Les candidats à Pactols' );
 $cand_a = na_notice( array( 'commune' => 'Caen', 'pactols_subjects_items' => array(
 	array( 'label' => 'Chemin creux', 'ark' => '', 'libre' => true ),

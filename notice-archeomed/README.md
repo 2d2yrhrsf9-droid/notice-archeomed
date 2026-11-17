@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.77
+# Formulaire des notices d’archéologie médiévale — version 3.78
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -208,7 +208,7 @@ envoyer de notice. La pièce de puzzle, choisie par défaut, ne demande rien.
 
 Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
 Formulaire, Courriel (avec le rythme d'envoi), Feuille de styles, Mises à
-jour, Hébergement, Stockage. Chacun s'enregistre pour son compte.
+jour, Hébergement, Stockage, Annuaire. Chacun s'enregistre pour son compte.
 
 ## Qui reçoit quoi
 
@@ -1023,6 +1023,28 @@ catégorie :
 Un fichier se classe d'après la notice qui le désigne, non d'après son nom,
 tiré au sort. Les fichiers se comptent à l'ouverture de l'onglet, en huit
 secondes au plus ; au-delà, les chiffres sont donnés pour des minimums.
+
+### L'annuaire des auteurs
+
+L'onglet **Annuaire** réunit les personnes nommées dans les notices reçues :
+le responsable d'opération, et pour les notices anciennes le co-responsable
+et les co-auteurs. Une ligne par adresse, classée par nom puis par prénom,
+sans égard aux accents ni aux capitales ; le nom et l'institution sont ceux
+de la notice la plus récente. Les notices qu'une correction remplace ne
+comptent pas. Qui dépose pour le responsable ne laisse que son adresse et
+n'y figure pas.
+
+Deux boutons l'emportent :
+
+- **pour la liste de diffusion** : un fichier texte, une ligne par personne,
+  `adresse Prénom Nom`. C'est la forme que Sympa (listes.services.cnrs.fr)
+  accepte dans l'ajout de plusieurs abonnés ; on y colle le contenu ;
+- **en tableur** : Nom, Prénom, Courriel, Institution, Rôle, Notices, en
+  CSV séparé par des points-virgules.
+
+Les adresses ne se voient et ne sortent que pour qui règle l'extension.
+Elles ont été données pour l'instruction des notices : le premier envoi à
+la liste gagne à dire pourquoi l'on y est inscrit et comment en sortir.
 
 ## Ce qui se passe quand ça ne passe pas
 
