@@ -2627,6 +2627,65 @@ na_verifier( isset( Notice_Archeomed_Settings::onglets()['accessibilite'] ) && f
 	&& false !== strpos( $rendu_a11y, 'déclaration' ),
 	'l\'onglet dit que le score n\'est pas le taux RGAA, renvoie à Ara, rappelle la déclaration, et montre le dernier contrôle' );
 
+WP_CLI::log( 'Le stockage' );
+$sto_dossier = trailingslashit( wp_upload_dir()['basedir'] ) . 'notice-archeomed/';
+wp_mkdir_p( $sto_dossier );
+$sto_passage = trailingslashit( get_temp_dir() ) . 'notice-archeomed-tmp/';
+wp_mkdir_p( $sto_passage . 'atelier-essaistock' );
+$sto_fichiers = array(
+	'original'    => array( $sto_dossier . 'essai-stock-original.tif', 1000 ),
+	'apercu'      => array( $sto_dossier . 'essai-stock-apercu.jpg', 200 ),
+	'ancien'      => array( $sto_dossier . 'essai-stock-ancien-apercu.jpg', 30 ),
+	'conversion'  => array( $sto_dossier . 'essai-stock-conv.jpg', 300 ),
+	'autorisation' => array( $sto_dossier . 'essai-stock-autorisation.pdf', 40 ),
+	'orphelin'    => array( $sto_dossier . 'essai-stock-orphelin.jpg', 7 ),
+	'word'        => array( $sto_passage . 'notice-archeomed-essai-stock.docx', 500 ),
+	'atelier'     => array( $sto_passage . 'atelier-essaistock/figure.tif', 60 ),
+);
+foreach ( $sto_fichiers as $sto_f ) {
+	file_put_contents( $sto_f[0], str_repeat( 'x', $sto_f[1] ) );
+}
+$sto_avant = Notice_Archeomed_Stockage::mesurer();
+$sto_id    = na_notice( array( 'commune' => 'Lisieux' ) );
+$sto_vieux = na_notice( array( 'commune' => 'Falaise', 'illustrations' => array(
+	array( 'rang' => 1, 'figure' => array( 'apercu' => $sto_fichiers['ancien'][0] ) ) ) ) );
+update_post_meta( $sto_id, '_na_reference', 'STOCK-Lisieux' );
+update_post_meta( $sto_id, '_na_illustrations', array( $sto_fichiers['original'][0] ) );
+update_post_meta( $sto_id, '_na_apercus', array( 1 => array( 'apercu' => $sto_fichiers['apercu'][0] ) ) );
+update_post_meta( $sto_id, '_na_conversions', array( 1 => array( 'hr' => $sto_fichiers['conversion'][0] ) ) );
+update_post_meta( $sto_id, '_na_autorisations', array( 1 => $sto_fichiers['autorisation'][0] ) );
+update_post_meta( $sto_id, '_na_document', $sto_fichiers['word'][0] );
+update_post_meta( $sto_id, '_na_fichiers', array( $sto_fichiers['word'][0], $sto_fichiers['original'][0] ) );
+update_post_meta( $sto_id, '_na_sdrive', array(
+	'/ailleurs/parti.tif' => array( 'distant' => 'Numero/originaux/x.tif', 'taille' => 4000, 'le' => time() ),
+	'word:v1'             => array( 'distant' => 'Numero/originaux/Lisieux_v1.docx', 'taille' => 900, 'le' => time() ) ) );
+$sto = Notice_Archeomed_Stockage::mesurer();
+$sto_ecart = function ( $ou, $cat ) use ( $sto, $sto_avant ) {
+	return array( $sto[ $ou ][ $cat ]['n'] - $sto_avant[ $ou ][ $cat ]['n'], $sto[ $ou ][ $cat ]['octets'] - $sto_avant[ $ou ][ $cat ]['octets'] );
+};
+na_verifier( array( 1, 1000 ) === $sto_ecart( 'serveur', 'originaux' ) && array( 2, 230 ) === $sto_ecart( 'serveur', 'apercus' )
+	&& array( 1, 300 ) === $sto_ecart( 'serveur', 'conversions' ) && array( 1, 40 ) === $sto_ecart( 'serveur', 'autorisations' )
+	&& array( -5, -1570 ) === $sto_ecart( 'serveur', 'orphelins' ) && array( 1, 500 ) === $sto_ecart( 'passage', 'word' )
+	&& array( -1, -500 ) === $sto_ecart( 'passage', 'fascicules' ) && $sto['passage']['ateliers']['octets'] >= 60
+	&& array( 1, 900 ) === $sto_ecart( 'sdrive', 'word' ) && array( 1, 4000 ) === $sto_ecart( 'sdrive', 'orphelins' )
+	&& 2040 === $sto['notices'][ $sto_id ]['serveur'] && 4900 === $sto['notices'][ $sto_id ]['sdrive']
+	&& 30 === $sto['notices'][ $sto_vieux ]['serveur'] && $sto['nombre'] - $sto_avant['nombre'] === 2,
+	'chaque fichier se compte dans la catégorie de la métadonnée qui le désigne, l\'aperçu ancien dans la saisie, le Word une seule fois ; ce qu\'aucune notice ne désigne, à part ; sDrive d\'après la table',
+	array( $sto['serveur'], $sto['passage'], $sto['sdrive'], $sto['notices'] ) );
+ob_start();
+Notice_Archeomed_Stockage::onglet();
+$rendu_stockage = ob_get_clean();
+na_verifier( isset( Notice_Archeomed_Settings::onglets()['stockage'] ) && false !== strpos( $rendu_stockage, 'JPEG tirés des TIFF' )
+	&& false !== strpos( $rendu_stockage, 'Ateliers d’export du numéro' ) && false !== strpos( $rendu_stockage, 'Sur sDrive' )
+	&& false !== strpos( $rendu_stockage, 'Saisies des notices' ) && false !== strpos( $rendu_stockage, 'Lisieux' ),
+	'l\'onglet Stockage montre le serveur, le passage, sDrive, la base et les notices les plus lourdes', $rendu_stockage );
+foreach ( $sto_fichiers as $sto_f ) {
+	@unlink( $sto_f[0] );
+}
+@rmdir( $sto_passage . 'atelier-essaistock' );
+wp_delete_post( $sto_id, true );
+wp_delete_post( $sto_vieux, true );
+
 WP_CLI::log( 'Les candidats à Pactols' );
 $cand_a = na_notice( array( 'commune' => 'Caen', 'pactols_subjects_items' => array(
 	array( 'label' => 'Chemin creux', 'ark' => '', 'libre' => true ),

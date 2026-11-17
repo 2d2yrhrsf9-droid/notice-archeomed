@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.75
+# Formulaire des notices d’archéologie médiévale — version 3.76
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -208,7 +208,7 @@ envoyer de notice. La pièce de puzzle, choisie par défaut, ne demande rien.
 
 Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
 Formulaire, Courriel (avec le rythme d'envoi), Feuille de styles, Mises à
-jour, Hébergement. Chacun s'enregistre pour son compte.
+jour, Hébergement, Stockage. Chacun s'enregistre pour son compte.
 
 ## Qui reçoit quoi
 
@@ -1003,6 +1003,26 @@ ce qui est rangé sur sDrive.
 
 L'onglet Diagnostic dit où vont les envois et l'export, combien de notices
 attendent d'être rangées, et où en est l'export de chaque rubrique.
+
+### La place prise
+
+L'onglet **Stockage** dit ce que prennent les notices, catégorie par
+catégorie :
+
+- le site entier, rapporté au plafond de l'hébergeur (2 Go), et la part du
+  dossier des notices ;
+- le dossier des notices : originaux, aperçus, JPEG tirés des TIFF,
+  autorisations de reproduction, feuille de styles, et les fichiers
+  qu'aucune notice ne désigne plus ;
+- les fichiers de passage (Word, ateliers d'export, copies ramenées de
+  sDrive), en disant si leur répertoire compte dans le quota ;
+- ce qui est rangé sur sDrive, d'après la table de chaque notice ;
+- la base de données : saisies, versions antérieures, termes, réglages ;
+- les dix notices les plus lourdes sur le serveur.
+
+Un fichier se classe d'après la notice qui le désigne, non d'après son nom,
+tiré au sort. Les fichiers se comptent à l'ouverture de l'onglet, en huit
+secondes au plus ; au-delà, les chiffres sont donnés pour des minimums.
 
 ## Ce qui se passe quand ça ne passe pas
 

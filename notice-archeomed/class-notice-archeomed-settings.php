@@ -315,6 +315,7 @@ class Notice_Archeomed_Settings {
 			// reste que le constat de l'hébergement. La clé ne change pas : les
 			// liens déjà donnés mènent toujours au même endroit.
 			'diagnostic'    => __( 'Hébergement', 'notice-archeomed' ),
+			'stockage'      => __( 'Stockage', 'notice-archeomed' ),
 			'documentation' => __( 'Documentation', 'notice-archeomed' ),
 		);
 	}
@@ -1545,6 +1546,12 @@ class Notice_Archeomed_Settings {
 	private function onglet_documentation( $essai ) {
 		unset( $essai );
 		Notice_Archeomed_Documentation::onglet();
+	}
+
+	/** La place que prennent les notices, catégorie par catégorie. */
+	private function onglet_stockage( $essai ) {
+		unset( $essai );
+		Notice_Archeomed_Stockage::onglet();
 	}
 
 	/** Les termes gardés hors de Pactols, à proposer à Frantiq. */
