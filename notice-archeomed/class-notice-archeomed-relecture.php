@@ -1609,7 +1609,7 @@ class Notice_Archeomed_Relecture {
 					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
-							[{ 'header': 3 }, { 'header': 4 }],
+							[{ 'header': 3 }],
 							['bold', 'italic'].concat(petitesCapitales ? ['petitescapitales'] : []),
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
@@ -1622,7 +1622,7 @@ class Notice_Archeomed_Relecture {
 				quill.root.setAttribute('aria-labelledby', 'na-rel-texte-libelle');
 				var barre = form.querySelector('.ql-toolbar');
 				if (barre) {
-					[['.ql-header[value="3"]', 'Intertitre, premier niveau', 'T1'], ['.ql-header[value="4"]', 'Intertitre, second niveau', 'T2'],
+					[['.ql-header[value="3"]', 'Intertitre', 'T1'],
 						['.ql-bold', 'Gras', ''], ['.ql-italic', 'Italique', ''], ['.ql-petitescapitales', 'Petites capitales', 'Pc'],
 						['.ql-script[value="super"]', 'Exposant', ''], ['.ql-script[value="sub"]', 'Indice', ''],
 						['.ql-clean', 'Effacer la mise en forme', '']].forEach(function (p) {

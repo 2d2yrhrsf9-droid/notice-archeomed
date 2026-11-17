@@ -2314,12 +2314,15 @@ class Notice_Archeomed_Pactols {
 	 * faisaient à elles seules la moitié de la page sur un téléphone. Le
 	 * champ caché que le serveur lit (« pactols_periods »…) ne change pas :
 	 * le script y tient la liste, dans le même JSON qu'avant.
+	 *
+	 * Périodes et sujets demandent un terme au moins, libre ou du thésaurus ;
+	 * le bloc est alors un « na-champ », où se pose le message d'erreur.
 	 */
-	private function pactols_categorie_html( $type, $titre, $aide, $cherche, $cible ) {
+	private function pactols_categorie_html( $type, $titre, $aide, $cherche, $cible, $requis = false ) {
 		$id    = 'na-kw-' . $type;
-		$html  = '<fieldset class="na-kw" id="' . esc_attr( $id ) . '" data-type="' . esc_attr( $type )
+		$html  = '<fieldset class="na-kw' . ( $requis ? ' na-champ' : '' ) . '" id="' . esc_attr( $id ) . '" data-type="' . esc_attr( $type )
 			. '" data-cible="' . esc_attr( $cible ) . '">';
-		$html .= '<legend>' . esc_html( $titre ) . '</legend>';
+		$html .= '<legend>' . esc_html( $titre ) . ( $requis ? ' <span class="na-requis" aria-hidden="true">*</span>' : '' ) . '</legend>';
 		$html .= '<p class="na-help" id="' . esc_attr( $id ) . '-aide">' . $aide . '</p>';
 		$html .= '<ul class="na-jetons" id="' . esc_attr( $id ) . '-jetons" aria-label="'
 			. esc_attr( $titre . ' retenus' ) . '" hidden></ul>';
@@ -2327,6 +2330,7 @@ class Notice_Archeomed_Pactols {
 		$html .= '<label class="na-sr" for="' . esc_attr( $id ) . '-champ">' . esc_html( $cherche ) . '</label>';
 		$html .= '<input type="text" id="' . esc_attr( $id ) . '-champ" class="na-kw-champ" autocomplete="off"'
 			. ' spellcheck="false" enterkeyhint="search" placeholder="Rechercher…"'
+			. ( $requis ? ' aria-required="true"' : '' )
 			. ' aria-describedby="' . esc_attr( $id ) . '-aide ' . esc_attr( $id ) . '-compte ' . esc_attr( $id ) . '-etat">';
 		$html .= '<ul class="na-pactols-suggestions" id="' . esc_attr( $id ) . '-liste" hidden></ul>';
 		$html .= '</div>';
@@ -2544,6 +2548,8 @@ class Notice_Archeomed_Pactols {
 			'commune'             => array( 'na-lieu-1', 'Indiquez la commune ou le territoire de l’opération' ),
 			'departement'         => array( 'na-departement', 'Indiquez ce qui figure entre parenthèses, le plus souvent le département' ),
 			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez un lieu-dit, une adresse ou le nom du projet' ),
+			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
+			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
 			'nature'              => array( 'na-nature-1', 'Cochez au moins une nature d’opération' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
@@ -2579,8 +2585,8 @@ class Notice_Archeomed_Pactols {
 			'illus_alt_3'         => array( 'na-illus-3-alt', 'Décrivez en une ou deux phrases ce qu’on voit sur la figure 3, pour les lecteurs qui ne voient pas l’image' ),
 			'originaux_lien'      => array( 'na-originaux', 'Saisissez l’adresse complète du lien de téléchargement, par exemple https://filesender.renater.fr/…' ),
 			'originaux_jusqua'    => array( 'na-originaux-jusqua', 'Indiquez jusqu’à quelle date le lien des originaux reste valable (aujourd’hui ou plus tard)' ),
-			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
-			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
+			'pactols_periods'     => array( 'na-kw-period-champ', 'Ajoutez au moins une période, choisie dans la liste ou gardée telle quelle (deux fois Entrée)' ),
+			'pactols_subjects'    => array( 'na-kw-subject-champ', 'Ajoutez au moins un sujet, choisi dans la liste ou gardé tel quel (deux fois Entrée)' ),
 			'puzzle'              => array( 'na-puzzle-poignee', 'Faites glisser la pièce jusqu’à son encoche' ),
 		);
 		// Les figures déjà déposées d'une notice qu'on corrige : leur carte
@@ -3167,6 +3173,7 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-pactols-grid { display: grid; gap: var(--na-e4); margin-top: var(--na-e3);
 				grid-template-columns: repeat(auto-fit, minmax(min(100%, max(calc((100% - 2rem) / 3), calc((54rem - 100%) * 999))), 1fr)); }
 			.na-form#na-form .na-kw { min-width: 0; padding: var(--na-e4); background: var(--na-fond); border: 1px solid var(--na-filet-doux); border-radius: var(--na-r2); }
+			.na-form#na-form .na-pactols-grid > .na-champ { margin-top: 0; }
 			.na-form#na-form .na-kw > legend { margin: 0 0 var(--na-e1); font-size: var(--na-t-m); font-weight: 600; line-height: 1.3; }
 			.na-form#na-form .na-jetons { display: flex; flex-wrap: wrap; gap: var(--na-e2); margin: 0 0 var(--na-e2); }
 			.na-form#na-form .na-jeton { display: inline-flex; align-items: center; gap: .25em; max-width: 100%;
@@ -3538,6 +3545,38 @@ class Notice_Archeomed_Pactols {
 					</div>
 				</fieldset>
 
+				<div class="na-champ">
+					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
+					<select id="na-rubrique" name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
+				</div>
+				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
+				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
+					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
+					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
+					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
+						<option value="">Choisir une matière…</option>
+						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
+							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<button type="button" class="na-ajout" aria-controls="na-renvois" aria-expanded="true" hidden><span aria-hidden="true">+</span> Signaler la notice dans d’autres rubriques</button>
+				<fieldset class="na-sous-groupe na-bloc" id="na-renvois" aria-describedby="na-renvois-aide">
+					<legend>Autres rubriques concernées <span class="na-facultatif">(facultatif)</span></legend>
+					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
+					<div class="na-half">
+						<div class="na-champ">
+							<label for="na-renvoi-1">Premier renvoi</label>
+							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_1' ) ), 'Aucun renvoi' ); ?></select>
+						</div>
+						<div class="na-champ">
+							<label for="na-renvoi-2">Second renvoi</label>
+							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_2' ) ), 'Aucun renvoi' ); ?></select>
+						</div>
+					</div>
+					<button type="button" class="na-retirer" hidden>Retirer les renvois</button>
+				</fieldset>
+
 				<?php echo $this->natures_html(); ?>
 
 				<div class="na-champ na-court">
@@ -3685,7 +3724,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s3"><span class="na-section-num" aria-hidden="true">3</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Deux niveaux d’intertitre sont possibles, par les boutons T1 et T2. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Un intertitre se pose par le bouton T1. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -3842,48 +3881,15 @@ class Notice_Archeomed_Pactols {
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s5">
-				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Classement et mots-clés</h2>
-				<div class="na-champ">
-					<label for="na-rubrique">Rubrique de la Chronique <span class="na-requis" aria-hidden="true">*</span></label>
-					<select id="na-rubrique" name="rubrique_principale" required><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ), 'Choisir une rubrique…' ); ?></select>
-				</div>
-				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
-				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
-					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
-					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
-						<option value="">Choisir une matière…</option>
-						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
-							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</div>
-				<button type="button" class="na-ajout" aria-controls="na-renvois" aria-expanded="true" hidden><span aria-hidden="true">+</span> Signaler la notice dans d’autres rubriques</button>
-				<fieldset class="na-sous-groupe na-bloc" id="na-renvois" aria-describedby="na-renvois-aide">
-					<legend>Autres rubriques concernées <span class="na-facultatif">(facultatif)</span></legend>
-					<p class="na-help" id="na-renvois-aide">Deux au plus. La notice y sera signalée par un renvoi.</p>
-					<div class="na-half">
-						<div class="na-champ">
-							<label for="na-renvoi-1">Premier renvoi</label>
-							<select id="na-renvoi-1" name="renvoi_1"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_1' ) ), 'Aucun renvoi' ); ?></select>
-						</div>
-						<div class="na-champ">
-							<label for="na-renvoi-2">Second renvoi</label>
-							<select id="na-renvoi-2" name="renvoi_2"><?php echo $this->options_html( $this->rubriques, self::rubrique_actuelle( $this->repris( 'renvoi_2' ) ), 'Aucun renvoi' ); ?></select>
-						</div>
-					</div>
-					<button type="button" class="na-retirer" hidden>Retirer les renvois</button>
-				</fieldset>
-
-				<div class="na-sous-groupe" role="group" aria-labelledby="na-kw-titre" aria-describedby="na-kw-aide">
-					<h3 class="na-sous-titre" id="na-kw-titre">Mots-clés <span class="na-facultatif">(facultatif)</span></h3>
-					<p class="na-help" id="na-kw-aide">Ils servent à retrouver la notice. Tapez trois lettres au moins, puis choisissez dans la liste, qui vient du thésaurus Pactols&nbsp;: seuls les termes choisis ainsi indexent la notice. Deux à cinq par liste suffisent (dix au plus). Un terme absent de la liste peut être gardé tel quel en appuyant deux fois sur Entrée&nbsp;; il reste visible pour la rédaction, mais n’indexe pas la notice.</p>
+				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Mots-clés</h2>
+				<div class="na-sous-groupe" role="group" aria-labelledby="na-s5" aria-describedby="na-kw-aide">
+					<p class="na-help" id="na-kw-aide">Ils servent à retrouver la notice. Une période et un sujet au moins&nbsp;; les autres lieux peuvent rester vides. Tapez trois lettres au moins, puis choisissez dans la liste, qui vient du thésaurus Pactols&nbsp;: seuls les termes choisis ainsi indexent la notice. Deux à cinq par liste suffisent (dix au plus). Un terme absent de la liste peut être gardé tel quel en appuyant deux fois sur Entrée&nbsp;; il reste visible pour la rédaction, mais n’indexe pas la notice.</p>
 					<div class="na-pactols-grid">
 						<?php
 						echo $this->pactols_categorie_html( 'period', 'Périodes',
-							'Un siècle se cherche en chiffres romains ou arabes (« XII<sup>e</sup> » ou « 12<sup>e</sup> »), une époque par son nom (« haut Moyen Âge »).', 'Chercher une période', 'pactols_periods' );
+							'Un siècle se cherche en chiffres romains ou arabes (« XII<sup>e</sup> » ou « 12<sup>e</sup> »), une époque par son nom (« haut Moyen Âge »).', 'Chercher une période', 'pactols_periods', true );
 						echo $this->pactols_categorie_html( 'subject', 'Sujets',
-							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects' );
+							'Par exemple&nbsp;: château, four de potier, sépulture.', 'Chercher un sujet', 'pactols_subjects', true );
 						// La commune de la notice est déjà demandée plus haut : ce qu'on
 						// attend ici, ce sont les autres lieux — la région, le pays, un
 						// ensemble géographique. Sans le dire, on reçoit la commune deux fois.
@@ -4252,13 +4258,14 @@ class Notice_Archeomed_Pactols {
 					// Les seuls formats que le document sait rendre. Sans cette
 					// liste, un collage depuis Word apportait listes, titres et
 					// citations, que le serveur aplatissait en un paragraphe.
-					// Deux niveaux d'intertitre, « h3 » et « h4 » : sous le titre de
-					// la notice, ce sont des titres de niveau 3 et 4, que le
-					// document pose sous les styles Métopes réglés pour eux.
+					// Un seul niveau d'intertitre, « h3 » : sous le titre de la
+					// notice, c'est un titre de niveau 3, que le document pose sous
+					// le style Métopes réglé pour lui. Le second niveau, « h4 », a
+					// quitté la barre ; une notice qui en porte déjà le garde.
 					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
-							[{ 'header': 3 }, { 'header': 4 }],
+							[{ 'header': 3 }],
 							['bold', 'italic'].concat(petitesCapitales ? ['petitescapitales'] : []),
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
@@ -4311,15 +4318,15 @@ class Notice_Archeomed_Pactols {
 							if (collageEnCours) { commentairesOtes = true; }
 							return new Delta();
 						}
-						// Un titre collé garde son rang, ramené aux deux niveaux
-						// d'intertitre : 1 à 3 deviennent le premier, 4 à 6 le second.
+						// Un titre collé devient l'intertitre, le seul niveau
+						// qu'offre la barre, quel que soit son rang.
 						if (delta.ops.some(function (op) { return op.attributes && op.attributes.header; })) {
 							delta = delta.reduce(function (d, op) {
 								var a = op.attributes;
 								if (a && a.header) {
 									var b = {};
 									Object.keys(a).forEach(function (k) { b[k] = a[k]; });
-									b.header = a.header <= 3 ? 3 : 4;
+									b.header = 3;
 									return d.insert(op.insert, b);
 								}
 								return d.insert(op.insert, a);
@@ -4358,7 +4365,7 @@ class Notice_Archeomed_Pactols {
 				if (barre) {
 					barre.setAttribute('role', 'toolbar');
 					barre.setAttribute('aria-label', 'Mise en forme du texte');
-					[['.ql-header[value="3"]', 'Intertitre, premier niveau'], ['.ql-header[value="4"]', 'Intertitre, second niveau'],
+					[['.ql-header[value="3"]', 'Intertitre'],
 						['.ql-bold', 'Gras'], ['.ql-italic', 'Italique'], ['.ql-petitescapitales', 'Petites capitales'],
 						['.ql-script[value="super"]', 'Exposant'],
 						['.ql-script[value="sub"]', 'Indice'], ['.ql-clean', 'Effacer la mise en forme']].forEach(function (p) {
@@ -4390,9 +4397,8 @@ class Notice_Archeomed_Pactols {
 					// petites capitales elles-mêmes.
 					var pc = barre.querySelector('.ql-petitescapitales');
 					if (pc) { pc.innerHTML = '<span aria-hidden="true">Pc</span>'; }
-					// Les intertitres : « T1 » et « T2 », plus parlants que les
-					// « H3 » et « H4 » du HTML.
-					[['3', 'T1'], ['4', 'T2']].forEach(function (t) {
+					// L'intertitre : « T1 », plus parlant que le « H3 » du HTML.
+					[['3', 'T1']].forEach(function (t) {
 						var h = barre.querySelector('.ql-header[value="' + t[0] + '"]');
 						if (h) { h.innerHTML = '<span aria-hidden="true">' + t[1] + '</span>'; h.classList.add('na-bouton-titre'); }
 					});
@@ -5072,7 +5078,14 @@ class Notice_Archeomed_Pactols {
 					});
 					dessiner();
 				};
-				function ecrire() { cache.value = JSON.stringify(items); }
+				// Le champ caché ne dit rien quand il change : la liste prévient,
+				// pour qu'une erreur « au moins un terme » s'efface aussitôt.
+				function ecrire() {
+					cache.value = JSON.stringify(items);
+					var ev;
+					try { ev = new Event('na-termes', { bubbles: true }); } catch (e) { ev = document.createEvent('Event'); ev.initEvent('na-termes', true, false); }
+					fs.dispatchEvent(ev);
+				}
 				function dessiner() {
 					jetons.innerHTML = '';
 					items.forEach(function (it, i) {
@@ -7473,6 +7486,13 @@ class Notice_Archeomed_Pactols {
 				commune: function () { return uneValeur('.na-commune'); },
 				departement: function () { return !vide(sansParentheses(deptInput.value)); },
 				lieu_dit: function () { return !vide(lieuDitInput.value); },
+				rubrique_principale: function () { return !vide(el('na-rubrique').value); },
+				// La matière, demandée par la seule rubrique V : masquée, elle ne
+				// compte pas.
+				rubrique_matiere: function () {
+					var b = el('na-matiere-bloc');
+					return !b || b.hidden || !vide(el('na-matiere').value);
+				},
 				nature: function () { return !!form.querySelector('input[name="nature[]"]:checked'); },
 				annee: function () { return !vide(el('na-annee').value); },
 				organisme: function () { return uneValeur('.na-organisme'); },
@@ -7491,13 +7511,6 @@ class Notice_Archeomed_Pactols {
 				coauteur_email: function () { var v = el('na-coauteur-email').value.trim(); return !v || courrielValide(v); },
 				deposant_email: function () { var v = el('na-deposant-email').value.trim(); return !v || courrielValide(v); },
 				texte: function () { return !quill || !vide(quill.getText()); },
-				rubrique_principale: function () { return !vide(el('na-rubrique').value); },
-				// La matière, demandée par la seule rubrique V : masquée, elle ne
-				// compte pas.
-				rubrique_matiere: function () {
-					var b = el('na-matiere-bloc');
-					return !b || b.hidden || !vide(el('na-matiere').value);
-				},
 				// Le titre, les crédits et le texte alternatif de chaque figure
 				// choisie. Le contrôle ne joue que si la carte est là : sans
 				// fichier, rien à décrire.
@@ -7526,8 +7539,17 @@ class Notice_Archeomed_Pactols {
 					var j = new Date(), aujourdhui = j.getFullYear() + '-' + ('0' + (j.getMonth() + 1)).slice(-2) + '-' + ('0' + j.getDate()).slice(-2);
 					return /^\d{4}-\d{2}-\d{2}$/.test(date.value) && date.value >= aujourdhui;
 				},
+				// Une période et un sujet au moins, libres ou du thésaurus.
+				pactols_periods: function () { return termesRetenus('pactols_periods'); },
+				pactols_subjects: function () { return termesRetenus('pactols_subjects'); },
 				puzzle: function () { return puzzleFait(); }
 			};
+			function termesRetenus(id) {
+				var c = el(id), lu = [];
+				if (!c) { return true; }
+				try { lu = c.value ? JSON.parse(c.value) : []; } catch (e) { lu = []; }
+				return Array.isArray(lu) && lu.some(function (it) { return it && !vide(String(it.label || '')); });
+			}
 			function champDeFigureDonne(rang, clef) {
 				var c = el('na-illus-' + rang + '-' + clef);
 				return !c || rang > selected.length || !vide(c.value);
@@ -7708,6 +7730,7 @@ class Notice_Archeomed_Pactols {
 			function rafraichir(e) { effacerLErreurDe(e.target); }
 			form.addEventListener('input', rafraichir);
 			form.addEventListener('change', rafraichir);
+			form.addEventListener('na-termes', rafraichir);
 			function valider() {
 				var liste = [];
 				Object.keys(CONTROLES).forEach(function (cle) {
@@ -9372,8 +9395,8 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function champs_manquants( $d ) {
 		$manquants = array();
-		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'nature', 'annee', 'organisme',
-			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'texte', 'rubrique_principale' );
+		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'rubrique_principale', 'nature', 'annee', 'organisme',
+			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'texte' );
 		foreach ( $ordre as $champ ) {
 			if ( 'resp_email' === $champ ) {
 				$vide = empty( $d['resp_email'] ) || ! is_email( $d['resp_email'] );
@@ -9385,11 +9408,11 @@ class Notice_Archeomed_Pactols {
 			if ( $vide ) {
 				$manquants[] = $champ;
 			}
-		}
-		// La matière, que seule la rubrique V demande.
-		if ( isset( $d['rubrique_principale'] ) && self::RUBRIQUE_ARTISANAT === $d['rubrique_principale']
-			&& '' === self::matiere_de( $d ) ) {
-			$manquants[] = 'rubrique_matiere';
+			// La matière, que seule la rubrique V demande, suit la rubrique.
+			if ( 'rubrique_principale' === $champ && isset( $d['rubrique_principale'] )
+				&& self::RUBRIQUE_ARTISANAT === $d['rubrique_principale'] && '' === self::matiere_de( $d ) ) {
+				$manquants[] = 'rubrique_matiere';
+			}
 		}
 		// Les figures déjà déposées d'une notice corrigée en place viennent
 		// les premières, comme sur la page : mêmes exigences que les
@@ -9471,6 +9494,12 @@ class Notice_Archeomed_Pactols {
 		// rédaction ne saurait pas jusqu'à quand le télécharger.
 		if ( ! empty( $d['originaux_lien'] ) && empty( $d['originaux_jusqua'] ) ) {
 			$manquants[] = 'originaux_jusqua';
+		}
+		// Une période et un sujet au moins ; un terme libre compte.
+		foreach ( array( 'pactols_periods', 'pactols_subjects' ) as $liste ) {
+			if ( empty( $d[ $liste . '_items' ] ) ) {
+				$manquants[] = $liste;
+			}
 		}
 		return $manquants;
 	}

@@ -2512,6 +2512,15 @@ $manque_i = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_s
 na_verifier( in_array( 'rubrique_matiere', $manque_v, true ) && ! in_array( 'rubrique_matiere', $manque_i, true )
 	&& ! in_array( 'rubrique_matiere', na_appel( $plugin, 'champs_manquants', array( $notice_v( 'Caen', 'Fouille préventive', 'B' ) ) ), true ),
 	'la matière est obligatoire pour la rubrique V, et pour elle seule', array( $manque_v, $manque_i ) );
+$libre_k   = array( array( 'label' => 'four à chaux', 'ark' => '', 'idConcept' => '' ) );
+$manque_k  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'pactols_periods_items' => array(), 'pactols_subjects_items' => array(), 'pactols_places_items' => array() ) ) ) );
+$libres_k  = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'pactols_periods_items' => $libre_k, 'pactols_subjects_items' => $libre_k, 'pactols_places_items' => array() ) ) ) );
+$ordre_k   = array_keys( na_appel( $plugin, 'champs_du_formulaire' ) );
+na_verifier( in_array( 'pactols_periods', $manque_k, true ) && in_array( 'pactols_subjects', $manque_k, true )
+	&& ! in_array( 'pactols_places', $manque_k, true )
+	&& ! array_intersect( array( 'pactols_periods', 'pactols_subjects' ), $libres_k )
+	&& array_search( 'rubrique_principale', $ordre_k, true ) < array_search( 'nature', $ordre_k, true ),
+	'une période et un sujet sont obligatoires, un terme libre suffit, les autres lieux restent facultatifs ; la rubrique vient avant la nature', array( $manque_k, $libres_k ) );
 $courriel_v = na_appel( $plugin, 'build_notice', array( array_merge( $notice_v( 'Caen', 'Fouille préventive', 'B' ), array( 'reference' => 'REFV01' ) ) ) );
 na_verifier( false !== strpos( $courriel_v, 'Matière' ) && false !== strpos( $courriel_v, 'B – Carrières, mines et métallurgie' ),
 	'le courriel et la fiche disent la matière' );

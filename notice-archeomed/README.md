@@ -514,7 +514,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
 | Intertitre du texte, premier niveau (T1) | `heading 3` (Titre 3) |
-| Intertitre du texte, second niveau (T2) | `heading 4` (Titre 4) |
+| Intertitre du texte, second niveau (`h4` des notices anciennes) | `heading 4` (Titre 4) |
 | Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
 | Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
 | Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
@@ -566,13 +566,14 @@ défaut, pour une notice d'avant ce champ, le titre de sa figure).
 
 ## Texte saisi dans l'éditeur
 
-Gras, italique, exposant et indice sont convertis. Deux niveaux
-d'**intertitre** se posent par les boutons T1 et T2 de la barre (écrits `h3` et
-`h4`) : sous le titre de la notice, qui est de niveau 2, ce sont des titres de
-niveau 3 et 4, que le document pose sous les styles des blocs « Intertitre du
-texte » de l'onglet Styles Métopes — « heading 3 » et « heading 4 » (Titre 3
-et Titre 4 de Word) par défaut. Un titre collé d'un autre niveau rejoint le
-plus proche (1 à 3 le premier, 4 à 6 le second) ; un intertitre ne reçoit pas
+Gras, italique, exposant et indice sont convertis. L'**intertitre** se pose
+par le bouton T1 de la barre (écrit `h3`) ; le bouton T2 du second niveau
+(`h4`) en a été retiré, mais une notice qui en porte déjà le garde. Sous le
+titre de la notice, qui est de niveau 2, ce sont des titres de niveau 3 et 4,
+que le document pose sous les styles des blocs « Intertitre du texte » de
+l'onglet Styles Métopes — « heading 3 » et « heading 4 » (Titre 3 et Titre 4
+de Word) par défaut. Un titre collé dans l'éditeur, de quelque niveau qu'il
+soit, devient un intertitre T1 ; un intertitre ne reçoit pas
 l'avis de ponctuation finale — il en reçoit un, au contraire, s'il finit par
 « . », « , », « ; » ou « : » (« ? », « ! » et « … » restent permis) —, et le bloc de responsabilité ne s'y colle pas.
 Une liste ou une citation collées depuis Word deviennent chacune un paragraphe,
@@ -1471,6 +1472,15 @@ point final qu'on y met par habitude, sauf abréviation ;
 une opération sur plusieurs années s'écrit « 2004-2005 ».
 
 ## Le thésaurus Pactols
+
+**Une période et un sujet au moins.** Depuis la version 3.73, la section
+« Mots-clés » du formulaire n'est plus facultative : Périodes et Sujets
+demandent chacun un terme, choisi dans la liste ou gardé tel quel — un terme
+libre suffit, pour qu'une panne de Pactols ou du proxy n'empêche aucun dépôt.
+« Autres lieux » peut rester vide. Le navigateur le dit sous la liste, et le
+serveur le redemande. La rubrique de la Chronique, sa matière pour la rubrique V
+et les renvois ont quitté cette section : ils se choisissent dans la première,
+juste avant la nature de l'opération.
 
 Les recherches sont mises en réserve une journée : le même terme cherché deux
 fois ne repart pas sur le réseau. Au-delà de deux cents interrogations par
