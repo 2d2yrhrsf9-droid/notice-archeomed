@@ -1023,6 +1023,16 @@ class Notice_Archeomed_Relecture {
 		$id       = isset( $_GET['na_notice'] ) && is_scalar( $_GET['na_notice'] ) ? absint( $_GET['na_notice'] ) : 0;
 		$droit    = $id ? self::droit_sur( $id ) : null;
 
+		// La rédaction voit toutes les rubriques ; un coordinateur, celles que
+		// les réglages lui confient, et rien d'autre. On le dit à qui essaie
+		// l'écran depuis un compte de la rédaction.
+		if ( self::peut_tout() ) {
+			echo '<p class="na-rel-note">' . esc_html__( 'Vous voyez toutes les rubriques, comme la rédaction. Un coordinateur ne voit que celles qui lui sont confiées dans les réglages de la relecture, et les notices qui y renvoient.', 'notice-archeomed' );
+			if ( current_user_can( 'manage_options' ) ) {
+				echo ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'relecture' ) ) . '">' . esc_html__( 'Confier les rubriques', 'notice-archeomed' ) . '</a>';
+			}
+			echo '</p>';
+		}
 		if ( count( $siennes ) > 1 ) {
 			echo '<nav class="na-rel-onglets" aria-label="' . esc_attr__( 'Rubriques', 'notice-archeomed' ) . '">';
 			foreach ( $siennes as $une ) {
@@ -1141,6 +1151,29 @@ class Notice_Archeomed_Relecture {
 			. '<input type="text" id="' . esc_attr( $id ) . '" name="' . esc_attr( $nom ) . '" value="' . esc_attr( (string) $valeur ) . '"></p>';
 	}
 
+	/**
+	 * Le titre de la notice au-dessus de son texte, tel qu'on le lit :
+	 * « CAEN (Calvados), Château ». Il ne se saisit pas ici : il suit les
+	 * champs du lieu, et le script le refait quand on les change.
+	 */
+	private static function titre_au_dessus_du_texte( $lieux, $departement, $lieu_dit ) {
+		$noms = array();
+		foreach ( (array) $lieux as $lieu ) {
+			if ( isset( $lieu['nom'] ) && '' !== trim( (string) $lieu['nom'] ) ) {
+				$noms[] = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( trim( (string) $lieu['nom'] ), 'UTF-8' ) : strtoupper( trim( (string) $lieu['nom'] ) );
+			}
+		}
+		$departement = trim( (string) $departement, " \t\n\r\0\x0B()" );
+		$lieu_dit    = trim( (string) $lieu_dit );
+		$titre       = esc_html( implode( ', ', $noms ) . ( '' !== $departement ? ' (' . $departement . ')' : '' ) );
+		if ( '' !== $lieu_dit ) {
+			$titre .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() )
+				. ( Notice_Archeomed_Normes::lieu_dit_en_italique() ? '<em>' . esc_html( $lieu_dit ) . '</em>' : esc_html( $lieu_dit ) );
+		}
+		return '<p class="na-rel-titre-texte" id="na-rel-titre-texte" data-avant="' . esc_attr( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . '"'
+			. ' data-italique="' . ( Notice_Archeomed_Normes::lieu_dit_en_italique() ? '1' : '0' ) . '">' . $titre . '</p>';
+	}
+
 	/** Une liste déroulante de rubriques, avec son choix vide. */
 	private static function choix_de_rubrique( $nom, $libelle, $rubriques, $choisie, $vide ) {
 		echo '<p class="na-rel-champ"><label for="na-rel-' . esc_attr( $nom ) . '">' . esc_html( $libelle ) . '</label>'
@@ -1188,8 +1221,12 @@ class Notice_Archeomed_Relecture {
 		} else {
 			echo '<p class="na-rel-champ"><span class="na-rel-libelle">' . esc_html__( 'Rubrique principale', 'notice-archeomed' ) . '</span> ' . esc_html( $principale ) . '</p>';
 		}
-		if ( Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === $principale || $tout ) {
-			echo '<p class="na-rel-champ"><label for="na-rel-matiere">' . esc_html__( 'Matière (rubrique V)', 'notice-archeomed' ) . '</label><select id="na-rel-matiere" name="rubrique_matiere"><option value="">—</option>';
+		// La matière ne divise que la rubrique V. La rédaction, qui peut
+		// changer la rubrique, la voit paraître quand elle choisit V.
+		$en_v = Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === Notice_Archeomed_Pactols::rubrique_actuelle( $principale );
+		if ( $en_v || $tout ) {
+			echo '<p class="na-rel-champ" id="na-rel-matiere-bloc" data-rubrique="' . esc_attr( Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT ) . '"' . ( $en_v ? '' : ' hidden' ) . '>'
+				. '<label for="na-rel-matiere">' . esc_html__( 'Matière de l’installation artisanale', 'notice-archeomed' ) . '</label><select id="na-rel-matiere" name="rubrique_matiere"><option value="">—</option>';
 			foreach ( Notice_Archeomed_Pactols::MATIERES as $lettre => $matiere ) {
 				echo '<option value="' . esc_attr( $lettre ) . '"' . selected( $lettre, Notice_Archeomed_Pactols::matiere_de( $d ), false ) . '>' . esc_html( $lettre . ' — ' . $matiere ) . '</option>';
 			}
@@ -1268,6 +1305,7 @@ class Notice_Archeomed_Relecture {
 		// ── Texte ──
 		$texte = $valeur( 'texte_notice' );
 		echo '<fieldset><legend id="na-rel-texte-libelle">' . esc_html__( 'Texte', 'notice-archeomed' ) . '</legend>'
+			. self::titre_au_dessus_du_texte( $notice['lieux'], $valeur( 'departement' ), $valeur( 'lieu_dit' ) )
 			. '<input type="hidden" name="texte_notice" id="na-rel-texte" value="' . esc_attr( 'b64:' . base64_encode( $texte ) ) . '">'
 			. '<div id="na-rel-editeur">' . self::texte_propre( $texte ) . '</div></fieldset>';
 
@@ -1322,7 +1360,12 @@ class Notice_Archeomed_Relecture {
 		$k = (int) $figure['k'];
 		echo '<div class="na-rel-figure' . ( null !== $figure['masquee'] ? ' na-rel-figure--masquee' : '' ) . '">';
 		if ( ! empty( $figure['apercu'] ) ) {
-			echo '<img src="' . esc_url( self::url_de_l_apercu( $id, $k ) ) . '" alt="' . esc_attr( Notice_Archeomed_Controles::une_ligne( strtok( (string) $figure['alt'], "\n" ) ) ) . '" loading="lazy">';
+			// Un clic l'agrandit : on décide d'un retrait sur l'image entière.
+			$adresse = self::url_de_l_apercu( $id, $k );
+			echo '<button type="button" class="na-rel-agrandir" data-src="' . esc_url( $adresse ) . '" data-titre="' . esc_attr( Notice_Archeomed_Normes::numero_de_figure( $k ) . ' — ' . (string) $figure['titre'] ) . '"'
+				. ' aria-label="' . esc_attr( sprintf( 'Agrandir : %s', Notice_Archeomed_Normes::numero_de_figure( $k ) ) ) . '">'
+				. '<img src="' . esc_url( $adresse ) . '" alt="' . esc_attr( Notice_Archeomed_Controles::une_ligne( strtok( (string) $figure['alt'], "\n" ) ) ) . '" loading="lazy">'
+				. '<span class="na-rel-loupe" aria-hidden="true">Agrandir</span></button>';
 		} elseif ( null !== $figure['a_part'] ) {
 			echo '<p class="na-rel-sans-apercu">' . esc_html__( 'Figure envoyée à part par l’auteur : pas d’aperçu.', 'notice-archeomed' ) . '</p>';
 		} else {
@@ -1492,7 +1535,16 @@ class Notice_Archeomed_Relecture {
 			. '.na-rel-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}'
 			. '#na-rel-editeur{background:#fff;min-height:16em;font-size:16px}.na-rel-form .ql-editor{min-height:16em}.na-rel .na-pc{font-variant:small-caps}'
 			. '.na-rel-figure{display:flex;gap:16px;border-top:1px solid #dcdcde;padding-top:12px;margin-top:12px}'
-			. '.na-rel-figure img{flex:0 0 220px;width:220px;max-width:100%;height:auto;align-self:flex-start;border:1px solid #c3c4c7}'
+			. '.na-rel .na-rel-agrandir{flex:0 0 220px;width:220px;max-width:100%;align-self:flex-start;position:relative;display:block;padding:0;margin:0;border:1px solid #c3c4c7;background:#fff;cursor:zoom-in}'
+			. '.na-rel .na-rel-agrandir img{display:block;width:100%;height:auto;border:0}'
+			. '.na-rel .na-rel-loupe{position:absolute;right:4px;bottom:4px;font-size:.8em;padding:0 .4em;background:rgba(29,35,39,.75);color:#fff;border-radius:2px}'
+			. '.na-rel .na-rel-agrandir:focus{outline:2px solid #2271b1;outline-offset:2px}'
+			. '.na-rel-boite{width:auto;max-width:96vw;max-height:96vh;padding:0;border:0;background:#1d2327;color:#fff}'
+			. '.na-rel-boite::backdrop{background:rgba(0,0,0,.8)}'
+			. '.na-rel-boite img{display:block;max-width:96vw;max-height:calc(96vh - 3em);width:auto;height:auto;margin:0 auto;background:#fff}'
+			. '.na-rel-boite-barre{display:flex;justify-content:space-between;align-items:center;gap:1em;padding:.4em .8em;font-size:15px}'
+			. '.na-rel-boite button{font:inherit;padding:.3em .9em;border:1px solid #fff;border-radius:3px;background:none;color:#fff;cursor:pointer}'
+			. '.na-rel .na-rel-titre-texte{font-size:1.1em;font-weight:700;margin:.2em 0 .8em}'
 			. '.na-rel-sans-apercu{flex:0 0 220px;width:220px;color:#646970;font-style:italic}'
 			. '.na-rel-figure-textes{flex:1 1 auto;min-width:0}.na-rel-figure--masquee{opacity:.7}'
 			. '.na-rel-boutons{display:flex;flex-wrap:wrap;gap:8px}'
@@ -1505,7 +1557,7 @@ class Notice_Archeomed_Relecture {
 			. '@media (max-width:800px){.na-rel-cadre{display:block}'
 			. '.na-rel-sommaire{position:static;max-width:none;max-height:40vh;margin-bottom:16px}'
 			. '.na-rel-form fieldset{padding:6px 10px 10px}.na-rel-form input[type=text],.na-rel-form textarea,.na-rel-form select{max-width:none}'
-			. '.na-rel-figure{display:block}.na-rel-figure img,.na-rel-sans-apercu{width:100%;max-width:320px;margin-bottom:8px}'
+			. '.na-rel-figure{display:block}.na-rel .na-rel-agrandir,.na-rel-sans-apercu{width:100%;max-width:320px;margin-bottom:8px}'
 			. '.na-rel .na-rel-bouton{flex:1 1 auto;text-align:center;padding:.7em 1em}.na-rel-lecture{height:60vh}}'
 			. '</style>';
 	}
@@ -1715,8 +1767,73 @@ class Notice_Archeomed_Relecture {
 							phrases[0] = m[1] + ' retenu, avec son identifiant\u00a0: « ' + m[2] + ' » est dans la parenthèse.';
 						}
 						dit.textContent = phrases.join(' ');
+						refaireLeTitre();
 					});
+					refaireLeTitre();
 				});
+			});
+
+			// Le titre au-dessus du texte suit le lieu, le département et le
+			// lieu-dit tels qu'ils sont dans le formulaire.
+			var titre = document.getElementById('na-rel-titre-texte');
+			function refaireLeTitre() {
+				if (!titre) { return; }
+				var noms = [];
+				[].forEach.call(form.querySelectorAll('.na-rel-lieu input[type="text"]'), function (c) {
+					if (c.value.trim()) { noms.push(c.value.trim().toLocaleUpperCase('fr')); }
+				});
+				var dept = deptChamp ? deptChamp.value.replace(/^[\s()]+|[\s()]+$/g, '') : '';
+				var ld = document.getElementById('na-rel-lieu_dit');
+				var lieuDit = ld ? ld.value.trim() : '';
+				titre.textContent = noms.join(', ') + (dept ? ' (' + dept + ')' : '') + (lieuDit ? titre.getAttribute('data-avant') : '');
+				if (lieuDit) {
+					var bout = document.createElement(titre.getAttribute('data-italique') === '1' ? 'em' : 'span');
+					bout.textContent = lieuDit;
+					titre.appendChild(bout);
+				}
+			}
+			form.addEventListener('input', function (e) {
+				if (e.target && (e.target.id === 'na-rel-departement' || e.target.id === 'na-rel-lieu_dit' || /^na-rel-commune-/.test(e.target.id))) { refaireLeTitre(); }
+			});
+
+			// La matière ne vaut que pour la rubrique V : elle paraît quand la
+			// rédaction choisit V, et se vide quand elle en sort.
+			var matiere = document.getElementById('na-rel-matiere-bloc');
+			var principale = document.getElementById('na-rel-rubrique_principale');
+			if (matiere && principale) {
+				principale.addEventListener('change', function () {
+					matiere.hidden = principale.value !== matiere.getAttribute('data-rubrique');
+					if (matiere.hidden) { document.getElementById('na-rel-matiere').value = ''; }
+				});
+			}
+
+			// Une figure s'agrandit dans une fenêtre par-dessus la page ;
+			// Échap, le bouton ou un clic à côté la referment.
+			var boite = null;
+			function ouvrir(bouton) {
+				if (!boite) {
+					boite = document.createElement('dialog');
+					boite.className = 'na-rel-boite';
+					boite.setAttribute('aria-label', 'Figure agrandie');
+					boite.innerHTML = '<div class="na-rel-boite-barre"><span></span><button type="button">Fermer</button></div><img alt="">';
+					boite.querySelector('button').addEventListener('click', function () { boite.close(); });
+					boite.addEventListener('click', function (e) { if (e.target === boite) { boite.close(); } });
+					boite.addEventListener('close', function () { if (boite.retour) { boite.retour.focus(); } });
+					document.body.appendChild(boite);
+				}
+				var image = bouton.querySelector('img');
+				boite.querySelector('span').textContent = bouton.getAttribute('data-titre');
+				boite.querySelector('img').src = bouton.getAttribute('data-src');
+				boite.querySelector('img').alt = image ? image.alt : '';
+				boite.retour = bouton;
+				if (typeof boite.showModal === 'function') {
+					boite.showModal();
+				} else {
+					window.open(bouton.getAttribute('data-src'), '_blank', 'noopener');
+				}
+			}
+			[].forEach.call(form.querySelectorAll('.na-rel-agrandir'), function (bouton) {
+				bouton.addEventListener('click', function () { ouvrir(bouton); });
 			});
 
 			// Les mots-clés : on en retire, et l'on en ajoute en choisissant

@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.72
+# Formulaire des notices d’archéologie médiévale — version 3.73
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1167,6 +1167,19 @@ L'aperçu de chaque figure est celui qui a été fabriqué pour le Word : il
 reste sur le site quand l'original part sur sDrive (le rangement n'efface un
 original que si son aperçu se lit). Une figure sans aperçu — envoyée à part,
 ou que le serveur n'a pas su réduire — le dit, sans image.
+Un clic sur l'aperçu l'agrandit dans une fenêtre par-dessus la page, à la
+taille de l'écran : c'est sur l'image entière qu'on décide d'un retrait.
+Échap, le bouton « Fermer » ou un clic à côté la referment.
+
+Au-dessus du texte, le titre de la notice se lit tel qu'il paraîtra :
+« CAEN (Calvados), Château », avec la ponctuation et l'italique du lieu-dit
+que règlent les normes. Il ne se saisit pas : il suit les champs du lieu, et
+change avec eux. La matière (A, B, C) ne se montre que pour une notice de la
+rubrique V, comme au dépôt.
+
+La rédaction voit toutes les rubriques, et l'écran le lui rappelle ; un
+coordinateur ne voit que celles que les réglages lui confient, et les
+notices qui y renvoient.
 
 Deux boutons : « Enregistrer », qui reste sur la notice, et « Suivante », qui
 enregistre puis ouvre la notice suivante du sommaire.
