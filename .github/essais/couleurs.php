@@ -6,7 +6,7 @@
  *     php .github/essais/couleurs.php /tmp/lineaire.icc
  *
  * Le profil d'essai (« profil-icc lineaire ») a les primaires du sRGB sans
- * sa courbe : un gris 128 qui le porte vaut 188 en sRGB. S'il ressort à 128,
+ * sa courbe : un rouge 128 qui le porte vaut 188 en sRGB. S'il ressort à 128,
  * le profil n'a pas été lu. On vérifie aussi qu'un sRGB n'est pas touché,
  * qu'un CMJN sans profil passe encore au sRGB, et qu'un profil qui ne
  * convient pas à l'image ne l'empêche pas.
@@ -67,19 +67,23 @@ $nom = function ( $im ) {
 	return isset( $p['icc'] ) ? Notice_Archeomed_Paquet::description_icc( $p['icc'] ) : '(aucun)';
 };
 
-// Un RVB qui porte un autre profil que le sRGB.
-$im = $image( 'rgb(128,128,128)', null, $lineaire );
+// Un RVB qui porte un autre profil que le sRGB. La couleur n'est pas un
+// gris : un gris pur se relit en niveaux de gris, qu'on ne convertit pas.
+// Les primaires étant celles du sRGB, chaque canal se convertit seul : le
+// rouge 128 devient 188.
+$im = $image( 'rgb(128,64,200)', null, $lineaire );
+$espace_lu = $im->getImageColorspace();
 $vers_le_srgb->invoke( null, $im );
-$verifier( abs( $rouge( $im ) - 188 ) <= 2, 'un gris 128 du profil linéaire devient 188 (lu : ' . $rouge( $im ) . ')' );
+$verifier( abs( $rouge( $im ) - 188 ) <= 2, 'un rouge 128 du profil linéaire devient 188 (lu : ' . $rouge( $im ) . ', espace ' . $espace_lu . ')' );
 $verifier( false !== stripos( $nom( $im ), 'srgb' ), 'il porte ensuite le profil sRGB (lu : ' . $nom( $im ) . ')' );
 
 // Un sRGB n'est pas touché.
-$im = $image( 'rgb(128,128,128)', null, $srgb );
+$im = $image( 'rgb(128,64,200)', null, $srgb );
 $vers_le_srgb->invoke( null, $im );
 $verifier( 128 === $rouge( $im ), 'un sRGB reste tel quel (lu : ' . $rouge( $im ) . ')' );
 
 // Un RVB sans profil n'est pas touché.
-$im = $image( 'rgb(128,128,128)' );
+$im = $image( 'rgb(128,64,200)' );
 $vers_le_srgb->invoke( null, $im );
 $verifier( 128 === $rouge( $im ), 'un RVB sans profil reste tel quel (lu : ' . $rouge( $im ) . ')' );
 

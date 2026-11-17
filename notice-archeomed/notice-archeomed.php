@@ -3511,7 +3511,7 @@ class Notice_Archeomed_Pactols {
 				<p class="na-intro-acces"><?php
 					if ( '' !== $secours ) {
 						echo $this->typo( 'Ce formulaire vous pose difficulté (lecteur d’écran, clavier, vue…)&nbsp;? Envoyez votre notice par courriel à <a href="mailto:'
-							. esc_attr( antispambot( $secours ) ) . '">' . esc_html( antispambot( $secours ) ) . '</a>&nbsp;: elle sera reprise à la main.' );
+							. esc_attr( antispambot( $secours ) ) . '">' . esc_html( antispambot( $secours ) ) . '</a>.' );
 					}
 					if ( '' !== $declaration ) {
 						echo ( '' !== $secours ? ' ' : '' ) . '<a href="' . esc_url( $declaration ) . '">Déclaration d’accessibilité</a>.';
