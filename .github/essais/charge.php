@@ -114,6 +114,9 @@ for ( $i = 1; $i <= $n; $i++ ) {
 		'nature[0]' => $nature, 'organisme[0]' => 'Inrap',
 		'resp_prenom' => 'Essai', 'resp_nom' => 'Charge' . $i, 'resp_email' => 'charge' . $i . '@example.org', 'resp_inst' => 'Inrap',
 		'texte_notice' => $texte,
+		// Une période et un sujet au moins : sans eux, le dépôt est refusé.
+		'pactols_periods'  => '[{"label":"haut Moyen Âge","ark":""}]',
+		'pactols_subjects' => '[{"label":"habitat","ark":""}]',
 	);
 	foreach ( array( 1, 2 ) as $f ) {
 		$champs[ 'illustrations[' . ( $f - 1 ) . ']' ] = 2 === $f

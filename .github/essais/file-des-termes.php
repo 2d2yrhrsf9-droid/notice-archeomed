@@ -1460,6 +1460,8 @@ $jouer_un_depot = function ( $mode ) use ( $plugin, $reglages_avant ) {
 		'departement' => 'Calvados', 'lieu_dit' => 'Château ' . $mode, 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
 		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.' . $mode . '@example.org',
 		'resp_inst' => 'Inrap', 'texte_notice' => '<p>Le mur du XIIe siècle.</p>',
+		'pactols_periods' => wp_slash( wp_json_encode( array( array( 'label' => 'XIIe siècle', 'ark' => '' ) ) ) ),
+		'pactols_subjects' => wp_slash( wp_json_encode( array( array( 'label' => 'château', 'ark' => '' ) ) ) ),
 	);
 	$vers = '';
 	try {
