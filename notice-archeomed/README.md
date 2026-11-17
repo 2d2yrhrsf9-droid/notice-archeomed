@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.83
+# Formulaire des notices d’archéologie médiévale — version 3.84
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1109,7 +1109,11 @@ adresse morte. La personne sort de l'onglet et des deux exports ; **ses
 notices ne changent pas**. L'adresse retirée est notée à part
 (`na_annuaire_retires`), avec le nom qu'elle portait, et reste écartée même
 si elle revient dans une nouvelle notice. Les retirées se listent sous le
-tableau, chacune avec un bouton **Rétablir**.
+tableau, chacune avec un bouton **Rétablir** et un bouton **Supprimer
+définitivement**. Ce dernier, après confirmation, ôte la ligne des
+retirées sans retour : l'adresse reste écartée pour de bon, et l'on n'en
+garde qu'une empreinte (`na_annuaire_supprimes`), ni l'adresse, ni le nom,
+ni la date. Seule une adresse déjà retirée se supprime.
 
 Deux boutons l'emportent :
 

@@ -61,7 +61,7 @@ Le texte alternatif de chaque image est inscrit dans le document à l'endroit o�
 - **La relecture sur le site**, une fois la campagne close, sur une page où les coordinateurs se connectent sans entrer dans l'administration : chaque coordinateur relit les notices de sa rubrique dans l'ordre du volume, la rédaction les relit toutes. Une notice ouverte est verrouillée pour les autres ; chaque enregistrement garde la version précédente et produit un Word à suivi de modifications ; un journal dit qui a fait quoi. Les lieux du titre se cherchent dans Pactols, comme au dépôt. Une modification de fond passe par l'accord de l'auteur, que la rédaction demande d'un bouton.
 - **Un récapitulatif quotidien** des dépôts, chaque matin, qui range les notices du jour dans l'ordre du volume et dit l'état de chacune.
 - **Les termes candidats** au thésaurus, avec un statut (à proposer, proposé, écarté) et un export en tableur.
-- **L'annuaire des auteurs** : une ligne par personne, classée par nom, à emporter pour la liste de diffusion qui ouvre chaque campagne ou en tableur. Une personne qui ne veut plus d'envois s'en retire d'un bouton, sans que ses notices changent.
+- **L'annuaire des auteurs** : une ligne par personne, classée par nom, à emporter pour la liste de diffusion qui ouvre chaque campagne ou en tableur. Une personne qui ne veut plus d'envois s'en retire d'un bouton, sans que ses notices changent ; une adresse retirée peut ensuite être supprimée définitivement.
 
 ## Les réglages
 

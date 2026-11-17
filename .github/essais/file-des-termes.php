@@ -2816,11 +2816,42 @@ $ann_vers = $ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retablir', '
 na_verifier( false !== strpos( $ann_vers, 'na_annuaire=retabli' ) && array() === Notice_Archeomed_Annuaire::retires()
 	&& in_array( 'jeanne@annuaire.test', array_map( 'strtolower', array_column( Notice_Archeomed_Annuaire::recenser(), 'courriel' ) ), true ),
 	'une adresse rétablie revient dans l\'annuaire', array( $ann_vers, Notice_Archeomed_Annuaire::retires() ) );
+
+// Supprimer définitivement : seulement une adresse retirée ; elle quitte la
+// liste des retirées, ne revient pas, et rien d'elle ne reste écrit.
+$ann_vers = $ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retablir', 'supprimer' => 'jeanne@annuaire.test' ) );
+na_verifier( false === strpos( $ann_vers, 'na_annuaire=supprime' ) && array() === Notice_Archeomed_Annuaire::supprimes(),
+	'une adresse qui n\'est pas retirée ne se supprime pas', array( $ann_vers, Notice_Archeomed_Annuaire::supprimes() ) );
+$ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retirer', 'courriel' => 'jeanne@annuaire.test', 'nom' => 'd’Arc', 'prenom' => 'Jeanne' ) );
+ob_start();
+Notice_Archeomed_Annuaire::onglet();
+$rendu_a_supprimer = ob_get_clean();
+na_verifier( false !== strpos( $rendu_a_supprimer, 'name="supprimer" value="jeanne@annuaire.test"' )
+	&& false !== strpos( $rendu_a_supprimer, 'Supprimer définitivement Jeanne d’Arc' ),
+	'une adresse retirée porte un bouton pour la supprimer définitivement', $rendu_a_supprimer );
+$ann_vers = $ann_jouer( array( '_wpnonce' => $ann_jeton, 'sens' => 'retablir', 'supprimer' => 'JEANNE@annuaire.test' ) );
+$ann_ids[] = na_notice( array( 'commune' => 'Honfleur', 'resp_nom' => 'd’Arc', 'resp_prenom' => 'Jeanne', 'resp_email' => 'jeanne@ANNUAIRE.test' ) );
+$_GET['na_annuaire'] = 'supprime';
+ob_start();
+Notice_Archeomed_Annuaire::onglet();
+$rendu_supprime = ob_get_clean();
+unset( $_GET['na_annuaire'] );
+$ann_reste = wp_json_encode( array( get_option( Notice_Archeomed_Annuaire::OPTION_RETIRES ), get_option( Notice_Archeomed_Annuaire::OPTION_SUPPRIMES ) ) );
+na_verifier( false !== strpos( $ann_vers, 'na_annuaire=supprime' ) && array() === Notice_Archeomed_Annuaire::retires()
+	&& 1 === count( Notice_Archeomed_Annuaire::supprimes() ) && false === stripos( $ann_reste, 'jeanne' ) && false === stripos( $ann_reste, 'Arc' )
+	&& ! in_array( 'jeanne@annuaire.test', array_map( 'strtolower', array_column( Notice_Archeomed_Annuaire::recenser(), 'courriel' ) ), true )
+	&& false === stripos( implode( "\n", Notice_Archeomed_Annuaire::lignes_sympa( Notice_Archeomed_Annuaire::recenser() ) ), 'jeanne@' )
+	&& false === stripos( $rendu_supprime, 'jeanne@annuaire.test' ) && false === strpos( $rendu_supprime, 'Retirées de l’annuaire' )
+	&& false !== strpos( $rendu_supprime, '1 adresse supprimée définitivement' ) && false !== strpos( $rendu_supprime, 'supprimée définitivement : elle ne reviendra plus' )
+	&& 'jeanne@annuaire.test' === get_post_meta( $ann_ids[2], '_na_donnees', true )['coresp_email'],
+	'une adresse supprimée quitte les retirées, ne revient pas avec une nouvelle notice, ne reste écrite nulle part, et ses notices ne changent pas',
+	array( $ann_vers, $ann_reste, $rendu_supprime ) );
 remove_filter( 'wp_redirect', $ann_sortie );
 remove_filter( 'wp_die_handler', $ann_mourir );
 $_POST = $_REQUEST = array();
 wp_set_current_user( $ann_utilisateur );
 delete_option( Notice_Archeomed_Annuaire::OPTION_RETIRES );
+delete_option( Notice_Archeomed_Annuaire::OPTION_SUPPRIMES );
 foreach ( $ann_ids as $ann_id ) {
 	wp_delete_post( $ann_id, true );
 }

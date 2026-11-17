@@ -22,6 +22,11 @@
  * quand la personne dépose une nouvelle notice, jusqu'à ce qu'on la
  * rétablisse.
  *
+ * Une adresse retirée peut enfin être supprimée définitivement : elle quitte
+ * la liste des retirées, ne se rétablit plus, et reste écartée pour de bon.
+ * On n'en garde que l'empreinte, qui suffit à la reconnaître : ni l'adresse,
+ * ni le nom, ni la date. Les notices, là encore, ne changent pas.
+ *
  * @package notice-archeomed
  */
 
@@ -42,6 +47,9 @@ class Notice_Archeomed_Annuaire {
 
 	/** Les adresses retirées : adresse en minuscules ⇒ nom, prénom, date. */
 	const OPTION_RETIRES = 'na_annuaire_retires';
+
+	/** Les adresses supprimées définitivement : empreinte ⇒ vrai, rien d'autre. */
+	const OPTION_SUPPRIMES = 'na_annuaire_supprimes';
 
 	/** Les personnes d'une notice : préfixe des champs ⇒ rôle. */
 	const ROLES = array(
@@ -128,7 +136,14 @@ class Notice_Archeomed_Annuaire {
 			}
 		} while ( count( (array) $lignes ) === 200 );
 
-		$personnes = array_values( array_diff_key( $personnes, self::retires() ) );
+		$personnes = array_diff_key( $personnes, self::retires() );
+		$supprimes = self::supprimes();
+		if ( ! empty( $supprimes ) ) {
+			$personnes = array_filter( $personnes, function ( $cle ) use ( $supprimes ) {
+				return ! isset( $supprimes[ self::empreinte( $cle ) ] );
+			}, ARRAY_FILTER_USE_KEY );
+		}
+		$personnes = array_values( $personnes );
 		usort( $personnes, function ( $a, $b ) {
 			$ordre = strcmp( self::cle_de_tri( $a['nom'] ), self::cle_de_tri( $b['nom'] ) );
 			if ( 0 === $ordre ) {
@@ -172,6 +187,41 @@ class Notice_Archeomed_Annuaire {
 		if ( ! isset( $retires[ $cle ] ) ) {
 			return false;
 		}
+		unset( $retires[ $cle ] );
+		update_option( self::OPTION_RETIRES, $retires, false );
+		return true;
+	}
+
+	/**
+	 * L'empreinte d'une adresse, sans égard à la casse : elle reconnaît une
+	 * adresse supprimée sans la garder écrite.
+	 */
+	public static function empreinte( $courriel ) {
+		return hash( 'sha256', 'na-annuaire|' . strtolower( trim( (string) $courriel ) ) );
+	}
+
+	/** Les empreintes des adresses supprimées définitivement. */
+	public static function supprimes() {
+		$supprimes = get_option( self::OPTION_SUPPRIMES, array() );
+		return is_array( $supprimes ) ? $supprimes : array();
+	}
+
+	/**
+	 * Supprime définitivement une adresse déjà retirée : elle quitte la
+	 * liste des retirées, avec son nom, et seule son empreinte demeure pour
+	 * l'écarter. Une adresse qui n'est pas retirée ne se supprime pas : on
+	 * ne passe pas de l'annuaire à l'oubli sans l'étape où l'on peut encore
+	 * revenir.
+	 */
+	public static function supprimer( $courriel ) {
+		$retires = self::retires();
+		$cle     = strtolower( trim( (string) $courriel ) );
+		if ( '' === $cle || ! isset( $retires[ $cle ] ) ) {
+			return false;
+		}
+		$supprimes = self::supprimes();
+		$supprimes[ self::empreinte( $cle ) ] = true;
+		update_option( self::OPTION_SUPPRIMES, $supprimes, false );
 		unset( $retires[ $cle ] );
 		update_option( self::OPTION_RETIRES, $retires, false );
 		return true;
@@ -230,16 +280,19 @@ class Notice_Archeomed_Annuaire {
 		$retires   = self::retires();
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- simple avis après redirection.
 		$fait = isset( $_GET['na_annuaire'] ) ? sanitize_key( wp_unslash( $_GET['na_annuaire'] ) ) : '';
-		if ( 'retire' === $fait || 'retabli' === $fait ) {
-			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( 'retire' === $fait
-				? "La personne est retirée de l’annuaire et des exports. Ses notices n’ont pas changé."
-				: "La personne est rétablie dans l’annuaire." ) . '</p></div>';
+		$avis = array(
+			'retire'   => 'La personne est retirée de l’annuaire et des exports. Ses notices n’ont pas changé.',
+			'retabli'  => 'La personne est rétablie dans l’annuaire.',
+			'supprime' => 'L’adresse est supprimée définitivement : elle ne reviendra plus dans l’annuaire. Ses notices n’ont pas changé.',
+		);
+		if ( isset( $avis[ $fait ] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $avis[ $fait ] ) . '</p></div>';
 		}
 		echo '<h2>' . esc_html__( 'Annuaire des auteurs', 'notice-archeomed' ) . '</h2>';
 		echo '<p class="description" style="max-width:46em">' . esc_html(
 			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable y figure comme déposant\u{00A0}; avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans nom." ) . '</p>';
 		if ( empty( $personnes ) ) {
-			echo '<p>' . esc_html( empty( $retires ) ? 'Aucune notice reçue pour l’instant.'
+			echo '<p>' . esc_html( empty( $retires ) && empty( self::supprimes() ) ? 'Aucune notice reçue pour l’instant.'
 				: 'Personne à montrer : toutes les adresses des notices sont retirées.' ) . '</p>';
 			self::liste_des_retires( $retires );
 			return;
@@ -306,7 +359,9 @@ class Notice_Archeomed_Annuaire {
 
 	/** Les adresses retirées, chacune avec de quoi la rétablir. */
 	private static function liste_des_retires( $retires ) {
+		$supprimes = count( self::supprimes() );
 		if ( empty( $retires ) ) {
+			self::dire_les_supprimes( $supprimes );
 			return;
 		}
 		uasort( $retires, function ( $a, $b ) {
@@ -325,33 +380,61 @@ class Notice_Archeomed_Annuaire {
 		foreach ( array( 'Nom', 'Prénom', 'Courriel', 'Retirée le' ) as $titre ) {
 			echo '<th scope="col">' . esc_html( $titre ) . '</th>';
 		}
-		echo '<th scope="col"><span class="screen-reader-text">' . esc_html__( 'Rétablir', 'notice-archeomed' ) . '</span></th></tr></thead><tbody>';
+		echo '<th scope="col"><span class="screen-reader-text">' . esc_html__( 'Rétablir', 'notice-archeomed' ) . '</span></th>'
+			. '<th scope="col"><span class="screen-reader-text">' . esc_html__( 'Supprimer définitivement', 'notice-archeomed' ) . '</span></th></tr></thead><tbody>';
 		foreach ( $retires as $cle => $r ) {
 			$courriel = isset( $r['courriel'] ) ? (string) $r['courriel'] : (string) $cle;
+			$qui      = trim( ( $r['prenom'] ?? '' ) . ' ' . ( $r['nom'] ?? '' ) );
+			$qui      = '' !== $qui ? $qui . ' (' . $courriel . ')' : $courriel;
 			echo '<tr><th scope="row">' . esc_html( '' !== ( $r['nom'] ?? '' ) ? $r['nom'] : '—' ) . '</th>'
 				. '<td>' . esc_html( $r['prenom'] ?? '' ) . '</td>'
 				. '<td>' . esc_html( $courriel ) . '</td>'
 				. '<td>' . esc_html( ! empty( $r['date'] ) ? mysql2date( 'j F Y', $r['date'] ) : '' ) . '</td>'
 				. '<td><button type="submit" class="button-link" name="courriel" value="' . esc_attr( $courriel ) . '"'
 				. ' aria-label="' . esc_attr( 'Rétablir ' . $courriel . ' dans l’annuaire' ) . '">'
-				. esc_html__( 'Rétablir', 'notice-archeomed' ) . '</button></td></tr>';
+				. esc_html__( 'Rétablir', 'notice-archeomed' ) . '</button></td>'
+				// Le bouton porte l'adresse sous un autre nom : c'est lui qui
+				// dit le geste, le formulaire étant celui du rétablissement.
+				. '<td><button type="submit" class="button-link button-link-delete" name="supprimer" value="' . esc_attr( $courriel ) . '"'
+				. ' aria-label="' . esc_attr( 'Supprimer définitivement ' . $qui ) . '"'
+				. ' data-question="' . esc_attr( 'Supprimer définitivement ' . $qui . ' ? L’adresse ne reviendra plus dans l’annuaire, même avec une nouvelle notice, et ne pourra plus être rétablie. Ses notices ne changent pas.' ) . '"'
+				. ' onclick="return confirm(this.dataset.question);">'
+				. esc_html__( 'Supprimer définitivement', 'notice-archeomed' ) . '</button></td></tr>';
 		}
 		echo '</tbody></table></form>';
+		self::dire_les_supprimes( $supprimes );
+	}
+
+	/** Combien d'adresses sont supprimées : on ne peut en dire plus. */
+	private static function dire_les_supprimes( $combien ) {
+		if ( $combien > 0 ) {
+			echo '<p class="description" style="max-width:46em">' . esc_html( sprintf(
+				_n( '%s adresse supprimée définitivement reste écartée ; on n’en garde que l’empreinte.',
+					'%s adresses supprimées définitivement restent écartées ; on n’en garde que l’empreinte.', $combien, 'notice-archeomed' ),
+				number_format_i18n( $combien ) ) ) . '</p>';
+		}
 	}
 
 	/**
-	 * Retire une personne de l'annuaire, ou l'y remet, puis revient à
-	 * l'onglet. Droit de régler et jeton exigés.
+	 * Retire une personne de l'annuaire, l'y remet, ou supprime
+	 * définitivement une adresse retirée, puis revient à l'onglet. Droit de
+	 * régler et jeton exigés.
 	 */
 	public function retirer_ou_retablir() {
 		self::verifier( self::ACTION_RETIRER );
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- jeton vérifié ci-dessus.
-		$courriel = isset( $_POST['courriel'] ) ? sanitize_email( wp_unslash( $_POST['courriel'] ) ) : '';
+		$courriel = isset( $_POST['courriel'] ) && is_string( $_POST['courriel'] ) ? sanitize_email( wp_unslash( $_POST['courriel'] ) ) : '';
 		$sens     = isset( $_POST['sens'] ) && 'retablir' === $_POST['sens'] ? 'retablir' : 'retirer';
+		if ( isset( $_POST['supprimer'] ) && is_string( $_POST['supprimer'] ) ) {
+			$sens     = 'supprimer';
+			$courriel = sanitize_email( wp_unslash( $_POST['supprimer'] ) );
+		}
 		$nom      = isset( $_POST['nom'] ) ? wp_unslash( $_POST['nom'] ) : '';
 		$prenom   = isset( $_POST['prenom'] ) ? wp_unslash( $_POST['prenom'] ) : '';
 		// phpcs:enable
-		if ( 'retablir' === $sens ) {
+		if ( 'supprimer' === $sens ) {
+			$fait = self::supprimer( $courriel ) ? 'supprime' : '';
+		} elseif ( 'retablir' === $sens ) {
 			$fait = self::retablir( $courriel ) ? 'retabli' : '';
 		} else {
 			$fait = self::retirer( $courriel, is_string( $nom ) ? $nom : '', is_string( $prenom ) ? $prenom : '' ) ? 'retire' : '';

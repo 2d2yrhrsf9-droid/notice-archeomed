@@ -103,7 +103,7 @@ Le type de contenu `na_notice`, la file d'attente et tout l'écran « Notices re
 - **Notice_Archeomed_Rangement** : la tâche qui range sur sDrive les fichiers des notices envoyées, sous un verrou et dans un budget de temps ; `dossier_de()` donne le dossier d'une notice, fixé au premier rangement.
 - **Notice_Archeomed_Export** : la tâche qui écrit le dossier Métopes d'une rubrique dans le dossier du numéro sur sDrive, une figure par pas, et tient la liste de ce que chaque rubrique y a écrit.
 - **Notice_Archeomed_Stockage** : l'onglet Stockage, la place prise catégorie par catégorie (originaux, aperçus, JPEG tirés des TIFF, autorisations, Word…), d'après les notices qui désignent chaque fichier.
-- **Notice_Archeomed_Annuaire** : l'onglet Annuaire, les personnes nommées dans les notices, une ligne par adresse, ses exports pour Sympa et en CSV, le retrait et le rétablissement d'une personne.
+- **Notice_Archeomed_Annuaire** : l'onglet Annuaire, les personnes nommées dans les notices, une ligne par adresse, ses exports pour Sympa et en CSV, le retrait et le rétablissement d'une personne, la suppression définitive d'une adresse retirée.
 - **Notice_Archeomed_Confidentialite** : l'export et l'effacement des données personnelles par les outils de WordPress (l'effacement ne supprime aucune notice).
 - **Notice_Archeomed_Nommage** : la règle des noms de fichiers (sans accent, sans espace, souligné pour séparateur) et la construction sur le modèle des réglages (`{numero}_{rubrique}_{commune}_{lieu_dit}_{annee}_Fig_{n}`).
 - **Notice_Archeomed_MiseAJour** : glisse la dernière release GitHub dans le transient des mises à jour de WordPress.
@@ -235,6 +235,7 @@ Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `sais
 | `na_disque_connu`, `na_disque_recu` | la dernière mesure du disque, et ce que les dépôts ont reçu depuis |
 | `na_derniers_refus` | les vingt derniers envois refusés : heure, raison, cause, âge de la page, connexion |
 | `na_annuaire_retires` | les adresses retirées de l'annuaire |
+| `na_annuaire_supprimes` | les empreintes des adresses supprimées définitivement de l'annuaire |
 
 ### Transients
 
@@ -254,7 +255,7 @@ Pour chaque clé : une constante de `wp-config.php` si elle existe (`NA_TURNSTIL
 
 ### Onglets
 
-Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Relecture · Courriel · Feuille de styles · Mises à jour · Hébergement · Stockage · Annuaire · Documentation. Chaque onglet a son propre formulaire. L'onglet Hébergement a pour clé `diagnostic`, son ancien nom : il dit l'état du serveur, relie le site à sDrive (« Relier le site à sDrive », « Parcourir », « Ranger maintenant »), montre où en sont rangement et export, et liste les derniers envois refusés. Stockage dit la place prise par catégorie et les notices les plus lourdes ; Annuaire liste les personnes, s'emporte pour Sympa ou en CSV, et retire ou rétablit une personne. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
+Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métopes · Formulaire · Accessibilité · Candidats à Pactols · Relecture · Courriel · Feuille de styles · Mises à jour · Hébergement · Stockage · Annuaire · Documentation. Chaque onglet a son propre formulaire. L'onglet Hébergement a pour clé `diagnostic`, son ancien nom : il dit l'état du serveur, relie le site à sDrive (« Relier le site à sDrive », « Parcourir », « Ranger maintenant »), montre où en sont rangement et export, et liste les derniers envois refusés. Stockage dit la place prise par catégorie et les notices les plus lourdes ; Annuaire liste les personnes, s'emporte pour Sympa ou en CSV, retire ou rétablit une personne, et supprime définitivement une adresse retirée. Un onglet est une méthode `onglet_<clé>()` de la classe des réglages ; en ajouter un, c'est ajouter sa clé dans `onglets()` et sa méthode.
 
 ### Clés principales de `notice_archeomed_options`
 

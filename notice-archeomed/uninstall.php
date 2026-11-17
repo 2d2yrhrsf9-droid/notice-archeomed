@@ -42,6 +42,7 @@ foreach ( array(
 	'na_disque_connu',
 	'na_disque_recu',
 	'na_annuaire_retires',
+	'na_annuaire_supprimes',
 ) as $option ) {
 	delete_option( $option );
 }
