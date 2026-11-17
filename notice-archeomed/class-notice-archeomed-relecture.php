@@ -1226,7 +1226,7 @@ class Notice_Archeomed_Relecture {
 		$en_v = Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === Notice_Archeomed_Pactols::rubrique_actuelle( $principale );
 		if ( $en_v || $tout ) {
 			echo '<p class="na-rel-champ" id="na-rel-matiere-bloc" data-rubrique="' . esc_attr( Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT ) . '"' . ( $en_v ? '' : ' hidden' ) . '>'
-				. '<label for="na-rel-matiere">' . esc_html__( 'Matière de l’installation artisanale', 'notice-archeomed' ) . '</label><select id="na-rel-matiere" name="rubrique_matiere"><option value="">—</option>';
+				. '<label for="na-rel-matiere">' . esc_html__( 'Sous-rubrique', 'notice-archeomed' ) . '</label><select id="na-rel-matiere" name="rubrique_matiere"><option value="">—</option>';
 			foreach ( Notice_Archeomed_Pactols::MATIERES as $lettre => $matiere ) {
 				echo '<option value="' . esc_attr( $lettre ) . '"' . selected( $lettre, Notice_Archeomed_Pactols::matiere_de( $d ), false ) . '>' . esc_html( $lettre . ' — ' . $matiere ) . '</option>';
 			}

@@ -644,6 +644,8 @@ jobs:
             $c->setAccessible( true );
             $lien = $c->invoke( $p, $id );
             if ( false === strpos( $lien, "na_corriger=1" ) || false === strpos( $lien, "post=" . $id ) ) { $echecs[] = "le lien de correction du courriel : " . $lien; }
+            $ecrire = $c->invoke( $p, $id, array( "resp_email" => "a@exemple.fr", "coresp_email" => "b+x@exemple.fr", "coauteur_email" => "a@exemple.fr", "deposant_email" => "pas une adresse" ), "[CORRIGÉE] Notice Archéomed - Caen (14)" );
+            if ( false === strpos( $ecrire, "mailto:a@exemple.fr,b%2Bx@exemple.fr?subject=Notice%20Arch" ) || false !== strpos( $ecrire, "CORRIG" ) || false === strpos( $ecrire, "Écrire aux responsables" ) ) { $echecs[] = "le lien vers les responsables : " . $ecrire; }
             $deux = array();
             foreach ( array( 1, 2 ) as $i ) {
               $n = wp_insert_post( array( "post_type" => "na_notice", "post_status" => "private", "post_title" => "Homonyme " . $i ) );

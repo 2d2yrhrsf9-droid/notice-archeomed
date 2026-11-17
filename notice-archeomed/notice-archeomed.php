@@ -1790,8 +1790,11 @@ class Notice_Archeomed_Pactols {
 	/**
 	 * L'adresse publiée de la page qui porte le formulaire, lue dans le site.
 	 *
-	 * La première page publiée qui contient le shortcode ; à défaut, un autre
+	 * La dernière page publiée qui contient le shortcode ; à défaut, un autre
 	 * contenu publié. Chaîne vide si aucune ne le porte.
+	 *
+	 * La dernière, non la première : une page d'essai plus ancienne, restée
+	 * en ligne, prenait la place du formulaire dans les liens de correction.
 	 */
 	private function page_du_formulaire() {
 		static $adresse = null;
@@ -1801,7 +1804,7 @@ class Notice_Archeomed_Pactols {
 		global $wpdb;
 		$id = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type NOT IN ( 'revision', 'nav_menu_item', %s )"
-			. " AND post_content LIKE %s ORDER BY ( post_type = 'page' ) DESC, ID ASC LIMIT 1",
+			. " AND post_content LIKE %s ORDER BY ( post_type = 'page' ) DESC, post_date DESC, ID DESC LIMIT 1",
 			Notice_Archeomed_File::CPT, '%' . $wpdb->esc_like( '[notice_archeomed_pactols' ) . '%' ) );
 		$lien    = $id ? get_permalink( $id ) : '';
 		$adresse = is_string( $lien ) ? $lien : '';
@@ -2200,6 +2203,12 @@ class Notice_Archeomed_Pactols {
 			'imagick'    => Notice_Archeomed_Paquet::imagick_disponible(),
 			// Le lecteur de PDF (pdf.js) ne se charge que si un auteur choisit un PDF.
 			'pdfjs'      => Notice_Archeomed_Paquet::imagick_disponible() ? '' : plugins_url( 'assets/pdfjs/', __FILE__ ),
+			// Le lecteur de TIFF, chargé à la demande quand Imagick est là : un
+			// TIFF trop lourd se passe encore en JPEG dans le navigateur.
+			'utif'       => array(
+				add_query_arg( 'ver', '2.1.0', plugins_url( 'assets/utif/pako_inflate.min.js', __FILE__ ) ),
+				add_query_arg( 'ver', '3.1.0', plugins_url( 'assets/utif/UTIF.js', __FILE__ ) ),
+			),
 			'pixelsMax'  => 36000000,
 			'hr'         => array(
 				'dpi'       => (int) Notice_Archeomed_Settings::get( 'hr_photo_dpi' ),
@@ -2549,7 +2558,7 @@ class Notice_Archeomed_Pactols {
 			'departement'         => array( 'na-departement', 'Indiquez ce qui figure entre parenthèses, le plus souvent le département' ),
 			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez un lieu-dit, une adresse ou le nom du projet' ),
 			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
-			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la matière de l’installation artisanale (A, B ou C)' ),
+			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la sous-rubrique de l’installation artisanale (A, B ou C)' ),
 			'nature'              => array( 'na-nature-1', 'Cochez au moins une nature d’opération' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
@@ -3210,6 +3219,8 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-depot-ou { color: var(--na-sourd); font-size: var(--na-t-s); }
 			@media (pointer: coarse) { .na-form#na-form .na-depot-ou { display: none; } }
 			.na-form#na-form .na-fichiers-refuses:empty { display: none; }
+			.na-form#na-form .na-alleger { display: flex; flex-wrap: wrap; gap: var(--na-e2); margin-top: var(--na-e2); }
+			.na-form#na-form .na-alleger .na-ajout { margin-top: 0; border-style: solid; }
 			.na-form#na-form .na-fichiers-refuses { margin-top: var(--na-e2); padding: var(--na-e2) var(--na-e3); font-size: var(--na-t-s);
 				color: var(--na-erreur); background: var(--na-erreur-fond); border-left: 3px solid var(--na-erreur); }
 			.na-form#na-form .na-filelist { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--na-e3); margin-top: var(--na-e3); }
@@ -3551,10 +3562,10 @@ class Notice_Archeomed_Pactols {
 				</div>
 				<?php $matiere_reprise = strtoupper( $this->repris( 'rubrique_matiere' ) ); ?>
 				<div class="na-champ" id="na-matiere-bloc" data-rubrique="<?php echo esc_attr( self::RUBRIQUE_ARTISANAT ); ?>"<?php echo self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $this->repris( 'rubrique_principale' ) ) ? '' : ' hidden'; ?>>
-					<label for="na-matiere">Matière <span class="na-requis" aria-hidden="true">*</span></label>
-					<p class="na-help" id="na-matiere-aide">La rubrique V se divise par matière&nbsp;: celle de l’installation.</p>
+					<label for="na-matiere">Sous-rubrique <span class="na-requis" aria-hidden="true">*</span></label>
+					<p class="na-help" id="na-matiere-aide">Choisissez selon ce que l’atelier fabriquait ou exploitait&nbsp;: céramique ou verre (A), pierre, minerai ou métal (B), autre chose (C).</p>
 					<select id="na-matiere" name="rubrique_matiere" aria-required="true" aria-describedby="na-matiere-aide">
-						<option value="">Choisir une matière…</option>
+						<option value="">Choisir une sous-rubrique…</option>
 						<?php foreach ( self::MATIERES as $lettre => $matiere ) : ?>
 							<option value="<?php echo esc_attr( $lettre ); ?>"<?php echo $lettre === $matiere_reprise ? ' selected' : ''; ?>><?php echo esc_html( $lettre . ' – ' . $matiere ); ?></option>
 						<?php endforeach; ?>
@@ -3842,7 +3853,10 @@ class Notice_Archeomed_Pactols {
 					<input type="file" name="illustrations[]" id="na-illustrations" multiple accept=".jpg,.jpeg,.tiff,.tif,.pdf" aria-describedby="na-illus-aide">
 					<p class="na-depot-invite" aria-hidden="true"><span class="na-bouton-faux">Choisir des fichiers</span><span class="na-depot-ou">ou faites-les glisser ici</span></p>
 				</div>
-				<p class="na-fichiers-refuses" id="na-fichiers-refuses" role="alert"></p>
+				<div class="na-refus" id="na-refus">
+					<p class="na-fichiers-refuses" id="na-fichiers-refuses" role="alert"></p>
+					<div class="na-alleger" id="na-alleger" hidden></div>
+				</div>
 				<ul class="na-filelist" id="na-filelist"></ul>
 				<button type="button" class="na-ajout na-ajout-figure" id="na-ajout-figure" aria-describedby="na-illus-aide" hidden><span aria-hidden="true">+</span> Ajouter une figure</button>
 
@@ -5426,8 +5440,9 @@ class Notice_Archeomed_Pactols {
 				var court = Math.round(Math.min(CONV.hr.largeurCm, CONV.hr.hauteurCm) * CONV.hr.dpi / 2.54);
 				return Math.min(grand / Math.max(w, h), court / Math.min(w, h));
 			}
-			function convertirLeTiff(f) {
-				var base = f.name.replace(/\.[^.]+$/, '');
+			// Le TIFF lu en entier, dans un canvas à sa pleine définition, avec la
+			// densité qu'il déclare (0 s'il n'en dit rien).
+			function decoderLeTiff(f) {
 				return lireLeBuffer(f).then(function (buf) {
 					var ifds = UTIF.decode(buf), ifd = ifds && ifds[0];
 					var w = ifd && ifd.t256 && ifd.t256[0], h = ifd && ifd.t257 && ifd.t257[0];
@@ -5442,6 +5457,16 @@ class Notice_Archeomed_Pactols {
 					var plein = document.createElement('canvas');
 					plein.width = w; plein.height = h;
 					plein.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h), 0, 0);
+					// La résolution, en pouces (2) ou en centimètres (3).
+					var x = ifd.t282 && ifd.t282[0], unite = ifd.t296 ? ifd.t296[0] : 2, dpi = 0;
+					if (x > 0 && (unite === 2 || unite === 3)) { dpi = Math.round(unite === 3 ? x * 2.54 : x); }
+					return { plein: plein, w: w, h: h, dpi: dpi };
+				});
+			}
+			function convertirLeTiff(f) {
+				var base = f.name.replace(/\.[^.]+$/, '');
+				return decoderLeTiff(f).then(function (t) {
+					var plein = t.plein, w = t.w, h = t.h;
 					// La haute définition : dans la boîte 10 × 15 cm à 300 ppp, tournée comme l'image.
 					var dpiHr = CONV.hr.dpi;
 					var echelleHr = Math.min(1, echelleDeLaBoiteHr(w, h));
@@ -5550,6 +5575,9 @@ class Notice_Archeomed_Pactols {
 			function messageDeConversion(f, erreur) {
 				var raison = erreur && erreur.message;
 				var fin = ' Enregistrez la figure vous-même en JPEG de bonne qualité, puis redéposez-la.';
+				if (raison === 'plafond' && peutSAlleger(f)) {
+					return guillemets(f.name) + ' ferait dépasser ' + moPlafond(MAX_TOTAL_SIZE) + ' en tout une fois converti.' + ALLEGER_FIN;
+				}
 				if (raison === 'delai') {
 					return guillemets(f.name) + ' est trop long à lire dans votre navigateur.' + fin;
 				}
@@ -5591,8 +5619,154 @@ class Notice_Archeomed_Pactols {
 						refreshFileInput();
 						majConseilsDuTexte();
 					}
-					refuses.textContent = (refuses.textContent ? refuses.textContent + ' ' : '') + messageDeConversion(f, erreur);
+					var phrase = messageDeConversion(f, erreur);
+					if (erreur && erreur.message === 'plafond') { proposerDAlleger(f, phrase); }
+					refuses.textContent = (refuses.textContent ? refuses.textContent + ' ' : '') + phrase;
 				});
+			}
+			// ── Un TIFF trop lourd, passé en JPEG de haute qualité ─────────
+			// Refusé pour son poids, un TIFF peut partir en JPEG à sa pleine
+			// définition, sans l'original : dix à vingt fois plus léger, et
+			// sans perte visible à l'impression. Le navigateur le fait sur un
+			// bouton, sous le refus ; le JPEG prend alors la place du TIFF,
+			// comme si l'auteur l'avait choisi lui-même. S'il ne tient pas
+			// encore, sa définition descend, jamais sous la norme des
+			// photographies.
+			var ALLEGER_FIN = ' En JPEG de haute qualité, sans l’original TIFF, l’image pèserait bien moins'
+				+ NBSP + ': le bouton ci-dessous la convertit.';
+			var refusZone = document.getElementById('na-refus');
+			var allegerEl = document.getElementById('na-alleger');
+			var aAlleger = [];
+			// Les refus encore à dire quand le JPEG allégé entre dans la liste.
+			var refusGardes = '';
+			// Sans Imagick, le lecteur de TIFF est déjà là ; avec lui, on ne le
+			// charge qu'au premier TIFF à alléger.
+			var ALLEGER_BASE = !!document.createElement('canvas').getContext && typeof Promise !== 'undefined'
+				&& (function () { try { new DataTransfer(); return true; } catch (e) { return false; } }());
+			var utifEnRoute = null;
+			function chargerUtif() {
+				if (typeof UTIF !== 'undefined') { return Promise.resolve(); }
+				if (!utifEnRoute) {
+					utifEnRoute = (CONV.utif || []).reduce(function (avant, src) {
+						return avant.then(function () {
+							return new Promise(function (ok, ko) {
+								var s = document.createElement('script');
+								s.src = src;
+								s.onload = ok;
+								s.onerror = function () { ko(new Error('illisible')); };
+								document.head.appendChild(s);
+							});
+						});
+					}, Promise.resolve()).then(function () {
+						if (typeof UTIF === 'undefined') { throw new Error('illisible'); }
+					}).catch(function (erreur) { utifEnRoute = null; throw erreur; });
+				}
+				return utifEnRoute;
+			}
+			function peutSAlleger(f) {
+				var ext = extOf(f.name);
+				return ALLEGER_BASE && !!allegerEl && (ext === 'tif' || ext === 'tiff')
+					&& (typeof UTIF !== 'undefined' || !!(CONV.utif && CONV.utif.length));
+			}
+			function proposerDAlleger(f, phrase) {
+				if (!peutSAlleger(f)) { return; }
+				aAlleger = aAlleger.filter(function (p) { return p.f !== f; });
+				aAlleger.push({ f: f, phrase: phrase });
+			}
+			function dessinerLesAllegements() {
+				if (!allegerEl) { return; }
+				allegerEl.textContent = '';
+				aAlleger.forEach(function (p) {
+					var b = document.createElement('button');
+					b.type = 'button';
+					b.className = 'na-ajout';
+					b.textContent = p.enCours ? 'Conversion de ' + guillemets(p.f.name) + ' en cours…' : 'Passer ' + guillemets(p.f.name) + ' en JPEG de haute qualité';
+					b.disabled = !!p.enCours;
+					b.addEventListener('click', function () { alleger(p); });
+					allegerEl.appendChild(b);
+				});
+				allegerEl.hidden = !aAlleger.length;
+			}
+			// Le JPEG le plus fin qui tienne dans la place : pleine définition
+			// d'abord, puis réduite par paliers, jusqu'à la norme au plus bas.
+			function allegerLeTiff(f, place) {
+				var base = f.name.replace(/\.[^.]+$/, '');
+				return chargerUtif().then(function () { return decoderLeTiff(f); }).then(function (t) {
+					var mini = Math.min(1, echelleDeLaBoiteHr(t.w, t.h)), echelle = 1, essais = 0;
+					function tour() {
+						var c = echelle >= 1 ? t.plein
+							: reduireLeCanvas(t.plein, Math.max(1, Math.round(t.w * echelle)), Math.max(1, Math.round(t.h * echelle)));
+						return enJpeg(c, 0.92).then(function (b) {
+							if (b.size <= place) { return { blob: b, echelle: echelle }; }
+							if (echelle <= mini || ++essais > 6) { throw new Error('lourd'); }
+							echelle = Math.max(mini, echelle * Math.sqrt(place / b.size) * 0.95);
+							return tour();
+						});
+					}
+					return tour().then(function (r) {
+						t.plein.width = t.plein.height = 1;
+						var dpi = t.dpi ? Math.round(t.dpi * r.echelle) : CONV.hr.dpi;
+						return etiqueterLeJpeg(r.blob, Math.max(72, Math.min(65535, dpi)), base + '.jpg');
+					}, function (erreur) {
+						t.plein.width = t.plein.height = 1;
+						throw erreur;
+					});
+				});
+			}
+			function alleger(p) {
+				var f = p.f;
+				function remplacer(texte) {
+					refuses.textContent = refuses.textContent.replace(p.phrase, texte);
+				}
+				if (decalage() + selected.length >= MAX_FILES) {
+					remplacer(guillemets(f.name) + NBSP + ': trois figures au plus en tout, retirez-en une avant de l’ajouter.');
+					return;
+				}
+				// La place qui reste, moins de quoi écrire la densité dans l'en-tête.
+				var place = Math.min(MAX_FILE_SIZE, MAX_TOTAL_SIZE - totalSelectedSize()) - 1024;
+				if (place < 102400) {
+					remplacer(guillemets(f.name) + NBSP + ': il ne reste plus de place, même pour un JPEG. Retirez une figure, ou envoyez celle-ci à part.');
+					return;
+				}
+				p.enCours = true;
+				dessinerLesAllegements();
+				annoncer('Conversion de ' + guillemets(f.name) + ' en JPEG…');
+				allegerLeTiff(f, place).then(function (jpeg) {
+					aAlleger = aAlleger.filter(function (q) { return q !== p; });
+					refusGardes = refuses.textContent.replace(p.phrase, '').replace(/\s+/g, ' ').trim();
+					annoncer(guillemets(f.name) + ' est passé en JPEG' + NBSP + ': ' + mo(jpeg.size) + ' au lieu de ' + mo(f.size) + '.');
+					var dt = new DataTransfer();
+					dt.items.add(jpeg);
+					fileInput.files = dt.files;
+					fileInput.dispatchEvent(new Event('change'));
+				}).catch(function (erreur) {
+					p.enCours = false;
+					var raison = erreur && erreur.message;
+					if (raison === 'lourd') {
+						remplacer(guillemets(f.name) + ' reste trop lourd, même en JPEG' + NBSP + ': retirez une autre figure, ou envoyez celle-ci à part.');
+					} else if (raison === 'grand') {
+						remplacer(guillemets(f.name) + ' est trop grand pour être converti dans le navigateur (plus de ' + entier(CONV.pixelsMax / 1000000) + NBSP + 'millions de pixels). Enregistrez-le vous-même en JPEG, ou envoyez-le à part.');
+					} else {
+						remplacer(guillemets(f.name) + ' n’a pas pu être lu par votre navigateur. Enregistrez-le vous-même en JPEG, puis redéposez-le.');
+					}
+					dessinerLesAllegements();
+				});
+			}
+			// Le refus se dit là où l'on ajoute : sous la dernière carte quand il
+			// y en a, sous la zone de dépôt sinon. Il ne se cache plus au-dessus
+			// des figures, où on le découvrait des minutes plus tard. Un bouton
+			// d'allègement ne vit qu'avec la phrase qui le propose.
+			function placerLesRefus() {
+				if (!refusZone) { return; }
+				aAlleger = aAlleger.filter(function (p) { return refuses.textContent.indexOf(p.phrase) !== -1; });
+				dessinerLesAllegements();
+				if (!refuses.textContent) { return; }
+				var avant = selected.length ? ajoutFigure : fileList;
+				if (refusZone.nextElementSibling !== avant) { avant.parentNode.insertBefore(refusZone, avant); }
+				try { refusZone.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { refusZone.scrollIntoView(false); }
+			}
+			if (refusZone && window.MutationObserver) {
+				new MutationObserver(placerLesRefus).observe(refuses, { childList: true, characterData: true, subtree: true });
 			}
 			// ── Les figures déjà déposées, quand on corrige une notice ─────
 			// Leurs cartes viennent du serveur, avant celles des fichiers
@@ -6664,8 +6838,17 @@ class Notice_Archeomed_Pactols {
 						refused.push(guillemets(f.name) + ' : ce navigateur ne sait pas convertir un ' + extOf(f.name).toUpperCase() + '. Enregistrez la figure en JPEG, puis redéposez-la.');
 						return;
 					}
-					if (f.size > MAX_FILE_SIZE) { refused.push(guillemets(f.name) + ' dépasse ' + moPlafond(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.'); return; }
-					if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) { refused.push(guillemets(f.name) + ' ferait dépasser ' + moPlafond(MAX_TOTAL_SIZE) + ' en tout.'); return; }
+					var trop = '';
+					if (f.size > MAX_FILE_SIZE) {
+						trop = guillemets(f.name) + ' dépasse ' + moPlafond(MAX_FILE_SIZE) + ', le plus que le serveur accepte par fichier.';
+					} else if ((totalSelectedSize() + f.size) > MAX_TOTAL_SIZE) {
+						trop = guillemets(f.name) + ' ferait dépasser ' + moPlafond(MAX_TOTAL_SIZE) + ' en tout.';
+					}
+					if (trop) {
+						if (peutSAlleger(f)) { trop += ALLEGER_FIN; proposerDAlleger(f, trop); }
+						refused.push(trop);
+						return;
+					}
 					selected.push(f);
 					ajoutes.push(f);
 					if (aConvertir(f)) { etatDe(f).conv = { etat: 'cours' }; }
@@ -6704,7 +6887,8 @@ class Notice_Archeomed_Pactols {
 				}
 				rattacher();
 				refreshFileInput();
-				refuses.textContent = refused.join(' ');
+				refuses.textContent = [refusGardes].concat(refused).filter(Boolean).join(' ');
+				refusGardes = '';
 				majConseilsDuTexte();
 				ajoutes.forEach(function (f) { if (etatDe(f).conv && etatDe(f).conv.etat === 'cours') { lancerLaConversion(f); } });
 				// La définition se lit dans l'en-tête, sans charger l'image.
@@ -9726,7 +9910,7 @@ class Notice_Archeomed_Pactols {
 		$entete_lines = array();
 		$entete_lines[] = $this->meta_line( 'Rubrique principale', $d['rubrique_principale'] );
 		if ( '' !== self::matiere_de( $d ) ) {
-			$entete_lines[] = $this->meta_line( 'Matière', self::matiere_de( $d ) . ' – ' . self::MATIERES[ self::matiere_de( $d ) ] );
+			$entete_lines[] = $this->meta_line( 'Sous-rubrique', self::matiere_de( $d ) . ' – ' . self::MATIERES[ self::matiere_de( $d ) ] );
 		}
 		if ( '' !== $d['renvoi_1'] ) {
 			$entete_lines[] = $this->meta_line( 'Rubrique secondaire', $d['renvoi_1'] );
@@ -10430,7 +10614,7 @@ class Notice_Archeomed_Pactols {
 		if ( isset( $d['rubrique_principale'] ) && self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( $d['rubrique_principale'] )
 			&& '' === self::matiere_de( $d ) ) {
 			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER,
-				array( array( 'text' => 'Matière à choisir (A, B ou C)', 'b' => true ) ) );
+				array( array( 'text' => 'Sous-rubrique à choisir (A, B ou C)', 'b' => true ) ) );
 		}
 
 		// 4 bis à 5. Les métadonnées de l'opération, telles qu'elles
@@ -11655,7 +11839,7 @@ class Notice_Archeomed_Pactols {
 		}
 		$corps = $notice;
 		if ( $id ) {
-			$corps = $this->correction_pour_la_redaction( $id ) . $corps;
+			$corps = $this->correction_pour_la_redaction( $id, $d, $subject ) . $corps;
 		}
 		if ( ! empty( $legeres ) || ! empty( $restees ) ) {
 			$corps = $this->avis_des_illustrations( count( $legeres ), $restees, $id ) . $corps;
@@ -12402,12 +12586,36 @@ class Notice_Archeomed_Pactols {
 	 * un mot-clé à ajouter, une phrase à reprendre, et le Word se refait.
 	 *
 	 * Il n'était que sur la fiche, d'où l'on ne savait pas qu'il existait.
+	 *
+	 * À côté, un lien qui ouvre un message à toutes les adresses de la
+	 * notice — responsable, correspondant, coauteur, déposant —, l'objet
+	 * déjà rempli : écrire aux auteurs ne demande plus de recopier quatre
+	 * adresses.
 	 */
-	private function correction_pour_la_redaction( $id ) {
+	private function correction_pour_la_redaction( $id, $d = array(), $objet = '' ) {
+		$adresses = array_values( array_unique( array_filter( array(
+			isset( $d['resp_email'] ) ? (string) $d['resp_email'] : '',
+			isset( $d['coresp_email'] ) ? (string) $d['coresp_email'] : '',
+			isset( $d['coauteur_email'] ) ? (string) $d['coauteur_email'] : '',
+			isset( $d['deposant_email'] ) ? (string) $d['deposant_email'] : '',
+		), 'is_email' ) ) );
+		$ecrire = '';
+		if ( ! empty( $adresses ) ) {
+			// Sans « [CORRIGÉE] » ni « [CORRECTION de …] » : ces marques
+			// servent au tri de la rédaction, non aux auteurs.
+			$objet  = trim( (string) preg_replace( '/^(\[[^\]]*\]\s*)+/u', '', (string) $objet ) );
+			$mailto = 'mailto:' . implode( ',', array_map( function ( $a ) {
+				return str_replace( '%40', '@', rawurlencode( $a ) );
+			}, $adresses ) ) . ( '' !== $objet ? '?subject=' . rawurlencode( $objet ) : '' );
+			$ecrire = '<br><a href="' . esc_url( $mailto, array( 'mailto' ) ) . '">'
+				. esc_html( _n( 'Écrire au responsable de la notice', 'Écrire aux responsables de la notice', count( $adresses ), 'notice-archeomed' ) )
+				. '</a> — ' . esc_html( implode( ', ', $adresses ) ) . '.';
+		}
 		return '<div style="background:#f6f7f7;border:1px solid #c3c4c7;padding:12px 16px;margin:0 0 14px;">'
 			. '<a href="' . esc_url( Notice_Archeomed_File::lien_pour_corriger( $id ) ) . '">Corriger cette notice dans le formulaire</a>'
 			. ' — texte, mots-clés, métadonnées. La notice garde sa référence et son document Word est refait ;'
-			. ' personne n’est prévenu. Le lien reste valable, il demande seulement d’être connecté au site.</div>';
+			. ' personne n’est prévenu. Le lien reste valable, il demande seulement d’être connecté au site.'
+			. $ecrire . '</div>';
 	}
 
 	/**

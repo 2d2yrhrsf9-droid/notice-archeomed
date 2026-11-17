@@ -424,6 +424,24 @@ Un navigateur sans canvas ou sans `DataTransfer` refuse aussi la conversion. Les
 profils colorimétriques ne sont pas gérés (un TIFF en CMYK donne des couleurs
 approximatives).
 
+### Un TIFF trop lourd, passé en JPEG
+
+Depuis la version 3.73, un TIFF refusé pour son poids — plus de 20 Mo, ou ce
+qui ferait dépasser la limite de l'ensemble — n'est plus un cul-de-sac. Le
+refus se dit **là où l'on ajoute les figures**, sous la dernière carte ou sous
+la zone de dépôt, et la page y descend ; il se lisait auparavant au-dessus des
+figures, où on le découvrait des minutes plus tard. Sous le refus, un bouton
+« Passer … en JPEG de haute qualité » : le navigateur lit le TIFF et l'enregistre
+en JPEG (qualité 0,92) à sa **pleine définition**, avec la densité qu'il
+déclarait. Le JPEG prend la place du TIFF, comme si l'auteur l'avait choisi ;
+l'original TIFF ne part pas. Un JPEG encore trop lourd voit sa définition
+descendre par paliers, jamais sous la norme des photographies (10 × 15 cm à
+300 ppp). Ce qui ne tient toujours pas, ou dépasse 36 millions de pixels, est
+refusé avec sa raison.
+
+Cela marche avec ou sans Imagick : sans lui, le lecteur de TIFF est déjà
+chargé ; avec lui, il ne se charge qu'au premier TIFF à alléger.
+
 `icono/originaux` garde, si on le demande, les fichiers tels que l'auteur les
 a envoyés : rien de ce qu'il a fourni ne disparaît alors dans une conversion.
 
@@ -519,7 +537,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
 | Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
 | Sous-rubrique de la rubrique V : « V. A1. – Céramique, terres cuites architecturales, verrerie : opération de terrain » | `TEI_Titre 1+rubrique` |
-| Matière à choisir (notice V d'avant les matières) | à supprimer |
+| Sous-rubrique à choisir (notice V d'avant les sous-rubriques A, B, C) | à supprimer |
 | Titre d'une illustration, numéro en `TEI_figure_num_inline` | `TEI_figure_title` |
 | Légende d'une illustration | `TEI_figure_caption` |
 | Crédits d'une illustration | `TEI_figure_credits` |
@@ -1013,7 +1031,17 @@ rédaction reçoit de nouveau la notice, l'objet du courriel ouvert par
 « Corriger dans le formulaire » qui rouvre le formulaire rempli : on ajoute un mot-clé, on
 reprend une légende, et le Word se refait de lui-même. Ce lien ne vaut que
 deux heures, et que pour l'administratrice qui l'a ouvert ; il n'y a ni
-vérification anti-robot, ni quota, ni courriel à l'auteur.
+vérification anti-robot, ni quota, ni courriel à l'auteur. Le même lien ouvre le courriel que
+la rédaction reçoit, dans un cadre gris ; dessous, depuis la version 3.73,
+« Écrire aux responsables de la notice » ouvre un message adressé à toutes les
+adresses de la notice — responsable, correspondant, coauteur, déposant —, l'objet
+déjà rempli.
+
+Les liens de correction mènent à **la dernière page publiée qui porte le
+formulaire** (`[notice_archeomed_pactols]`). Jusqu'à la version 3.72, c'était la
+première : une page d'essai plus ancienne, restée en ligne, prenait sa place.
+Une page d'essai qu'on n'utilise plus se met en brouillon — après un mois, quand
+les liens déjà envoyés vers elle ont expiré.
 
 **Deux corrections de la même notice ne s'écrasent pas.** Chaque notice porte
 un numéro de version, que la page lit en s'ouvrant. Une correction ne passe
@@ -1175,7 +1203,7 @@ taille de l'écran : c'est sur l'image entière qu'on décide d'un retrait.
 Au-dessus du texte, le titre de la notice se lit tel qu'il paraîtra :
 « CAEN (Calvados), Château », avec la ponctuation et l'italique du lieu-dit
 que règlent les normes. Il ne se saisit pas : il suit les champs du lieu, et
-change avec eux. La matière (A, B, C) ne se montre que pour une notice de la
+change avec eux. La sous-rubrique (A, B, C) ne se montre que pour une notice de la
 rubrique V, comme au dépôt.
 
 La rédaction voit toutes les rubriques, et l'écran le lui rappelle ; un
@@ -1283,13 +1311,15 @@ comme le nouveau partout où une rubrique se compare (fascicule, dossier,
 renvois, filtre et comptes de la liste, lien de correction), et le Word, le
 fascicule et le courriel impriment le nouveau.
 
-Dans la rubrique V, l'auteur choisit la **matière** (A, B ou C) : le champ
+Dans la rubrique V, l'auteur choisit la **sous-rubrique** (A, B ou C), selon ce
+que l'atelier fabriquait ou exploitait ; le formulaire, la relecture et le courriel
+l'appellent ainsi depuis la version 3.73, « matière » auparavant. Le champ
 paraît quand la rubrique V est choisie, et n'est obligatoire que pour elle. Les
 sous-rubriques s'écrivent « V. A1. – Céramique, terres cuites architecturales,
 verrerie : opération de terrain », « V. A2. – … : prospections », « V. A3. – … :
 projets collectifs de recherche », de même pour B et C. Une notice V d'avant les
 matières garde « V. 1. », se range en tête, et porte la ligne « à supprimer »
-« Matière à choisir (A, B ou C) ». Un renvoi vers la rubrique V se range selon la
+« Sous-rubrique à choisir (A, B ou C) ». Un renvoi vers la rubrique V se range selon la
 matière de sa notice — qui n'en a pas, venant d'une autre rubrique : il se
 range alors comme une notice sans matière.
 
@@ -1478,7 +1508,7 @@ une opération sur plusieurs années s'écrit « 2004-2005 ».
 demandent chacun un terme, choisi dans la liste ou gardé tel quel — un terme
 libre suffit, pour qu'une panne de Pactols ou du proxy n'empêche aucun dépôt.
 « Autres lieux » peut rester vide. Le navigateur le dit sous la liste, et le
-serveur le redemande. La rubrique de la Chronique, sa matière pour la rubrique V
+serveur le redemande. La rubrique de la Chronique, sa sous-rubrique pour la rubrique V
 et les renvois ont quitté cette section : ils se choisissent dans la première,
 juste avant la nature de l'opération.
 
@@ -1554,7 +1584,7 @@ conception, selon le RGAA 4.1 ; ils n'ont pas fait l'objet d'un audit complet) :
 - la barre de mise en forme de l'éditeur est un seul arrêt de tabulation, les
   flèches passent d'un bouton à l'autre ; l'aide rappelle Ctrl+B et Ctrl+I ;
 - chaque liste de propositions porte le nom de son champ ; les champs
-  facultatifs le disent, la matière de la rubrique V est marquée obligatoire.
+  facultatifs le disent, la sous-rubrique de la rubrique V est marquée obligatoire.
 
 L'audit officiel se fait avec **Ara** (DINUM, libre et gratuit, RGAA 4.1,
 <https://ara.numerique.gouv.fr/>), audit manuel dont le taux est celui qui

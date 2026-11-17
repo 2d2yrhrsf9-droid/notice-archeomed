@@ -2506,9 +2506,9 @@ foreach ( $m_v as $p_v ) {
 		? ( preg_match( '/^V\.\s*([A-C]?\d)\./u', $texte_v, $mm_v ) ? '# V. ' . $mm_v[1] . '.' : $texte_v ) : strtok( $texte_v, ' ' );
 }
 na_verifier( array( '# V. 1.', 'Alençon', '# V. A1.', 'Argentan', 'Lisieux', '# V. A2.', 'Bayeux', '# V. C1.', 'Dives' ) === $suite_v
-	&& false !== strpos( $xml_v, 'Matière à choisir (A, B ou C)' ),
+	&& false !== strpos( $xml_v, 'Sous-rubrique à choisir (A, B ou C)' ),
 	'le fascicule V se range par matière, puis par famille, puis par commune ; une notice sans matière reste sans lettre, et le dit', $suite_v );
-na_verifier( 0 === substr_count( $xml_v, 'Matière à choisir' ) - 1, 'la ligne « matière à choisir » ne vaut que pour la notice sans matière' );
+na_verifier( 0 === substr_count( $xml_v, 'Sous-rubrique à choisir' ) - 1, 'la ligne « matière à choisir » ne vaut que pour la notice sans matière' );
 $manque_v = na_appel( $plugin, 'champs_manquants', array( $notice_v( 'Caen', 'Fouille préventive', '' ) ) );
 $manque_i = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'rubrique_principale' => $nouvelle_i, 'rubrique_matiere' => '' ) ) ) );
 na_verifier( in_array( 'rubrique_matiere', $manque_v, true ) && ! in_array( 'rubrique_matiere', $manque_i, true )
@@ -2524,7 +2524,7 @@ na_verifier( in_array( 'pactols_periods', $manque_k, true ) && in_array( 'pactol
 	&& array_search( 'rubrique_principale', $ordre_k, true ) < array_search( 'nature', $ordre_k, true ),
 	'une période et un sujet sont obligatoires, un terme libre suffit, les autres lieux restent facultatifs ; la rubrique vient avant la nature', array( $manque_k, $libres_k ) );
 $courriel_v = na_appel( $plugin, 'build_notice', array( array_merge( $notice_v( 'Caen', 'Fouille préventive', 'B' ), array( 'reference' => 'REFV01' ) ) ) );
-na_verifier( false !== strpos( $courriel_v, 'Matière' ) && false !== strpos( $courriel_v, 'B – Carrières, mines et métallurgie' ),
+na_verifier( false !== strpos( $courriel_v, 'Sous-rubrique' ) && false !== strpos( $courriel_v, 'B – Carrières, mines et métallurgie' ),
 	'le courriel et la fiche disent la matière' );
 $_POST = array( 'rubrique_principale' => $rub_v, 'rubrique_matiere' => 'b', 'lieu_dit' => 'Château' );
 $jeton_v = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
