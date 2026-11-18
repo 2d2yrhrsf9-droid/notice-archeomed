@@ -2985,8 +2985,8 @@ na_verifier( '' !== $styles_titres['heading 3'] && '' !== $styles_titres['headin
 	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>.*?La phase 1#s', $xml_titres )
 	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 4'] . '"/>.*?Le comblement#s', $xml_titres )
 	&& 2 === substr_count( $xml_titres, '<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>' )
-	&& 1 === preg_match( '#Bilan</w:t>.*?</w:p><w:p><w:pPr><w:pStyle w:val="[^"]+"/>.*?Responsable#s', $xml_titres ),
-	'au Word, les intertitres prennent les styles de leurs niveaux, « Titre 3 » et « Titre 4 » ; la responsabilité ne se colle pas à un intertitre final', $styles_titres );
+	&& 1 === preg_match( '#Bilan</w:t>.*?</w:p><w:p><w:pPr><w:pStyle w:val="[^"]+"/></w:pPr><w:r><w:t[^>]*>\(</w:t>.*?Responsable#s', $xml_titres ),
+	'au Word, les intertitres prennent les styles de leurs niveaux, « Titre 3 » et « Titre 4 » ; la responsabilité ne se colle pas à un intertitre final, et son paragraphe ne commence pas par une espace', $styles_titres );
 na_verifier( array() === Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>' ) + array( 'illustrations' => array() ) )
 	|| ! preg_grep( '/La phase 1/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
 	'un intertitre sans point final ne reçoit pas l\'avis de ponctuation' );
@@ -2996,6 +2996,16 @@ na_verifier( 2 === count( $avis_titres )
 	&& false !== strpos( $avis_titres[1], 'finit par « : »' )
 	&& preg_grep( '/La phase 1\./u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1.</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
 	'un intertitre qui finit par un point ou un deux-points reçoit un avis ; « ? » et les points de suspension restent permis', $avis_titres );
+$avis_italiques = Notice_Archeomed_Controles::figures( array(
+	array( 'rang' => 1, 'titre' => 'Plan', 'legende' => 'Plan de la phase 2 : *bâtiment 1*, silos ; _Le Mans_.', 'credits' => '© Inrap' ),
+	array( 'rang' => 2, 'titre' => 'Plan', 'legende' => 'Fichier plan_general_evreux.tif ; * sondage négatif.', 'credits' => '© Inrap' ),
+) );
+na_verifier( 1 === count( preg_grep( '/italique/u', $avis_italiques ) )
+	&& preg_grep( '/« \*bâtiment 1\* ».*« bâtiment 1 » en italique/u', $avis_italiques ),
+	'un italique écrit « *ainsi* » dans une légende se signale ; un nom de fichier ou un renvoi « * » non', $avis_italiques );
+$avis_abreges = Notice_Archeomed_Controles::intertitres_ponctues( '<h4>Phase 1 (xiie–xiiie s.)</h4><h4>Phase 2 : xive s.</h4><h4>Le ier s. av. J.-C.</h4><h4>Les fossés de la rue.</h4>' );
+na_verifier( 1 === count( $avis_abreges ) && false !== strpos( $avis_abreges[0], 'Les fossés de la rue.' ),
+	'le point d\'une abréviation (« s. », « J.-C. ») n\'est pas une ponctuation finale d\'intertitre ; celui d\'un mot l\'est', $avis_abreges );
 na_verifier( 'La Croix-Blanche' === na_appel( $plugin, 'capitale_initiale', array( 'la Croix-Blanche' ) )
 	&& 'Église Saint-Martin' === na_appel( $plugin, 'capitale_initiale', array( 'église Saint-Martin' ) ),
 	'le lieu-dit prend une capitale initiale, accents compris' );

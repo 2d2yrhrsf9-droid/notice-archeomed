@@ -251,6 +251,14 @@ class Notice_Archeomed_Controles {
 	 * un deux-points. Le point d'interrogation, d'exclamation et les points
 	 * de suspension restent permis : un titre peut poser une question.
 	 */
+	/**
+	 * Un point qui ferme une abréviation, non la phrase : « (xiie–xiiie s.) »,
+	 * « av. J.-C. ». L'intertitre « Phase 1 (xiie–xiiie s.) » recevait l'avis
+	 * d'une ponctuation finale qu'il n'a pas. Le formulaire porte la même
+	 * liste (ABREVIATION_FINALE).
+	 */
+	const ABREVIATION_FINALE = '/(*UCP)(?:^|[\s(\[«’\'\-–])(?:s|ss|av|apr|ap|env|ca|cf|etc|éd|dir|coll|vol|fig|pl|J\.-C)\.$/iu';
+
 	public static function intertitres_ponctues( $html ) {
 		$avis = array();
 		if ( ! preg_match_all( '#<h([1-6])\b[^>]*>(.*?)</h\1\s*>#is', (string) $html, $titres ) ) {
@@ -260,7 +268,8 @@ class Notice_Archeomed_Controles {
 			$titre = trim( html_entity_decode( wp_strip_all_tags( $titre ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 			$nu    = preg_replace( '/[' . preg_quote( self::FERMANTS, '/' ) . ']+$/u', '', $titre );
 			$fin   = preg_match( '/.$/us', (string) $nu, $m ) ? $m[0] : '';
-			if ( '' === $fin || false === strpos( '.,;:', $fin ) || '..' === substr( $nu, -2 ) ) {
+			if ( '' === $fin || false === strpos( '.,;:', $fin ) || '..' === substr( $nu, -2 )
+				|| ( '.' === $fin && preg_match( self::ABREVIATION_FINALE, (string) $nu ) ) ) {
 				continue;
 			}
 			$long   = function_exists( 'mb_strlen' ) ? mb_strlen( $titre, 'UTF-8' ) : strlen( $titre );
@@ -409,6 +418,17 @@ class Notice_Archeomed_Controles {
 			$credits = isset( $item['credits'] ) ? trim( $item['credits'] ) : '';
 			if ( '' === $credits && '' !== $titre . $legende && Notice_Archeomed_Normes::avis_actif( 'credits' ) ) {
 				$avis[] = sprintf( '%s : pas de crédits (auteur, détenteur des droits).', Notice_Archeomed_Normes::numero_de_figure( $rang ) );
+			}
+			// Le titre, la légende et les crédits sont du texte brut : l'auteur
+			// qui veut un italique l'écrit « *ainsi* » ou « _ainsi_ », et ces
+			// signes passaient tels quels dans le Word. On ne les convertit pas
+			// — un renvoi « * », un nom de fichier s'y tromperaient —, on le dit.
+			foreach ( array( $titre, $legende, $credits ) as $champ ) {
+				if ( preg_match( '/(*UCP)(?<![\w*_])([*_])(?=[^\s*_])([^*_\n]{1,80}?)(?<=[^\s*_])\1(?![\w*_])/u', $champ, $m ) ) {
+					$avis[] = sprintf( '%1$s : « %2$s » — les astérisques et les soulignés ne font pas d’italique. Mettez « %3$s » en italique dans le Word, puis ôtez-les.',
+						Notice_Archeomed_Normes::numero_de_figure( $rang ), $m[0], $m[2] );
+					break;
+				}
 			}
 			// L'accessibilité de la figure : des avis, que la case « accessibilité
 			// des figures » des normes permet de taire.

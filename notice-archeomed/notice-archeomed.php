@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.93
+ * Version: 3.94
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -947,6 +947,7 @@ class Notice_Archeomed_Pactols {
 		$notices_en_attente = 0;
 		$prochaine_lecture  = 0;
 		$plus_proche        = 0;
+		$blocs_poses        = 0;
 		foreach ( $notices as $notice ) {
 			if ( empty( $notice['id'] ) ) {
 				continue;
@@ -965,10 +966,25 @@ class Notice_Archeomed_Pactols {
 			if ( '' === $xml ) {
 				continue;
 			}
-			$paquet->poser_une_indexation(
+			if ( '' !== $paquet->poser_une_indexation(
 				Notice_Archeomed_Nommage::assainir(
 					trim( $notice['d']['commune'] . '-' . $notice['d']['lieu_dit'] ) ),
-				$xml );
+				$xml ) ) {
+				++$blocs_poses;
+			}
+		}
+		// Le lisez-moi annonce « un fichier par notice » : un dossier vide doit
+		// dire pourquoi, sans quoi on le croit perdu en route. Ce qui reste à
+		// résoudre a son avis plus bas ; ici, les cas où rien ne viendra.
+		if ( 0 === $blocs_poses && 0 === $termes_manquants && ! empty( $notices ) ) {
+			$paquet->noter( self::lit_pactols()
+				? 'XML/indexation est vide : aucune notice de la rubrique ne porte de terme'
+					. ' choisi dans Pactols.'
+				: 'XML/indexation est vide : la lecture des termes par le serveur est coupée'
+					. ' (page Hébergement, « Lecture des termes par le serveur »). Les'
+					. ' identifiants ARK restent en lien dans le Word ; quand le serveur'
+					. ' pourra joindre Pactols, rétablissez la lecture et exportez de nouveau'
+					. ' la rubrique.' );
 		}
 
 		// Le lisez-moi dit quand Pactols sera réinterrogé, et non « dans
@@ -7588,13 +7604,17 @@ class Notice_Archeomed_Pactols {
 			}
 			// Un intertitre qui finit par « . », « , », « ; » ou « : », comme
 			// au serveur (Notice_Archeomed_Controles::intertitres_ponctues).
+			// Le point d'une abréviation n'est pas une ponctuation finale :
+			// « (xiie–xiiie s.) », « av. J.-C. » (ABREVIATION_FINALE au serveur).
+			var ABREVIATION_FINALE = /(?:^|[\s(\[«’'\-–])(?:s|ss|av|apr|ap|env|ca|cf|etc|éd|dir|coll|vol|fig|pl|J\.-C)\.$/i;
 			function intertitresPonctues() {
 				var avis = [];
 				quill.getLines().filter(estIntertitre).forEach(function (l) {
 					var t = texteDeLigne(l), nu = t;
 					while (nu && FERMANTS.indexOf(nu.charAt(nu.length - 1)) !== -1) { nu = nu.slice(0, -1); }
 					var fin = nu.charAt(nu.length - 1);
-					if (!fin || '.,;:'.indexOf(fin) === -1 || nu.slice(-2) === '..') { return; }
+					if (!fin || '.,;:'.indexOf(fin) === -1 || nu.slice(-2) === '..'
+						|| (fin === '.' && ABREVIATION_FINALE.test(nu))) { return; }
 					avis.push('L’intertitre ' + guillemets(points(t).length > 40 ? '…' + extrait(t, -40) : t)
 						+ ' finit par ' + guillemets(fin) + NBSP + ': un intertitre ne prend pas de ponctuation finale.');
 				});
@@ -11113,7 +11133,9 @@ class Notice_Archeomed_Pactols {
 			// Collé au dernier paragraphe — jamais à un intertitre, qu'un
 			// texte finirait par hasard : il prend alors son paragraphe.
 			if ( $last < 0 || 0 !== $blocs[ $last ]['niveau'] ) {
-				$blocs[] = array( 'niveau' => 0, 'runs' => $bloc_resp );
+				// Sans l'espace qui le séparait du point final : en tête de
+				// paragraphe, elle s'imprimait « ␣(Responsable… ».
+				$blocs[] = array( 'niveau' => 0, 'runs' => $this->responsables_rtf( $doc, $d, true, false ) );
 			} else {
 				$blocs[ $last ]['runs'] .= $bloc_resp;
 			}
@@ -11450,7 +11472,7 @@ class Notice_Archeomed_Pactols {
 	 * langage. C'est ce qui l'a préservé quand la variable s'est perdue — et
 	 * la raison de l'ôter partout ailleurs.
 	 */
-	private function responsables_rtf( $doc, $d, $entre_parentheses = true ) {
+	private function responsables_rtf( $doc, $d, $entre_parentheses = true, $apres_le_texte = true ) {
 		$segments = array();
 
 		$resp = self::nom_d_autorite( $d['resp_prenom'], $d['resp_nom'] );
@@ -11492,7 +11514,7 @@ class Notice_Archeomed_Pactols {
 		if ( ! $entre_parentheses ) {
 			return implode( $doc->plain( ' ; ' ), $segments );
 		}
-		return $doc->plain( ' (' )
+		return $doc->plain( $apres_le_texte ? ' (' : '(' )
 			. implode( $doc->plain( ' ; ' ), $segments )
 			. $doc->plain( ')' );
 	}
