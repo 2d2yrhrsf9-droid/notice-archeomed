@@ -1533,6 +1533,7 @@ class Notice_Archeomed_Relecture {
 		} else {
 			$this->afficher_le_sommaire( $rubrique, self::sommaire( $rubrique ), $id );
 		}
+		self::poser_le_script_du_sommaire();
 		echo '<div class="na-rel-notice">';
 		if ( $id && null === $droit ) {
 			echo '<p>' . esc_html__( 'Cette notice n’est pas de vos rubriques.', 'notice-archeomed' ) . '</p>';
@@ -1565,6 +1566,44 @@ class Notice_Archeomed_Relecture {
 			$this->lister_les_notices( $rubrique, $sommaire[ $bloc ], $ouverte, $famille );
 		}
 		echo '</nav>';
+	}
+
+	/**
+	 * Le sommaire garde sa place d'une notice à l'autre. Chaque clic charge
+	 * une page neuve, et le sommaire, qui défile seul à côté de la notice,
+	 * revenait en tête : au fond d'une rubrique de quarante notices, il
+	 * fallait le redescendre à chaque fois. Sa position se garde le temps
+	 * du clic ; à défaut (« Suivante », un lien direct), la notice ouverte
+	 * se montre au tiers du sommaire si elle n'y était pas visible.
+	 */
+	private static function poser_le_script_du_sommaire() {
+		?>
+		<script>
+		(function () {
+			var nav = document.querySelector('.na-rel-sommaire');
+			if (!nav) { return; }
+			var clef = 'na-rel-sommaire:' + (nav.getAttribute('aria-label') || '');
+			var place = null;
+			try {
+				place = window.sessionStorage.getItem(clef);
+				window.sessionStorage.removeItem(clef);
+			} catch (e) { place = null; }
+			if (place && /^[0-9]+$/.test(place)) { nav.scrollTop = parseInt(place, 10); }
+			var ouverte = nav.querySelector('.na-rel-ouverte');
+			if (ouverte && nav.scrollHeight > nav.clientHeight) {
+				var haut = ouverte.getBoundingClientRect().top - nav.getBoundingClientRect().top;
+				if (haut < 0 || haut + ouverte.offsetHeight > nav.clientHeight) {
+					nav.scrollTop = Math.max(0, nav.scrollTop + haut - Math.round(nav.clientHeight / 3));
+				}
+			}
+			nav.addEventListener('click', function (e) {
+				var lien = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+				if (!lien) { return; }
+				try { window.sessionStorage.setItem(clef, String(Math.round(nav.scrollTop))); } catch (err) {}
+			});
+		}());
+		</script>
+		<?php
 	}
 
 	/**

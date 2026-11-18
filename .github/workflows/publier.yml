@@ -254,6 +254,7 @@ jobs:
             exit 1
           fi
           cat /tmp/essais.log
+          node --check /tmp/relecture-sommaire.js || { echo "::error::Le script du sommaire de la relecture n'est pas du JavaScript valide."; exit 1; }
 
       - name: Le plugin se désactive
         working-directory: /tmp/wp

@@ -1139,6 +1139,14 @@ if ( '' !== $fascicule && class_exists( 'ZipArchive' ) ) {
 	@unlink( $fascicule );
 }
 $xml_fasc = str_replace( "\u{00A0}", ' ', $xml_fasc );
+// Le sommaire du coordinateur de II range ses renvois comme le fascicule :
+// Caen puis Lisieux, l'un et l'autre sous « II. 1. ».
+$renvois_ii = Notice_Archeomed_Relecture::sommaire( 'II. Constructions et habitats ecclésiastiques' )['renvois'];
+$ordre_ii   = array_values( array_intersect( array_map( 'intval', wp_list_pluck( $renvois_ii, 'id' ) ), array( $renvoyee, $artisan ) ) );
+$familles_ii = array_values( array_unique( array_map( function ( $e ) { return (string) preg_replace( '/[\s\x{00A0}\x{202F}]+/u', ' ', $e['famille'] ); },
+	array_filter( $renvois_ii, function ( $e ) use ( $renvoyee, $artisan ) { return in_array( (int) $e['id'], array( $renvoyee, $artisan ), true ); } ) ) ) );
+na_verifier( array( $renvoyee, $artisan ) === $ordre_ii && 1 === count( $familles_ii ) && 0 === strpos( $familles_ii[0], 'II. 1.' ),
+	'au sommaire aussi, les renvois se rangent par commune sous la sous-rubrique du fascicule, sans la matière de V', array( $ordre_ii, $familles_ii ) );
 wp_delete_post( $renvoyee, true );
 wp_delete_post( $artisan, true );
 $pos_lisieux = strpos( $xml_fasc, 'Lisieux' );
@@ -3636,6 +3644,14 @@ na_verifier( false === $barre_coord && true === $barre_redac, 'un coordinateur n
 na_verifier( false !== strpos( $ecran_coord, 'na-rel-sommaire' ) && false !== strpos( $ecran_coord, 'name="resp_nom"' ) && false !== strpos( $ecran_coord, 'name="commune_ark[]"' )
 	&& false !== strpos( $ecran_coord, 'Journal et versions' ) && false === strpos( $ecran_coord, '<script' ) && false === strpos( $ecran_coord, 'wp-admin/admin.php' ),
 	'le shortcode rend au coordinateur le sommaire, le formulaire et le journal, ses scripts renvoyés au pied de page' );
+// Le sommaire garde sa place d'une notice à l'autre ; la CI vérifie que ce
+// script est du JavaScript valide.
+ob_start();
+na_appel( $R, 'poser_le_script_du_sommaire' );
+$script_sommaire = (string) ob_get_clean();
+file_put_contents( '/tmp/relecture-sommaire.js', (string) preg_replace( '#^\s*<script>|</script>\s*$#', '', $script_sommaire ) );
+na_verifier( false !== strpos( $script_sommaire, 'sessionStorage' ) && false !== strpos( $script_sommaire, '.na-rel-ouverte' ),
+	'le sommaire garde sa position au clic, et montre la notice ouverte à défaut' );
 na_verifier( false === strpos( $ecran_coord, 'a@example.org' ) && false === strpos( $ecran_coord, 'example.org' ) && false !== strpos( $ecran_redac, 'a@example.org' ),
 	'le HTML rendu au coordinateur ne contient aucun courriel des responsables ; celui de la direction les montre' );
 na_verifier( false === strpos( $ecran_autre, 'name="resp_nom"' ) && false !== strpos( $ecran_autre, 'Cette notice n’est pas de vos rubriques.' ) && false === strpos( $ecran_autre, 'Lisieux' ),
