@@ -44,6 +44,8 @@ class Notice_Archeomed_Paquet {
 	const LARGEUR_APERCU = 1000;
 	/** Au-delà, une image se déclare trop grande pour qu'on tente de la lire : mémoire, temps. */
 	const MEGAPIXELS_MAX = 250;
+	/** Au plus, les pixels d'une page de PDF dessinée : une A4 à 600 ppp. */
+	const MEGAPIXELS_PDF = 36;
 	const POIDS_APERCU   = 150;
 
 	/**
@@ -786,48 +788,66 @@ class Notice_Archeomed_Paquet {
 	}
 
 	/**
-	 * La résolution à laquelle dessiner un PDF qui finira à l'écran.
+	 * La résolution à laquelle dessiner un PDF.
 	 *
-	 * Le dessin d'une page coûte en proportion de ses pixels. À 150 ppp, une
-	 * planche A4 en faisait 1 754 sur son grand côté, pour un aperçu de
-	 * mille : près de la moitié du travail partait à dessiner ce que la
-	 * réduction jetait ensuite, et une planche A3 ou A1 davantage encore.
-	 * C'était, dans la requête du dépôt, l'essentiel des quinze secondes
-	 * qu'une planche en PDF faisait attendre.
+	 * Le dessin d'une page coûte en proportion de ses pixels. Pour l'écran,
+	 * on la dessine juste assez grande — un quart de plus que la mesure
+	 * voulue, que la réduction affine — d'après sa taille déclarée, jamais
+	 * au-delà de 150 ppp. Pour la haute définition, à la densité réglée,
+	 * jamais au-delà de 600.
 	 *
-	 * On dessine donc la page juste assez grande — un quart de plus que la
-	 * mesure voulue, que la réduction affine — d'après sa taille déclarée.
-	 * Jamais au-delà des 150 ppp d'avant, et 150 quand la taille ne se lit
-	 * pas : ce n'est qu'une économie, elle ne fait rien perdre.
+	 * Dans les deux cas, la page dessinée ne dépasse pas MEGAPIXELS_PDF : une
+	 * planche qui se déclarait de 87 cm sur 62 — la taille en pixels d'une A4
+	 * inscrite comme une taille en points — se dessinait à 600 ppp en trois
+	 * cents millions de pixels, et le serveur coupait l'export sur elle.
+	 *
+	 * La taille est celle de la plus grande page déclarée : prise trop
+	 * grande, la page est dessinée un peu petite, et la lecture la reprend
+	 * ensuite à sa vraie mesure (voir « reduire »).
 	 */
-	private static function rendu_pour_l_ecran( $source, $largeur ) {
-		$cote = self::cote_de_page_pdf( $source );
-		if ( $cote <= 0 || $largeur <= 0 || PHP_INT_MAX === (int) $largeur ) {
-			return 150;
+	private static function rendu_du_pdf( $source, $largeur, $dpi, $ecran ) {
+		$page = self::plus_grande_page_pdf( $source );
+		if ( $ecran ) {
+			$rendu = 150;
+			if ( null !== $page && $largeur > 0 && PHP_INT_MAX !== (int) $largeur ) {
+				$rendu = (int) min( 150, max( 10, ceil( 1.25 * $largeur * 72 / $page['cote'] ) ) );
+			}
+		} else {
+			$rendu = (int) min( 600, max( 150, (int) $dpi ) );
 		}
-		return (int) min( 150, max( 10, ceil( 1.25 * $largeur * 72 / $cote ) ) );
+		if ( null !== $page ) {
+			$rendu = min( $rendu, self::plafond_du_pdf( $page['aire'] ) );
+		}
+		return $rendu;
+	}
+
+	/** La résolution au-delà de laquelle une page de tant de points carrés passerait MEGAPIXELS_PDF. */
+	private static function plafond_du_pdf( $aire ) {
+		if ( $aire <= 0 ) {
+			return 600;
+		}
+		return (int) max( 10, floor( 72 * sqrt( self::MEGAPIXELS_PDF * 1000000 / $aire ) ) );
 	}
 
 	/**
-	 * Le grand côté, en points, de la plus petite page qu'un PDF déclare
-	 * (« /MediaBox »), ou 0 s'il ne s'en lit aucune.
+	 * La plus grande page qu'un PDF déclare (« /MediaBox ») : son grand côté
+	 * et sa surface, en points ; null s'il ne s'en lit aucune.
 	 *
-	 * La plus petite, parce que la première page n'est pas forcément la
-	 * première trouvée : prise trop grande, elle serait dessinée trop
-	 * petite ; prise trop petite, elle l'est seulement un peu trop finement.
 	 * Un PDF récent range parfois ses pages dans des flux compressés, où
-	 * rien ne se lit : on garde alors les 150 ppp.
+	 * rien ne se lit : on s'en tient alors aux résolutions d'usage, et la
+	 * mesure de l'image lue rattrape ce qui doit l'être.
 	 *
 	 * Le fichier se lit par tranches, qui se recouvrent pour qu'une
 	 * déclaration à cheval sur deux ne se perde pas.
 	 */
-	private static function cote_de_page_pdf( $source ) {
+	private static function plus_grande_page_pdf( $source ) {
 		$flux = @fopen( $source, 'rb' );
 		if ( ! $flux ) {
-			return 0;
+			return null;
 		}
-		$plus_petit = 0.0;
-		$reste      = '';
+		$cote  = 0.0;
+		$aire  = 0.0;
+		$reste = '';
 		while ( ! feof( $flux ) ) {
 			$tranche = fread( $flux, 1048576 );
 			if ( false === $tranche || '' === $tranche ) {
@@ -841,16 +861,32 @@ class Notice_Archeomed_Paquet {
 					if ( $l < 1 || $h < 1 ) {
 						continue;
 					}
-					$cote = max( $l, $h );
-					if ( 0.0 === $plus_petit || $cote < $plus_petit ) {
-						$plus_petit = $cote;
-					}
+					$cote = max( $cote, $l, $h );
+					$aire = max( $aire, $l * $h );
 				}
 			}
 			$reste = substr( $texte, -200 );
 		}
 		fclose( $flux );
-		return $plus_petit;
+		if ( $cote <= 0 && self::imagick_disponible() ) {
+			// Rien de lisible : Imagick mesure la première page sans la
+			// dessiner en grand (72 ppp, un pixel par point), pour que le
+			// plafond de pixels tienne quand même.
+			try {
+				$sonde = new Imagick();
+				$sonde->pingImage( $source . '[0]' );
+				$l = (float) $sonde->getImageWidth();
+				$h = (float) $sonde->getImageHeight();
+				$sonde->clear();
+				if ( $l >= 1 && $h >= 1 ) {
+					$cote = max( $l, $h );
+					$aire = $l * $h;
+				}
+			} catch ( Throwable $e ) {
+				unset( $e );
+			}
+		}
+		return $cote > 0 ? array( 'cote' => $cote, 'aire' => $aire ) : null;
 	}
 
 	/**
@@ -889,8 +925,14 @@ class Notice_Archeomed_Paquet {
 			$est_pdf = 'pdf' === strtolower( pathinfo( $source, PATHINFO_EXTENSION ) );
 			$rendu   = 0;
 			if ( $est_pdf ) {
-				$rendu = $ecran ? self::rendu_pour_l_ecran( $source, $largeur ) : min( 600, max( 150, (int) $dpi ) );
+				$rendu = self::rendu_du_pdf( $source, $largeur, $dpi, $ecran );
 				$image->setResolution( $rendu, $rendu );
+				$voulu = (int) min( 600, max( 150, (int) $dpi ) );
+				if ( ! $ecran && $rendu < $voulu ) {
+					$this->journal[] = basename( $cible ) . ' : PDF dessiné à ' . $rendu . ' ppp au lieu de ' . $voulu
+						. ', sa page se déclarant trop grande (plus de ' . self::MEGAPIXELS_PDF
+						. ' millions de pixels à cette résolution) ; reprenez au besoin l’original.';
+				}
 			}
 			// « [0] » demande la première vue seulement. Un PDF de deux pages
 			// ou un TIFF multi-images chargeait toutes ses vues, que
@@ -904,12 +946,20 @@ class Notice_Archeomed_Paquet {
 				$image->readImage( $source );
 			}
 			// La page lue n'atteint pas la mesure voulue : la taille trouvée
-			// dans le fichier n'était pas la sienne. On la relit à 150 ppp,
-			// comme avant, plutôt que d'agrandir une image trop petite.
-			if ( $est_pdf && $ecran && $rendu < 150
+			// dans le fichier n'était pas la sienne, mais celle d'une autre
+			// page, plus grande. La page lue donne maintenant la vraie : on la
+			// relit à la résolution qu'il lui faut, sans dépasser 150 ppp ni le
+			// plafond de pixels, plutôt que d'agrandir une image trop petite.
+			$relu = 0;
+			if ( $est_pdf && $ecran && $rendu < 150 && $rendu > 0
 				&& max( $image->getImageWidth(), $image->getImageHeight() ) < $largeur ) {
+				$cote_lu = max( $image->getImageWidth(), $image->getImageHeight() ) * 72 / $rendu;
+				$aire_lue = $image->getImageWidth() * $image->getImageHeight() * ( 72 / $rendu ) * ( 72 / $rendu );
+				$relu = (int) min( 150, ceil( 1.25 * $largeur * 72 / max( 1, $cote_lu ) ), self::plafond_du_pdf( $aire_lue ) );
+			}
+			if ( $relu > $rendu ) {
 				$image->clear();
-				$image->setResolution( 150, 150 );
+				$image->setResolution( $relu, $relu );
 				try {
 					$image->readImage( $source . '[0]' );
 				} catch ( Exception $e ) {

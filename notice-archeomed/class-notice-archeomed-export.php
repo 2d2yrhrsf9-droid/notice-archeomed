@@ -50,6 +50,9 @@ class Notice_Archeomed_Export {
 	/** Les passages manqués avant qu'on renonce, à une figure ou à la rubrique. */
 	const ESSAIS = 5;
 
+	/** Les passages coupés par le serveur sur une même figure avant qu'on la laisse. */
+	const COUPURES = 2;
+
 	/** Branche la tâche et son réveil. */
 	public static function brancher() {
 		add_action( self::HOOK, array( __CLASS__, 'en_tache' ), 10, 0 );
@@ -294,6 +297,13 @@ class Notice_Archeomed_Export {
 				// lourde reviendrait sans fin et bloquerait la file.
 				$issue  = 'manque';
 				$raison = 'le passage précédent a été coupé par le serveur pendant ce pas';
+				// Une figure qui fait couper le serveur le refera : elle a eu
+				// un passage entier pour elle, on n'en attend pas trois autres
+				// (une demi-heure de plus) avant de passer à la suivante.
+				$travail['coupures'] = ( isset( $travail['coupures'] ) ? (int) $travail['coupures'] : 0 ) + 1;
+				if ( 'figures' === $travail['etape'] && $travail['coupures'] >= self::COUPURES ) {
+					$travail['essais'] = max( (int) $travail['essais'], self::ESSAIS - 1 );
+				}
 			} else {
 				$travail['entame'] = time();
 				update_option( self::TRAVAIL, $travail, false );
@@ -311,8 +321,9 @@ class Notice_Archeomed_Export {
 				continue;
 			}
 			if ( 'avance' === $issue ) {
-				$travail['essais'] = 0;
-				$travail['raison'] = '';
+				$travail['essais']   = 0;
+				$travail['coupures'] = 0;
+				$travail['raison']   = '';
 				unset( $travail['apres'] );
 				update_option( self::TRAVAIL, $travail, false );
 				continue;
@@ -330,8 +341,9 @@ class Notice_Archeomed_Export {
 						. ' n’a pas pu être exportée (' . $raison . ') ; reprenez-la d’après « originaux/ ».' );
 					$travail['paquet'] = $etat->etat();
 					++$travail['suivante'];
-					$travail['essais'] = 0;
-					$travail['raison'] = '';
+					$travail['essais']   = 0;
+					$travail['coupures'] = 0;
+					$travail['raison']   = '';
 					update_option( self::TRAVAIL, $travail, false );
 					continue;
 				}

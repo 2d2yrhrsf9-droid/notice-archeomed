@@ -100,6 +100,34 @@ $vers_le_srgb->invoke( null, $im );
 $verifier( Imagick::COLORSPACE_CMYK !== $im->getImageColorspace(), 'un CMJN au profil faux passe au RVB' );
 $verifier( '(aucun)' === $nom( $im ) || false !== stripos( $nom( $im ), 'srgb' ), 'et ne garde pas un profil qui ne le décrit plus (lu : ' . $nom( $im ) . ')' );
 
+// La résolution d'un PDF. Une planche qui se déclare de 2 480 × 1 754
+// points — la taille en pixels d'une A4 à 300 ppp écrite en points — se
+// dessinait à 600 ppp en trois cents millions de pixels, et le serveur
+// coupait l'export sur elle. Une A4 ordinaire garde ses 600 ppp.
+$rendu_du_pdf = new ReflectionMethod( 'Notice_Archeomed_Paquet', 'rendu_du_pdf' );
+$rendu_du_pdf->setAccessible( true );
+$pdf = function ( $boites ) {
+	$chemin = tempnam( sys_get_temp_dir(), 'na-pdf' ) . '.pdf';
+	$corps  = "%PDF-1.4\n";
+	foreach ( $boites as $boite ) {
+		$corps .= "1 0 obj << /Type /Page /MediaBox [0 0 " . $boite . "] >> endobj\n";
+	}
+	file_put_contents( $chemin, $corps . "%%EOF\n" );
+	return $chemin;
+};
+$geante = $pdf( array( '612 792', '2480 1754' ) );
+$a4     = $pdf( array( '595 842' ) );
+$hr     = $rendu_du_pdf->invoke( null, $geante, PHP_INT_MAX, 1200, false );
+$pixels = ( 2480 * $hr / 72 ) * ( 1754 * $hr / 72 );
+$verifier( $pixels <= Notice_Archeomed_Paquet::MEGAPIXELS_PDF * 1000000, 'une page géante ne passe pas le plafond de pixels (' . $hr . ' ppp, ' . round( $pixels / 1e6 ) . ' Mpx)' );
+$br = $rendu_du_pdf->invoke( null, $geante, 2500, 150, true );
+$verifier( 91 === $br, 'sa basse définition se dessine d\'après sa plus grande page (lu : ' . $br . ' ppp)' );
+$verifier( 600 === $rendu_du_pdf->invoke( null, $a4, PHP_INT_MAX, 1200, false ), 'une A4 garde ses 600 ppp en haute définition' );
+$verifier( 107 === $rendu_du_pdf->invoke( null, $a4, 1000, 150, true ), 'une A4 se dessine juste assez pour son aperçu' );
+$verifier( 300 === $rendu_du_pdf->invoke( null, $a4, PHP_INT_MAX, 300, false ), 'une A4 suit la densité réglée' );
+@unlink( $geante );
+@unlink( $a4 );
+
 if ( $echecs ) {
 	echo "\n" . count( $echecs ) . " échec(s).\n";
 	exit( 1 );
