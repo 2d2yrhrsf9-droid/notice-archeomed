@@ -247,11 +247,6 @@ class Notice_Archeomed_Controles {
 	}
 
 	/**
-	 * Un intertitre qui finit par un point, une virgule, un point-virgule ou
-	 * un deux-points. Le point d'interrogation, d'exclamation et les points
-	 * de suspension restent permis : un titre peut poser une question.
-	 */
-	/**
 	 * Un point qui ferme une abréviation, non la phrase : « (xiie–xiiie s.) »,
 	 * « av. J.-C. ». L'intertitre « Phase 1 (xiie–xiiie s.) » recevait l'avis
 	 * d'une ponctuation finale qu'il n'a pas. Le formulaire porte la même
@@ -259,6 +254,11 @@ class Notice_Archeomed_Controles {
 	 */
 	const ABREVIATION_FINALE = '/(*UCP)(?:^|[\s(\[«’\'\-–])(?:s|ss|av|apr|ap|env|ca|cf|etc|éd|dir|coll|vol|fig|pl|J\.-C)\.$/iu';
 
+	/**
+	 * Un intertitre qui finit par un point, une virgule, un point-virgule ou
+	 * un deux-points. Le point d'interrogation, d'exclamation et les points
+	 * de suspension restent permis : un titre peut poser une question.
+	 */
 	public static function intertitres_ponctues( $html ) {
 		$avis = array();
 		if ( ! preg_match_all( '#<h([1-6])\b[^>]*>(.*?)</h\1\s*>#is', (string) $html, $titres ) ) {
