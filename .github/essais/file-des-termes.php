@@ -1579,6 +1579,11 @@ $immediat_etat = array(
 	'etat'       => get_post_meta( $immediat['id'], '_na_etat', true ),
 	'correction' => isset( $donnees_immediat['correction_url'] ) ? $donnees_immediat['correction_url'] : '',
 );
+$deposes_immediat = $deposes;
+// En différé, le Word ne se fait plus dans la requête de l'auteur : la file
+// le refait d'après la saisie gardée, et le courriel le joint comme avant.
+$differe_issue    = $differe['id'] ? $plugin->expedier_de_la_file( $differe['id'] ) : '';
+$differe_courriel = array_slice( $deposes, count( $deposes_immediat ) );
 remove_filter( 'wp_redirect', $sortir );
 remove_filter( 'pre_wp_mail', $capter_depot, 10 );
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
@@ -1592,14 +1597,18 @@ foreach ( array( $differe, $immediat ) as $depot ) {
 		wp_delete_post( $depot['id'], true );
 	}
 }
-na_verifier( $differe['id'] > 0 && 'en_attente' === $differe_etat['etat'] && '' !== $differe_etat['document']
-	&& $differe_etat['word_fait'] && '' === $differe_etat['preparation'] && $differe_etat['prevue']
+na_verifier( $differe['id'] > 0 && 'en_attente' === $differe_etat['etat'] && '' === $differe_etat['document']
+	&& ! $differe_etat['word_fait'] && '' === $differe_etat['preparation'] && $differe_etat['prevue']
 	&& 0 === $differe_etat['courriels'] && false !== strpos( $differe['vers'], 'notice_envoyee=1' ),
-	'en différé : la notice est inscrite, son Word fait, la préparation levée, l\'envoi programmé, rien d\'expédié', array( $differe, $differe_etat ) );
-na_verifier( $immediat['id'] > 0 && 'envoyee' === $immediat_etat['etat'] && 2 === count( $deposes )
-	&& isset( $deposes[0] ) && false !== strpos( $deposes[0]['objet'], 'réf. ' . $immediat['ref'] )
-	&& 1 === count( $deposes[0]['pieces'] ) && '.docx' === substr( $deposes[0]['pieces'][0], -5 ),
-	'en immédiat : la notice est inscrite comme en différé, et part par la file, Word joint', array( $immediat, $immediat_etat, $deposes ) );
+	'en différé : la notice est inscrite, la préparation levée, l\'envoi programmé, ni Word ni courriel dans la requête', array( $differe, $differe_etat ) );
+na_verifier( 'partie' === $differe_issue && ! empty( $differe_courriel )
+	&& false !== strpos( $differe_courriel[0]['objet'], 'réf. ' . $differe['ref'] )
+	&& 1 === count( $differe_courriel[0]['pieces'] ) && '.docx' === substr( $differe_courriel[0]['pieces'][0], -5 ),
+	'en différé : la file fait le Word et le joint au courriel', array( $differe_issue, $differe_courriel ) );
+na_verifier( $immediat['id'] > 0 && 'envoyee' === $immediat_etat['etat'] && 2 === count( $deposes_immediat )
+	&& isset( $deposes_immediat[0] ) && false !== strpos( $deposes_immediat[0]['objet'], 'réf. ' . $immediat['ref'] )
+	&& 1 === count( $deposes_immediat[0]['pieces'] ) && '.docx' === substr( $deposes_immediat[0]['pieces'][0], -5 ),
+	'en immédiat : la notice est inscrite comme en différé, et part par la file, Word joint', array( $immediat, $immediat_etat, $deposes_immediat ) );
 na_verifier( false === strpos( $differe['vers'] . $immediat['vers'] . $immediat_etat['correction'], 'phishing' )
 	&& '' !== $immediat_etat['correction'],
 	'ni le retour ni le lien de correction ne suivent un référent étranger', array( $differe['vers'], $immediat_etat['correction'] ) );

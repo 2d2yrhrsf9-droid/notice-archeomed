@@ -1587,6 +1587,10 @@ class Notice_Archeomed_Relecture {
 				. '<span class="na-rel-loupe" aria-hidden="true">Agrandir</span></button>';
 		} elseif ( null !== $figure['a_part'] ) {
 			echo '<p class="na-rel-sans-apercu">' . esc_html__( 'Figure envoyée à part par l’auteur : pas d’aperçu.', 'notice-archeomed' ) . '</p>';
+		} elseif ( ! empty( $figure['apercu_attendu'] ) ) {
+			// La tâche des aperçus ne l'a pas encore faite : quelques secondes
+			// après un dépôt ou une correction d'auteur.
+			echo '<p class="na-rel-sans-apercu">' . esc_html__( 'Aperçu en préparation : il paraîtra en rechargeant la page dans un instant.', 'notice-archeomed' ) . '</p>';
 		} else {
 			echo '<p class="na-rel-sans-apercu">' . esc_html__( 'Pas d’aperçu pour cette figure.', 'notice-archeomed' ) . '</p>';
 		}

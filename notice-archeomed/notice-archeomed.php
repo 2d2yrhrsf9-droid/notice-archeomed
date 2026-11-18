@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.89
+ * Version: 3.90
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -12002,6 +12002,33 @@ class Notice_Archeomed_Pactols {
 			$this->record_send( $d['resp_email'] );
 			$this->record_global_send();
 
+			// ── Le dépôt, et rien de plus ─────────────────────────────────
+			//
+			// Tout ce qui est lent — la poignée de main SMTP, le transfert de
+			// vingt méga-octets de pièces jointes, les accusés de réception —
+			// sort de la requête de l'auteur. Elle rend la main tout de suite,
+			// et le processus PHP se libère pour le déposant suivant.
+			//
+			// Les versions allégées et le Word en sortent aussi. Une planche
+			// en PDF demandait quinze secondes à elle seule, dans la requête
+			// de l'auteur : il attendait devant le formulaire, et l'un des
+			// cinq processus du serveur restait pris pendant ce temps. Dix
+			// déposants à la fois, et le onzième trouvait porte close. La
+			// tâche des aperçus les fabrique juste après, puis appelle la
+			// file ; la file refait le Word à partir de la saisie gardée,
+			// qui est celle-ci, avec les mêmes aperçus. Le courriel ne
+			// change pas.
+			if ( $this->envoi_differe() ) {
+				delete_post_meta( $id, '_na_preparation' );
+				if ( $this->apercus_a_fabriquer( $id ) ) {
+					$this->programmer_les_apercus( $id );
+				}
+				$this->file()->programmer( $id );
+				$this->redirect_result( true, '', '', $reference );
+			}
+			// L'envoi immédiat : tout dans cette requête, puisqu'il sert là où
+			// le planificateur ne passe pas.
+			//
 			// Les figures que le document emportera. Elles se fabriquent avant
 			// lui, puisqu'il les porte : le Word envoyé par courriel voyage
 			// seul, sans dossier d'icono à côté de lui où aller chercher une
@@ -12034,17 +12061,6 @@ class Notice_Archeomed_Pactols {
 				update_post_meta( $id, '_na_document', $document );
 			}
 			delete_post_meta( $id, '_na_preparation' );
-
-			// ── Le dépôt, et rien de plus ─────────────────────────────────
-			//
-			// Tout ce qui est lent — la poignée de main SMTP, le transfert de
-			// vingt méga-octets de pièces jointes, les accusés de réception —
-			// sort de la requête de l'auteur. Elle rend la main tout de suite,
-			// et le processus PHP se libère pour le déposant suivant.
-			if ( $this->envoi_differe() ) {
-				$this->file()->programmer( $id );
-				$this->redirect_result( true, '', '', $reference );
-			}
 			// L'envoi immédiat : la même expédition, dans cette requête. Les
 			// versions allégées viennent d'être tentées ; la file ne les
 			// retente pas avant de partir. Un refus laisse la notice en file,
@@ -13005,30 +13021,61 @@ class Notice_Archeomed_Pactols {
 		if ( $this->en_preparation( $id ) ) {
 			return;   // la correction programmera sa propre tâche
 		}
+		// La marque du travail en cours se pose avant celle de l'essai : entre
+		// les deux, la file verrait une notice dont l'essai est fait et qui
+		// n'a pas ses aperçus, et l'enverrait sans eux. Le dépôt ne les
+		// fabrique plus lui-même ; la relance des cinq minutes, ou un second
+		// passage du planificateur, peut donc tomber en plein travail.
+		//
+		// Elle sert aussi de verrou : deux passages du planificateur qui
+		// lancent la même tâche fabriquaient deux fois chaque aperçu, et
+		// l'un des deux restait sur le disque sans que rien le désigne. Le
+		// second s'efface devant le premier, qui relancera l'envoi ; une
+		// marque restée d'une tâche tuée se reprend passé le délai d'abandon.
+		if ( ! add_post_meta( $id, '_na_apercus_en_cours', time(), true ) ) {
+			wp_cache_delete( $id, 'post_meta' );
+			if ( $this->apercus_en_cours( $id ) ) {
+				return;
+			}
+			update_post_meta( $id, '_na_apercus_en_cours', time() );
+		}
 		update_post_meta( $id, '_na_apercus_tente', time() );
-		$d = get_post_meta( $id, '_na_donnees', true );
-		if ( is_array( $d ) && ! empty( $d ) ) {
-			$originaux = self::illustrations_rangees( $id );
-			$apercus   = $this->apercus_de( $id, $d );
-			$a_faire   = array();
-			foreach ( $originaux as $i => $original ) {
-				$a_faire[ $i ] = ( empty( $apercus[ $i + 1 ]['apercu'] )
-					|| ! is_readable( $apercus[ $i + 1 ]['apercu'] ) ) ? $original : '';
-			}
-			$neufs = $this->fabriquer_les_apercus( $a_faire, $d, self::conversions_rangees( $id ) );
-			if ( ! empty( $neufs ) ) {
-				wp_cache_delete( $id, 'post_meta' );
-				if ( $this->en_preparation( $id ) || self::illustrations_rangees( $id ) !== $originaux ) {
-					$this->effacer_des_apercus( $neufs );
-					// La correction programme sa propre tâche ; levée, la
-					// marque de l'essai laisse aussi l'envoi en refaire une.
-					delete_post_meta( $id, '_na_apercus_tente' );
-					return;
+		try {
+			$d = get_post_meta( $id, '_na_donnees', true );
+			if ( is_array( $d ) && ! empty( $d ) ) {
+				$originaux = self::illustrations_rangees( $id );
+				$apercus   = $this->apercus_de( $id, $d );
+				$a_faire   = array();
+				foreach ( $originaux as $i => $original ) {
+					$a_faire[ $i ] = ( empty( $apercus[ $i + 1 ]['apercu'] )
+						|| ! is_readable( $apercus[ $i + 1 ]['apercu'] ) ) ? $original : '';
 				}
-				update_post_meta( $id, '_na_apercus', $neufs + $apercus );
+				$neufs = $this->fabriquer_les_apercus( $a_faire, $d, self::conversions_rangees( $id ) );
+				if ( ! empty( $neufs ) ) {
+					wp_cache_delete( $id, 'post_meta' );
+					if ( $this->en_preparation( $id ) || self::illustrations_rangees( $id ) !== $originaux ) {
+						$this->effacer_des_apercus( $neufs );
+						// La correction programme sa propre tâche ; levée, la
+						// marque de l'essai laisse aussi l'envoi en refaire une.
+						delete_post_meta( $id, '_na_apercus_tente' );
+						return;
+					}
+					update_post_meta( $id, '_na_apercus', $neufs + $apercus );
+				}
 			}
+		} finally {
+			// Levée quoi qu'il arrive, sauf si l'hébergement tue la tâche :
+			// la marque vieillit alors, et passé le délai d'abandon la file
+			// envoie avec ce qu'il y a. La notice part sans aperçu, jamais
+			// ne reste en souffrance.
+			delete_post_meta( $id, '_na_apercus_en_cours' );
 		}
 		$this->file()->programmer( $id );
+	}
+
+	/** La tâche des aperçus travaille sur la notice, et n'est pas morte en route. */
+	private function apercus_en_cours( $id ) {
+		return (int) get_post_meta( (int) $id, '_na_apercus_en_cours', true ) > time() - Notice_Archeomed_File::ABANDON;
 	}
 
 	/**
@@ -13177,15 +13224,22 @@ class Notice_Archeomed_Pactols {
 			$this->programmer_les_apercus( $id );
 			return 'en_preparation';
 		}
+		// La tâche des aperçus travaille en ce moment : elle relancera
+		// l'envoi en finissant. Partir maintenant, c'était envoyer un Word
+		// sans ses figures.
+		if ( $this->apercus_en_cours( $id ) ) {
+			return 'en_preparation';
+		}
 		if ( ! $this->file()->prendre( $id ) ) {
 			return 'occupee';
 		}
 		// Une correction en place a pu poser sa marque entre la lecture
-		// d'en haut et la prise : la notice se récrit, on la rend à la file
-		// plutôt que d'envoyer un mélange de l'ancienne et de la nouvelle.
+		// d'en haut et la prise — ou la tâche des aperçus commencer : la
+		// notice se récrit, on la rend à la file plutôt que d'envoyer un
+		// mélange de l'ancienne et de la nouvelle.
 		wp_cache_delete( $id, 'post_meta' );
 		$preparee = (int) get_post_meta( $id, '_na_preparation', true );
-		if ( $preparee > time() - Notice_Archeomed_File::ABANDON ) {
+		if ( $preparee > time() - Notice_Archeomed_File::ABANDON || $this->apercus_en_cours( $id ) ) {
 			update_post_meta( $id, '_na_etat', 'en_attente' );
 			delete_post_meta( $id, '_na_prise' );
 			return 'en_preparation';
@@ -15434,26 +15488,35 @@ class Notice_Archeomed_Pactols {
 		}
 		update_post_meta( $id, '_na_fichiers', array_merge( $illustrations, array_values( $autorisations ) ) );
 
-		// Une figure remplacée ou ajoutée a sa version allégée tout de suite,
-		// comme au dépôt. Laissée à la tâche, elle attendait une visite du
-		// site — deux pour une correction d'auteur, qui passe d'abord par la
-		// file — et la relecture disait « Pas d'aperçu » d'un JPEG qu'on
-		// venait d'envoyer. Un échec ne coûte pas la correction : la tâche
-		// reprend ce qui manque.
-		try {
-			$a_faire = array();
-			foreach ( $illustrations as $i => $chemin ) {
-				$a_faire[ $i ] = isset( $apercus[ $i + 1 ] ) ? '' : $chemin;
-			}
-			if ( array_filter( $a_faire ) ) {
-				$faits = $this->fabriquer_les_apercus( $a_faire, $d, $conversions );
-				if ( ! empty( $faits ) ) {
-					$apercus = $faits + $apercus;
-					update_post_meta( $id, '_na_apercus', $apercus );
+		// Une figure remplacée ou ajoutée a sa version allégée tout de suite
+		// quand la rédaction corrige, ou quand l'envoi est immédiat. Laissée
+		// à la tâche, elle attendait une visite du site, et la relecture
+		// disait « Pas d'aperçu » d'un JPEG qu'on venait d'envoyer. Un échec
+		// ne coûte pas la correction : la tâche reprend ce qui manque.
+		//
+		// L'auteur qui corrige, lui, ne l'attend plus, pas plus qu'au dépôt :
+		// une planche en PDF le tenait quinze secondes devant le formulaire
+		// et prenait l'un des cinq processus du serveur, en pleine campagne,
+		// quand les corrections arrivent avec les dépôts. La tâche s'inscrit
+		// avant la file, plus bas : la visite qui suit la redirection les
+		// fait passer l'une après l'autre, et la relecture dit en attendant
+		// que l'aperçu se prépare.
+		if ( $redaction || ! $this->envoi_differe() ) {
+			try {
+				$a_faire = array();
+				foreach ( $illustrations as $i => $chemin ) {
+					$a_faire[ $i ] = isset( $apercus[ $i + 1 ] ) ? '' : $chemin;
 				}
+				if ( array_filter( $a_faire ) ) {
+					$faits = $this->fabriquer_les_apercus( $a_faire, $d, $conversions );
+					if ( ! empty( $faits ) ) {
+						$apercus = $faits + $apercus;
+						update_post_meta( $id, '_na_apercus', $apercus );
+					}
+				}
+			} catch ( Throwable $e ) {
+				error_log( 'Notice Archeomed: aperçus de la correction ' . $id . ' non fabriqués (' . get_class( $e ) . ' : ' . $e->getMessage() . ').' );
 			}
-		} catch ( Throwable $e ) {
-			error_log( 'Notice Archeomed: aperçus de la correction ' . $id . ' non fabriqués (' . get_class( $e ) . ' : ' . $e->getMessage() . ').' );
 		}
 
 		// ── La notice ──────────────────────────────────────────────────────
@@ -15543,6 +15606,16 @@ class Notice_Archeomed_Pactols {
 			update_post_meta( $id, '_na_corrigee', array_values( array_unique( array_merge(
 				null !== $a_signaler ? $a_signaler : array(), $champs ) ) ) );
 		}
+		// Les aperçus s'inscrivent avant l'envoi : à la même seconde, le
+		// planificateur passe les tâches dans l'ordre où elles sont venues,
+		// et la notice part dans la même visite, avec ses figures. Après,
+		// l'envoi passait le premier, se voyait renvoyé aux aperçus, et
+		// n'était relancé qu'à la visite suivante. La tâche ne commence
+		// rien tant que la marque de préparation tient : elle se lève juste
+		// en dessous, avant que la requête rende la main.
+		if ( $this->apercus_a_fabriquer( $id ) ) {
+			$this->programmer_les_apercus( $id );
+		}
 		$this->file()->remettre_en_file( $id );
 		delete_post_meta( $id, '_na_preparation' );
 		$this->record_send( $d['resp_email'] );
@@ -15574,8 +15647,13 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		$figures = array();
+		// Les aperçus ne se font plus dans la requête du dépôt ni dans celle
+		// d'une correction d'auteur : ouverte juste après, la page les attend
+		// encore. Elle le dit, au lieu d'annoncer qu'il n'y en a pas.
+		$attendus = $this->apercus_en_cours( $id ) || $this->apercus_a_fabriquer( $id );
 		foreach ( $this->figures_gardees_de( $id, $d ) as $figure ) {
 			$figure['apercu']  = '' !== $this->chemin_de_l_apercu( $id, (int) $figure['k'] );
+			$figure['apercu_attendu'] = ! $figure['apercu'] && $attendus;
 			$figure['masquee'] = null;
 			foreach ( (array) $d['illustrations'] as $item ) {
 				if ( is_array( $item ) && isset( $item['rang'] ) && (int) $item['rang'] === (int) $figure['k'] ) {

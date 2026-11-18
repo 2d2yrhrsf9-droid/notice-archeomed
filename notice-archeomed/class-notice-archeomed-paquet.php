@@ -786,6 +786,74 @@ class Notice_Archeomed_Paquet {
 	}
 
 	/**
+	 * La résolution à laquelle dessiner un PDF qui finira à l'écran.
+	 *
+	 * Le dessin d'une page coûte en proportion de ses pixels. À 150 ppp, une
+	 * planche A4 en faisait 1 754 sur son grand côté, pour un aperçu de
+	 * mille : près de la moitié du travail partait à dessiner ce que la
+	 * réduction jetait ensuite, et une planche A3 ou A1 davantage encore.
+	 * C'était, dans la requête du dépôt, l'essentiel des quinze secondes
+	 * qu'une planche en PDF faisait attendre.
+	 *
+	 * On dessine donc la page juste assez grande — un quart de plus que la
+	 * mesure voulue, que la réduction affine — d'après sa taille déclarée.
+	 * Jamais au-delà des 150 ppp d'avant, et 150 quand la taille ne se lit
+	 * pas : ce n'est qu'une économie, elle ne fait rien perdre.
+	 */
+	private static function rendu_pour_l_ecran( $source, $largeur ) {
+		$cote = self::cote_de_page_pdf( $source );
+		if ( $cote <= 0 || $largeur <= 0 || PHP_INT_MAX === (int) $largeur ) {
+			return 150;
+		}
+		return (int) min( 150, max( 10, ceil( 1.25 * $largeur * 72 / $cote ) ) );
+	}
+
+	/**
+	 * Le grand côté, en points, de la plus petite page qu'un PDF déclare
+	 * (« /MediaBox »), ou 0 s'il ne s'en lit aucune.
+	 *
+	 * La plus petite, parce que la première page n'est pas forcément la
+	 * première trouvée : prise trop grande, elle serait dessinée trop
+	 * petite ; prise trop petite, elle l'est seulement un peu trop finement.
+	 * Un PDF récent range parfois ses pages dans des flux compressés, où
+	 * rien ne se lit : on garde alors les 150 ppp.
+	 *
+	 * Le fichier se lit par tranches, qui se recouvrent pour qu'une
+	 * déclaration à cheval sur deux ne se perde pas.
+	 */
+	private static function cote_de_page_pdf( $source ) {
+		$flux = @fopen( $source, 'rb' );
+		if ( ! $flux ) {
+			return 0;
+		}
+		$plus_petit = 0.0;
+		$reste      = '';
+		while ( ! feof( $flux ) ) {
+			$tranche = fread( $flux, 1048576 );
+			if ( false === $tranche || '' === $tranche ) {
+				break;
+			}
+			$texte = $reste . $tranche;
+			if ( preg_match_all( '#/MediaBox\s*\[\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s+(-?[0-9.]+)\s+(-?[0-9.]+)\s*\]#', $texte, $boites, PREG_SET_ORDER ) ) {
+				foreach ( $boites as $b ) {
+					$l = abs( (float) $b[3] - (float) $b[1] );
+					$h = abs( (float) $b[4] - (float) $b[2] );
+					if ( $l < 1 || $h < 1 ) {
+						continue;
+					}
+					$cote = max( $l, $h );
+					if ( 0.0 === $plus_petit || $cote < $plus_petit ) {
+						$plus_petit = $cote;
+					}
+				}
+			}
+			$reste = substr( $texte, -200 );
+		}
+		fclose( $flux );
+		return $plus_petit;
+	}
+
+	/**
 	 * Réduit une image jusqu'à tenir sous le plafond de poids.
 	 *
 	 * La qualité baisse par paliers, et l'on s'arrête dès que le fichier
@@ -818,8 +886,10 @@ class Notice_Archeomed_Paquet {
 			// lire : sans elle, Imagick le rend à 72 ppp, et un plan au trait
 			// devenait une image floue étiquetée 1 200. Plafonnée à 600 : une
 			// page A4 à 1 200 ppp tiendrait un demi-gigaoctet en mémoire.
-			if ( 'pdf' === strtolower( pathinfo( $source, PATHINFO_EXTENSION ) ) ) {
-				$rendu = $ecran ? 150 : min( 600, max( 150, (int) $dpi ) );
+			$est_pdf = 'pdf' === strtolower( pathinfo( $source, PATHINFO_EXTENSION ) );
+			$rendu   = 0;
+			if ( $est_pdf ) {
+				$rendu = $ecran ? self::rendu_pour_l_ecran( $source, $largeur ) : min( 600, max( 150, (int) $dpi ) );
 				$image->setResolution( $rendu, $rendu );
 			}
 			// « [0] » demande la première vue seulement. Un PDF de deux pages
@@ -832,6 +902,20 @@ class Notice_Archeomed_Paquet {
 			} catch ( Exception $e ) {
 				$image->clear();
 				$image->readImage( $source );
+			}
+			// La page lue n'atteint pas la mesure voulue : la taille trouvée
+			// dans le fichier n'était pas la sienne. On la relit à 150 ppp,
+			// comme avant, plutôt que d'agrandir une image trop petite.
+			if ( $est_pdf && $ecran && $rendu < 150
+				&& max( $image->getImageWidth(), $image->getImageHeight() ) < $largeur ) {
+				$image->clear();
+				$image->setResolution( 150, 150 );
+				try {
+					$image->readImage( $source . '[0]' );
+				} catch ( Exception $e ) {
+					$image->clear();
+					$image->readImage( $source );
+				}
 			}
 			// Ce qui reste de calques dans cette vue s'aplatit. L'objet
 			// d'origine se libère : sur une centaine d'illustrations, les
