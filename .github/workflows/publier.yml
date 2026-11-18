@@ -533,6 +533,7 @@ jobs:
             $t = array(
               "rubrique" => "I. Habitats", "numero" => Notice_Archeomed_Export::numero(), "etape" => "debut",
               "essais" => 0, "raison" => "", "commence" => time() - 200, "entame" => time() - 200,
+              "version" => Notice_Archeomed_Export::version(),
             );
             update_option( Notice_Archeomed_Export::TRAVAIL, $t, false );
             Notice_Archeomed_Export::en_tache();
@@ -546,6 +547,38 @@ jobs:
               exit( 1 );
             }
             echo "Le pas coupé compte : ", $apres["raison"], "\n";
+          '
+
+      - name: Après une mise à jour, l'export oublie les délais de l'ancien code et dit l'heure du prochain essai
+        working-directory: /tmp/wp
+        run: |
+          wp eval '
+            $echecs = array();
+            if ( "" === Notice_Archeomed_Export::version() ) { $echecs[] = "la version du plugin ne se lit pas"; }
+            $loin = time() + 900;
+            $repris = Notice_Archeomed_Export::oublier_l_ancien_code( array(
+              "rubrique" => "I. Habitats", "etape" => "figures", "suivante" => 1,
+              "essais" => 4, "coupures" => 1, "raison" => "coupé", "entame" => time() - 600, "apres" => $loin,
+            ) );
+            if ( Notice_Archeomed_Export::version() !== $repris["version"] || 0 !== $repris["essais"] || 0 !== $repris["coupures"]
+              || isset( $repris["apres"] ) || isset( $repris["entame"] ) || 1 !== $repris["suivante"] || "figures" !== $repris["etape"] ) {
+              $echecs[] = "le délai de l’ancien code tient encore : " . wp_json_encode( $repris );
+            }
+            $t = array(
+              "rubrique" => "I. Habitats", "numero" => Notice_Archeomed_Export::numero(), "etape" => "debut",
+              "essais" => 2, "raison" => "sDrive a refusé", "commence" => time(), "apres" => time() + 480,
+              "version" => Notice_Archeomed_Export::version(),
+            );
+            update_option( Notice_Archeomed_Export::TRAVAIL, $t, false );
+            $e = Notice_Archeomed_Export::etat_de( "I. Habitats" );
+            if ( false === strpos( $e["texte"], "nouvel essai à partir de " ) || false === strpos( $e["texte"], "sDrive a refusé" ) ) {
+              $echecs[] = "l’heure du prochain essai ne se dit pas : " . $e["texte"];
+            }
+            delete_option( Notice_Archeomed_Export::TRAVAIL );
+            delete_option( Notice_Archeomed_Export::ATTENTE );
+            wp_clear_scheduled_hook( Notice_Archeomed_Export::HOOK );
+            if ( $echecs ) { foreach ( $echecs as $x ) { echo "::error::", $x, "\n"; } exit( 1 ); }
+            echo "Mise à jour : délais oubliés ; ", $e["texte"], "\n";
           '
 
       - name: Un formulaire ouvert sans être connecté passe après connexion, et chaque refus se note

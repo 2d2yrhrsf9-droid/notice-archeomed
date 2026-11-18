@@ -53,6 +53,30 @@ class Notice_Archeomed_Export {
 	/** Les passages coupés par le serveur sur une même figure avant qu'on la laisse. */
 	const COUPURES = 2;
 
+	/**
+	 * La version du plugin, lue dans son en-tête : un export ne garde pas,
+	 * d'une version à l'autre, les délais ni les coupures que l'ancien code
+	 * lui a valus.
+	 */
+	public static function version() {
+		static $version = null;
+		if ( null === $version ) {
+			$entete  = get_file_data( dirname( __FILE__ ) . '/notice-archeomed.php', array( 'Version' => 'Version' ) );
+			$version = isset( $entete['Version'] ) ? (string) $entete['Version'] : '';
+		}
+		return $version;
+	}
+
+	/** Un export repris par une autre version : ni délai, ni essai, ni coupure comptés. */
+	public static function oublier_l_ancien_code( $travail ) {
+		unset( $travail['apres'], $travail['entame'] );
+		$travail['essais']   = 0;
+		$travail['coupures'] = 0;
+		$travail['raison']   = '';
+		$travail['version']  = self::version();
+		return $travail;
+	}
+
 	/** Branche la tâche et son réveil. */
 	public static function brancher() {
 		add_action( self::HOOK, array( __CLASS__, 'en_tache' ), 10, 0 );
@@ -168,7 +192,11 @@ class Notice_Archeomed_Export {
 				$texte .= ' : l’export précédent s’efface';
 			}
 			if ( ! empty( $travail['raison'] ) ) {
-				$texte .= ' (nouvel essai : ' . $travail['raison'] . ')';
+				// L'heure du prochain essai : sans elle, l'attente entre deux
+				// essais, qui va jusqu'à un quart d'heure, se lit comme un arrêt.
+				$apres  = isset( $travail['apres'] ) ? (int) $travail['apres'] : 0;
+				$texte .= ' (nouvel essai' . ( $apres > time() ? ' à partir de ' . wp_date( get_option( 'time_format' ), $apres ) : '' )
+					. ' : ' . $travail['raison'] . ')';
 			}
 			return array( 'etat' => 'cours', 'texte' => $texte . '…' );
 		}
@@ -265,6 +293,14 @@ class Notice_Archeomed_Export {
 		wp_cache_delete( self::TRAVAIL, 'options' );
 		wp_cache_delete( self::ATTENTE, 'options' );
 		$travail = self::travail();
+		// Le plugin a été mis à jour pendant l'export : ce qui a fait manquer
+		// ou couper un pas tenait peut-être à l'ancien code. Le nouveau
+		// essaie aussitôt, avec tous ses essais, au lieu d'attendre la fin
+		// d'un délai qu'il ne mérite pas.
+		if ( null !== $travail && ( ! isset( $travail['version'] ) || self::version() !== $travail['version'] ) ) {
+			$travail = self::oublier_l_ancien_code( $travail );
+			update_option( self::TRAVAIL, $travail, false );
+		}
 		if ( null !== $travail && ! empty( $travail['apres'] ) && (int) $travail['apres'] > time() ) {
 			return (int) $travail['apres'];
 		}
@@ -377,6 +413,7 @@ class Notice_Archeomed_Export {
 			'essais'   => 0,
 			'raison'   => '',
 			'commence' => time(),
+			'version'  => self::version(),
 		);
 		update_option( self::TRAVAIL, $travail, false );
 		return $travail;
