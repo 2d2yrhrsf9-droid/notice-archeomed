@@ -46,6 +46,8 @@ class Notice_Archeomed_Paquet {
 	const MEGAPIXELS_MAX = 250;
 	/** Au plus, les pixels d'une page de PDF dessinée : une A4 à 600 ppp. */
 	const MEGAPIXELS_PDF = 36;
+	/** La plus grande figure que la page de la revue imprime, en centimètres. */
+	const PLEINE_PAGE_CM = array( 17, 24 );
 	const POIDS_APERCU   = 150;
 
 	/**
@@ -928,11 +930,6 @@ class Notice_Archeomed_Paquet {
 				$rendu = self::rendu_du_pdf( $source, $largeur, $dpi, $ecran );
 				$image->setResolution( $rendu, $rendu );
 				$voulu = (int) min( 600, max( 150, (int) $dpi ) );
-				if ( ! $ecran && $rendu < $voulu ) {
-					$this->journal[] = basename( $cible ) . ' : PDF dessiné à ' . $rendu . ' ppp au lieu de ' . $voulu
-						. ', sa page se déclarant trop grande (plus de ' . self::MEGAPIXELS_PDF
-						. ' millions de pixels à cette résolution) ; reprenez au besoin l’original.';
-				}
 			}
 			// « [0] » demande la première vue seulement. Un PDF de deux pages
 			// ou un TIFF multi-images chargeait toutes ses vues, que
@@ -965,6 +962,24 @@ class Notice_Archeomed_Paquet {
 				} catch ( Exception $e ) {
 					$image->clear();
 					$image->readImage( $source );
+				}
+			}
+			// Une grande page dessinée sous la résolution voulue n'a rien perdu
+			// tant que ses pixels couvrent encore une pleine page de la revue à
+			// cette résolution : un plan de 86 × 62 cm donne 7 000 pixels à
+			// 207 ppp. Ce n'est alors qu'une information, et non un échec à
+			// reprendre : sept avis de ce genre noyaient ceux qui comptent.
+			if ( $est_pdf && ! $ecran && $rendu < $voulu ) {
+				$pixels = $image->getImageWidth() * $image->getImageHeight();
+				$besoin = self::PLEINE_PAGE_CM[0] * self::PLEINE_PAGE_CM[1] * pow( $voulu / 2.54, 2 );
+				if ( $pixels >= $besoin ) {
+					$this->notes[] = basename( $cible ) . ' : PDF de grand format dessiné à ' . $rendu . ' ppp au lieu de ' . $voulu
+						. ' (' . self::MEGAPIXELS_PDF . ' millions de pixels au plus) ; c’est encore assez pour une pleine page à '
+						. $voulu . ' ppp, et l’original se garde parmi les originaux.';
+				} else {
+					$this->journal[] = basename( $cible ) . ' : PDF dessiné à ' . $rendu . ' ppp au lieu de ' . $voulu
+						. ', sa page se déclarant trop grande (plus de ' . self::MEGAPIXELS_PDF
+						. ' millions de pixels à cette résolution) ; reprenez au besoin l’original.';
 				}
 			}
 			// Ce qui reste de calques dans cette vue s'aplatit. L'objet

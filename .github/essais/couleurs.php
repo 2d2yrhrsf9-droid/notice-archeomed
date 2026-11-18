@@ -120,6 +120,10 @@ $a4     = $pdf( array( '595 842' ) );
 $hr     = $rendu_du_pdf->invoke( null, $geante, PHP_INT_MAX, 1200, false );
 $pixels = ( 2480 * $hr / 72 ) * ( 1754 * $hr / 72 );
 $verifier( $pixels <= Notice_Archeomed_Paquet::MEGAPIXELS_PDF * 1000000, 'une page géante ne passe pas le plafond de pixels (' . $hr . ' ppp, ' . round( $pixels / 1e6 ) . ' Mpx)' );
+// Ainsi dessinée, elle couvre encore une pleine page de la revue à 600 ppp :
+// le lisez-moi la range parmi les notes, non parmi ce qui est à reprendre.
+$pleine = Notice_Archeomed_Paquet::PLEINE_PAGE_CM[0] * Notice_Archeomed_Paquet::PLEINE_PAGE_CM[1] * pow( 600 / 2.54, 2 );
+$verifier( $hr < 600 && $pixels >= $pleine, 'une page géante sous 600 ppp suffit encore à une pleine page (' . round( $pixels / 1e6 ) . ' Mpx pour ' . round( $pleine / 1e6 ) . ')' );
 $br = $rendu_du_pdf->invoke( null, $geante, 2500, 150, true );
 $verifier( 91 === $br, 'sa basse définition se dessine d\'après sa plus grande page (lu : ' . $br . ' ppp)' );
 $verifier( 600 === $rendu_du_pdf->invoke( null, $a4, PHP_INT_MAX, 1200, false ), 'une A4 garde ses 600 ppp en haute définition' );
