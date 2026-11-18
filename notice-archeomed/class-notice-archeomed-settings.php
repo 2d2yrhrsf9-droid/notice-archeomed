@@ -38,6 +38,12 @@ class Notice_Archeomed_Settings {
 	/** Le disque que l'hébergeur donne au site, en octets : 2 Go, non extensibles. */
 	const PLAFOND_DISQUE = 2 * GB_IN_BYTES;
 
+	/** L'essai de charge en cours : sa clé et l'heure où il se ferme. */
+	const OPTION_ESSAI_DE_CHARGE = 'na_essai_de_charge';
+
+	/** Combien de temps un essai de charge reste ouvert : deux jours. */
+	const DUREE_ESSAI_DE_CHARGE = 2 * DAY_IN_SECONDS;
+
 	/**
 	 * La part du plafond au-delà de laquelle un dépôt est reçu sans ses
 	 * fichiers. Un disque plein ne refuserait pas seulement les notices :
@@ -1136,6 +1142,9 @@ class Notice_Archeomed_Settings {
 		$quoi    = isset( $_REQUEST['na_quoi'] ) ? sanitize_key( wp_unslash( $_REQUEST['na_quoi'] ) ) : '';
 		$onglets = array(
 			'turnstile' => 'formulaire',
+			'charge_ouvrir'    => 'formulaire',
+			'charge_fermer'    => 'formulaire',
+			'charge_corbeille' => 'formulaire',
 			'envoi'     => 'courriel',
 			'etapes'    => 'courriel',
 			'poids'     => 'courriel',
@@ -1168,6 +1177,12 @@ class Notice_Archeomed_Settings {
 			? sanitize_email( wp_unslash( $_POST['na_essai_vers'] ) ) : '';
 		if ( 'turnstile' === $quoi ) {
 			$resultat = $this->test_cloudflare( self::get( 'turnstile_secret' ) );
+		} elseif ( 'charge_ouvrir' === $quoi ) {
+			$resultat = self::ouvrir_l_essai_de_charge();
+		} elseif ( 'charge_fermer' === $quoi ) {
+			$resultat = self::fermer_l_essai_de_charge();
+		} elseif ( 'charge_corbeille' === $quoi ) {
+			$resultat = self::ecarter_les_notices_d_essai();
 		} elseif ( 'envoi' === $quoi ) {
 			$resultat = $plugin ? $plugin->tester_l_envoi( $vers ) : $absent;
 		} elseif ( 'etapes' === $quoi ) {
@@ -1241,6 +1256,80 @@ class Notice_Archeomed_Settings {
 	private static function fermer_les_reglages() {
 		submit_button( __( 'Enregistrer', 'notice-archeomed' ) );
 		echo '</form>';
+	}
+
+	/**
+	 * L'essai de charge ouvert, ou null : sa clé, et l'heure où il se ferme.
+	 *
+	 * Un dépôt automatique ne passe pas la pièce de puzzle, et c'est voulu.
+	 * Pour éprouver le formulaire à plusieurs dizaines de dépôts, la
+	 * rédaction ouvre donc un essai, pour deux jours au plus : les dépôts qui
+	 * présentent sa clé passent la protection et les plafonds par poste.
+	 * Personne d'autre ne la connaît, et elle cesse de valoir d'elle-même.
+	 */
+	public static function essai_de_charge() {
+		$essai = get_option( self::OPTION_ESSAI_DE_CHARGE );
+		if ( ! is_array( $essai ) || empty( $essai['cle'] ) || ! is_string( $essai['cle'] )
+			|| empty( $essai['jusqua'] ) || (int) $essai['jusqua'] <= time() ) {
+			return null;
+		}
+		return $essai;
+	}
+
+	/** La clé présentée par un dépôt est-elle celle de l'essai ouvert ? */
+	public static function cle_d_essai_valide( $cle ) {
+		$essai = self::essai_de_charge();
+		return null !== $essai && is_string( $cle ) && strlen( $cle ) >= 32
+			&& hash_equals( $essai['cle'], $cle );
+	}
+
+	/** Ouvre un essai de charge, avec une clé neuve. */
+	public static function ouvrir_l_essai_de_charge() {
+		$jusqua = time() + self::DUREE_ESSAI_DE_CHARGE;
+		update_option( self::OPTION_ESSAI_DE_CHARGE, array(
+			'cle'    => wp_generate_password( 40, false, false ),
+			'jusqua' => $jusqua,
+		), false );
+		return array( 'ok' => true, 'message' => 'L’essai de charge est ouvert jusqu’au '
+			. wp_date( 'j F Y à H:i', $jusqua ) . '. Sa clé figure ci-dessous.' );
+	}
+
+	/** Ferme l'essai de charge : sa clé ne vaut plus rien. */
+	public static function fermer_l_essai_de_charge() {
+		delete_option( self::OPTION_ESSAI_DE_CHARGE );
+		return array( 'ok' => true, 'message' => 'L’essai de charge est fermé : sa clé ne fait plus passer aucun dépôt. Les notices qu’il a déposées restent marquées « essai ».' );
+	}
+
+	/** Les notices déposées par un essai de charge, hors corbeille. */
+	public static function notices_d_essai() {
+		return array_map( 'intval', get_posts( array(
+			'post_type'   => Notice_Archeomed_File::CPT,
+			'post_status' => 'any',
+			'meta_key'    => '_na_essai',
+			'fields'      => 'ids',
+			'numberposts' => -1,
+		) ) );
+	}
+
+	/**
+	 * Met à la corbeille les notices d'un essai de charge.
+	 *
+	 * La corbeille et non l'effacement : une notice d'essai qu'on voudrait
+	 * garder s'en retire d'un clic, et WordPress vide la corbeille de
+	 * lui-même au bout de trente jours. Les dossiers rangés sur sDrive
+	 * restent : ils se suppriment là-bas.
+	 */
+	public static function ecarter_les_notices_d_essai() {
+		$ids = self::notices_d_essai();
+		$mises = 0;
+		foreach ( $ids as $id ) {
+			if ( wp_trash_post( $id ) ) {
+				++$mises;
+			}
+		}
+		return array( 'ok' => $mises === count( $ids ), 'message' => sprintf(
+			'%d notice(s) d’essai sur %d mise(s) à la corbeille de la Chronique. Leurs dossiers sur sDrive restent à supprimer là-bas.',
+			$mises, count( $ids ) ) );
 	}
 
 	/** Le formulaire d'un essai, adressé au gestionnaire des essais. */
@@ -1916,6 +2005,36 @@ class Notice_Archeomed_Settings {
 			</form>
 			<?php
 			if ( 'turnstile' === $essai['quoi'] ) {
+				self::resultat( $essai['resultat'] );
+			}
+			?>
+		</div>
+
+		<?php
+		$charge        = self::essai_de_charge();
+		$notices_essai  = self::notices_d_essai();
+		?>
+		<div id="na-essai-de-charge">
+			<h2>Essai de charge</h2>
+			<p>Pour éprouver le formulaire avec des dépôts automatiques, à plusieurs en même temps. Tant que l’essai est ouvert, et deux jours au plus, un dépôt qui présente sa clé passe sans pièce de puzzle ni Turnstile, et sans plafond par poste ni par adresse ; le plafond de toute la revue et la garde du disque restent en place. La page de fin d’un tel dépôt donne son lien de correction. Chaque notice déposée ainsi est marquée «&nbsp;essai&nbsp;» et n’entre pas dans l’annuaire.</p>
+			<?php if ( null !== $charge ) : ?>
+				<p><strong>Ouvert jusqu’au <?php echo esc_html( wp_date( 'j F Y à H:i', (int) $charge['jusqua'] ) ); ?>.</strong> Clé&nbsp;: <code><?php echo esc_html( $charge['cle'] ); ?></code></p>
+			<?php else : ?>
+				<p>Aucun essai de charge n’est ouvert.</p>
+			<?php endif; ?>
+			<?php self::ouvrir_un_essai(); ?>
+				<?php if ( null !== $charge ) : ?>
+					<button type="submit" class="button" name="na_quoi" value="charge_fermer">Fermer l’essai</button>
+				<?php else : ?>
+					<button type="submit" class="button" name="na_quoi" value="charge_ouvrir">Ouvrir un essai de charge pour deux jours</button>
+				<?php endif; ?>
+				<?php if ( ! empty( $notices_essai ) ) : ?>
+					<button type="submit" class="button" name="na_quoi" value="charge_corbeille"
+						onclick="return confirm('Mettre à la corbeille les <?php echo (int) count( $notices_essai ); ?> notices d’essai ?');">Mettre les <?php echo (int) count( $notices_essai ); ?> notices d’essai à la corbeille</button>
+				<?php endif; ?>
+			</form>
+			<?php
+			if ( in_array( $essai['quoi'], array( 'charge_ouvrir', 'charge_fermer', 'charge_corbeille' ), true ) ) {
 				self::resultat( $essai['resultat'] );
 			}
 			?>

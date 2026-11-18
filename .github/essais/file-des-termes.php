@@ -1279,6 +1279,42 @@ remove_filter( 'pre_http_request', $refuse_proxy, 10 );
 na_verifier( false === $essai_pactols['ok'] && false !== strpos( $essai_pactols['message'], 'proxy' ),
 	'l\'essai dit que le proxy refuse Pactols', $essai_pactols );
 
+WP_CLI::log( 'L\'essai de charge' );
+$ch_option = Notice_Archeomed_Settings::OPTION_ESSAI_DE_CHARGE;
+delete_option( $ch_option );
+na_verifier( null === Notice_Archeomed_Settings::essai_de_charge() && ! Notice_Archeomed_Settings::cle_d_essai_valide( '' ),
+	'sans essai ouvert, aucune clé ne vaut' );
+Notice_Archeomed_Settings::ouvrir_l_essai_de_charge();
+$ch = Notice_Archeomed_Settings::essai_de_charge();
+na_verifier( is_array( $ch ) && 40 === strlen( $ch['cle'] ) && Notice_Archeomed_Settings::cle_d_essai_valide( $ch['cle'] )
+	&& ! Notice_Archeomed_Settings::cle_d_essai_valide( strrev( $ch['cle'] ) )
+	&& ! Notice_Archeomed_Settings::cle_d_essai_valide( substr( $ch['cle'], 0, 20 ) )
+	&& ! Notice_Archeomed_Settings::cle_d_essai_valide( array( $ch['cle'] ) )
+	&& (int) $ch['jusqua'] > time() + DAY_IN_SECONDS && (int) $ch['jusqua'] <= time() + 2 * DAY_IN_SECONDS,
+	'un essai ouvert pour deux jours : sa clé vaut, aucune autre', $ch );
+update_option( $ch_option, array( 'cle' => $ch['cle'], 'jusqua' => time() - 1 ), false );
+na_verifier( ! Notice_Archeomed_Settings::cle_d_essai_valide( $ch['cle'] ), 'un essai échu ne fait plus rien passer' );
+Notice_Archeomed_Settings::fermer_l_essai_de_charge();
+na_verifier( false === get_option( $ch_option ), 'fermé, l\'essai ne laisse rien' );
+$ch_id    = na_notice( array( 'commune' => 'Essaiville', 'resp_nom' => 'Fictif', 'resp_prenom' => 'Jean', 'resp_email' => 'jean@charge.invalid' ) );
+$ch_vraie = na_notice( array( 'commune' => 'Vraieville', 'resp_nom' => 'Réel', 'resp_prenom' => 'Anne', 'resp_email' => 'anne@charge.test' ) );
+update_post_meta( $ch_id, '_na_essai', 1 );
+$ch_ann = array_column( Notice_Archeomed_Annuaire::recenser(), 'courriel' );
+na_verifier( ! in_array( 'jean@charge.invalid', $ch_ann, true ) && in_array( 'anne@charge.test', $ch_ann, true ),
+	'l\'annuaire ignore les auteurs d\'une notice d\'essai, pas les autres', $ch_ann );
+$ch_etats  = apply_filters( 'display_post_states', array(), get_post( $ch_id ) );
+$ch_autres = apply_filters( 'display_post_states', array(), get_post( $ch_vraie ) );
+na_verifier( isset( $ch_etats['na_essai'] ) && ! isset( $ch_autres['na_essai'] ),
+	'la liste marque « Essai » la seule notice d\'essai', array( $ch_etats, $ch_autres ) );
+na_verifier( array( $ch_id ) === Notice_Archeomed_Settings::notices_d_essai(), 'les notices d\'essai se retrouvent toutes, et elles seules',
+	Notice_Archeomed_Settings::notices_d_essai() );
+$ch_r = Notice_Archeomed_Settings::ecarter_les_notices_d_essai();
+na_verifier( ! empty( $ch_r['ok'] ) && 'trash' === get_post_status( $ch_id ) && 'private' === get_post_status( $ch_vraie )
+	&& array() === Notice_Archeomed_Settings::notices_d_essai(),
+	'la corbeille ne prend que les notices d\'essai', $ch_r );
+wp_delete_post( $ch_id, true );
+wp_delete_post( $ch_vraie, true );
+
 WP_CLI::log( 'La sortie vers Cloudflare' );
 $cf_vu     = array();
 $cf_reponse = null;

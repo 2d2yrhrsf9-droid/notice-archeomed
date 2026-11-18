@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.88
+# Formulaire des notices d’archéologie médiévale — version 3.89
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -207,6 +207,16 @@ aussi y coller sa clé secrète. Le bouton « Tester Cloudflare », visible quel
 que soit la protection, dit si le serveur joint Cloudflare (un proxy peut
 l'empêcher) et, si une clé est enregistrée, si Cloudflare la reconnaît ; il
 n'envoie aucune notice. La pièce de puzzle, choisie par défaut, ne demande rien.
+
+Le même onglet ouvre un **essai de charge**, pour éprouver le formulaire avec
+des dépôts automatiques, à plusieurs en même temps. Ouvert pour deux jours au
+plus, il donne une clé : un dépôt qui la présente (champ `na_essai`) passe
+sans pièce de puzzle ni Turnstile, et sans plafond par poste ni par adresse.
+Le plafond de toute la revue le borne sans qu'il s'y compte, et la garde du
+disque reste en place. La réponse d'un tel dépôt porte son lien de correction
+(en-tête `X-NA-Correction`). Ses notices sont marquées « Essai » dans la liste,
+n'entrent pas dans l'annuaire, et un bouton les met toutes à la corbeille ;
+leurs dossiers sur sDrive se suppriment là-bas.
 
 Les réglages sont rangés en onglets : Destinataires, Numéro et iconographie,
 Normes éditoriales, Styles Métopes, Formulaire, Accessibilité, Candidats à

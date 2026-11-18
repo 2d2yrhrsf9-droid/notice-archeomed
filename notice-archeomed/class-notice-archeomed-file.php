@@ -96,6 +96,7 @@ class Notice_Archeomed_File {
 		// Les chemins par lesquels une notice quittait la file sans qu'on le
 		// veuille : modification rapide, statut changé, restauration.
 		add_filter( 'post_row_actions', array( $this, 'actions_de_ligne' ), 10, 2 );
+		add_filter( 'display_post_states', array( $this, 'marquer_l_essai' ), 10, 2 );
 		add_filter( 'bulk_actions-edit-' . self::CPT, array( $this, 'actions_groupees' ) );
 		add_filter( 'display_post_states', array( $this, 'etats_affiches' ), 10, 2 );
 		add_filter( 'wp_untrash_post_status', array( $this, 'statut_a_la_restauration' ), 10, 2 );
@@ -2376,6 +2377,15 @@ class Notice_Archeomed_File {
 		if ( 0 === $total && $objet ) {
 			$objet->labels->not_found = __( 'Aucune notice reçue pour l’instant. Chaque dépôt fait par le formulaire paraîtra ici, avec l’état de son envoi à la rédaction.', 'notice-archeomed' );
 		}
+	}
+
+	/** Une notice d'essai de charge porte la mention « Essai » dans la liste. */
+	public function marquer_l_essai( $etats, $post ) {
+		if ( $post instanceof WP_Post && self::CPT === $post->post_type
+			&& get_post_meta( $post->ID, '_na_essai', true ) ) {
+			$etats['na_essai'] = 'Essai';
+		}
+		return $etats;
 	}
 
 	/**

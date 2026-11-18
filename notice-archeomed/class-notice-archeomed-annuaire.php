@@ -72,7 +72,8 @@ class Notice_Archeomed_Annuaire {
 	 * Le nom, le prénom et l'institution sont ceux de la notice la plus
 	 * récente qui les donne : une personne qui a changé de laboratoire
 	 * paraît sous le nouveau. Les notices qu'une correction remplace ne sont
-	 * pas comptées, ni les adresses retirées. La saisie se lit par paquets
+	 * pas comptées, ni les adresses retirées, ni les notices d'un essai de
+	 * charge, dont les auteurs n'existent pas. La saisie se lit par paquets
 	 * de deux cents.
 	 */
 	public static function recenser() {
@@ -90,7 +91,8 @@ class Notice_Archeomed_Annuaire {
 				"SELECT p.ID, p.post_title, m.meta_value, r.meta_value AS reference FROM {$wpdb->posts} p
 				JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_na_donnees'
 				LEFT JOIN {$wpdb->postmeta} r ON r.post_id = p.ID AND r.meta_key = '_na_reference'
-				WHERE p.post_type = %s AND p.post_status = 'private' AND p.ID > %d ORDER BY p.ID ASC LIMIT 200",
+				LEFT JOIN {$wpdb->postmeta} e ON e.post_id = p.ID AND e.meta_key = '_na_essai'
+				WHERE p.post_type = %s AND p.post_status = 'private' AND e.meta_id IS NULL AND p.ID > %d ORDER BY p.ID ASC LIMIT 200",
 				Notice_Archeomed_File::CPT, $depuis ) );
 			foreach ( (array) $lignes as $ligne ) {
 				$depuis = (int) $ligne->ID;

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.88
+ * Version: 3.89
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -359,6 +359,9 @@ class Notice_Archeomed_Pactols {
 	 * le dit.
 	 */
 	private $fichiers_refuses = false;
+
+	/** Vrai quand ce dépôt présente la clé de l'essai de charge ouvert. */
+	private $essai = false;
 
 	// Ce que tous les dépôts peuvent écrire en une heure. Une campagne n'en
 	// approche pas : trois cents notices par an, de quelques Mo à quarante.
@@ -11746,6 +11749,13 @@ class Notice_Archeomed_Pactols {
 		// l'administration, et c'est elle qui tient la revue.
 		$contexte  = $this->contexte_poste();
 		$redaction = null !== $contexte && $contexte['par_la_redaction'] > 0;
+		// Un essai de charge ouvert par la rédaction : le dépôt qui présente
+		// sa clé ne passe ni la protection anti-robot ni les plafonds par
+		// poste. Le plafond de toute la revue le borne, sans qu'il s'y
+		// compte : les vrais déposants du même jour gardent le leur entier.
+		$essai = ! $redaction && Notice_Archeomed_Settings::cle_d_essai_valide(
+			isset( $_POST['na_essai'] ) && is_string( $_POST['na_essai'] ) ? wp_unslash( $_POST['na_essai'] ) : '' );
+		$this->essai = $essai;
 		// Le plafond de tentatives d'abord, et il compte les refus : un robot
 		// qui martèle sans jeton valable ne doit pas passer, lui, sous le
 		// plafond que seuls ses essais aboutis feraient monter.
@@ -11792,7 +11802,7 @@ class Notice_Archeomed_Pactols {
 			error_log( 'Notice Archeomed: correction en place sans réserve valable.' );
 			$this->redirect_result( false, Notice_Archeomed_Relecture::campagne_close() ? 'close' : 'perimee' );
 		}
-		if ( ! $redaction && ! $this->verifier_la_protection() ) {
+		if ( ! $redaction && ! $essai && ! $this->verifier_la_protection() ) {
 			$this->redirect_result( false, 'verification' );
 		}
 		// Le plafond de toute la revue, quelle que soit l'adresse : la barrière
@@ -11881,7 +11891,7 @@ class Notice_Archeomed_Pactols {
 			$this->redirect_result( false, array( 'texte' ) === $manquants ? 'texte' : 'champs',
 				empty( $autres ) ? '' : $autres[0], '', $manquants );
 		}
-		if ( ! $redaction && ! $this->check_send_limit( $d['resp_email'] ) ) {
+		if ( ! $redaction && ! $essai && ! $this->check_send_limit( $d['resp_email'] ) ) {
 			error_log( 'Notice Archeomed: send limit reached.' );
 			$this->redirect_result( false, 'envois' );
 		}
@@ -11968,6 +11978,13 @@ class Notice_Archeomed_Pactols {
 				'vivant'           => true,
 				'par_la_redaction' => 0,
 			), MONTH_IN_SECONDS );
+			// La notice d'un essai de charge se reconnaît, et son déposant
+			// automatique reçoit le lien de correction que la copie aurait
+			// porté : ses auteurs n'ont pas d'adresse où la lire.
+			if ( $essai ) {
+				update_post_meta( $id, '_na_essai', 1 );
+				header( 'X-NA-Correction: ' . esc_url_raw( $d['correction_url'] ) );
+			}
 			// Le temps de la préparation, la file laisse la notice : la
 			// marque est posée par l'inscription même. Si la requête meurt,
 			// elle vieillit et la file reprend la notice d'elle-même.
@@ -14490,7 +14507,9 @@ class Notice_Archeomed_Pactols {
 	}
 
 	private function record_global_send() {
-		self::ajouter_au_compteur( 'na_envois_global' );
+		if ( ! $this->essai ) {
+			self::ajouter_au_compteur( 'na_envois_global' );
+		}
 		$this->consommer_le_sceau();
 	}
 	private function verify_turnstile() {
