@@ -1394,9 +1394,13 @@ class Notice_Archeomed_Pactols {
 			$entrees[] = array( 'quoi' => 'notice', 'd' => $d, 'clef' => $this->classement_de( $d ) );
 		}
 		foreach ( $this->file()->renvois_vers( $rubrique ) as $d ) {
-			// Le renvoi se classe dans la sous-rubrique de la notice qui le
-			// porte : c'est la même opération, vue d'une autre rubrique.
-			$entrees[] = array( 'quoi' => 'renvoi', 'd' => $d, 'clef' => $this->classement_de( $d ) );
+			// Le renvoi se classe dans la famille de la notice qui le porte :
+			// c'est la même opération, vue d'une autre rubrique. Mais il se
+			// range sous la rubrique du fascicule, comme il s'y titre : un
+			// renvoi venu de V gardait sa matière, « A1 », qui se classe après
+			// « 2 », et rouvrait « I. 1. » derrière « I. 2. ».
+			$entrees[] = array( 'quoi' => 'renvoi', 'd' => $d, 'clef' => $this->classement_de(
+				array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ) );
 		}
 		$entrees = $this->ranger_comme_au_fascicule( $entrees );
 

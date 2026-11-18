@@ -826,7 +826,8 @@ class Notice_Archeomed_Relecture {
 			foreach ( $notice_archeomed_file->renvois_vers( $rubrique, true ) as $id => $d ) {
 				$renvois[] = array(
 					'id'      => (int) $id,
-					'clef'    => $plugin->classement_de( $d ),
+					// Rangé et titré sous la rubrique lue, comme au fascicule.
+					'clef'    => $plugin->classement_de( array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ),
 					'famille' => $plugin->titre_de_famille( array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ),
 					'titre'   => $plugin->titre_de_liste( $d ),
 				);

@@ -1120,9 +1120,15 @@ $fasc_d = function ( $commune, $rubrique, $renvoi = '' ) use ( $saisie_styles ) 
 };
 $renvoyee = na_notice( $fasc_d( 'Caen', 'I. Constructions et habitats civils', 'II. Constructions et habitats ecclésiastiques' ) );
 $GLOBALS['notice_archeomed_file']->poser_le_classement( $renvoyee, $fasc_d( 'Caen', 'I. Constructions et habitats civils' ) );
+// Un renvoi venu de V porte sa matière : il se rangeait après « II. 2. » et
+// rouvrait « II. 1. » derrière elle.
+$d_artisan = array_merge( $fasc_d( 'Lisieux', 'V. Installations artisanales', 'II. Constructions et habitats ecclésiastiques' ), array( 'rubrique_matiere' => 'A' ) );
+$artisan   = na_notice( $d_artisan );
+$GLOBALS['notice_archeomed_file']->poser_le_classement( $artisan, $d_artisan );
 $erreur_fasc = '';
 $fascicule   = na_appel( $plugin, 'fabriquer_le_fascicule', array( 'II. Constructions et habitats ecclésiastiques', array(
-	$fasc_d( 'Bayeux', 'II. Constructions et habitats ecclésiastiques' ), $fasc_d( 'Falaise', 'II. Constructions et habitats ecclésiastiques' ) ), &$erreur_fasc ) );
+	$fasc_d( 'Bayeux', 'II. Constructions et habitats ecclésiastiques' ), $fasc_d( 'Falaise', 'II. Constructions et habitats ecclésiastiques' ),
+	array_merge( $fasc_d( 'Vire', 'II. Constructions et habitats ecclésiastiques' ), array( 'nature' => 'Prospection archéologique' ) ) ), &$erreur_fasc ) );
 $xml_fasc = '';
 if ( '' !== $fascicule && class_exists( 'ZipArchive' ) ) {
 	$zip_fasc = new ZipArchive();
@@ -1134,9 +1140,14 @@ if ( '' !== $fascicule && class_exists( 'ZipArchive' ) ) {
 }
 $xml_fasc = str_replace( "\u{00A0}", ' ', $xml_fasc );
 wp_delete_post( $renvoyee, true );
+wp_delete_post( $artisan, true );
+$pos_lisieux = strpos( $xml_fasc, 'Lisieux' );
+$pos_ii_2    = strpos( $xml_fasc, 'II. 2. –' );
 na_verifier( 1 === substr_count( $xml_fasc, 'II. 1. – Opérations de terrain' ) && false === strpos( $xml_fasc, '>I. 1. –' )
 	&& false !== strpos( $xml_fasc, 'Voir dans la rubrique' ),
 	'un renvoi se range sous la sous-rubrique du fascicule, sans en ouvrir une fausse', '' !== $erreur_fasc ? $erreur_fasc : substr_count( $xml_fasc, '1. –' ) );
+na_verifier( false !== $pos_lisieux && false !== $pos_ii_2 && $pos_lisieux < $pos_ii_2 && 1 === substr_count( $xml_fasc, 'II. 2. –' ),
+	'un renvoi venu de V se range avec sa famille, avant « II. 2. », sans la matière de sa rubrique', array( $pos_lisieux, $pos_ii_2, substr_count( $xml_fasc, '. –' ) ) );
 
 WP_CLI::log( 'Une expansion tombée n\'est pas un terme lu' );
 $ark_tombe = 'https://ark.frantiq.fr/ark:/26678/pcrtTombe';
