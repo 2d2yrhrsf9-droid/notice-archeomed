@@ -3622,6 +3622,126 @@ na_verifier( false === strpos( $ecran_autre, 'name="resp_nom"' ) && false !== st
 na_verifier( false === strpos( $ecran_abonne, 'na-rel-sommaire' ) && false !== strpos( $ecran_abonne, 'réservée aux relecteurs' ) && false === strpos( $ecran_abonne, 'Falaise' )
 	&& false === strpos( $ecran_anonyme, 'na-rel-sommaire' ) && false !== strpos( $ecran_anonyme, 'wp-login.php' ),
 	'un compte sans droit lit une phrase, et rien de plus ; sans connexion, l\'écran ne propose que de se connecter' );
+// La relecture vue comme un coordinateur : la direction emprunte son
+// regard, voit l'écran comme lui, et rien de ce qu'elle y fait ne reste.
+$vue_cle   = function ( $compte ) {
+	return 'na_relecture_vue_' . (int) $compte;
+};
+$rendre_vue = function ( $compte, $notice ) use ( $R ) {
+	wp_set_current_user( $compte );
+	$_GET = array( 'na_notice' => (string) $notice );
+	$html = do_shortcode( '[' . $R::SHORTCODE . ']' );
+	$_GET = array();
+	return $html;
+};
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+$version_vue = $file_rel->version_de( $rel_a );
+$journal_vue = count( $R::journal_de( $rel_a ) );
+$regard_1    = $R::regard_choisi( array( 'sorte' => 'compte', 'valeur' => $coord_1 ) );
+$regard_2    = $R::regard_choisi( array( 'sorte' => 'rubrique', 'valeur' => $rubs_rel[1] ) );
+$memes_droits = true;
+foreach ( array( $rel_a, $rel_b, $rel_c, $rel_d ) as $id ) {
+	$memes_droits = $memes_droits && $R::droit_sur( $id, $coord_1 ) === $R::droit_sur( $id, $regard_1 )
+		&& $R::droit_sur( $id, $coord_2 ) === $R::droit_sur( $id, $regard_2 );
+}
+na_verifier( $regard_1 instanceof Notice_Archeomed_Regard && $coord_1 === (int) $regard_1->ID && $R::rubriques_de( $coord_1 ) === $R::rubriques_de( $regard_1 )
+	&& $regard_2 instanceof Notice_Archeomed_Regard && array( $rubs_rel[1] ) === $R::rubriques_de( $regard_2 ) && -1 === (int) $regard_2->ID
+	&& ! $R::peut_tout( $regard_1 ) && ! $R::peut_tout( $regard_2 ) && $memes_droits,
+	'le regard d\'un coordinateur a ses rubriques et ses droits, ni plus ni moins ; celui d\'une rubrique sans compte, cette rubrique seule' );
+na_verifier( null === $R::regard_choisi( array( 'sorte' => 'compte', 'valeur' => $redac ) ) && null === $R::regard_choisi( array( 'sorte' => 'compte', 'valeur' => $abonne_rel ) )
+	&& null === $R::regard_choisi( array( 'sorte' => 'compte', 'valeur' => 999999 ) ) && null === $R::regard_choisi( array( 'sorte' => 'rubrique', 'valeur' => 'XX. Rubrique forgée' ) )
+	&& null === $R::regard_choisi( 'compte:' . $coord_1 ),
+	'on n\'emprunte que le regard d\'un coordinateur des réglages, ou d\'une rubrique du fascicule' );
+$possibles_vue = $R::regards_possibles();
+na_verifier( isset( $possibles_vue['comptes'][ 'compte:' . $coord_1 ], $possibles_vue['comptes'][ 'compte:' . $coord_2 ] )
+	&& ! isset( $possibles_vue['comptes'][ 'compte:' . $redac ] ) && count( $rubs_rel ) === count( $possibles_vue['rubriques'] )
+	&& 0 === strpos( $possibles_vue['comptes'][ 'compte:' . $coord_1 ], 'Jeanne Martin — rubrique ' ),
+	'la liste propose les coordinateurs des réglages, avec leurs rubriques, puis chaque rubrique', $possibles_vue );
+
+// Rien ne s'écrit par un regard.
+$_POST       = wp_slash( array( 'texte_notice' => '<p>Le regard récrit la notice.</p>', 'remarque' => 'Remarque du regard.' ) );
+$ecrit_vue   = $R::enregistrer( $rel_a, $version_vue, $regard_1 );
+$R::noter_au_journal( $rel_a, $regard_1, array( 'essai' ), 'a_relire', 'a_relire', 'Trace du regard.' );
+$soumis_vue  = $R::soumettre_la_notice( $rel_a, $regard_1 );
+$_POST       = array();
+$d_vue       = $lire_rel( $rel_a );
+$verrou_vue  = $R::verrou_de( $rel_a );
+na_verifier( 'interdit' === $ecrit_vue['issue'] && $version_vue === $file_rel->version_de( $rel_a ) && false === strpos( $d_vue['texte_notice'], 'Le regard récrit' )
+	&& $journal_vue === count( $R::journal_de( $rel_a ) ) && 0 === $verrou_vue['par'] && '' !== $soumis_vue,
+	'le regard n\'enregistre rien, ne note rien au journal, ne prend pas le verrou et n\'envoie rien à l\'auteur', array( $ecrit_vue, $soumis_vue ) );
+
+// Le choix : pour soi seul, et seulement pour qui relit tout.
+wp_set_current_user( $coord_1 );
+$emprunt_coord = $R::emprunter_le_regard( $coord_1, 'compte:' . $coord_2 );
+set_transient( $vue_cle( $coord_1 ), array( 'sorte' => 'compte', 'valeur' => $coord_2 ), HOUR_IN_SECONDS );
+$vue_du_coord  = $R::vue();
+$reste_coord   = get_transient( $vue_cle( $coord_1 ) );
+na_verifier( false === $emprunt_coord && null === $vue_du_coord && false === $reste_coord,
+	'un coordinateur n\'emprunte pas le regard d\'un autre : un choix posé pour lui ne vaut rien, et s\'efface' );
+wp_set_current_user( $redac );
+$emprunt_redac = $R::emprunter_le_regard( $redac, 'compte:' . $coord_1 );
+$refus_redac   = ! $R::emprunter_le_regard( $redac, 'compte:' . $redac ) && ! $R::emprunter_le_regard( $redac, 'compte:' . $abonne_rel )
+	&& ! $R::emprunter_le_regard( $redac, 'rubrique:99' ) && ! $R::emprunter_le_regard( $redac, 'n’importe quoi' );
+$vue_redac     = $R::vue();
+wp_set_current_user( $admin_rel );
+$vue_admin     = $R::vue();
+na_verifier( $emprunt_redac && $refus_redac && $vue_redac instanceof Notice_Archeomed_Regard && $coord_1 === (int) $vue_redac->ID && null === $vue_admin,
+	'la direction emprunte le regard d\'un coordinateur pour son compte seul ; un choix refusé ne remplace pas le sien' );
+
+// L'écran sous ce regard : celui du coordinateur, bandeau en tête, inerte.
+$ecran_vue   = $rendre_vue( $redac, $rel_a );
+$verrou_vue  = $R::verrou_de( $rel_a );
+$actifs_vue  = preg_match_all( '#<(input|select|textarea|button)\b(?![^>]*\sdisabled\b)(?![^>]*na-rel-agrandir)[^>]*>#i', $ecran_vue );
+na_verifier( false !== strpos( $ecran_vue, esc_html( $R::phrase_du_regard( $regard_1 ) ) ) && false !== strpos( $ecran_vue, 'Jeanne Martin (coordination de la rubrique ' )
+	&& false !== strpos( $ecran_vue, 'Rien de ce que vous faites ici ne s’enregistre.' ) && false !== strpos( $ecran_vue, 'na_relecture_vue_quitter' )
+	&& false === strpos( $ecran_vue, 'La campagne n’est pas close' ) && false === strpos( $ecran_vue, 'Vous voyez toutes les rubriques' ),
+	'l\'écran dit qui l\'on regarde, que rien ne s\'enregistre, et propose d\'en sortir', substr( $ecran_vue, 0, 1500 ) );
+na_verifier( 1 === preg_match( '#<input disabled[^>]*name="resp_nom"#', $ecran_vue ) && 0 === $actifs_vue && false === strpos( $ecran_vue, 'example.org' )
+	&& false === strpos( $ecran_vue, 'na-rel-sommaire--tout' ) && 0 === $verrou_vue['par'],
+	'sous le regard du coordinateur, le formulaire est le sien, sans courriel, champs et boutons désactivés, et la notice n\'est pas verrouillée', $actifs_vue );
+$ecran_vue_d = $rendre_vue( $redac, $rel_d );
+na_verifier( false !== strpos( $ecran_vue_d, 'Cette notice n’est pas de vos rubriques.' ) && false === strpos( $ecran_vue_d, 'name="resp_nom"' ),
+	'une notice hors de ses rubriques ne se montre pas plus sous son regard qu\'à lui' );
+$R::prendre_le_verrou( $rel_a, $redac );
+$ecran_tenu = $rendre_vue( $redac, $rel_a );
+$R::liberer_le_verrou( $rel_a, $redac );
+na_verifier( false !== strpos( $ecran_tenu, 'Cette notice est ouverte par Direction Essai' ) && false === strpos( $ecran_tenu, 'name="resp_nom"' ),
+	'une notice qu\'un autre tient se montre au regard comme au coordinateur : ouverte par lui, en lecture' );
+
+// Avant la clôture : la direction ne voit rien, le regard voit comme si c'était clos.
+$R::regler( false, array( 0 => array( $coord_1 ), 1 => array( $coord_2 ) ) );
+$ecran_avant = $rendre_vue( $redac, $rel_a );
+$vue_avant   = $R::vue();
+delete_transient( $vue_cle( $redac ) );
+$ecran_seul  = $rendre_vue( $redac, $rel_a );
+na_verifier( null === $R::droit_sur( $rel_a, $redac ) && null === $R::droit_sur( $rel_a, $coord_1 ) && is_array( $R::droit_sur( $rel_a, $regard_1 ) )
+	&& $vue_avant instanceof Notice_Archeomed_Regard && false !== strpos( $ecran_avant, 'La campagne n’est pas close : aujourd’hui, Jeanne Martin ne voit encore aucune notice.' )
+	&& false !== strpos( $ecran_avant, 'name="resp_nom"' ) && false !== strpos( $ecran_seul, 'La relecture s’ouvrira quand la campagne sera close.' )
+	&& false === strpos( $ecran_seul, 'name="resp_nom"' ),
+	'avant la clôture, ni la direction ni le coordinateur ne relisent ; le regard montre la relecture comme si elle l\'était, et le dit' );
+
+// Le regard d'une rubrique, et un choix que les réglages ne permettent plus.
+$R::regler( true, array( 0 => array( $coord_1 ), 1 => array( $coord_2 ) ) );
+wp_set_current_user( $redac );
+$emprunt_rub = $R::emprunter_le_regard( $redac, 'rubrique:2' );
+$ecran_rub   = $rendre_vue( $redac, $rel_d );
+na_verifier( $emprunt_rub && false !== strpos( $ecran_rub, esc_html( $R::phrase_du_regard( $regard_2 ) ) ) && false !== strpos( $ecran_rub, 'comme la verrait la coordination de la rubrique ' )
+	&& false !== strpos( $ecran_rub, 'na-rel-titre' ) && false === strpos( $ecran_rub, 'Cette notice n’est pas de vos rubriques.' ),
+	'le regard d\'une rubrique montre ses notices comme à sa coordination, même sans compte', substr( $ecran_rub, 0, 800 ) );
+$R::emprunter_le_regard( $redac, 'compte:' . $coord_1 );
+$R::regler( true, array( 1 => array( $coord_2 ) ) );
+wp_set_current_user( $redac );
+$vue_perdue = $R::vue();
+na_verifier( null === $vue_perdue && false === get_transient( $vue_cle( $redac ) ) && null === $R::regard_choisi( array( 'sorte' => 'compte', 'valeur' => $coord_1 ) ),
+	'le regard d\'un compte qui ne coordonne plus de rubrique s\'efface à la requête suivante' );
+$R::regler( true, array( 0 => array( $coord_1 ), 1 => array( $coord_2 ) ) );
+foreach ( array( $redac, $coord_1, $admin_rel ) as $compte ) {
+	delete_transient( $vue_cle( $compte ) );
+}
+wp_set_current_user( 0 );
+$_GET  = array();
+$_POST = array();
+
 wp_delete_post( $page_ecran, true );
 wp_delete_user( $abonne_rel );
 

@@ -25,6 +25,12 @@
  * relecteur — part sur sDrive par une tâche à part : une panne de sDrive
  * ne coûte pas une correction.
  *
+ * La direction peut voir l'écran comme le voit un coordinateur — un compte
+ * nommé, ou la coordination d'une rubrique qui n'a pas encore de compte —,
+ * pour préparer la relecture avant de l'ouvrir. Cette vue n'est qu'un
+ * regard : tout s'y calcule avec les droits du coordinateur, mais rien ne
+ * s'y enregistre, ne s'y verrouille ni n'entre au journal.
+ *
  * @package notice-archeomed
  */
 
@@ -77,6 +83,13 @@ class Notice_Archeomed_Relecture {
 	 */
 	const DUREE_DU_VERROU = 300;
 
+	/**
+	 * Le temps que dure le choix de voir la relecture comme un coordinateur.
+	 * Assez pour parcourir ses rubriques ; on n'y reste pas pris le
+	 * lendemain, si l'on a oublié d'en sortir.
+	 */
+	const DUREE_DE_LA_VUE = 2 * HOUR_IN_SECONDS;
+
 	/** Pourquoi une figure se retire : le motif est obligatoire. */
 	const MOTIFS = array(
 		'redondante'   => 'Redondante',
@@ -119,6 +132,8 @@ class Notice_Archeomed_Relecture {
 		add_action( 'admin_post_na_relecture_lire', array( $this, 'rendre_la_lecture' ) );
 		add_action( 'admin_post_na_relecture_soumettre', array( $this, 'soumettre' ) );
 		add_action( 'admin_post_na_relecture_rouvrir', array( $this, 'recevoir_la_reouverture' ) );
+		add_action( 'admin_post_na_relecture_vue', array( $this, 'choisir_la_vue' ) );
+		add_action( 'admin_post_na_relecture_vue_quitter', array( $this, 'quitter_la_vue' ) );
 		add_action( 'wp_ajax_na_relecture_verrou', array( $this, 'tenir_le_verrou' ) );
 		add_action( 'wp_ajax_na_relecture_liberer', array( $this, 'rendre_le_verrou' ) );
 		add_action( self::HOOK, array( __CLASS__, 'en_tache' ), 10, 0 );
@@ -217,6 +232,11 @@ class Notice_Archeomed_Relecture {
 		if ( ! user_can( $compte, self::CAP ) ) {
 			return array();
 		}
+		// Le regard d'une rubrique sans compte : cette rubrique, si elle
+		// est toujours du fascicule.
+		if ( $compte instanceof Notice_Archeomed_Regard && null !== $compte->rubriques_fixees ) {
+			return array_values( array_intersect( $plugin->rubriques(), $compte->rubriques_fixees ) );
+		}
 		$reglages  = self::reglages();
 		$rubriques = array();
 		foreach ( $plugin->rubriques() as $rubrique ) {
@@ -237,13 +257,18 @@ class Notice_Archeomed_Relecture {
 	 * Tout passe par ici, l'affichage comme chaque écriture : l'identifiant
 	 * d'une notice se forge dans une adresse ou un champ caché, et c'est la
 	 * notice elle-même qui dit sa rubrique — jamais la requête. Avant la
-	 * clôture de la campagne, personne ne relit.
+	 * clôture de la campagne, personne ne relit, la direction pas plus
+	 * qu'un autre ; seul le regard d'un coordinateur, que la direction
+	 * emprunte pour préparer la relecture, la voit comme si elle l'était.
 	 */
 	public static function droit_sur( $id, $utilisateur = null ) {
 		$id     = (int) $id;
 		$compte = self::compte( $utilisateur );
 		$plugin = self::plugin();
-		if ( ! $id || null === $plugin || ! self::campagne_close() || ! ( $compte instanceof WP_User ) || ! $compte->exists() ) {
+		if ( ! $id || null === $plugin || ! ( $compte instanceof WP_User ) || ! $compte->exists() ) {
+			return null;
+		}
+		if ( ! self::campagne_close() && ! ( $compte instanceof Notice_Archeomed_Regard ) ) {
 			return null;
 		}
 		$notice = get_post( $id );
@@ -353,6 +378,10 @@ class Notice_Archeomed_Relecture {
 	public function tenir_le_verrou() {
 		$id = isset( $_POST['notice'] ) ? absint( $_POST['notice'] ) : 0;
 		check_ajax_referer( 'na_relecture_verrou_' . $id );
+		// Rien ne se tient pendant qu'on voit la relecture comme un autre.
+		if ( null !== self::vue() ) {
+			wp_send_json_error();
+		}
 		$droit = self::droit_sur( $id );
 		if ( ! self::peut_corriger( $droit, self::etat_de( $id ) ) ) {
 			wp_send_json_error();
@@ -440,6 +469,10 @@ class Notice_Archeomed_Relecture {
 	 */
 	public static function noter_au_journal( $id, $compte, $quoi, $etat_avant, $etat_apres, $remarque = '', $version = 0 ) {
 		$compte = self::compte( $compte );
+		// Le regard d'un coordinateur ne laisse pas de trace.
+		if ( $compte instanceof Notice_Archeomed_Regard ) {
+			return;
+		}
 		add_post_meta( (int) $id, '_na_relecture_journal', wp_slash( array(
 			'le'         => current_time( 'mysql' ),
 			'par'        => ( $compte instanceof WP_User ) && $compte->exists() ? (string) $compte->display_name : '',
@@ -481,6 +514,7 @@ class Notice_Archeomed_Relecture {
 	 *
 	 * Rend ce que rend l'enregistrement de la saisie, avec l'état ; l'issue
 	 * peut être aussi « interdit », « figee » ou « verrouillee » (avec « par »).
+	 * Le regard d'un coordinateur n'enregistre rien : « interdit ».
 	 */
 	public static function enregistrer( $id, $lue, $utilisateur = null ) {
 		$id     = (int) $id;
@@ -488,7 +522,7 @@ class Notice_Archeomed_Relecture {
 		$plugin = self::plugin();
 		$droit  = self::droit_sur( $id, $compte );
 		$rendu  = array( 'issue' => 'interdit', 'version' => 0, 'champs' => array(), 'faits' => array(), 'etat' => '', 'par' => '' );
-		if ( null === $droit || null === $plugin ) {
+		if ( null === $droit || null === $plugin || $compte instanceof Notice_Archeomed_Regard ) {
 			return $rendu;
 		}
 		$etat          = self::etat_de( $id );
@@ -1029,10 +1063,16 @@ class Notice_Archeomed_Relecture {
 		);
 	}
 
-	/** Ce que l'entrée du menu montre : où est la page de relecture. */
+	/**
+	 * Ce que l'entrée du menu montre : où est la page de relecture, et, pour
+	 * la direction, de quoi la voir comme un coordinateur.
+	 */
 	public function afficher_le_lien() {
 		echo '<div class="wrap"><h1>' . esc_html__( 'Relecture de la Chronique', 'notice-archeomed' ) . '</h1>';
 		self::dire_la_page();
+		if ( self::peut_tout() ) {
+			self::afficher_le_choix_du_regard();
+		}
 		echo '</div>';
 	}
 
@@ -1047,6 +1087,283 @@ class Notice_Archeomed_Relecture {
 		echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
 			'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et direction relisent.',
 			self::SHORTCODE ) ) . '</p></div>';
+	}
+
+	// ── La relecture vue comme un coordinateur ────────────────────────────
+
+	/**
+	 * Le regard que ce compte emprunte, ou null s'il voit la relecture comme
+	 * lui-même : celui d'un coordinateur nommé, ou celui de la coordination
+	 * d'une rubrique, qui n'a pas forcément de compte.
+	 *
+	 * Le choix est gardé pour ce compte seul, et relu à chaque requête : il
+	 * ne vaut que pour un compte qui relit tout, et que pour un regard que
+	 * les réglages permettent encore. Un choix qui ne vaut plus s'efface.
+	 * Rien ne le lit hors de l'écran de relecture et des gestes qu'il
+	 * appelle : l'administration, sa barre et la connexion l'ignorent.
+	 */
+	public static function vue() {
+		$reel = wp_get_current_user();
+		if ( ! ( $reel instanceof WP_User ) || ! $reel->exists() ) {
+			return null;
+		}
+		$cle   = self::cle_de_la_vue( $reel->ID );
+		$choix = get_transient( $cle );
+		if ( false === $choix ) {
+			return null;
+		}
+		$regard = self::peut_tout( $reel ) ? self::regard_choisi( $choix ) : null;
+		if ( null === $regard ) {
+			delete_transient( $cle );
+		}
+		return $regard;
+	}
+
+	/** Le compte dont l'écran prend les droits : le regard emprunté, ou soi. */
+	private static function regard() {
+		$vue = self::vue();
+		return null !== $vue ? $vue : wp_get_current_user();
+	}
+
+	/** Où se garde le choix d'un compte. */
+	private static function cle_de_la_vue( $compte ) {
+		return 'na_relecture_vue_' . (int) $compte;
+	}
+
+	/**
+	 * Le regard qu'un choix désigne, s'il est permis, ou null. Un compte doit
+	 * relire sans tout relire, et tenir au moins une rubrique des réglages ;
+	 * une rubrique doit être du fascicule.
+	 */
+	public static function regard_choisi( $choix ) {
+		$plugin = self::plugin();
+		if ( null === $plugin || ! is_array( $choix ) || ! isset( $choix['sorte'], $choix['valeur'] ) || ! is_scalar( $choix['valeur'] ) ) {
+			return null;
+		}
+		if ( 'compte' === $choix['sorte'] ) {
+			$compte = get_userdata( absint( $choix['valeur'] ) );
+			if ( ! ( $compte instanceof WP_User ) || self::peut_tout( $compte ) || ! user_can( $compte, self::CAP ) || empty( self::rubriques_de( $compte ) ) ) {
+				return null;
+			}
+			return Notice_Archeomed_Regard::du_compte( $compte );
+		}
+		if ( 'rubrique' === $choix['sorte'] && in_array( (string) $choix['valeur'], $plugin->rubriques(), true ) ) {
+			return Notice_Archeomed_Regard::de_la_rubrique( (string) $choix['valeur'] );
+		}
+		return null;
+	}
+
+	/**
+	 * Le choix que porte une valeur de la liste : « compte:12 » pour un
+	 * compte, « rubrique:2 » pour la deuxième rubrique ; null sinon. La
+	 * rubrique se garde par son nom, qui ne bouge pas quand l'ordre change.
+	 */
+	private static function choix_de_la_valeur( $valeur ) {
+		$plugin = self::plugin();
+		if ( null === $plugin || ! preg_match( '/^(compte|rubrique):([0-9]+)$/', (string) $valeur, $m ) ) {
+			return null;
+		}
+		if ( 'compte' === $m[1] ) {
+			return array( 'sorte' => 'compte', 'valeur' => (int) $m[2] );
+		}
+		$toutes = $plugin->rubriques();
+		return isset( $toutes[ (int) $m[2] - 1 ] ) ? array( 'sorte' => 'rubrique', 'valeur' => $toutes[ (int) $m[2] - 1 ] ) : null;
+	}
+
+	/** La valeur de la liste qui désigne ce regard. */
+	private static function valeur_du_regard( $regard ) {
+		$plugin = self::plugin();
+		if ( ! ( $regard instanceof Notice_Archeomed_Regard ) || null === $plugin ) {
+			return '';
+		}
+		if ( null === $regard->rubriques_fixees ) {
+			return 'compte:' . (int) $regard->ID;
+		}
+		$rang = array_search( $regard->rubriques_fixees[0], $plugin->rubriques(), true );
+		return false !== $rang ? 'rubrique:' . ( $rang + 1 ) : '';
+	}
+
+	/**
+	 * Les regards qu'on peut emprunter, en valeurs de la liste : les comptes
+	 * que les réglages affectent à une rubrique, puis chaque rubrique.
+	 */
+	public static function regards_possibles() {
+		$plugin   = self::plugin();
+		$possible = array( 'comptes' => array(), 'rubriques' => array() );
+		if ( null === $plugin ) {
+			return $possible;
+		}
+		$reglages = self::reglages();
+		$vus      = array();
+		foreach ( $plugin->rubriques() as $rang => $rubrique ) {
+			$confiee = isset( $reglages['coordinateurs'][ $rubrique ] ) ? array_map( 'intval', (array) $reglages['coordinateurs'][ $rubrique ] ) : array();
+			foreach ( $confiee as $compte ) {
+				if ( isset( $vus[ $compte ] ) ) {
+					continue;
+				}
+				$vus[ $compte ] = true;
+				$regard         = self::regard_choisi( array( 'sorte' => 'compte', 'valeur' => $compte ) );
+				if ( null !== $regard ) {
+					$possible['comptes'][ 'compte:' . $compte ] = $regard->display_name . ' — ' . self::rubriques_courtes( self::rubriques_de( $regard ) );
+				}
+			}
+			$possible['rubriques'][ 'rubrique:' . ( $rang + 1 ) ] = $rubrique . ( empty( $confiee ) ? ' — sans coordinateur' : '' );
+		}
+		asort( $possible['comptes'], SORT_STRING | SORT_FLAG_CASE );
+		return $possible;
+	}
+
+	/** « rubrique II », « rubriques II et IV » : les rubriques par leur seul numéro. */
+	private static function rubriques_courtes( $rubriques ) {
+		$numeros = array();
+		foreach ( (array) $rubriques as $rubrique ) {
+			$numeros[] = (string) preg_replace( '/^([IVX]+)\..*$/u', '$1', (string) $rubrique );
+		}
+		$derniere = array_pop( $numeros );
+		return empty( $numeros ) ? 'rubrique ' . $derniere : 'rubriques ' . implode( ', ', $numeros ) . ' et ' . $derniere;
+	}
+
+	/**
+	 * Ce qu'on voit, en une phrase : « comme Jeanne Martin (coordination de
+	 * la rubrique II) », ou, sans compte, « comme la verrait la coordination
+	 * de la rubrique II ». Le nom tel que le compte le porte, sans accord
+	 * deviné d'après le prénom.
+	 */
+	public static function phrase_du_regard( $regard ) {
+		$rubriques = self::rubriques_courtes( self::rubriques_de( $regard ) );
+		$de        = ( 0 === strpos( $rubriques, 'rubriques ' ) ? 'des ' : 'de la ' ) . $rubriques;
+		if ( $regard instanceof Notice_Archeomed_Regard && null === $regard->rubriques_fixees ) {
+			return sprintf( 'Vous voyez la relecture comme %1$s (coordination %2$s).', $regard->display_name, $de );
+		}
+		return sprintf( 'Vous voyez la relecture comme la verrait la coordination %s.', $de );
+	}
+
+	/**
+	 * Garde pour ce compte le regard que désigne une valeur de la liste ;
+	 * rend vrai si le choix est permis. Le bouton passe par ici, et les
+	 * essais aussi.
+	 */
+	public static function emprunter_le_regard( $compte, $valeur ) {
+		$reel  = get_userdata( (int) $compte );
+		$choix = self::choix_de_la_valeur( $valeur );
+		if ( ! ( $reel instanceof WP_User ) || ! self::peut_tout( $reel ) || null === $choix || null === self::regard_choisi( $choix ) ) {
+			return false;
+		}
+		set_transient( self::cle_de_la_vue( $reel->ID ), $choix, self::DUREE_DE_LA_VUE );
+		return true;
+	}
+
+	/** Le choix d'un regard, dans l'entrée « Relecture » du menu. */
+	private static function afficher_le_choix_du_regard() {
+		$possibles = self::regards_possibles();
+		$vue       = self::vue();
+		$choisie   = self::valeur_du_regard( $vue );
+		$page      = self::page();
+		echo '<h2>' . esc_html__( 'Voir la relecture comme un coordinateur', 'notice-archeomed' ) . '</h2>'
+			. '<p class="description" style="max-width:46em">' . esc_html__( 'La page de relecture telle que la voit un coordinateur : ses rubriques, ses notices et ses renvois, ce qu’il corrige et ce qu’il lit seulement, avec ses boutons. Rien de ce qu’on y fait ne s’enregistre, et rien ne s’y verrouille. Le choix ne vaut que pour votre compte, deux heures au plus ; l’administration ne change pas. Avant la clôture de la campagne, la page se montre comme si elle était close.', 'notice-archeomed' ) . '</p>';
+		if ( isset( $_GET['na_vue'] ) && 'refusee' === $_GET['na_vue'] ) {
+			echo '<div class="notice inline notice-error"><p>' . esc_html__( 'Ce choix n’est plus possible : le compte ne coordonne plus de rubrique, ou la page de relecture manque.', 'notice-archeomed' ) . '</p></div>';
+		}
+		if ( null !== $vue ) {
+			echo '<div class="notice inline notice-info"><p>' . esc_html( self::phrase_du_regard( $vue ) ) . '</p><p>'
+				. ( '' !== $page ? '<a class="button button-primary" href="' . esc_url( $page ) . '">' . esc_html__( 'Voir la relecture', 'notice-archeomed' ) . '</a> ' : '' )
+				. '<a class="button" href="' . esc_url( self::url_pour_quitter_la_vue( 'admin' ) ) . '">' . esc_html__( 'Revenir à ma vue', 'notice-archeomed' ) . '</a></p></div>';
+		}
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="na_relecture_vue">';
+		wp_nonce_field( 'na_relecture_vue' );
+		echo '<p><label for="na-rel-regard">' . esc_html__( 'Voir comme', 'notice-archeomed' ) . '</label> <select id="na-rel-regard" name="regard">';
+		$aucun = array( 'comptes' => 'Aucun compte n’est affecté à une rubrique', 'rubriques' => 'Aucune rubrique' );
+		foreach ( array( 'comptes' => 'Un coordinateur', 'rubriques' => 'Une rubrique' ) as $sorte => $titre ) {
+			echo '<optgroup label="' . esc_attr( $titre ) . '">';
+			if ( empty( $possibles[ $sorte ] ) ) {
+				echo '<option value="" disabled>' . esc_html( $aucun[ $sorte ] ) . '</option>';
+			}
+			foreach ( $possibles[ $sorte ] as $valeur => $libelle ) {
+				echo '<option value="' . esc_attr( $valeur ) . '"' . selected( $valeur, $choisie, false ) . '>' . esc_html( $libelle ) . '</option>';
+			}
+			echo '</optgroup>';
+		}
+		echo '</select> ';
+		submit_button( __( 'Voir la relecture comme lui', 'notice-archeomed' ), 'secondary', 'submit', false, '' === $page ? array( 'disabled' => 'disabled' ) : null );
+		echo '</p></form>';
+	}
+
+	/** L'adresse qui rend à chacun sa propre vue ; vers l'administration si l'on en vient. */
+	public static function url_pour_quitter_la_vue( $retour = '' ) {
+		$args = array( 'action' => 'na_relecture_vue_quitter' );
+		if ( 'admin' === $retour ) {
+			$args['retour'] = 'admin';
+		}
+		return wp_nonce_url( add_query_arg( $args, admin_url( 'admin-post.php' ) ), 'na_relecture_vue_quitter' );
+	}
+
+	/** Le bouton « Voir la relecture comme lui » : le choix, gardé pour ce compte. */
+	public function choisir_la_vue() {
+		if ( ! is_user_logged_in() || ! self::peut_tout( wp_get_current_user() ) ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_relecture_vue' );
+		$valeur = isset( $_POST['regard'] ) && is_string( $_POST['regard'] ) ? sanitize_text_field( wp_unslash( $_POST['regard'] ) ) : '';
+		$page   = self::page();
+		if ( '' === $page || ! self::emprunter_le_regard( get_current_user_id(), $valeur ) ) {
+			wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE, 'na_vue' => 'refusee' ), admin_url( 'admin.php' ) ) );
+			exit;
+		}
+		wp_safe_redirect( $page );
+		exit;
+	}
+
+	/**
+	 * « Revenir à ma vue » : toujours permis, à qui est connecté, même s'il
+	 * a perdu entre-temps le droit de tout relire. On n'efface que son choix.
+	 */
+	public function quitter_la_vue() {
+		if ( ! is_user_logged_in() ) {
+			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
+		}
+		check_admin_referer( 'na_relecture_vue_quitter' );
+		delete_transient( self::cle_de_la_vue( get_current_user_id() ) );
+		$page = self::page();
+		$vers = ( '' === $page || ( isset( $_GET['retour'] ) && 'admin' === $_GET['retour'] ) ) ? add_query_arg( 'page', self::PAGE, admin_url( 'admin.php' ) ) : $page;
+		wp_safe_redirect( $vers );
+		exit;
+	}
+
+	/** Le refus d'un geste pendant la vue : rien n'est fait, et l'on dit pourquoi. */
+	private static function refuser_pendant_la_vue( $vue, $id ) {
+		self::dire( 'warning', array( self::phrase_du_regard( $vue ) . ' Rien n’est enregistré : revenez à votre vue pour corriger.' ) );
+		wp_safe_redirect( self::url( self::rubrique_demandee( self::rubriques_de( $vue ), $_POST ), null === self::droit_sur( $id, $vue ) ? 0 : $id ) );
+		exit;
+	}
+
+	/**
+	 * Le bandeau de la vue : qui l'on regarde, que rien ne s'enregistre, et
+	 * le bouton pour en sortir. Avant la clôture, il dit aussi que ce
+	 * coordinateur ne voit encore rien.
+	 */
+	private static function afficher_le_bandeau( $vue ) {
+		echo '<div class="na-rel-message na-rel-message--warning na-rel-bandeau" role="status"><p><strong>'
+			. esc_html( self::phrase_du_regard( $vue ) . ' Rien de ce que vous faites ici ne s’enregistre.' ) . '</strong></p>';
+		if ( ! self::campagne_close() ) {
+			$qui = null === $vue->rubriques_fixees ? $vue->display_name : 'la coordination de la ' . self::rubriques_courtes( $vue->rubriques_fixees );
+			echo '<p>' . esc_html( sprintf( 'La campagne n’est pas close : aujourd’hui, %s ne voit encore aucune notice.', $qui ) ) . '</p>';
+		}
+		echo '<p><a class="na-rel-bouton" href="' . esc_url( self::url_pour_quitter_la_vue() ) . '">' . esc_html__( 'Revenir à ma vue', 'notice-archeomed' ) . '</a></p></div>';
+	}
+
+	/**
+	 * Rend inertes les champs et les boutons d'un écran vu comme un autre :
+	 * ils restent à leur place, tels qu'il les verrait, mais rien ne se
+	 * remplit ni ne s'envoie. Seul l'agrandissement d'une figure reste
+	 * permis : il ne fait que montrer. Les scripts ne sont pas touchés.
+	 */
+	private static function neutraliser( $html ) {
+		return (string) preg_replace_callback( '#<script\b.*?</script>|<(input|select|textarea|button)\b([^>]*)>#is', function ( $m ) {
+			if ( empty( $m[1] ) || false !== strpos( $m[2], 'na-rel-agrandir' ) || preg_match( '/\sdisabled\b/i', $m[2] ) ) {
+				return $m[0];
+			}
+			return '<' . $m[1] . ' disabled' . $m[2] . '>';
+		}, (string) $html );
 	}
 
 	/** L'adresse de l'écran, pour une rubrique et une notice. */
@@ -1091,15 +1408,32 @@ class Notice_Archeomed_Relecture {
 	private $scripts_du_pied = array();
 
 	/**
+	 * Le regard sous lequel l'écran se dessine, le temps de le dessiner :
+	 * celui d'un coordinateur, que la direction emprunte, ou null.
+	 */
+	private $regard_de_l_ecran = null;
+
+	/** Le compte dont l'écran en cours prend les droits. */
+	private function vu_par() {
+		return null !== $this->regard_de_l_ecran ? $this->regard_de_l_ecran : wp_get_current_user();
+	}
+
+	/**
 	 * Le shortcode : l'écran de relecture dans le contenu de la page, ses
 	 * scripts renvoyés au pied de page — dans le contenu, un thème à blocs
 	 * changeait des « && » en entités et le script tombait en erreur, comme
 	 * pour le formulaire de dépôt.
 	 */
 	public function afficher() {
+		$this->regard_de_l_ecran = self::vue();
 		ob_start();
 		$this->ecran();
 		$html = (string) ob_get_clean();
+		// Vu comme un autre, rien ne se remplit ni ne s'envoie.
+		if ( null !== $this->regard_de_l_ecran ) {
+			$html = self::neutraliser( $html );
+		}
+		$this->regard_de_l_ecran = null;
 		if ( did_action( 'wp_footer' ) ) {
 			return $html;
 		}
@@ -1127,11 +1461,15 @@ class Notice_Archeomed_Relecture {
 			echo '<p><a href="' . esc_url( wp_login_url( (string) get_permalink() ) ) . '">' . esc_html__( 'Connectez-vous pour relire.', 'notice-archeomed' ) . '</a></p></div>';
 			return;
 		}
+		// Vu comme un coordinateur, tout se calcule avec ses droits à lui :
+		// rubriques, notices, ce qui se corrige et ce qui se lit seulement.
+		$vue     = $this->regard_de_l_ecran;
+		$compte  = $this->vu_par();
 		$plugin  = self::plugin();
-		$siennes = self::rubriques_de();
+		$siennes = self::rubriques_de( $compte );
 		// Un compte sans droit ne lit qu'une phrase : ni rubrique, ni notice,
 		// ni même si la relecture est ouverte.
-		if ( null === $plugin || ( ! current_user_can( self::CAP ) && ! self::peut_tout() ) ) {
+		if ( null === $plugin || ( ! user_can( $compte, self::CAP ) && ! self::peut_tout( $compte ) ) ) {
 			echo '<p>' . esc_html__( 'Cette page est réservée aux relecteurs de la Chronique.', 'notice-archeomed' ) . '</p></div>';
 			return;
 		}
@@ -1144,7 +1482,12 @@ class Notice_Archeomed_Relecture {
 			}
 			echo '</div>';
 		}
-		if ( ! self::campagne_close() ) {
+		if ( null !== $vue ) {
+			self::afficher_le_bandeau( $vue );
+		}
+		// Le regard d'un coordinateur voit la relecture comme si la campagne
+		// était close : c'est pour la préparer qu'on l'emprunte.
+		if ( null === $vue && ! self::campagne_close() ) {
 			echo '<p>' . esc_html__( 'La relecture s’ouvrira quand la campagne sera close.', 'notice-archeomed' );
 			if ( Notice_Archeomed_Settings::peut_regler() ) {
 				echo ' <a href="' . esc_url( Notice_Archeomed_Settings::url( 'relecture' ) ) . '">' . esc_html__( 'Régler la relecture', 'notice-archeomed' ) . '</a>';
@@ -1158,8 +1501,8 @@ class Notice_Archeomed_Relecture {
 		}
 		$rubrique = self::rubrique_demandee( $siennes, $_GET, 'na_rubrique' );
 		$id       = isset( $_GET['na_notice'] ) && is_scalar( $_GET['na_notice'] ) ? absint( $_GET['na_notice'] ) : 0;
-		$droit    = $id ? self::droit_sur( $id ) : null;
-		$tout     = self::peut_tout();
+		$droit    = $id ? self::droit_sur( $id, $compte ) : null;
+		$tout     = self::peut_tout( $compte );
 		// La direction lit la notice sous sa rubrique, quoi que dise l'adresse.
 		if ( $tout && null !== $droit && in_array( $droit['rubrique'], $siennes, true ) ) {
 			$rubrique = $droit['rubrique'];
@@ -1273,7 +1616,7 @@ class Notice_Archeomed_Relecture {
 			}
 			$etat   = self::etat_de( $entree['id'] );
 			$verrou = self::verrou_de( $entree['id'] );
-			$tenant = ( $verrou['par'] && $verrou['par'] !== get_current_user_id() ) ? get_userdata( $verrou['par'] ) : null;
+			$tenant = ( $verrou['par'] && $verrou['par'] !== (int) $this->vu_par()->ID ) ? get_userdata( $verrou['par'] ) : null;
 			echo '<li' . ( (int) $entree['id'] === (int) $ouverte ? ' class="na-rel-ouverte"' : '' ) . '>'
 				. '<a href="' . esc_url( self::url( $rubrique, $entree['id'] ) ) . '"' . ( (int) $entree['id'] === (int) $ouverte ? ' aria-current="true"' : '' ) . '>'
 				. esc_html( $entree['titre'] ) . '</a>'
@@ -1298,7 +1641,15 @@ class Notice_Archeomed_Relecture {
 		$corrige = 'renvoi' !== $droit['sorte'] && self::peut_corriger( $droit, $etat );
 		$tenant  = null;
 		if ( $corrige ) {
-			$verrou = self::prendre_le_verrou( $id, get_current_user_id() );
+			// Vu comme un coordinateur, on regarde le verrou sans le prendre :
+			// la notice se montre comme il la verrait, ouverte par un autre
+			// si un autre la tient.
+			if ( null !== $this->regard_de_l_ecran ) {
+				$verrou         = self::verrou_de( $id );
+				$verrou['tenu'] = 0 === $verrou['par'] || (int) $this->regard_de_l_ecran->ID === $verrou['par'];
+			} else {
+				$verrou = self::prendre_le_verrou( $id, get_current_user_id() );
+			}
 			if ( ! $verrou['tenu'] ) {
 				$corrige = false;
 				$tenant  = get_userdata( $verrou['par'] );
@@ -1805,6 +2156,7 @@ class Notice_Archeomed_Relecture {
 			'jeton'   => wp_create_nonce( 'na_relecture_verrou_' . (int) $id ),
 			'pactols' => 'https://pactols.frantiq.fr/',
 			'maximum' => (int) Notice_Archeomed_Pactols::PACTOLS_FIELD_COUNT,
+			'vue'     => null !== $this->regard_de_l_ecran,
 		);
 		?>
 		<script>
@@ -1836,6 +2188,7 @@ class Notice_Archeomed_Relecture {
 				} catch (e) { petitesCapitales = false; }
 				quill = new Quill('#na-rel-editeur', {
 					theme: 'snow',
+					readOnly: !!R.vue,
 					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
@@ -1862,6 +2215,9 @@ class Notice_Archeomed_Relecture {
 						b.title = p[1];
 						if (p[2]) { b.textContent = p[2]; }
 					});
+				}
+				if (R.vue && barre) {
+					[].forEach.call(barre.querySelectorAll('button, select'), function (b) { b.disabled = true; });
 				}
 				quill.on('text-change', function (delta, avant, source) {
 					if (source === 'user') { touche = true; }
@@ -2082,6 +2438,7 @@ class Notice_Archeomed_Relecture {
 						li.appendChild(document.createTextNode(item.label + (item.ark ? '' : ' (hors thésaurus)')));
 						var b = document.createElement('button');
 						b.type = 'button';
+						b.disabled = !!R.vue;
 						b.textContent = '×';
 						b.setAttribute('aria-label', 'Retirer ' + item.label);
 						b.addEventListener('click', function () {
@@ -2121,7 +2478,9 @@ class Notice_Archeomed_Relecture {
 			form.addEventListener('keydown', function (e) {
 				if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT' && e.target.type === 'text') { e.preventDefault(); }
 			});
-			form.addEventListener('submit', function () {
+			form.addEventListener('submit', function (e) {
+				// Vu comme un coordinateur, rien ne part.
+				if (R.vue) { e.preventDefault(); return; }
 				envoi = true;
 				if (quill && touche && cache) {
 					cache.value = 'b64:' + btoa(unescape(encodeURIComponent(quill.root.innerHTML)));
@@ -2129,6 +2488,8 @@ class Notice_Archeomed_Relecture {
 			});
 
 			// Le verrou : renouvelé chaque minute, rendu quand on quitte la page.
+			// Vu comme un coordinateur, il n'y en a pas.
+			if (R.vue) { return; }
 			function poster(action) {
 				var corps = new URLSearchParams();
 				corps.append('action', action);
@@ -2157,6 +2518,12 @@ class Notice_Archeomed_Relecture {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_relecture_' . $id );
+		// Vu comme un coordinateur, rien ne s'enregistre, d'où que vienne
+		// la demande.
+		$vue = self::vue();
+		if ( null !== $vue ) {
+			self::refuser_pendant_la_vue( $vue, $id );
+		}
 		$plugin   = self::plugin();
 		$rubrique = self::rubrique_demandee( self::rubriques_de(), $_POST );
 		$rendu    = self::enregistrer( $id, isset( $_POST['version'] ) ? absint( $_POST['version'] ) : 0 );
@@ -2229,6 +2596,12 @@ class Notice_Archeomed_Relecture {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_relecture_soumettre_' . $id );
+		// Vu comme un coordinateur, rien ne s'enregistre, d'où que vienne
+		// la demande.
+		$vue = self::vue();
+		if ( null !== $vue ) {
+			self::refuser_pendant_la_vue( $vue, $id );
+		}
 		$plugin = self::plugin();
 		$droit  = self::droit_sur( $id );
 		if ( null === $plugin || null === $droit ) {
@@ -2250,6 +2623,9 @@ class Notice_Archeomed_Relecture {
 		$plugin = self::plugin();
 		if ( null === $plugin ) {
 			return 'le plugin n’est pas chargé';
+		}
+		if ( self::compte( $utilisateur ) instanceof Notice_Archeomed_Regard ) {
+			return 'la relecture vue comme un coordinateur n’envoie rien';
 		}
 		// Rien ne part à l'auteur sans modification de fond : le bouton ne
 		// se montre que pour une notice « à soumettre », et le serveur le
@@ -2299,6 +2675,12 @@ class Notice_Archeomed_Relecture {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		check_admin_referer( 'na_relecture_rouvrir_' . $id );
+		// Vu comme un coordinateur, rien ne s'enregistre, d'où que vienne
+		// la demande.
+		$vue = self::vue();
+		if ( null !== $vue ) {
+			self::refuser_pendant_la_vue( $vue, $id );
+		}
 		$motif = isset( $_POST['motif'] ) && is_string( $_POST['motif'] )
 			? trim( sanitize_textarea_field( wp_unslash( $_POST['motif'] ) ) ) : '';
 		$motif = function_exists( 'mb_substr' ) ? mb_substr( $motif, 0, 2000 ) : substr( $motif, 0, 2000 );
@@ -2341,7 +2723,8 @@ class Notice_Archeomed_Relecture {
 	public function rendre_le_word() {
 		$id = isset( $_GET['notice'] ) ? absint( $_GET['notice'] ) : 0;
 		check_admin_referer( 'na_relecture_word_' . $id );
-		$droit  = self::droit_sur( $id );
+		// Vu comme un coordinateur : ce qu'il obtiendrait, ni plus ni moins.
+		$droit  = self::droit_sur( $id, self::regard() );
 		$plugin = self::plugin();
 		if ( null === $droit || null === $plugin ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
@@ -2368,7 +2751,7 @@ class Notice_Archeomed_Relecture {
 		$id = isset( $_GET['notice'] ) ? absint( $_GET['notice'] ) : 0;
 		check_admin_referer( 'na_relecture_apercu_' . $id );
 		$plugin = self::plugin();
-		if ( null === self::droit_sur( $id ) || null === $plugin ) {
+		if ( null === self::droit_sur( $id, self::regard() ) || null === $plugin ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		$chemin = $plugin->chemin_de_l_apercu( $id, isset( $_GET['rang'] ) ? absint( $_GET['rang'] ) : 0 );
@@ -2390,7 +2773,7 @@ class Notice_Archeomed_Relecture {
 		$id = isset( $_GET['notice'] ) ? absint( $_GET['notice'] ) : 0;
 		check_admin_referer( 'na_relecture_lire_' . $id );
 		$plugin = self::plugin();
-		if ( null === self::droit_sur( $id ) || null === $plugin ) {
+		if ( null === self::droit_sur( $id, self::regard() ) || null === $plugin ) {
 			wp_die( esc_html__( 'Droits insuffisants.', 'notice-archeomed' ) );
 		}
 		nocache_headers();
@@ -2411,6 +2794,10 @@ class Notice_Archeomed_Relecture {
 		$comptes  = get_users( array( 'role__in' => array( self::ROLE ), 'orderby' => 'display_name', 'fields' => array( 'ID', 'display_name' ) ) );
 		echo '<h2>' . esc_html__( 'La page de relecture', 'notice-archeomed' ) . '</h2>';
 		self::dire_la_page();
+		if ( self::peut_tout() ) {
+			echo '<p><a href="' . esc_url( add_query_arg( 'page', self::PAGE, admin_url( 'admin.php' ) ) ) . '">' . esc_html__( 'Voir la relecture comme un coordinateur', 'notice-archeomed' ) . '</a> — '
+				. esc_html__( 'un compte nommé, ou une rubrique même sans compte, sans rien enregistrer.', 'notice-archeomed' ) . '</p>';
+		}
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="na_relecture_reglages">';
 		wp_nonce_field( 'na_relecture_reglages' );
 		echo '<h2>' . esc_html__( 'Campagne', 'notice-archeomed' ) . '</h2>'
@@ -2473,5 +2860,57 @@ class Notice_Archeomed_Relecture {
 			}
 		}
 		update_option( self::OPTION, array( 'close' => $close ? 1 : 0, 'coordinateurs' => $coordinateurs ), false );
+	}
+}
+
+/**
+ * Le regard d'un coordinateur, que la direction emprunte pour voir la
+ * relecture comme lui.
+ *
+ * C'est un compte au sens de WordPress, que les fonctions de droits
+ * reçoivent comme un autre : celui d'un coordinateur nommé porte son
+ * numéro, ses rôles et ses capacités tels que la base les donne, et ne
+ * voit donc ni plus ni moins que lui. Celui d'une rubrique sans compte n'a
+ * pas de numéro réel (-1, que WordPress ne rattache à personne) : il porte
+ * le rôle de coordinateur et la seule rubrique choisie.
+ *
+ * Être un regard suffit à tout refuser : la relecture n'enregistre, ne
+ * verrouille, n'envoie ni ne note au journal rien de ce qu'il demande.
+ */
+class Notice_Archeomed_Regard extends WP_User {
+
+	/**
+	 * La rubrique d'un regard sans compte, en liste ; null pour le regard
+	 * d'un compte, dont les réglages disent les rubriques.
+	 */
+	public $rubriques_fixees = null;
+
+	/** Le regard d'un coordinateur nommé : ses droits, relus de la base. */
+	public static function du_compte( WP_User $compte ) {
+		return new self( $compte );
+	}
+
+	/** Le regard de la coordination d'une rubrique, qu'elle ait un compte ou non. */
+	public static function de_la_rubrique( $rubrique ) {
+		$regard = new self();
+		$numero = (string) preg_replace( '/^([IVX]+)\..*$/u', '$1', (string) $rubrique );
+		// Les champs qu'on lit d'un compte, posés d'avance : sans eux,
+		// WordPress les chercherait dans les métadonnées d'un compte réel.
+		$regard->data = (object) array(
+			'ID'            => -1,
+			'user_login'    => '',
+			'user_email'    => '',
+			'user_nicename' => '',
+			'display_name'  => 'Coordination de la rubrique ' . $numero,
+		);
+		$regard->ID   = -1;
+		$role         = get_role( Notice_Archeomed_Relecture::ROLE );
+		$capacites    = null !== $role ? array_filter( (array) $role->capabilities ) : array( 'read' => true );
+		$capacites[ Notice_Archeomed_Relecture::CAP ] = true;
+		$regard->roles   = array( Notice_Archeomed_Relecture::ROLE );
+		$regard->caps    = array( Notice_Archeomed_Relecture::ROLE => true );
+		$regard->allcaps = $capacites;
+		$regard->rubriques_fixees = array( (string) $rubrique );
+		return $regard;
 	}
 }

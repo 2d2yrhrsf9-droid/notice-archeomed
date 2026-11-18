@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.91
+# Formulaire des notices d’archéologie médiévale — version 3.92
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1282,8 +1282,8 @@ le mène à la page, et toute adresse de `wp-admin` l'y renvoie — sauf
 `admin-ajax.php` et `admin-post.php`, que le verrou et les gestes de l'écran
 emploient. Il ne peut donc pas ouvrir son profil : un mot de passe oublié se
 refait par le lien de la page de connexion. La direction de la revue relit
-sur la même page ; le menu « Relecture » de l'administration n'est plus
-qu'un lien vers elle.
+sur la même page ; le menu « Relecture » de l'administration donne l'adresse
+de la page, et de quoi la voir comme un coordinateur (ci-dessous).
 
 **Elle s'ouvre quand la campagne est close.** Rien ne fermait une campagne :
 l'onglet « Relecture » des réglages porte donc une case « La campagne est
@@ -1316,6 +1316,37 @@ la 3.85 disparaît à la mise à jour : ses comptes passent à la direction.
 Il n'y a pas de lien anonyme. Le droit se
 juge à chaque requête sur la notice elle-même — sa rubrique en base —, jamais
 sur ce que l'adresse ou le formulaire prétendent.
+
+**Voir la relecture comme un coordinateur.** La direction et les
+administrateurs peuvent voir la page telle qu'un coordinateur la verra, pour
+préparer la relecture ou répondre à ses questions. L'entrée « Relecture » du
+menu propose de choisir soit un coordinateur nommé, parmi les comptes que
+l'onglet « Relecture » affecte à une rubrique — on voit alors toutes ses
+rubriques —, soit une rubrique, même si personne n'y est encore affecté ; le
+bouton « Voir la relecture comme lui » mène à la page de relecture.
+
+Tout s'y calcule avec les droits du coordinateur : son sommaire, ses notices
+et ses renvois, ce qu'il corrige et ce qu'il lit seulement, les états, les
+boutons et les messages. Une adresse forgée n'ouvre rien de plus qu'à lui.
+Mais rien ne s'y enregistre : les champs et les boutons restent à leur place,
+désactivés ; la notice n'est pas verrouillée ; rien n'entre au journal ;
+chaque geste envoyé malgré tout est refusé par le serveur. Un bandeau dit qui
+l'on regarde — « Vous voyez la relecture comme Jeanne Martin (coordination de
+la rubrique II). Rien de ce que vous faites ici ne s'enregistre. » — avec un
+bouton « Revenir à ma vue ».
+
+Avant la clôture de la campagne, la vue montre la relecture comme si elle
+était close, et le bandeau ajoute qu'aujourd'hui ce coordinateur ne voit
+encore aucune notice. La direction elle-même, avant la clôture, ne voit sur
+la page que « La relecture s'ouvrira quand la campagne sera close » : elle
+lit les notices dans « Notices reçues ».
+
+Le choix ne vaut que pour le compte qui l'a fait, deux heures au plus, et il
+est revérifié à chaque page : un compte qui ne relit pas tout ne peut pas
+s'en servir, et le regard d'un compte qui ne coordonne plus de rubrique
+s'efface. L'administration, sa barre et la connexion n'en sont pas changées.
+Pendant la vue, une notice que l'on tiendrait ouverte dans un autre onglet,
+sous son propre compte, ne s'enregistre pas : revenir d'abord à sa vue.
 
 **Ce que voit le coordinateur.** Les notices de sa rubrique, dans l'ordre du
 fascicule — sous-rubriques, puis communes —, avec un sommaire latéral qui
