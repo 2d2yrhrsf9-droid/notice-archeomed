@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.98
+ * Version: 3.99
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -23,6 +23,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.p
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-lieu-dit.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-forme.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-sdrive.php';
@@ -1209,8 +1210,7 @@ class Notice_Archeomed_Pactols {
 				$h .= '<figure>';
 				// La description détaillée, sous la figure, et l'image qui y
 				// renvoie : un lecteur d'écran la lit après le texte alternatif.
-				$description = isset( $item['description'] ) && is_scalar( $item['description'] )
-					? self::paragraphes_simples( $item['description'] ) : array();
+				$description = self::description_en_html( $item );
 				$id_description = 'description-' . ( ++$descriptions );
 				if ( ! empty( $item['figure']['fichier'] ) ) {
 					// Le texte alternatif de l'auteur ; à défaut, pour une notice
@@ -1231,10 +1231,10 @@ class Notice_Archeomed_Pactols {
 				$h .= '<figcaption><strong>' . esc_html( Notice_Archeomed_Normes::numero_de_figure( $item['rang'] ) ) . '</strong>';
 				$titre_fig = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $item['rang'] );
 				if ( '' !== $titre_fig ) {
-					$h .= esc_html( Notice_Archeomed_Normes::typographie( Notice_Archeomed_Normes::apres_le_numero() . $titre_fig ) );
+					$h .= self::figure_en_html( $item, 'titre', $titre_fig, Notice_Archeomed_Normes::apres_le_numero() );
 				}
 				if ( '' !== $item['legende'] ) {
-					$h .= '<br>' . esc_html( $item['legende'] );
+					$h .= '<br>' . self::figure_en_html( $item, 'legende', $item['legende'] );
 				}
 				if ( '' !== $item['credits'] ) {
 					$h .= '<br><em>' . esc_html( $item['credits'] ) . '</em>';
@@ -1251,7 +1251,7 @@ class Notice_Archeomed_Pactols {
 				if ( ! empty( $description ) ) {
 					$h .= '<div class="description" id="' . esc_attr( $id_description ) . '"><p><strong>'
 						. esc_html( "Description détaillée\u{00A0}:" ) . '</strong> '
-						. implode( '</p><p>', array_map( 'esc_html', $description ) ) . '</p></div>';
+						. implode( '</p><p>', $description ) . '</p></div>';
 				}
 				$h .= '</figure>';
 			}
@@ -1658,6 +1658,17 @@ class Notice_Archeomed_Pactols {
 						array_slice( wp_unslash( $_POST[ $champ ] ), 0, 10 ) ) );
 			}
 		}
+		// La mise en forme des textes de chaque figure : l'assainissement
+		// ôterait ses balises, elle est donc réécrite, rien que les trois
+		// marques et le texte. Elle se raccorde au texte à l'envoi.
+		foreach ( array_keys( Notice_Archeomed_Forme::CLEFS ) as $clef ) {
+			$champ = 'illus_' . $clef;
+			if ( isset( $_POST[ $champ ] ) && is_array( $_POST[ $champ ] ) ) {
+				$garde[ $champ ] = array_map( function ( $v ) {
+					return is_string( $v ) ? Notice_Archeomed_Forme::propre( $v ) : '';
+				}, array_slice( array_values( wp_unslash( $_POST[ $champ ] ) ), 0, 10 ) );
+			}
+		}
 		// Le nom de chaque fichier, dans l'ordre des légendes : au retour, les
 		// légendes se rattachent au fichier redéposé qui porte ce nom, et non
 		// à son rang. Redéposés dans l'autre ordre, deux fichiers échangeaient
@@ -1724,7 +1735,8 @@ class Notice_Archeomed_Pactols {
 			return $garde;
 		}
 		$champs = array( 'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type', 'illus_nom', 'illus_autorisation',
-			'illus_source', 'illus_lien', 'illus_jusqua', 'illus_nom_envoi' );
+			'illus_source', 'illus_lien', 'illus_jusqua', 'illus_nom_envoi',
+			'illus_titre_forme', 'illus_legende_forme', 'illus_description_forme' );
 		$postes = isset( $garde['illus_titre'] ) ? count( $garde['illus_titre'] ) : 0;
 		$noms   = isset( $garde['illus_nom'] ) ? array_filter( array_map( 'strval', (array) $garde['illus_nom'] ) ) : array();
 		foreach ( $champs as $champ ) {
@@ -2091,6 +2103,11 @@ class Notice_Archeomed_Pactols {
 				// Le champ unique du formulaire : le texte alternatif, puis la
 				// description détaillée à la ligne.
 				'alt'          => '' !== $texte( 'description' ) ? $alt . "\n" . $texte( 'description' ) : $alt,
+				// La mise en forme du titre, de la légende et de la
+				// description, que les éditeurs du formulaire reprennent.
+				'titre_forme'       => $texte( 'titre_forme' ),
+				'legende_forme'     => $texte( 'legende_forme' ),
+				'description_forme' => $texte( 'description_forme' ),
 				'type'         => $texte( 'type' ),
 				'nom'          => '' !== $texte( 'fichier_depose' ) ? $texte( 'fichier_depose' )
 					: ( '' !== $fichier ? preg_replace( '/^\d+-notice-archeomed-(garde-)?/', '', basename( $fichier ) ) : '' ),
@@ -2183,6 +2200,14 @@ class Notice_Archeomed_Pactols {
 				$valeur = $this->garde_postee( $champ, $k );
 				if ( null !== $valeur ) {
 					$gardees[ $i ][ $champ ] = sanitize_textarea_field( $this->limit_string( $valeur, 5000 ) );
+				}
+			}
+			// La mise en forme revient avec, réécrite : rien que les trois
+			// marques et le texte. Elle se raccorde au texte à l'envoi.
+			foreach ( array_keys( Notice_Archeomed_Forme::CLEFS ) as $champ ) {
+				$valeur = $this->garde_postee( $champ, $k );
+				if ( null !== $valeur ) {
+					$gardees[ $i ][ $champ ] = Notice_Archeomed_Forme::propre( $valeur );
 				}
 			}
 			$action = $this->garde_postee( 'action', $k );
@@ -3286,6 +3311,12 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-lieu-dit-riche .ql-editor[aria-invalid="true"] { box-shadow: none; }
 			.na-form#na-form .na-lieu-dit-riche .ql-editor p { margin: 0; color: inherit; }
 			.na-form#na-form .na-lieu-dit-riche .ql-editor .na-pc { font-variant: small-caps; }
+			/* Les textes d'une figure : la même barre ; la légende et le texte
+			   pour l'écoute, sur plusieurs lignes. Dans le texte alternatif, la
+			   barre s'éteint. */
+			.na-form#na-form .na-figure-riche--lignes .ql-editor { min-height: 4.5em; }
+			.na-form#na-form .na-figure-riche .na-figure-note { margin: 0; padding: var(--na-e1) .75rem; border-top: 1px solid var(--na-filet-doux); }
+			.na-form#na-form .na-figure-riche--inerte .ql-toolbar.ql-snow button { opacity: .4; cursor: not-allowed; }
 			.na-form#na-form .na-wordcount { margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
 			.na-form#na-form .na-wordcount.na-out { color: var(--na-avis); font-weight: 600; }
 
@@ -3999,10 +4030,12 @@ class Notice_Archeomed_Pactols {
 								<div>
 									<label for="<?php echo esc_attr( $base . '-titre' ); ?>">Légende de la figure <span class="na-requis" aria-hidden="true">*</span></label>
 									<input type="text" id="<?php echo esc_attr( $base . '-titre' ); ?>" name="garde_titre[<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( $texte( 'titre' ) ); ?>">
+									<input type="hidden" id="<?php echo esc_attr( $base . '-titre-forme' ); ?>" name="garde_titre_forme[<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( $texte( 'titre_forme' ) ); ?>">
 								</div>
 								<div>
 									<label for="<?php echo esc_attr( $base . '-legende' ); ?>">Complément de légende <span class="na-facultatif">(facultatif)</span></label>
 									<textarea id="<?php echo esc_attr( $base . '-legende' ); ?>" name="garde_legende[<?php echo esc_attr( $k ); ?>]" rows="2"><?php echo esc_textarea( $texte( 'legende' ) ); ?></textarea>
+									<input type="hidden" id="<?php echo esc_attr( $base . '-legende-forme' ); ?>" name="garde_legende_forme[<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( $texte( 'legende_forme' ) ); ?>">
 								</div>
 								<div>
 									<label for="<?php echo esc_attr( $base . '-credits' ); ?>">Crédits <span class="na-requis" aria-hidden="true">*</span></label>
@@ -4022,6 +4055,7 @@ class Notice_Archeomed_Pactols {
 									<label for="<?php echo esc_attr( $base . '-alt' ); ?>">Description de l’image <span class="na-requis" aria-hidden="true">*</span></label>
 									<p class="na-help" id="<?php echo esc_attr( $base . '-alt-aide' ); ?>">Une ou deux phrases qui disent ce qu’on voit, comme si vous décriviez l’image au téléphone. Ce n’est pas la légende. Pour un plan ou une carte, poursuivez à la ligne&nbsp;: le détail est publié sous la légende.</p>
 									<textarea id="<?php echo esc_attr( $base . '-alt' ); ?>" name="garde_alt[<?php echo esc_attr( $k ); ?>]" rows="4" autocomplete="off" aria-describedby="<?php echo esc_attr( $base . '-alt-aide' ); ?>"><?php echo esc_textarea( $texte( 'alt' ) ); ?></textarea>
+									<input type="hidden" id="<?php echo esc_attr( $base . '-alt-forme' ); ?>" name="garde_description_forme[<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( $texte( 'description_forme' ) ); ?>">
 								</div>
 							</div>
 						</fieldset>
@@ -4735,6 +4769,7 @@ class Notice_Archeomed_Pactols {
 
 			// ── Le titre : lieux, parenthèse, lieu-dit, et leur aperçu ──────
 <?php echo Notice_Archeomed_Lieu_Dit::script(); ?>
+<?php echo Notice_Archeomed_Forme::script(); ?>
 			var deptInput = document.getElementById('na-departement');
 			var deptAuto = document.getElementById('na-departement-auto');
 			var lieuDitInput = document.getElementById('na-lieu-dit');
@@ -6206,6 +6241,22 @@ class Notice_Archeomed_Pactols {
 					numero: li.querySelector('.na-garde-numero')
 				};
 			});
+			// Leurs textes se mettent en forme comme ceux des figures nouvelles :
+			// la légende, son complément, la description détaillée, chacun dans
+			// son éditeur, la forme gardée au champ caché voisin.
+			var gardeesRiches = [];
+			if (quill) {
+				gardees.forEach(function (g) {
+					var base = 'na-garde-' + g.k;
+					[['titre', false, false, 'Mise en forme de la légende'],
+						['legende', true, false, 'Mise en forme du complément de légende'],
+						['alt', true, true, 'Mise en forme de la description détaillée']].forEach(function (d) {
+						var riche = naFigureRiche(document.getElementById(base + '-' + d[0]), document.getElementById(base + '-' + d[0] + '-forme'),
+							{ lignes: d[1], premierBrut: d[2], barre: d[3] });
+						if (riche) { gardeesRiches.push(riche); }
+					});
+				});
+			}
 			function actionDe(g) {
 				var c = g.li.querySelector('input[name="garde_action[' + g.k + ']"]:checked');
 				return c ? c.value : 'garder';
@@ -6395,6 +6446,11 @@ class Notice_Archeomed_Pactols {
 						'alt'     => trim( ( isset( $reprise['illus_alt'][ $i ] ) ? $reprise['illus_alt'][ $i ] : '' )
 							. ( ! empty( $reprise['illus_description'][ $i ] ) ? "\n" . $reprise['illus_description'][ $i ] : '' ) ),
 						'description' => '',
+						// La mise en forme des trois textes, gardée à part :
+						// l'éditeur la reprend si elle s'accorde au texte.
+						'titreForme'       => isset( $reprise['illus_titre_forme'][ $i ] ) ? (string) $reprise['illus_titre_forme'][ $i ] : '',
+						'legendeForme'     => isset( $reprise['illus_legende_forme'][ $i ] ) ? (string) $reprise['illus_legende_forme'][ $i ] : '',
+						'descriptionForme' => isset( $reprise['illus_description_forme'][ $i ] ) ? (string) $reprise['illus_description_forme'][ $i ] : '',
 						'type'    => isset( $reprise['illus_type'][ $i ] ) ? Notice_Archeomed_Controles::type_de_figure( $reprise['illus_type'][ $i ] ) : '',
 						'nom'     => isset( $reprise['illus_nom'][ $i ] ) ? $reprise['illus_nom'][ $i ] : '',
 						// L'autorisation jointe au dépôt d'avant : le fichier ne
@@ -6643,6 +6699,18 @@ class Notice_Archeomed_Pactols {
 					illusMeta[idx].description = '';
 				}
 				champ.value = illusMeta[idx] && illusMeta[idx][clef] ? illusMeta[idx][clef] : '';
+				// La mise en forme du titre, de la légende, de la description
+				// détaillée : un champ caché à côté, que l'éditeur remplit. Il
+				// est posté même vide, pour que chaque figure garde son rang.
+				var nomDeForme = { titre: 'titre', legende: 'legende', alt: 'description' }[clef];
+				var cache = null;
+				if (nomDeForme) {
+					cache = document.createElement('input');
+					cache.type = 'hidden';
+					cache.id = id + '-forme';
+					cache.name = 'illus_' + nomDeForme + '_forme[]';
+					cache.value = illusMeta[idx] && typeof illusMeta[idx][nomDeForme + 'Forme'] === 'string' ? illusMeta[idx][nomDeForme + 'Forme'] : '';
+				}
 				if (obligatoire) { champ.required = true; }
 				champ.addEventListener('input', function () {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
@@ -6681,8 +6749,9 @@ class Notice_Archeomed_Pactols {
 				bloc.appendChild(aide);
 				if (clef === 'alt') { bloc.appendChild(exemplesDuTexteAlternatif()); }
 				bloc.appendChild(champ);
+				if (cache) { bloc.appendChild(cache); }
 				if (compteur) { bloc.appendChild(compteur); compter(); }
-				return { bloc: bloc, champ: champ };
+				return { bloc: bloc, champ: champ, cache: cache, forme: nomDeForme };
 			}
 			// La nature de la figure : obligatoire, comme le texte alternatif
 			// qu'elle sert — « Autre » est là pour ce qui n'entre nulle part.
@@ -6978,7 +7047,9 @@ class Notice_Archeomed_Pactols {
 					// avant qu'on ait pu écrire un mot : il attend qu'on ait quitté
 					// la carte.
 					groupe.addEventListener('focusout', function (e) {
-						var cle = /^illus_(titre|legende|credits|alt|description|type)/.exec(e.target.name || '');
+						// Un éditeur de mise en forme porte le nom de son champ.
+						var cle = /^illus_(titre|legende|credits|alt|description|type)/.exec(e.target.name
+							|| (e.target.getAttribute && e.target.getAttribute('data-na-nom')) || '');
 						if (cle) { etat.vus[cle[1]] = true; }
 						if (!(e.relatedTarget && groupe.contains(e.relatedTarget))) { etat.quittee = true; }
 						majFigure(idx);
@@ -6986,6 +7057,26 @@ class Notice_Archeomed_Pactols {
 					li.appendChild(groupe);
 					fileList.appendChild(li);
 					cartes[idx] = { zone: conseils, titre: titre.champ, alt: alt.champ, description: null, legende: legende.champ, credits: credits.champ, type: nature.champ, impression: impression };
+					// Petites capitales, italique, exposant : la légende, son
+					// complément et la description détaillée s'écrivent dans un
+					// éditeur, posé une fois la carte dans la page. Le texte
+					// alternatif, premier paragraphe du champ pour l'écoute, reste
+					// sans marque. Chaque forme suit la figure dans illusMeta.
+					if (quill) {
+						[[titre, 'titreRiche', false, false, 'Mise en forme de la légende'],
+							[legende, 'legendeRiche', true, false, 'Mise en forme du complément de légende'],
+							[alt, 'altRiche', true, true, 'Mise en forme de la description détaillée']].forEach(function (d) {
+							var champ = d[0];
+							if (!champ.cache) { return; }
+							cartes[idx][d[1]] = naFigureRiche(champ.champ, champ.cache, {
+								lignes: d[2], premierBrut: d[3], barre: d[4],
+								garder: function (forme) {
+									if (!illusMeta[idx]) { illusMeta[idx] = {}; }
+									illusMeta[idx][champ.forme + 'Forme'] = forme;
+								}
+							});
+						});
+					}
 					// La nature change la densité qui compte : la taille se refait.
 					nature.champ.addEventListener('change', function () { majFigure(idx); });
 					majFigure(idx);
@@ -7281,6 +7372,10 @@ class Notice_Archeomed_Pactols {
 							m[clef] = coupe.reste;
 							m.credits = coupe.credit;
 							illusMeta[idx] = m;
+							// L'éditeur reprend le texte raccourci, ses marques
+							// gardées sur ce qui reste.
+							var riche = c[clef + 'Riche'];
+							if (riche) { riche.charger(); }
 							marquerModifie();
 							majFigure(idx);
 							annoncer('Crédit déplacé dans le champ Crédits de la figure ' + rang + '.');
@@ -8687,6 +8782,7 @@ class Notice_Archeomed_Pactols {
 				});
 				if (quill && b.texte) { quill.clipboard.dangerouslyPasteHTML(b.texte); }
 				if (lieuDitRiche) { lieuDitRiche.charger(); }
+				gardeesRiches.forEach(function (r) { r.charger(); });
 				// Les textes des figures attendent leur fichier : ils s'y
 				// rattacheront par son nom, dans quelque ordre qu'on les redépose.
 				if (Array.isArray(b.illus)) {
@@ -9603,6 +9699,13 @@ class Notice_Archeomed_Pactols {
 			$parts[ $clef ] = is_array( $brut ) ? array_values( $brut ) : array();
 		}
 		$types = isset( $_POST['illus_type'] ) && is_array( $_POST['illus_type'] ) ? array_values( wp_unslash( $_POST['illus_type'] ) ) : array();
+		// La mise en forme du titre, de la légende et de la description, à
+		// part : elle ne compte pas les figures, elle habille leurs textes.
+		$formes = array();
+		foreach ( array_keys( Notice_Archeomed_Forme::CLEFS ) as $clef ) {
+			$brut = isset( $_POST[ 'illus_' . $clef ] ) ? wp_unslash( $_POST[ 'illus_' . $clef ] ) : array();
+			$formes[ $clef ] = is_array( $brut ) ? array_values( $brut ) : array();
+		}
 		$combien = 0;
 		foreach ( $parts as $liste ) {
 			$combien = max( $combien, count( $liste ) );
@@ -9627,7 +9730,7 @@ class Notice_Archeomed_Pactols {
 				$item['type_absent'] = true;
 			}
 			$brut = array();
-			foreach ( $parts as $clef => $liste ) {
+			foreach ( $parts + $formes as $clef => $liste ) {
 				$brut[ $clef ] = isset( $liste[ $i ] ) && is_string( $liste[ $i ] ) ? $liste[ $i ] : '';
 			}
 			$item = array_merge( $item, $this->textes_de_figure( $brut, $item['rang'] ) );
@@ -9697,6 +9800,23 @@ class Notice_Archeomed_Pactols {
 		// « Fig. 1 : Plan » retapé dans le titre donnait « Fig. 1 Fig. 1 :
 		// Plan » : le numéro, c'est le plugin qui le pose.
 		$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $rang );
+		// La mise en forme de l'auteur — titre, légende, description —,
+		// accordée aux textes qu'on vient de garder : les trois clefs
+		// toujours, vides quand rien ne s'accorde, pour qu'une forme d'avant
+		// ne survive pas à son texte. Le texte alternatif n'en a jamais.
+		return array_merge( $item, Notice_Archeomed_Forme::accorder_la_figure( $brut, $item, $rang ) );
+	}
+
+	/**
+	 * La mise en forme du titre d'une figure qui change de rang, accordée au
+	 * titre qui a pu perdre son « Fig. N » : sinon, elle s'oublie.
+	 */
+	private static function titre_forme_au_rang( $item, $rang ) {
+		if ( ! empty( $item['titre_forme'] ) && is_string( $item['titre_forme'] ) ) {
+			$item['titre_forme'] = Notice_Archeomed_Forme::accorder( $item['titre_forme'],
+				isset( $item['titre'] ) && is_scalar( $item['titre'] ) ? (string) $item['titre'] : '',
+				array( 'rang' => (int) $rang, 'max' => Notice_Archeomed_Forme::BORNES['titre'] ) );
+		}
 		return $item;
 	}
 
@@ -10416,13 +10536,13 @@ class Notice_Archeomed_Pactols {
 		foreach ( $items as $item ) {
 			$parts = array( '<strong>' . esc_html( Notice_Archeomed_Normes::numero_de_figure( $item['rang'] ) ) . '</strong>' );
 			if ( '' !== $item['titre'] ) {
-				$parts[] = esc_html( $item['titre'] );
+				$parts[] = self::figure_en_html( $item, 'titre', $item['titre'], '', false );
 			}
 			// La marque où le courriel de la rédaction pose l'aperçu de la
 			// figure, au-dessus de sa légende ; ailleurs, elle ne se voit pas.
 			$lignes[] = '<!--na-figure-' . (int) $item['rang'] . '-->' . implode( ' — ', $parts );
 			if ( '' !== $item['legende'] ) {
-				$lignes[] = esc_html( $item['legende'] );
+				$lignes[] = self::figure_en_html( $item, 'legende', $item['legende'] );
 			}
 			if ( '' !== $item['credits'] ) {
 				$lignes[] = '<em>' . esc_html( $item['credits'] ) . '</em>';
@@ -10435,7 +10555,7 @@ class Notice_Archeomed_Pactols {
 				$lignes[] = esc_html( "Texte alternatif\u{00A0}: " . Notice_Archeomed_Controles::une_ligne( $item['alt'] ) );
 			}
 			if ( ! empty( $item['description'] ) && is_scalar( $item['description'] ) ) {
-				$lignes[] = esc_html( "Description détaillée\u{00A0}: " ) . implode( '<br>', array_map( 'esc_html', self::paragraphes_simples( $item['description'] ) ) );
+				$lignes[] = esc_html( "Description détaillée\u{00A0}: " ) . implode( '<br>', self::description_en_html( $item ) );
 			}
 		}
 		return implode( '<br>', $lignes );
@@ -11016,9 +11136,12 @@ class Notice_Archeomed_Pactols {
 		if ( '' === $description ) {
 			return;
 		}
-		foreach ( self::paragraphes_simples( $description ) as $i => $paragraphe ) {
+		// Les paragraphes sont ceux de « paragraphes_simples », chacun avec la
+		// mise en forme de l'auteur quand elle dit encore le même texte.
+		$forme = isset( $item['description_forme'] ) ? $item['description_forme'] : '';
+		foreach ( Notice_Archeomed_Forme::paragraphes( $forme, $description ) as $i => $runs ) {
 			$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_description' ),
-				array( array( 'text' => ( 0 === $i ? "Description\u{00A0}: " : '' ) . $paragraphe ) ) );
+				Notice_Archeomed_Forme::precede( 0 === $i ? "Description\u{00A0}: " : '', $runs ) );
 		}
 	}
 
@@ -11057,6 +11180,43 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		return $paragraphes;
+	}
+
+	/**
+	 * Le titre ou la légende d'une figure en HTML d'affichage, précédé de
+	 * « $tete ». Avec la mise en forme de l'auteur quand elle dit encore le
+	 * même texte ; sinon tel qu'il s'affichait, échappé. Le titre prend la
+	 * typographie, comme avant ; « $typo » à faux la lui laisse.
+	 */
+	private static function figure_en_html( $item, $champ, $texte, $tete = '', $typo = null ) {
+		$typo    = null === $typo ? 'titre' === $champ : $typo;
+		$options = array( 'max' => Notice_Archeomed_Forme::BORNES[ $champ ] );
+		if ( 'titre' === $champ ) {
+			$options['rang'] = isset( $item['rang'] ) ? (int) $item['rang'] : 0;
+		}
+		$forme = isset( $item[ $champ . '_forme' ] ) && is_string( $item[ $champ . '_forme' ] ) ? $item[ $champ . '_forme' ] : '';
+		$runs  = '' === $forme ? array() : Notice_Archeomed_Forme::morceaux_de( $forme, $texte, $options );
+		if ( ! Notice_Archeomed_Lieu_Dit::a_une_forme( $runs ) ) {
+			return esc_html( $typo ? Notice_Archeomed_Normes::typographie( $tete . $texte ) : $tete . $texte );
+		}
+		return Notice_Archeomed_Forme::html( Notice_Archeomed_Forme::precede( $tete, $runs ), true, $typo );
+	}
+
+	/**
+	 * Les paragraphes de la description détaillée d'une figure, en HTML
+	 * d'affichage : ceux de « paragraphes_simples », avec la mise en forme
+	 * de l'auteur.
+	 */
+	private static function description_en_html( $item ) {
+		if ( ! isset( $item['description'] ) || ! is_scalar( $item['description'] ) || '' === (string) $item['description'] ) {
+			return array();
+		}
+		$forme = isset( $item['description_forme'] ) && is_string( $item['description_forme'] ) ? $item['description_forme'] : '';
+		$html  = array();
+		foreach ( Notice_Archeomed_Forme::paragraphes( $forme, (string) $item['description'] ) as $runs ) {
+			$html[] = Notice_Archeomed_Forme::html( $runs, true );
+		}
+		return $html;
 	}
 
 	/**
@@ -11385,15 +11545,21 @@ class Notice_Archeomed_Pactols {
 			// Le titre prend les siècles comme la légende : « au XIIe siècle »
 			// restait tel quel, sous une légende qui l'imprimait en petites
 			// capitales.
+			// L'italique, les petites capitales et les exposants que l'auteur
+			// a posés au titre et à la légende les suivent, quand leur forme
+			// dit encore le même texte.
 			$titre_fig = Notice_Archeomed_Normes::apres_le_numero() . $item['titre'];
 			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'figure_titre' ),
 				$doc->char_run( Notice_Archeomed_Styles::de( 'figure_numero' ), $numero )
 					. ( '' === $item['titre'] ? '' : ( method_exists( $doc, 'fragments' )
-						? $doc->fragments( array( array( 'text' => $titre_fig ) ) )
+						? $doc->fragments( Notice_Archeomed_Forme::precede( Notice_Archeomed_Normes::apres_le_numero(),
+							Notice_Archeomed_Forme::morceaux_de( isset( $item['titre_forme'] ) ? $item['titre_forme'] : '', $item['titre'],
+								array( 'rang' => (int) $item['rang'], 'max' => Notice_Archeomed_Forme::BORNES['titre'] ) ) ) )
 						: $doc->plain( $titre_fig ) ) ) );
 			if ( '' !== $item['legende'] ) {
 				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'figure_legende' ),
-					array( array( 'text' => $item['legende'] ) ) );
+					Notice_Archeomed_Forme::morceaux_de( isset( $item['legende_forme'] ) ? $item['legende_forme'] : '', $item['legende'],
+						array( 'max' => Notice_Archeomed_Forme::BORNES['legende'] ) ) );
 			}
 			$this->poser_la_description( $doc, $item );
 			if ( '' !== $item['credits'] ) {
@@ -11868,6 +12034,10 @@ class Notice_Archeomed_Pactols {
 			'garde_lien' => true, 'garde_jusqua' => true, 'garde_nom_envoi' => true,
 			'garde_titre' => true, 'garde_credits' => true, 'garde_alt' => false, 'garde_legende' => false, 'garde_type' => true,
 			'garde_action' => true, 'garde_autorisation_retirer' => true,
+			// La mise en forme des textes d'une figure : du HTML court, qui
+			// garde ses fins de ligne comme le texte qu'il double.
+			'illus_titre_forme' => false, 'illus_legende_forme' => false, 'illus_description_forme' => false,
+			'garde_titre_forme' => false, 'garde_legende_forme' => false, 'garde_description_forme' => false,
 		);
 		foreach ( $listes as $champ => $ligne ) {
 			if ( ! isset( $_POST[ $champ ] ) ) {
@@ -15410,7 +15580,8 @@ class Notice_Archeomed_Pactols {
 		$textes = array();
 		foreach ( (array) $items as $item ) {
 			$ligne = array();
-			foreach ( array( 'titre', 'legende', 'credits', 'alt', 'description', 'type' ) as $cle ) {
+			// Une mise en forme changée est un changement de la figure.
+			foreach ( array( 'titre', 'legende', 'credits', 'alt', 'description', 'type', 'titre_forme', 'legende_forme', 'description_forme' ) as $cle ) {
 				$ligne[] = isset( $item[ $cle ] ) && is_scalar( $item[ $cle ] ) ? (string) $item[ $cle ] : '';
 			}
 			$ligne[]  = ! empty( $item['autorisation'] );
@@ -15613,6 +15784,12 @@ class Notice_Archeomed_Pactols {
 				$valeur       = $this->garde_postee( $cle, $k );
 				$brut[ $cle ] = null !== $valeur ? $valeur : (string) $figure[ $cle ];
 			}
+			// La mise en forme postée, ou celle que la figure avait : elle se
+			// raccorde aux textes corrigés, ou s'oublie.
+			foreach ( array_keys( Notice_Archeomed_Forme::CLEFS ) as $cle ) {
+				$valeur       = $this->garde_postee( $cle, $k );
+				$brut[ $cle ] = null !== $valeur ? $valeur : ( isset( $figure[ $cle ] ) && is_string( $figure[ $cle ] ) ? $figure[ $cle ] : '' );
+			}
 			$type = $this->garde_postee( 'type', $k );
 			$ancien['type'] = Notice_Archeomed_Controles::type_de_figure(
 				null !== $type && '' !== $type ? $type : (string) $figure['type'] );
@@ -15690,6 +15867,7 @@ class Notice_Archeomed_Pactols {
 				// Le titre d'une figure neuve a été nettoyé de « Fig. N » pour
 				// son rang parmi les neuves ; il le redevient pour le sien.
 				$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $rang );
+				$item          = self::titre_forme_au_rang( $item, $rang );
 			}
 			$item['rang']         = $rang;
 			$item['autorisation'] = $e['drapeau'];
@@ -16099,6 +16277,7 @@ class Notice_Archeomed_Pactols {
 				$rangs[ (int) $item['rang'] ] = $nouveau;
 				if ( (int) $item['rang'] !== $nouveau && isset( $item['titre'] ) && is_scalar( $item['titre'] ) ) {
 					$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( (string) $item['titre'], $nouveau );
+					$item          = self::titre_forme_au_rang( $item, $nouveau );
 				}
 				$item['rang'] = $nouveau;
 			}
@@ -16462,6 +16641,13 @@ class Notice_Archeomed_Pactols {
 					}
 				}
 				$brut[ $cle ] = $valeur;
+			}
+			// La mise en forme postée, ou celle que la figure avait. Changer
+			// la seule mise en forme est déjà corriger la figure.
+			foreach ( array_keys( Notice_Archeomed_Forme::CLEFS ) as $cle ) {
+				$valeur = $this->garde_postee( $cle, $k );
+				$touche = $touche || null !== $valeur;
+				$brut[ $cle ] = null !== $valeur ? $valeur : ( isset( $item[ $cle ] ) && is_string( $item[ $cle ] ) ? $item[ $cle ] : '' );
 			}
 			if ( $touche ) {
 				foreach ( $this->textes_de_figure( $brut, $k ) as $cle => $valeur ) {

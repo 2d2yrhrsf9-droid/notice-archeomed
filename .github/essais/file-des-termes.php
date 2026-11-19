@@ -2383,6 +2383,110 @@ $_FILES = array();
 na_verifier( 0 === strpos( $decrite[0]['description'], "Premier paragraphe,\nsecond gras.\nyyy" ) && 2000 === mb_strlen( $decrite[0]['description'], 'UTF-8' ),
 	'la description détaillée se collecte en paragraphes simples, sans balise, coupée à 2 000 caractères', mb_substr( $decrite[0]['description'], 0, 60 ) );
 
+WP_CLI::log( 'La mise en forme des textes des figures' );
+$FO = 'Notice_Archeomed_Forme';
+na_verifier( 'Plan du <em>castrum</em>' === $FO::accorder( 'Plan du <em>castrum</em>', 'Plan du castrum' )
+	&& 'Plan du <em>castrum</em>' === $FO::accorder( ' plan  du <em>castrum</em>. ', 'Plan du castrum' )
+	&& 'Plan du <em>castrum</em>' === $FO::accorder( 'Fig. 3 : Plan du <em>castrum</em>', 'Plan du castrum', array( 'rang' => 3 ) ),
+	'la forme d\'une figure s\'accorde au texte gardé : capitale, blancs et point final, « Fig. 3 » retapé au titre' );
+na_verifier( '' === $FO::accorder( 'Plan du <em>donjon</em>', 'Plan du castrum' ) && '' === $FO::accorder( 'Plan du castrum', 'Plan du castrum' )
+	&& '' === $FO::accorder( 'Fig. 2 : Plan du <em>castrum</em>', 'Plan du castrum', array( 'rang' => 3 ) ) && '' === $FO::accorder( '<em>a</em>', '' )
+	&& '' === $FO::accorder( array( '<em>a</em>' ), 'a' ),
+	'une forme qui ment sur le texte, ne marque rien ou porte un autre numéro se perd, sans erreur' );
+na_verifier( '<em>a</em>&lt;b&gt;' === $FO::accorder( '<img src=x onerror=alert(1)><em>a</em>&lt;b&gt;<script>', 'a<b>' )
+	&& 'L. <em>&amp;lt;5</em> cm' === $FO::accorder( 'L. <em>&lt;5</em> cm', 'L. &lt;5 cm' ),
+	'la forme est réécrite sans attribut ni balise étrangère ; le chevron que le serveur écrit « &lt; » s\'y accorde' );
+na_verifier( '<em>' . str_repeat( 'a', 400 ) . '</em>' === $FO::accorder( '<em>' . str_repeat( 'a', 450 ) . '</em>', str_repeat( 'a', 400 ), array( 'max' => 400 ) )
+	&& '' === $FO::accorder( '<em>' . str_repeat( 'a', 450 ) . '</em>', str_repeat( 'a', 400 ) )
+	&& '' === $FO::accorder( '<em>' . str_repeat( 'a', 450 ) . '</em>', str_repeat( 'a', 399 ), array( 'max' => 400 ) ),
+	'un texte coupé à sa borne garde la forme du début ; sous la borne, une fin qui manque la fait perdre' );
+$fo_par = $FO::paragraphes( '<p>Deux murs <em>in situ</em>.</p><p></p><p>Le  fossé.</p>', "Deux murs in situ.\nLe fossé." );
+na_verifier( 2 === count( $fo_par ) && 'Deux murs <em>in situ</em>.' === $FO::html( $fo_par[0], false ) && 'Le fossé.' === $FO::html( $fo_par[1], false )
+	&& array( array( array( 'text' => 'Sans forme.', 'i' => false, 'pc' => false, 'sup' => false ) ) ) === $FO::paragraphes( '<em>Autre</em>', 'Sans  forme.' ),
+	'la description se forme paragraphe par paragraphe, les lignes vides ôtées ; une forme qui ne s\'accorde pas laisse le texte en romain', $fo_par );
+$_POST = array(
+	'illus_titre'             => array( 'Fig. 1 : Plan du castrum, tour Nord', 'Vue' ),
+	'illus_titre_forme'       => array( 'Fig. 1 : Plan du <em>castrum</em>, tour <span class="na-pc">Nord</span>', '<em>Coupe</em>' ),
+	'illus_legende'           => array( 'Le  castrum vu du nord, cote Ab', 'Rien' ),
+	'illus_legende_forme'     => array( 'Le <em>castrum</em> vu du nord, cote A<sup>b</sup>', array( '<em>Rien</em>' ) ),
+	'illus_credits'           => array( 'DAO A.', '' ),
+	'illus_alt'               => array( "Plan des murs\nDeux murs in situ.\n\nLe fossé de la tour Nord c.", 'Vue du site' ),
+	'illus_description_forme' => array( 'Deux murs <em>in situ</em>.<br><br>Le fossé de la tour <span class="na-pc">Nord</span> <sup>c</sup>.', '' ),
+);
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg', 'vue.jpg' ), 'error' => array( 0, 0 ) ) );
+$fo_items = na_appel( $plugin, 'collect_illustrations' );
+$_POST  = array();
+$_FILES = array();
+$fo_1 = isset( $fo_items[0] ) ? $fo_items[0] : array();
+$fo_2 = isset( $fo_items[1] ) ? $fo_items[1] : array();
+na_verifier( isset( $fo_1['titre_forme'] ) && 'Plan du <em>castrum</em>, tour <span class="na-pc">Nord</span>' === $fo_1['titre_forme'] && 'Plan du castrum, tour Nord' === $fo_1['titre']
+	&& 1 === preg_match( '#^Le\s+<em>castrum</em> vu du nord, cote A<sup>b</sup>$#u', (string) $fo_1['legende_forme'] )
+	&& 'Plan des murs' === $fo_1['alt'] && ! isset( $fo_1['alt_forme'] )
+	&& 1 === preg_match( '#^Deux murs <em>in situ</em>\.<br>Le fossé de la tour <span class="na-pc">Nord</span> <sup>c</sup>\.$#u', (string) $fo_1['description_forme'] ),
+	'au dépôt, titre, légende et description gardent leur forme, accordée au texte ; le texte alternatif n\'en a pas', $fo_1 );
+na_verifier( array( '', '', '' ) === array( $fo_2['titre_forme'], $fo_2['legende_forme'], $fo_2['description_forme'] ) && 'Vue' === $fo_2['titre'],
+	'une forme menteuse ou envoyée en tableau s\'oublie : les trois clefs restent, vides', $fo_2 );
+$fo_saisie = array_merge( $saisie_styles, array( 'illustrations' => array( array_merge( $fo_1, array( 'figure' => $figure_du_dossier ) ) ) ) );
+$fo_doc = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $fo_doc, $fo_saisie ) );
+$fo_xml  = implode( '', $corps->getValue( $fo_doc ) );
+$fo_bloc = substr( $fo_xml, (int) strpos( $fo_xml, 'TEIfigurestart' ) );
+$fo_bloc = substr( $fo_bloc, 0, (int) strpos( $fo_bloc, 'TEIfigureend' ) );
+$fo_vus  = array();
+preg_match_all( '#<w:r>(?:<w:rPr>(.*?)</w:rPr>)?<w:t[^>]*>(.*?)</w:t></w:r>#s', $fo_bloc, $fo_m, PREG_SET_ORDER );
+foreach ( $fo_m as $r ) {
+	$fo_vus[] = ( false !== strpos( $r[1], '<w:i/>' ) ? 'i' : '' ) . ( false !== strpos( $r[1], 'smallCaps' ) ? 'pc' : '' )
+		. ( false !== strpos( $r[1], 'superscript' ) ? 'sup' : '' ) . ':' . html_entity_decode( $r[2], ENT_QUOTES | ENT_XML1, 'UTF-8' );
+}
+na_verifier( 2 <= count( preg_grep( '/^i:castrum$/u', $fo_vus ) ) && 2 === count( preg_grep( '/^pc:Nord$/u', $fo_vus ) )
+	&& 1 === count( preg_grep( '/^sup:b$/u', $fo_vus ) ) && 1 === count( preg_grep( '/^sup:c$/u', $fo_vus ) ) && 1 === count( preg_grep( '/^i:in situ$/u', $fo_vus ) )
+	&& 0 === count( preg_grep( '/<|na-pc/', $fo_vus ) ),
+	'au Word, l\'italique, les petites capitales et l\'exposant de l\'auteur passent au titre, à la légende et à la description', $fo_vus );
+$fo_suite = $bloc_de_figure( $fo_xml );
+na_verifier( false !== strpos( $fo_xml, 'descr="Plan des murs" title="Plan des murs"' ) && false === strpos( $fo_xml, 'TEIfigurealttext' )
+	&& 1 === count( preg_grep( '/^TEIfigurecaption Description : Deux murs in situ\.$/u', $fo_suite ) )
+	&& 1 === count( preg_grep( '/^TEIfigurecaption Le fossé de la tour Nord c\.$/u', $fo_suite ) ),
+	'le texte alternatif reste sans forme dans l\'image, la description garde ses deux paragraphes', $fo_suite );
+$fo_retouche = $fo_saisie;
+$fo_retouche['illustrations'][0]['titre'] = 'Plan du donjon, tour Nord';
+$fo_doc2 = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $fo_doc2, $fo_retouche ) );
+$fo_xml2 = implode( '', $corps->getValue( $fo_doc2 ) );
+na_verifier( 1 === preg_match( '#Plan du donjon, tour Nord</w:t>#u', $fo_xml2 ) && false === strpos( $fo_xml2, 'castrum, tour' ),
+	'un titre retouché ailleurs perd sa forme au Word, jamais une lettre' );
+$fo_page     = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $fo_saisie ) ) );
+$fo_courriel = na_appel( $plugin, 'illustrations_block', array( $fo_saisie ) );
+na_verifier( 1 === preg_match( '#<figcaption><strong>Fig\.[^<]*1</strong>.*?Plan du <em>castrum</em>, tour <span class="na-pc" style="font-variant:small-caps">Nord</span>#us', $fo_page )
+	&& 1 === preg_match( '#<br>Le\s+<em>castrum</em> vu du nord, cote A<sup>b</sup>#u', $fo_page )
+	&& 1 === preg_match( '#</strong> Deux murs <em>in situ</em>\.</p><p>Le fossé de la tour <span class="na-pc"[^>]*>Nord</span> <sup>c</sup>\.</p>#u', $fo_page )
+	&& false !== strpos( $fo_page, 'alt="Plan des murs"' ),
+	'la page de relecture montre la forme du titre, de la légende et de la description ; l\'image garde son texte alternatif brut', $fo_page );
+na_verifier( false !== strpos( $fo_courriel, 'Plan du <em>castrum</em>, tour <span class="na-pc" style="font-variant:small-caps">Nord</span>' )
+	&& 1 === preg_match( '#Description détaillée\x{00A0}: Deux murs <em>in situ</em>\.<br>Le fossé de la tour <span[^>]*>Nord</span> <sup>c</sup>\.#u', $fo_courriel )
+	&& false !== strpos( $fo_courriel, "Texte alternatif\u{00A0}: Plan des murs<" ),
+	'le courriel aussi, les petites capitales avec leur style', $fo_courriel );
+na_verifier( false !== strpos( (string) na_appel( $plugin, 'illustrations_block', array( array( 'illustrations' => array(
+		array( 'rang' => 1, 'titre' => 'A <b> & c', 'legende' => '', 'credits' => '', 'titre_forme' => '<em>Autre</em>' ) ) ) ) ), 'A &lt;b&gt; &amp; c' ),
+	'sans forme accordée, le titre s\'affiche échappé comme avant' );
+$fo_avant = array( 'illustrations' => array( $fo_1 ) );
+$fo_apres = $fo_avant;
+$fo_apres['illustrations'][0]['legende_forme'] = '';
+na_verifier( na_appel( $plugin, 'textes_des_figures', array( $fo_avant['illustrations'] ) ) !== na_appel( $plugin, 'textes_des_figures', array( $fo_apres['illustrations'] ) )
+	&& na_appel( $plugin, 'textes_des_figures', array( array( array( 'titre' => 'A' ) ) ) ) === na_appel( $plugin, 'textes_des_figures', array( array( array( 'titre' => 'A', 'titre_forme' => '' ) ) ) ),
+	'ôter la seule forme d\'une légende change la figure ; une clef vide d\'une notice ancienne ne la change pas' );
+$_POST = array( 'reprise_jeton' => '', 'illus_titre' => array( 'Plan' ), 'illus_alt' => array( 'Plan des murs' ),
+	'illus_titre_forme' => array( '<em onclick="x()">Plan</em><script>y</script>' ), 'illus_legende_forme' => array( array( 'x' ) ),
+	'illus_description_forme' => array( 'Rien de marqué' ), 'lieu_dit' => 'Château' );
+$_FILES = array( 'illustrations' => array( 'name' => array( 'plan.jpg' ), 'error' => array( 0 ) ) );
+$fo_jeton = na_appel( $plugin, 'garder_la_saisie', array( 60 ) );
+$fo_reserve = get_transient( 'na_reprise_' . $fo_jeton );
+delete_transient( 'na_reprise_' . $fo_jeton );
+$_POST  = array();
+$_FILES = array();
+na_verifier( is_array( $fo_reserve ) && array( '<em>Plan</em>y' ) === $fo_reserve['illus_titre_forme']
+	&& array( '' ) === $fo_reserve['illus_legende_forme'] && array( '' ) === $fo_reserve['illus_description_forme'],
+	'la saisie gardée réécrit la forme : rien que les marques et le texte, rien pour ce qui n\'en est pas une', $fo_reserve );
+
 WP_CLI::log( 'Les avis d\'accessibilité des figures' );
 $C = 'Notice_Archeomed_Controles';
 $avis_de = function ( $item ) use ( $C ) {
@@ -4043,8 +4147,43 @@ $_POST = wp_slash( array( 'lieu_dit' => 'Le Bourg' ) );
 $rien_rel = $R::enregistrer( $rel_c, 2, $coord_1 );
 na_verifier( 'inchangee' === $rien_rel['issue'] && 2 === $file_rel->version_de( $rel_c ), 'un enregistrement qui ne change rien ne fait pas de version', $rien_rel );
 
+// La mise en forme des figures, à la relecture.
+$rel_e = $notice_rel( array( 'commune' => 'Falaise', 'illustrations' => array(
+	array( 'rang' => 1, 'titre' => 'Plan du castrum', 'titre_forme' => 'Plan du <em>castrum</em>', 'legende' => 'Vue du nord',
+		'legende_forme' => '<span class="na-pc">Vue</span> du nord', 'credits' => 'A. Ferrand', 'alt' => 'Plan du castrum.',
+		'description' => "Deux murs in situ.\nLe fossé.", 'description_forme' => 'Deux murs <em>in situ</em>.<br>Le fossé.', 'type' => 'plan' ),
+) ) );
+$ecran_e = $rendre_vue( $coord_1, $rel_e );
+na_verifier( 1 === preg_match( '#name="garde_titre_forme\[1\]" value="Plan du &lt;em&gt;castrum&lt;/em&gt;"#', $ecran_e )
+	&& 1 === preg_match( '#name="garde_legende_forme\[1\]" value="&lt;span class=&quot;na-pc&quot;&gt;Vue&lt;/span&gt; du nord"#', $ecran_e )
+	&& 1 === preg_match( '#name="garde_description_forme\[1\]" value="Deux murs &lt;em&gt;in situ&lt;/em&gt;\.&lt;br&gt;Le fossé\."#u', $ecran_e )
+	&& 1 === preg_match( '#name="garde_alt\[1\]"[^>]*>Plan du castrum\.\nDeux murs in situ\.\nLe fossé\.</textarea>#u', $ecran_e ),
+	'la relecture porte la forme de chaque texte à côté de son champ, le champ pour l\'écoute restant brut', substr( $ecran_e, (int) strpos( $ecran_e, 'na-rel-forme' ), 900 ) );
+$_POST = wp_slash( array(
+	'garde_titre'             => array( 1 => 'Plan du castrum' ),
+	'garde_titre_forme'       => array( 1 => 'Plan du <em>castrum</em>' ),
+	'garde_legende'           => array( 1 => 'Vue du nord' ),
+	'garde_legende_forme'     => array( 1 => 'Vue du <em>nord</em>' ),
+	'garde_alt'               => array( 1 => "Plan du castrum.\nDeux murs in situ.\nLe grand fossé." ),
+	'garde_description_forme' => array( 1 => 'Deux murs <em>in situ</em>.<br>Le fossé.' ),
+) );
+$forme_rel = $R::enregistrer( $rel_e, 1, $coord_1 );
+$d_forme   = $lire_rel( $rel_e );
+$fig_forme = isset( $d_forme['illustrations'][0] ) ? $d_forme['illustrations'][0] : array();
+na_verifier( 'enregistree' === $forme_rel['issue'] && 'Plan du <em>castrum</em>' === $fig_forme['titre_forme'] && 'Vue du <em>nord</em>' === $fig_forme['legende_forme']
+	&& "Deux murs in situ.\nLe grand fossé." === $fig_forme['description'] && '' === $fig_forme['description_forme'] && 'Plan du castrum.' === $fig_forme['alt'],
+	'la relecture corrige la forme d\'une légende ; une description retouchée sans sa forme la perd, pas une lettre', $fig_forme );
+$_POST = wp_slash( array( 'garde_legende_forme' => array( 1 => '<span class="na-pc">Vue</span> du nord' ) ) );
+$forme_rel2 = $R::enregistrer( $rel_e, 2, $coord_1 );
+$d_forme2   = $lire_rel( $rel_e );
+na_verifier( 'enregistree' === $forme_rel2['issue'] && '<span class="na-pc">Vue</span> du nord' === $d_forme2['illustrations'][0]['legende_forme']
+	&& 'Vue du nord' === $d_forme2['illustrations'][0]['legende'] && 'Plan du <em>castrum</em>' === $d_forme2['illustrations'][0]['titre_forme'],
+	'changer la seule mise en forme est déjà corriger la figure', array( $forme_rel2, $d_forme2['illustrations'][0] ) );
+$R::liberer_le_verrou( $rel_e, $coord_1 );
+wp_set_current_user( 0 );
+
 $_POST = array();
-foreach ( array( $rel_a, $rel_b, $rel_c, $rel_d ) as $id ) {
+foreach ( array( $rel_a, $rel_b, $rel_c, $rel_d, $rel_e ) as $id ) {
 	wp_delete_post( $id, true );
 }
 foreach ( array( $coord_1, $coord_2, $redac ) as $compte ) {

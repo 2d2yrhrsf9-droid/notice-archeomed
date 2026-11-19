@@ -2108,6 +2108,17 @@ class Notice_Archeomed_Relecture {
 			echo '</div></div>';
 			return;
 		}
+		// La mise en forme du titre, de la légende et de la description
+		// détaillée, à côté de chaque champ : le script y pose un éditeur,
+		// comme au dépôt. Sans lui, elle repart telle quelle, et le serveur
+		// l'oublie si le texte a changé.
+		$forme = function ( $cle ) use ( $figure ) {
+			return isset( $figure[ $cle ] ) && is_string( $figure[ $cle ] ) ? $figure[ $cle ] : '';
+		};
+		foreach ( array( 'titre' => 'titre_forme', 'legende' => 'legende_forme', 'alt' => 'description_forme' ) as $champ => $cle ) {
+			echo '<input type="hidden" class="na-rel-forme" data-champ="' . esc_attr( $champ ) . '" data-k="' . $k . '" id="na-rel-' . esc_attr( $champ ) . '-forme-' . $k . '"'
+				. ' name="garde_' . esc_attr( $cle ) . '[' . $k . ']" value="' . esc_attr( $forme( $cle ) ) . '">';
+		}
 		self::champ( 'garde_titre[' . $k . ']', 'Titre', $figure['titre'] );
 		echo '<p class="na-rel-champ"><label for="na-rel-legende-' . $k . '">' . esc_html__( 'Légende', 'notice-archeomed' ) . '</label><textarea id="na-rel-legende-' . $k . '" name="garde_legende[' . $k . ']" rows="2">' . esc_textarea( (string) $figure['legende'] ) . '</textarea></p>';
 		self::champ( 'garde_credits[' . $k . ']', 'Crédits', $figure['credits'] );
@@ -2278,6 +2289,8 @@ class Notice_Archeomed_Relecture {
 			. '.na-rel-form .na-lieu-dit-riche .ql-container.ql-snow{border:0;height:auto;font-size:14px}'
 			. '.na-rel-form .na-lieu-dit-riche .ql-editor{min-height:0;padding:.3em .6em}.na-rel-form .na-lieu-dit-riche .ql-editor:focus{outline:none}'
 			. '.na-rel-form .na-lieu-dit-riche .ql-editor p{margin:0}.na-rel .na-pc{font-variant:small-caps}'
+			. '.na-rel-form .na-figure-riche--lignes .ql-editor{min-height:3.5em}.na-rel-form .na-figure-note{margin:0;padding:.3em .6em;border-top:1px solid #dcdcde;color:#50575e}'
+			. '.na-rel-form .na-figure-riche--inerte .ql-toolbar.ql-snow button{opacity:.4;cursor:not-allowed}'
 			. '.na-rel-figure{display:flex;gap:16px;border-top:1px solid #dcdcde;padding-top:12px;margin-top:12px}'
 			. '.na-rel .na-rel-agrandir{flex:0 0 220px;width:220px;max-width:100%;align-self:flex-start;position:relative;display:block;padding:0;margin:0;border:1px solid #c3c4c7;background:#fff;cursor:zoom-in}'
 			. '.na-rel .na-rel-agrandir img{display:block;width:100%;height:auto;border:0}'
@@ -2328,6 +2341,7 @@ class Notice_Archeomed_Relecture {
 			var form = document.getElementById('na-rel-form');
 			if (!form) { return; }
 <?php echo Notice_Archeomed_Lieu_Dit::script(); ?>
+<?php echo Notice_Archeomed_Forme::script(); ?>
 			var envoi = false;
 
 			// L'éditeur : les formats du dépôt, et eux seuls. Le champ caché
@@ -2394,6 +2408,20 @@ class Notice_Archeomed_Relecture {
 				lecture: !!R.vue,
 				italiqueDuTitre: !document.getElementById('na-rel-titre-texte') || document.getElementById('na-rel-titre-texte').getAttribute('data-italique') === '1'
 			}); }
+			// Le titre, la légende et la description détaillée de chaque
+			// figure, chacun dans son éditeur ; le premier paragraphe du champ
+			// pour l'écoute, le texte alternatif, reste sans marque.
+			if (quill) {
+				[].forEach.call(form.querySelectorAll('input.na-rel-forme'), function (cache) {
+					var k = cache.getAttribute('data-k'), champ = cache.getAttribute('data-champ');
+					var input = form.querySelector('[name="garde_' + champ + '[' + k + ']"]');
+					var lignes = champ !== 'titre';
+					naFigureRiche(input, cache, {
+						lignes: lignes, premierBrut: champ === 'alt', lecture: !!R.vue,
+						barre: { titre: 'Mise en forme du titre', legende: 'Mise en forme de la légende', alt: 'Mise en forme de la description détaillée' }[champ]
+					});
+				});
+			}
 
 			// La recherche dans Pactols, depuis le navigateur comme au dépôt :
 			// trois lettres au moins, puis on choisit dans la liste.

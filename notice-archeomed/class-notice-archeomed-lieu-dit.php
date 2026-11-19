@@ -26,14 +26,21 @@ class Notice_Archeomed_Lieu_Dit {
 	/** Une forme plus longue n'est pas celle d'un lieu-dit de deux cents signes. */
 	const BORNE = 4000;
 
+	/** La borne d'une forme de plusieurs paragraphes : une légende, une description. */
+	const BORNE_LONGUE = 100000;
+
 	/**
 	 * Les morceaux d'une forme, dans l'ordre : chacun porte son texte et ses
 	 * trois marques. Les balises inconnues s'ignorent, leur texte reste ; les
 	 * blancs des deux bouts s'ôtent, comme au champ brut.
+	 *
+	 * « $multiligne » sert aux textes des figures : un « <br> » ou la fin
+	 * d'un paragraphe y donne un retour à la ligne, qui se garde. Le
+	 * lieu-dit, lui, tient sur une ligne.
 	 */
-	public static function morceaux( $forme ) {
+	public static function morceaux( $forme, $multiligne = false ) {
 		$forme = (string) $forme;
-		if ( '' === $forme || strlen( $forme ) > self::BORNE ) {
+		if ( '' === $forme || strlen( $forme ) > ( $multiligne ? self::BORNE_LONGUE : self::BORNE ) ) {
 			return array();
 		}
 		if ( function_exists( 'wp_check_invalid_utf8' ) ) {
@@ -44,7 +51,9 @@ class Notice_Archeomed_Lieu_Dit {
 		$runs  = array();
 		foreach ( (array) $parts as $part ) {
 			if ( '<' === $part[0] && '>' === substr( $part, -1 ) ) {
-				if ( preg_match( '#^</\s*(em|i|sup|span)\s*>$#i', $part, $m ) ) {
+				if ( $multiligne && preg_match( '#^(?:<\s*br\b[^>]*|</\s*(?:p|div)\s*)>$#i', $part ) ) {
+					$part = "\n";
+				} elseif ( preg_match( '#^</\s*(em|i|sup|span)\s*>$#i', $part, $m ) ) {
 					$cherche = array( 'em' => array( 'i' ), 'i' => array( 'i' ), 'sup' => array( 'sup' ), 'span' => array( 'pc', 'x' ) );
 					for ( $k = count( $pile ) - 1; $k >= 0; $k-- ) {
 						if ( in_array( $pile[ $k ], $cherche[ strtolower( $m[1] ) ], true ) ) {
@@ -60,12 +69,19 @@ class Notice_Archeomed_Lieu_Dit {
 						$pile[] = 'sup' === $balise ? 'sup' : 'i';
 					}
 				}
-				continue;
+				if ( "\n" !== $part ) {
+					continue;
+				}
 			}
 			$texte = html_entity_decode( $part, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 			// Comme au champ brut : ce qui sépare devient une espace, les
-			// autres caractères de contrôle s'ôtent.
-			$texte = str_replace( array( "\t", "\n", "\x0B", "\x0C", "\r" ), ' ', $texte );
+			// autres caractères de contrôle s'ôtent. Sur plusieurs lignes, le
+			// retour à la ligne reste.
+			if ( $multiligne ) {
+				$texte = str_replace( array( "\r\n", "\r", "\t", "\x0B", "\x0C" ), array( "\n", "\n", ' ', ' ', ' ' ), $texte );
+			} else {
+				$texte = str_replace( array( "\t", "\n", "\x0B", "\x0C", "\r" ), ' ', $texte );
+			}
 			$texte = (string) preg_replace( '/[\x00-\x08\x0E-\x1F\x7F]/', '', $texte );
 			if ( '' === $texte ) {
 				continue;
@@ -112,7 +128,7 @@ class Notice_Archeomed_Lieu_Dit {
 	}
 
 	/** Un morceau au moins porte-t-il une marque ? */
-	private static function a_une_forme( $runs ) {
+	public static function a_une_forme( $runs ) {
 		foreach ( (array) $runs as $run ) {
 			if ( ! empty( $run['i'] ) || ! empty( $run['pc'] ) || ! empty( $run['sup'] ) ) {
 				return true;

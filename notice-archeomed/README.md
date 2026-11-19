@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.94
+# Formulaire des notices d’archéologie médiévale — version 3.99
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -787,6 +787,22 @@ du navigateur qui la donne. Un clic l'agrandit dans une fenêtre par-dessus la p
 la taille de l'écran : la légende et le texte alternatif s'écrivent mieux
 devant l'image entière. Échap, le bouton « Fermer » ou un clic à côté la
 referment.
+
+**Le titre, la légende et la description détaillée ont la barre du
+lieu-dit**, depuis la version 3.99 : petites capitales (Pc), italique et
+exposant, pour un nom latin, un siècle ou un appel de cote. Le titre reste
+d'une ligne (Entrée n'y crée rien) ; la légende et le champ « Pour un public
+empêché de voir » gardent leurs paragraphes. Dans ce dernier, **le premier
+paragraphe, le texte alternatif, reste sans mise en forme** : le lecteur
+d'écran n'en ferait rien, et Métopes le lit en texte brut. Les boutons y
+sont sans effet, une marque collée s'y efface aussitôt, et une ligne sous
+le champ le dit ; la barre ne sert qu'à la description qui suit. La mise en
+forme passe dans le Word, le courriel, la page de relecture du dossier et
+le formulaire de correction ; la même barre se trouve à la relecture. Comme au
+lieu-dit, le texte reste ce qu'il était et la forme voyage à côté : si le
+texte est retouché ailleurs, elle se perd sans perdre une lettre, et le
+texte s'imprime en romain. Sans l'éditeur (script bloqué), le champ ordinaire
+reste à sa place.
 
 ### La taille d'impression
 
