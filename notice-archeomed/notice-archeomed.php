@@ -9106,6 +9106,7 @@ class Notice_Archeomed_Pactols {
 					if (fait < 0) {
 						mesurerEnvoi(0, 0);
 						direEnvoi('Tout est parti. Le serveur enregistre la notice' + FINE + '; ne fermez pas cette page.');
+						annoncer('Fichiers transmis. Le serveur enregistre la notice.');
 						return;
 					}
 					mesurerEnvoi(fait, total);
@@ -9145,6 +9146,7 @@ class Notice_Archeomed_Pactols {
 					if (renvoisAuto < 1) {
 						renvoisAuto += 1;
 						direEnvoi('La connexion a flanché' + FINE + '; la page renvoie la notice. Ne fermez pas cette page.');
+						annoncer('La connexion a flanché' + NBSP + ': la page renvoie la notice.');
 						envoyerLaNotice();
 						return;
 					}
@@ -9249,6 +9251,8 @@ class Notice_Archeomed_Pactols {
 					e.preventDefault();
 					renvoisAuto = 0;
 					attentes = 0;
+					mesurerEnvoi(0, 0);
+					direEnvoi(motEnvoiInitial);
 					envoyerLaNotice();
 				}
 			});
@@ -9278,6 +9282,7 @@ class Notice_Archeomed_Pactols {
 				bouton.disabled = false;
 				bouton.textContent = libelleBouton;
 				document.getElementById('na-envoi').hidden = true;
+				if (envoiRate) { envoiRate.hidden = true; }
 				var relais = form.querySelector('input[type=hidden][name="notice_archeomed_envoi"]');
 				if (relais) { relais.remove(); }
 			});

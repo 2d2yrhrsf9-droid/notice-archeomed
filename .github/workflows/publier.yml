@@ -291,6 +291,101 @@ jobs:
               + 'process.exit(ok ? 0 : 1);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # L'envoi en arrière-plan : une coupure fait demander au serveur ce
+          # que la notice est devenue, renvoyer une fois si rien n'est arrivé,
+          # attendre un envoi en route, et ne jamais quitter la page sans
+          # adresse de ce site. Les réponses du serveur sont jouées.
+          python3 - <<'PY'
+          import subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          noms = ('megaOctets', 'direEnvoi', 'mesurerEnvoi', 'rendreLaPage', 'messageDeCoupure', 'messageTropLourd',
+                  'poster', 'issue', 'aller', 'envoyerLaNotice', 'sonder', 'suiteDeLEnvoi')
+          decor = r"""
+          var NBSP = ' ', FINE = ' ';
+          function guillemets(t) { return '«' + FINE + t + FINE + '»'; }
+          var envois, allees, minuteries, annonces, reponses;
+          function noeud() { return { attrs: {}, hidden: false, textContent: '', style: {}, classList: { add: function () {}, remove: function () {} },
+            setAttribute: function (a, v) { this.attrs[a] = v; }, removeAttribute: function (a) { delete this.attrs[a]; },
+            scrollIntoView: function () {}, focus: function () {} }; }
+          var form = noeud(); form.action = 'https://revue.example/depot/'; form.querySelector = function () { return null; };
+          form.getAttribute = function (a) { return this.attrs[a]; };
+          var bouton, envoiRate, pisteEnvoi = noeud(), barreEnvoi = noeud(), motEnvoi = noeud(), motEnvoiInitial = 'Envoi en cours.';
+          var blocEnvoi = noeud();
+          var libelleBouton = 'Envoyer la notice', jetonDEnvoi = 'abcdef0123456789abcdef01', renvoisAuto = 0, attentes = 0;
+          var document = { getElementById: function () { return blocEnvoi; } };
+          var window = { location: { href: 'https://revue.example/depot/', origin: 'https://revue.example',
+              assign: function (u) { allees.push(u); } },
+            sessionStorage: { removeItem: function () {}, setItem: function () {} },
+            setTimeout: function (f) { minuteries.push(f); } };
+          function annoncer(m) { annonces.push(m); }
+          function FormData() { this.champs = {}; }
+          FormData.prototype.append = function (k, v) { this.champs[k] = v; };
+          function XMLHttpRequest() { this.upload = {}; this.entetes = {}; }
+          XMLHttpRequest.prototype.open = function (m, u) { this.adresse = u; };
+          XMLHttpRequest.prototype.setRequestHeader = function (k, v) { this.entetes[k] = v; };
+          XMLHttpRequest.prototype.send = function (d) {
+            var sorte = d.champs.na_sonde ? 'sonde' : 'envoi';
+            envois.push(sorte + (this.entetes['X-NA-Envoi'] === '1' && d.champs.na_page === jetonDEnvoi ? '' : '!'));
+            var r = reponses.shift();
+            if (!r || r === 'coupure') { this.onerror(); return; }
+            if (sorte === 'envoi' && this.upload.onprogress) { this.upload.onprogress({ lengthComputable: true, loaded: 5, total: 10 }); this.upload.onload(); }
+            this.status = r[0]; this.responseText = r[1]; this.responseURL = r[2] || this.adresse; this.onload();
+          };
+          function jouer(rep) {
+            envois = []; allees = []; minuteries = []; annonces = []; reponses = rep.slice();
+            renvoisAuto = 0; attentes = 0; blocEnvoi.hidden = false;
+            bouton = { disabled: true, textContent: 'Envoi en cours…' }; envoiRate = noeud(); envoiRate.hidden = true;
+            envoyerLaNotice();
+            while (minuteries.length) { minuteries.shift()(); }
+            return { envois: envois.join(' '), allee: allees.join(' '), rate: envoiRate.hidden ? '' : envoiRate.textContent,
+              libre: !bouton.disabled && blocEnvoi.hidden };
+          }
+          var OK = 'https://revue.example/depot/?notice_envoyee=1&notice_ref=AB12CD';
+          var J = function (o) { return [200, JSON.stringify(o)]; };
+          var cas = [
+            ['un dépôt reçu mène à la confirmation', [J({ redirect: OK })], function (r) { return r.envois === 'envoi' && r.allee === OK; }],
+            ['une coupure fait demander, puis renvoyer une fois', ['coupure', J({ absente: true }), J({ redirect: OK })],
+              function (r) { return r.envois === 'envoi sonde envoi' && r.allee === OK; }],
+            ['deux coupures rendent la page, saisie gardée', ['coupure', J({ absente: true }), 'coupure', J({ absente: true })],
+              function (r) { return r.envois === 'envoi sonde envoi sonde' && r.allee === '' && r.libre && /interrompue/.test(r.rate) && /pas en double/.test(r.rate); }],
+            ['un « Request Time-out » fait demander avant tout renvoi', [[408, '<html>Request Time-out</html>'], J({ redirect: OK })],
+              function (r) { return r.envois === 'envoi sonde' && r.allee === OK; }],
+            ['la sonde injoignable rend la page', ['coupure', 'coupure'],
+              function (r) { return r.envois === 'envoi sonde' && r.allee === '' && r.libre && /interrompue/.test(r.rate); }],
+            ['un envoi en route fait attendre, puis confirme', [J({ attendre: 5 }), J({ attendre: 5 }), J({ redirect: OK })],
+              function (r) { return r.envois === 'envoi sonde sonde' && r.allee === OK; }],
+            ['une attente sans fin finit par rendre la page', [J({ attendre: 5 })].concat(Array(70).fill(J({ attendre: 5 }))),
+              function (r) { return r.envois.split(' ').length === 61 && r.allee === '' && r.libre && /pas confirmé/.test(r.rate); }],
+            ['trop lourd (413) : la page reste, fichiers compris', [[413, '']],
+              function (r) { return r.envois === 'envoi' && r.allee === '' && r.libre && /dépasse/.test(r.rate); }],
+            ['trop lourd, dit par le serveur : la page reste', [J({ redirect: 'https://revue.example/depot/?notice_envoyee=0&notice_erreur=trop_lourd' })],
+              function (r) { return r.envois === 'envoi' && r.allee === '' && r.libre && /dépasse/.test(r.rate); }],
+            ['une adresse d\'un autre site n\'est pas suivie', [J({ redirect: 'https://ailleurs.example/' })],
+              function (r) { return r.allee === '' && r.libre; }],
+            ['une redirection suivie par le navigateur mène à la confirmation', [[200, '<html></html>', OK]],
+              function (r) { return r.envois === 'envoi' && r.allee === OK; }],
+            ['un refus mène à la page qui le dit', [J({ redirect: 'https://revue.example/depot/?notice_envoyee=0&notice_erreur=securite' })],
+              function (r) { return r.allee === 'https://revue.example/depot/?notice_envoyee=0&notice_erreur=securite'; }],
+          ];
+          var faux = 0;
+          cas.forEach(function (c) {
+            var r = jouer(c[1]);
+            if (!c[2](r)) { faux++; console.log('::error::Envoi en arrière-plan, ' + c[0] + ' : ' + JSON.stringify(r)); }
+          });
+          process.exit(faux ? 1 : 0);
+          """
+          js = '\n'.join(fonction(f) for f in noms) + '\n' + decor
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
 
       - name: La relecture se fait sur une page du site, et le coordinateur n'entre pas dans l'administration
         working-directory: /tmp/wp
