@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.99
+# Formulaire des notices d’archéologie médiévale — version 3.100
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1750,7 +1750,10 @@ sa première mention.
 Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ
 (ceux du texte une seconde après la dernière frappe, y compris après un
 collage ; une adresse électronique ou web mal formée dès qu'on quitte son
-champ), et
+champ ; depuis la 3.100, un caractère qu'aucune adresse électronique ne porte
+— « ; », « , », « : », une espace, un second « @ », « < », « > »,
+parenthèses, crochets, guillemets droits — dès la frappe, l'adresse
+seulement inachevée attendant toujours la sortie du champ), et
 partent sous « À vérifier » dans le courriel, dans le document (style « à
 supprimer ») et dans la page de relecture du dossier. La norme des
 photographies est posée en un seul endroit, qui sert à l'aide et au contrôle.

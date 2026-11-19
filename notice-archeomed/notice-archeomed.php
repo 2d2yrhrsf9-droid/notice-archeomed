@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.99
+ * Version: 3.100
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -8255,6 +8255,18 @@ class Notice_Archeomed_Pactols {
 			var titreDeLaPage = document.title;
 			var erreurs = {};
 			function courrielValide(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+			// Le caractère qu'aucune adresse ne porte : « ; », « , », une
+			// espace (rendue « ␣ »), un second « @ »… Il se dit dès la frappe,
+			// quand une adresse seulement inachevée attend la sortie du champ
+			// pour ne pas alerter à chaque lettre.
+			function horsDUneAdresse(v) {
+				v = String(v).trim();
+				var m = /[\s;,:<>()[\]\\"]/.exec(v);
+				if (m) { return /\s/.test(m[0]) ? '␣' : m[0]; }
+				var a = v.indexOf('@');
+				return a !== -1 && v.indexOf('@', a + 1) !== -1 ? '@' : '';
+			}
+			var COURRIELS = ['resp_email', 'coresp_email', 'coauteur_email', 'deposant_email'];
 			function normaliserUneAdresse(r) {
 				if (!r) { return; }
 				var v = r.value.trim();
@@ -8412,7 +8424,14 @@ class Notice_Archeomed_Pactols {
 				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
 			}
 			function messageDe(cle, resultat) {
-				if (cle === 'resp_email' && resultat === 'forme') { return CHAMPS.email_forme[1]; }
+				if (COURRIELS.indexOf(cle) !== -1) {
+					var base = cle === 'resp_email' && resultat === 'forme' ? CHAMPS.email_forme[1] : CHAMPS[cle][1];
+					var c = cibleDe(cle), hors = c ? horsDUneAdresse(c.value) : '';
+					if (!hors) { return base; }
+					return (hors === '␣' ? 'Une adresse électronique ne contient pas d’espace'
+						: hors === '@' ? 'Une adresse électronique ne contient qu’un ' + guillemets('@')
+						: 'Une adresse électronique ne contient pas de ' + guillemets(hors)) + '. ' + base;
+				}
 				// La figure se nomme aussi par son fichier : le numéro suit
 				// l'ordre, qu'on a pu changer.
 				var rang = /^illus_(?:titre|credits|alt|type|lien|jusqua)_(\d)$/.exec(cle);
@@ -8532,6 +8551,22 @@ class Notice_Archeomed_Pactols {
 			form.addEventListener('input', rafraichir);
 			form.addEventListener('change', rafraichir);
 			form.addEventListener('na-termes', rafraichir);
+			// « ajkdk@df;fr » se signale au « ; », sans attendre qu'on quitte
+			// le champ. Le caractère ôté, l'alerte tombe ; la sortie du champ
+			// dira si l'adresse reste incomplète.
+			var signaleEnFrappe = {};
+			form.addEventListener('input', function (e) {
+				var c = e.target, cle = '';
+				COURRIELS.forEach(function (k) { if (c && c.id && CHAMPS[k][0] === c.id) { cle = k; } });
+				if (!cle || !cibleDe(cle)) { return; }
+				if (horsDUneAdresse(c.value)) {
+					signaler(cle, messageDe(cle, CONTROLES[cle]()));
+					signaleEnFrappe[cle] = true;
+				} else if (signaleEnFrappe[cle]) {
+					delete signaleEnFrappe[cle];
+					if (CONTROLES[cle]() !== true) { effacer(cle); }
+				}
+			});
 			// Une adresse mal formée se dit dès qu'on quitte le champ : on ne
 			// l'apprenait qu'à l'envoi, loin de la saisie. Un champ laissé vide
 			// ne se signale pas en passant ; l'envoi dira s'il était attendu.
@@ -8545,12 +8580,14 @@ class Notice_Archeomed_Pactols {
 				var cle = c && c.id && Object.prototype.hasOwnProperty.call(VERIFIES_EN_SORTANT, c.id) ? VERIFIES_EN_SORTANT[c.id] : '';
 				if (!cle || !CONTROLES[cle] || !cibleDe(cle)) { return; }
 				if (/^na-(rapport|donnees|originaux)$/.test(c.id)) { normaliserUneAdresse(c); }
+				delete signaleEnFrappe[cle];
 				if (vide(c.value)) { return; }
 				var r = CONTROLES[cle]();
 				if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
 			});
 			function valider() {
 				var liste = [];
+				signaleEnFrappe = {};
 				Object.keys(CONTROLES).forEach(function (cle) {
 					if (!cibleDe(cle)) { return; }
 					effacer(cle);
