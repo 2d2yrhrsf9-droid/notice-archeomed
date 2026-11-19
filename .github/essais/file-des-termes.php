@@ -2765,11 +2765,24 @@ update_option( Notice_Archeomed_Accessibilite::OPTION, array(), false );
 $rendu_sans_declaration = (string) $plugin->render_form();
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_acces );
 if ( null === $acces_avant ) { delete_option( Notice_Archeomed_Accessibilite::OPTION ); } else { update_option( Notice_Archeomed_Accessibilite::OPTION, $acces_avant, false ); }
-na_verifier( false !== strpos( $rendu_acces, 'id="na-form" lang="fr"' )
-	&& 1 === preg_match( '#class="na-intro-acces".*Envoyez votre notice par courriel.*mailto:.*href="https://www\.cnrs\.fr/fr/accessibilite">Déclaration d’accessibilité#us', $rendu_acces )
-	&& false === strpos( $rendu_sans_declaration, 'Déclaration d’accessibilité' ) && false !== strpos( $rendu_sans_declaration, 'Envoyez votre notice par courriel' )
-	&& false !== strpos( $rendu_acces, 'Nature de la figure' ) && false !== strpos( $rendu_acces, 'Ctrl+B' ),
-	'le formulaire est en français, donne la voie de secours par courriel et, si elle est réglée, la déclaration d\'accessibilité ; il propose la nature de la figure et les raccourcis' );
+// Repères cherchés dans l'ordre, sans expression régulière : sur une page
+// de cette taille, trois « .* » gourmands épuisent la limite de PCRE.
+$ordre_acces = function ( $page, array $reperes ) {
+	$depuis = 0;
+	foreach ( $reperes as $repere ) {
+		$trouve = strpos( $page, $repere, $depuis );
+		if ( false === $trouve ) { return $repere; }
+		$depuis = $trouve + strlen( $repere );
+	}
+	return '';
+};
+$manque_acces = $ordre_acces( $rendu_acces, array( 'class="na-intro-acces"', 'Envoyez votre notice par courriel', 'mailto:', 'href="https://www.cnrs.fr/fr/accessibilite">Déclaration d’accessibilité' ) );
+na_verifier( '' === $manque_acces, 'l\'introduction donne, dans l\'ordre, la voie de secours par courriel puis la déclaration d\'accessibilité', $manque_acces );
+na_verifier( false !== strpos( $rendu_acces, 'id="na-form" lang="fr"' ), 'le formulaire est en français' );
+na_verifier( false === strpos( $rendu_sans_declaration, 'Déclaration d’accessibilité' ) && false !== strpos( $rendu_sans_declaration, 'Envoyez votre notice par courriel' ),
+	'sans déclaration réglée, l\'introduction garde la voie de secours et ne promet aucune déclaration' );
+na_verifier( false !== strpos( $rendu_acces, 'Nature de la figure' ) && false !== strpos( $rendu_acces, 'Ctrl+B' ),
+	'le formulaire propose la nature de la figure et les raccourcis' );
 
 WP_CLI::log( 'Les siècles sur la fiche' );
 $fiche_siecle = wp_insert_post( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'private', 'post_title' => 'Siècles' ) );
