@@ -1861,7 +1861,7 @@ class Notice_Archeomed_Relecture {
 	 * « CAEN (Calvados), Château ». Il ne se saisit pas ici : il suit les
 	 * champs du lieu, et le script le refait quand on les change.
 	 */
-	private static function titre_au_dessus_du_texte( $lieux, $departement, $lieu_dit ) {
+	private static function titre_au_dessus_du_texte( $lieux, $departement, $d ) {
 		$noms = array();
 		foreach ( (array) $lieux as $lieu ) {
 			if ( isset( $lieu['nom'] ) && '' !== trim( (string) $lieu['nom'] ) ) {
@@ -1869,11 +1869,12 @@ class Notice_Archeomed_Relecture {
 			}
 		}
 		$departement = trim( (string) $departement, " \t\n\r\0\x0B()" );
-		$lieu_dit    = trim( (string) $lieu_dit );
+		$lieu_dit    = Notice_Archeomed_Lieu_Dit::html_du_titre( $d );
 		$titre       = esc_html( implode( ', ', $noms ) . ( '' !== $departement ? ' (' . $departement . ')' : '' ) );
 		if ( '' !== $lieu_dit ) {
-			$titre .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() )
-				. ( Notice_Archeomed_Normes::lieu_dit_en_italique() ? '<em>' . esc_html( $lieu_dit ) . '</em>' : esc_html( $lieu_dit ) );
+			// Le lieu-dit avec sa mise en forme : petites capitales, exposant,
+			// et l'italique de l'auteur rendu en romain dans le titre.
+			$titre .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . '<span>' . $lieu_dit . '</span>';
 		}
 		return '<p class="na-rel-titre-texte" id="na-rel-titre-texte" data-avant="' . esc_attr( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . '"'
 			. ' data-italique="' . ( Notice_Archeomed_Normes::lieu_dit_en_italique() ? '1' : '0' ) . '">' . $titre . '</p>';
@@ -1967,6 +1968,7 @@ class Notice_Archeomed_Relecture {
 		}
 		self::champ( 'departement', 'Précision géographique', $valeur( 'departement' ) );
 		self::champ( 'lieu_dit', 'Lieu-dit', $valeur( 'lieu_dit' ) );
+		echo '<input type="hidden" name="lieu_dit_forme" id="na-rel-lieu_dit_forme" value="' . esc_attr( $valeur( 'lieu_dit_forme' ) ) . '">';
 		self::champ( 'annee', 'Année de l’opération', $valeur( 'annee' ) );
 		self::champ( 'num_autorisation', 'Numéro d’arrêté', $valeur( 'num_autorisation' ) );
 		self::champ( 'id_patriarche', 'Code Patriarche', $valeur( 'id_patriarche' ) );
@@ -2016,7 +2018,7 @@ class Notice_Archeomed_Relecture {
 		// ── Texte ──
 		$texte = $valeur( 'texte_notice' );
 		echo '<fieldset><legend id="na-rel-texte-libelle">' . esc_html__( 'Texte', 'notice-archeomed' ) . '</legend>'
-			. self::titre_au_dessus_du_texte( $notice['lieux'], $valeur( 'departement' ), $valeur( 'lieu_dit' ) )
+			. self::titre_au_dessus_du_texte( $notice['lieux'], $valeur( 'departement' ), $d )
 			. '<input type="hidden" name="texte_notice" id="na-rel-texte" value="' . esc_attr( 'b64:' . base64_encode( $texte ) ) . '">'
 			. '<div id="na-rel-editeur">' . self::texte_propre( $texte ) . '</div></fieldset>';
 
@@ -2268,7 +2270,13 @@ class Notice_Archeomed_Relecture {
 			. '.na-rel .na-rel-propositions button:hover,.na-rel .na-rel-propositions button:focus{background:#2271b1;color:#fff}'
 			. '.na-rel-dit{display:block;font-size:.9em;color:#50575e}'
 			. '.na-rel-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}'
-			. '#na-rel-editeur{background:#fff;min-height:16em;font-size:16px}.na-rel-form .ql-editor{min-height:16em}.na-rel .na-pc{font-variant:small-caps}'
+			. '#na-rel-editeur{background:#fff;min-height:16em;font-size:16px}.na-rel-form .ql-editor{min-height:16em}'
+			. '.na-rel-form .na-lieu-dit-riche{background:#fff;border:1px solid #8c8f94;border-radius:4px;max-width:40em}'
+			. '.na-rel-form .na-lieu-dit-riche:focus-within{border-color:#2271b1;box-shadow:0 0 0 1px #2271b1}'
+			. '.na-rel-form .na-lieu-dit-riche .ql-toolbar.ql-snow{border:0;border-bottom:1px solid #dcdcde;padding:2px 4px}'
+			. '.na-rel-form .na-lieu-dit-riche .ql-container.ql-snow{border:0;height:auto;font-size:14px}'
+			. '.na-rel-form .na-lieu-dit-riche .ql-editor{min-height:0;padding:.3em .6em}.na-rel-form .na-lieu-dit-riche .ql-editor:focus{outline:none}'
+			. '.na-rel-form .na-lieu-dit-riche .ql-editor p{margin:0}.na-rel .na-pc{font-variant:small-caps}'
 			. '.na-rel-figure{display:flex;gap:16px;border-top:1px solid #dcdcde;padding-top:12px;margin-top:12px}'
 			. '.na-rel .na-rel-agrandir{flex:0 0 220px;width:220px;max-width:100%;align-self:flex-start;position:relative;display:block;padding:0;margin:0;border:1px solid #c3c4c7;background:#fff;cursor:zoom-in}'
 			. '.na-rel .na-rel-agrandir img{display:block;width:100%;height:auto;border:0}'
@@ -2318,6 +2326,7 @@ class Notice_Archeomed_Relecture {
 			var R = <?php echo wp_json_encode( $reglages ); ?>;
 			var form = document.getElementById('na-rel-form');
 			if (!form) { return; }
+<?php echo Notice_Archeomed_Lieu_Dit::script(); ?>
 			var envoi = false;
 
 			// L'éditeur : les formats du dépôt, et eux seuls. Le champ caché
@@ -2377,6 +2386,13 @@ class Notice_Archeomed_Relecture {
 					if (source === 'user') { touche = true; }
 				});
 			}
+			// Le lieu-dit, dans son éditeur d'une ligne, comme au dépôt. Monté
+			// après le texte : la barre du texte est la première de la page.
+			var lieuDitForme = document.getElementById('na-rel-lieu_dit_forme');
+			if (quill) { naLieuDitRiche(document.getElementById('na-rel-lieu_dit'), lieuDitForme, {
+				lecture: !!R.vue,
+				italiqueDuTitre: !document.getElementById('na-rel-titre-texte') || document.getElementById('na-rel-titre-texte').getAttribute('data-italique') === '1'
+			}); }
 
 			// La recherche dans Pactols, depuis le navigateur comme au dépôt :
 			// trois lettres au moins, puis on choisit dans la liste.
@@ -2527,9 +2543,7 @@ class Notice_Archeomed_Relecture {
 				var lieuDit = ld ? ld.value.trim() : '';
 				titre.textContent = noms.join(', ') + (dept ? ' (' + dept + ')' : '') + (lieuDit ? titre.getAttribute('data-avant') : '');
 				if (lieuDit) {
-					var bout = document.createElement(titre.getAttribute('data-italique') === '1' ? 'em' : 'span');
-					bout.textContent = lieuDit;
-					titre.appendChild(bout);
+					naLieuDitPoser(titre, lieuDitForme ? lieuDitForme.value : '', lieuDit, titre.getAttribute('data-italique') === '1');
 				}
 			}
 			form.addEventListener('input', function (e) {

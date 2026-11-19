@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.96
+ * Version: 3.97
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -22,6 +22,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-lieu-dit.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-styles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-docx.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-sdrive.php';
@@ -1114,7 +1115,7 @@ class Notice_Archeomed_Pactols {
 			$departement = $this->sans_parentheses( $d['departement'] );
 			$titre = esc_html( $this->lieux_en_ligne( $d ) . ' (' . $departement . ')' );
 			if ( '' !== $d['lieu_dit'] ) {
-				$titre .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . self::lieu_dit_html( $d['lieu_dit'] );
+				$titre .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . self::lieu_dit_html( $d );
 			}
 			$h .= '<article><h2>' . $titre . '</h2>';
 
@@ -1325,7 +1326,7 @@ class Notice_Archeomed_Pactols {
 		}
 		if ( '' !== $d['lieu_dit'] ) {
 			$contenu .= $doc->plain( Notice_Archeomed_Normes::avant_le_lieu_dit() )
-				. $this->run_xml( $doc, array( 'text' => $d['lieu_dit'], 'i' => Notice_Archeomed_Normes::lieu_dit_en_italique() ) );
+				. $this->runs_xml( $doc, Notice_Archeomed_Lieu_Dit::morceaux_du_titre( $d ) );
 		}
 		$contenu .= $doc->plain( ' — Voir dans la rubrique ' )
 			. $this->run_xml( $doc, array(
@@ -1611,7 +1612,7 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
-			'departement', 'lieu_dit', 'annee',
+			'departement', 'lieu_dit', 'lieu_dit_forme', 'annee',
 			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
 			'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 		);
@@ -2007,7 +2008,7 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
-			'departement', 'lieu_dit', 'annee',
+			'departement', 'lieu_dit', 'lieu_dit_forme', 'annee',
 			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
 			'texte_notice',
 		) as $champ ) {
@@ -3260,6 +3261,22 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form #na-editor .ql-editor.ql-blank::before { left: var(--na-e4); right: var(--na-e4); font-style: normal; color: var(--na-indice); }
 			.na-form#na-form .na-texte--erreur #na-editor.ql-container.ql-snow,
 			.na-form#na-form .na-texte--erreur .ql-toolbar.ql-snow { border-color: var(--na-erreur); }
+			/* Le lieu-dit : un champ d'une ligne, sa petite barre au-dessus. */
+			.na-form#na-form .na-lieu-dit-riche { background: var(--na-papier); border: 1px solid var(--na-filet); border-radius: var(--na-r1);
+				transition: border-color .15s ease; }
+			.na-form#na-form .na-lieu-dit-riche:hover { border-color: var(--na-encre); }
+			.na-form#na-form .na-lieu-dit-riche:focus-within { border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; }
+			.na-form#na-form .na-lieu-dit-riche.na-lieu-dit-riche--erreur { border-color: var(--na-erreur); box-shadow: 0 0 0 1px var(--na-erreur); }
+			.na-form#na-form .na-lieu-dit-riche .ql-toolbar.ql-snow { position: static; padding: 2px var(--na-e1); background: var(--na-fond);
+				border: 0; border-bottom: 1px solid var(--na-filet-doux); border-radius: var(--na-r1) var(--na-r1) 0 0; }
+			.na-form#na-form .na-lieu-dit-riche .ql-toolbar.ql-snow button { width: 2rem; height: 2rem; padding: .375rem; }
+			.na-form#na-form .na-lieu-dit-riche .ql-toolbar.ql-snow button.ql-petitescapitales { width: auto; min-width: 2rem; padding: 0 .375rem; }
+			.na-form#na-form .na-lieu-dit-riche .ql-container.ql-snow { height: auto; font-family: inherit; font-size: var(--na-t-m); border: 0; }
+			.na-form#na-form .na-lieu-dit-riche .ql-editor { min-height: 0; padding: .5625rem .75rem; line-height: 1.5; color: var(--na-encre); }
+			.na-form#na-form .na-lieu-dit-riche .ql-editor:focus { outline: none; }
+			.na-form#na-form .na-lieu-dit-riche .ql-editor[aria-invalid="true"] { box-shadow: none; }
+			.na-form#na-form .na-lieu-dit-riche .ql-editor p { margin: 0; color: inherit; }
+			.na-form#na-form .na-lieu-dit-riche .ql-editor .na-pc { font-variant: small-caps; }
 			.na-form#na-form .na-wordcount { margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-sourd); font-variant-numeric: tabular-nums; }
 			.na-form#na-form .na-wordcount.na-out { color: var(--na-avis); font-weight: 600; }
 
@@ -3650,6 +3667,8 @@ class Notice_Archeomed_Pactols {
 						<input type="text" id="na-lieu-dit" name="lieu_dit" required
 							aria-describedby="na-lieu-dit-aide na-apercu"
 							value="<?php echo esc_attr( $this->repris( 'lieu_dit' ) ); ?>">
+						<input type="hidden" id="na-lieu-dit-forme" name="lieu_dit_forme"
+							value="<?php echo esc_attr( $this->repris( 'lieu_dit_forme' ) ); ?>">
 					</div>
 					<div class="na-apercu" id="na-apercu" hidden>
 						<p class="na-apercu-mot">Votre notice paraîtra sous le titre&nbsp;:</p>
@@ -4694,9 +4713,15 @@ class Notice_Archeomed_Pactols {
 			}
 
 			// ── Le titre : lieux, parenthèse, lieu-dit, et leur aperçu ──────
+<?php echo Notice_Archeomed_Lieu_Dit::script(); ?>
 			var deptInput = document.getElementById('na-departement');
 			var deptAuto = document.getElementById('na-departement-auto');
 			var lieuDitInput = document.getElementById('na-lieu-dit');
+			// Petites capitales, italique, exposant : le lieu-dit s'écrit dans un
+			// éditeur d'une ligne, qui remplit le champ et garde la mise en forme
+			// à côté.
+			var lieuDitForme = document.getElementById('na-lieu-dit-forme');
+			var lieuDitRiche = quill ? naLieuDitRiche(lieuDitInput, lieuDitForme, { classe: 'na-ancre', italiqueDuTitre: !!NORMES.lieuDitItalique }) : null;
 			// Comme au serveur (capitale_initiale) : la première lettre, et elle
 			// seule, passe en capitale ; les blancs de tête ne comptent pas.
 			function capitaleInitiale(t) {
@@ -4807,7 +4832,15 @@ class Notice_Archeomed_Pactols {
 				morceau(dept || 'département', !dept);
 				// Le signe et l'italique du lieu-dit suivent les normes de la revue.
 				morceau(')' + NORMES.avantLieuDit, false);
-				morceau(lieuDit || 'Lieu-dit', !lieuDit, NORMES.lieuDitItalique);
+				if (lieuDit) {
+					// La mise en forme de l'auteur, accordée au texte tel que le
+					// titre l'imprime ; l'italique renversé dans l'italique.
+					var brut = capitaleInitiale(naLieuDitPropre(lieuDitInput.value).trim());
+					if (/\.$/.test(brut) && !/\.$/.test(lieuDit)) { brut = brut.slice(0, -1).trim(); }
+					naLieuDitPoser(apercuTitre, lieuDitForme ? lieuDitForme.value : '', brut, NORMES.lieuDitItalique);
+				} else {
+					morceau('Lieu-dit', true, NORMES.lieuDitItalique);
+				}
 				apercu.hidden = false;
 			}
 			lieuDitInput.addEventListener('input', majApercu);
@@ -8579,6 +8612,7 @@ class Notice_Archeomed_Pactols {
 					if (typeof v === 'string') { c.value = v; }
 				});
 				if (quill && b.texte) { quill.clipboard.dangerouslyPasteHTML(b.texte); }
+				if (lieuDitRiche) { lieuDitRiche.charger(); }
 				// Les textes des figures attendent leur fichier : ils s'y
 				// rattacheront par son nom, dans quelque ordre qu'on les redépose.
 				if (Array.isArray(b.illus)) {
@@ -9642,10 +9676,12 @@ class Notice_Archeomed_Pactols {
 		return $d;
 	}
 
-	/** Le lieu-dit d'un titre en HTML, en italique si la revue le veut. */
-	private static function lieu_dit_html( $lieu_dit ) {
-		return Notice_Archeomed_Normes::lieu_dit_en_italique()
-			? '<em>' . esc_html( $lieu_dit ) . '</em>' : esc_html( $lieu_dit );
+	/**
+	 * Le lieu-dit d'un titre en HTML, en italique si la revue le veut, avec
+	 * la mise en forme de l'auteur quand elle dit encore le même texte.
+	 */
+	private static function lieu_dit_html( $d ) {
+		return Notice_Archeomed_Lieu_Dit::html_du_titre( $d );
 	}
 
 	/**
@@ -10465,7 +10501,7 @@ class Notice_Archeomed_Pactols {
 			// Un point sépare, comme dans le document et dans le volume : la
 			// copie de l'auteur et le fichier joint ne doivent pas se
 			// contredire sur la ponctuation d'un titre.
-			$loc_line .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . self::lieu_dit_html( $d['lieu_dit'] );
+			$loc_line .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . self::lieu_dit_html( $d );
 		}
 		$nature_line = 'Nature de l\'opération : ' . esc_html( $d['nature'] );
 		$bloc_resp = ' (' . esc_html( implode( ' ; ', $segments ) ) . ')';
@@ -11045,7 +11081,7 @@ class Notice_Archeomed_Pactols {
 		}
 		if ( '' !== $d['lieu_dit'] ) {
 			$titre .= $doc->plain( Notice_Archeomed_Normes::avant_le_lieu_dit() )
-				. $this->run_xml( $doc, array( 'text' => $d['lieu_dit'], 'i' => Notice_Archeomed_Normes::lieu_dit_en_italique() ) );
+				. $this->runs_xml( $doc, Notice_Archeomed_Lieu_Dit::morceaux_du_titre( $d ) );
 		}
 		$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'titre_notice' ), $titre );
 		// Une notice de la rubrique V reçue avant les matières se range sous
@@ -11497,6 +11533,37 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Plusieurs morceaux à la suite — le lieu-dit avec ses petites
+	 * capitales et ses exposants. En DOCX, ils passent ensemble par la
+	 * typographie : une apostrophe ou un siècle à cheval sur deux morceaux
+	 * se reconnaît encore.
+	 */
+	private function runs_xml( $doc, $runs ) {
+		$runs = array_values( array_filter( (array) $runs, function ( $run ) {
+			return isset( $run['text'] ) && '' !== (string) $run['text'];
+		} ) );
+		if ( $doc instanceof Notice_Archeomed_DOCX ) {
+			$propres = array();
+			foreach ( $runs as $run ) {
+				$propres[] = array(
+					'text' => (string) $run['text'],
+					'i'    => ! empty( $run['i'] ),
+					'pc'   => ! empty( $run['pc'] ),
+					'sup'  => ! empty( $run['sup'] ),
+				);
+			}
+			return $doc->fragments( $propres );
+		}
+		$rtf = '';
+		foreach ( $runs as $run ) {
+			$open = ( ! empty( $run['i'] ) ? '\\i ' : '' ) . ( ! empty( $run['pc'] ) ? '\\scaps ' : '' ) . ( ! empty( $run['sup'] ) ? '\\super ' : '' );
+			$text = Notice_Archeomed_RTF::esc( $run['text'] );
+			$rtf .= '' === $open ? $text : '{' . $open . $text . '}';
+		}
+		return $rtf;
+	}
+
+	/**
 	 * Retire le numéro de rubrique en tête de libellé.
 	 * « I. Constructions et habitats civils » devient
 	 * « Constructions et habitats civils ».
@@ -11677,7 +11744,7 @@ class Notice_Archeomed_Pactols {
 			'commentaires', 'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 			'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2', 'reprise_jeton',
 			'notice_archeomed_nonce', 'na_website', 'na_curseur', 'na_preuve', 'cf-turnstile-response',
-			'corrige_version',
+			'corrige_version', 'lieu_dit_forme',
 		) );
 		foreach ( $simples as $champ ) {
 			if ( isset( $_POST[ $champ ] ) && ! is_string( $_POST[ $champ ] ) ) {
@@ -11764,6 +11831,11 @@ class Notice_Archeomed_Pactols {
 			// La première lettre en capitale : le lieu-dit ouvre une phrase du
 			// titre, après le point — « Caen (Calvados). La Croix-Blanche ».
 			$d['lieu_dit'] = $this->capitale_initiale( $d['lieu_dit'] );
+			// Sa mise en forme, quand le formulaire la poste : elle reçoit les
+			// mêmes corrections, et ne se garde que si elle dit le même texte.
+			if ( isset( $_POST['lieu_dit_forme'] ) && is_string( $_POST['lieu_dit_forme'] ) ) {
+				$d['lieu_dit_forme'] = Notice_Archeomed_Lieu_Dit::accorder( wp_unslash( $_POST['lieu_dit_forme'] ), $d['lieu_dit'] );
+			}
 		}
 		return $d;
 	}
@@ -15146,7 +15218,7 @@ class Notice_Archeomed_Pactols {
 			'la rubrique'                 => array( 'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2', 'renvoi_matiere' ),
 			'les lieux'                   => array( 'lieux', 'commune', 'commune_ark' ),
 			'la précision géographique'   => array( 'departement' ),
-			'le lieu-dit'                 => array( 'lieu_dit' ),
+			'le lieu-dit'                 => array( 'lieu_dit', 'lieu_dit_forme' ),
 			'l’année'                     => array( 'annee' ),
 			'le numéro d’arrêté'          => array( 'num_autorisation' ),
 			'le code Patriarche'          => array( 'id_patriarche' ),

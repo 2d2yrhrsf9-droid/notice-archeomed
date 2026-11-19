@@ -633,7 +633,9 @@ reçoit uniquement son style, et hérite donc des polices et tailles définies
 dans la feuille de styles Métopes du modèle. Modifier le modèle suffit à
 changer l'apparence de toutes les notices produites ensuite.
 
-Le lieu-dit passe en italique dans le titre de notice. Le bloc
+Le lieu-dit passe en italique dans le titre de notice. Ce que l'auteur y a
+mis en italique (le nom d'un navire, d'une œuvre) repasse en romain ; ses
+petites capitales et ses exposants restent. Le bloc
 « Responsable de l'opération : … » se colle à la fin du dernier paragraphe du
 texte, entre parenthèses, comme dans le fichier de stylage de référence.
 
@@ -693,7 +695,17 @@ s'appellent désormais ce qu'ils sont :
 | **Lieu-dit, adresse ou complément de titre** | ce qui suit la parenthèse, en italique : un lieu-dit ou le titre d'un projet collectif |
 
 Le titre se compose des lieux séparés par des virgules, puis de la parenthèse,
-puis du complément en italique. La parenthèse se remplit toute seule à partir
+puis du complément en italique.
+
+**Le lieu-dit a sa barre de mise en forme**, depuis la version 3.97 : petites
+capitales (Pc), italique et exposant, pour « XII<sup>e</sup> s. » ou le nom d'un
+navire. L'italique posé par l'auteur s'imprime en romain dans le titre, qui
+est lui-même en italique — l'aperçu du titre le montre ainsi. Le champ reste
+d'une ligne : Entrée ne crée pas de ligne, un collage sur plusieurs lignes se
+remet sur une. La même barre se trouve à la relecture. Le texte du lieu-dit
+reste ce qu'il était (contrôles, nom des fichiers, objet du courriel) ; la
+mise en forme voyage à côté et se perd, sans perdre une lettre, si le texte
+est retouché ailleurs. La parenthèse se remplit toute seule à partir
 du **premier** lieu quand c'est une commune ; les suivants sont réputés du même
 département.
 

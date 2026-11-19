@@ -1064,6 +1064,61 @@ $lieu_dit_xml = na_appel( $plugin, 'run_xml', array( $doc_titre, array( 'text' =
 na_verifier( false !== strpos( $lieu_dit_xml, "l\u{2019}enceinte" ) && false !== strpos( $lieu_dit_xml, '<w:smallCaps/>' )
 	&& 0 === substr_count( $lieu_dit_xml, '<w:r><w:t' ) && false !== strpos( $lieu_dit_xml, '<w:i/>' ),
 	'le lieu-dit du titre prend apostrophe et siècles, en gardant son italique', $lieu_dit_xml );
+
+WP_CLI::log( 'La mise en forme du lieu-dit' );
+$LD = 'Notice_Archeomed_Lieu_Dit';
+$ld_runs = $LD::morceaux( ' <span class="na-pc">xii</span><sup>e</sup> s., <em>Pourquoi-Pas</em>&amp;Cie <b>x</b> ' );
+na_verifier( array(
+		array( 'text' => 'xii', 'i' => false, 'pc' => true, 'sup' => false ),
+		array( 'text' => 'e', 'i' => false, 'pc' => false, 'sup' => true ),
+		array( 'text' => ' s., ', 'i' => false, 'pc' => false, 'sup' => false ),
+		array( 'text' => 'Pourquoi-Pas', 'i' => true, 'pc' => false, 'sup' => false ),
+		array( 'text' => '&Cie x', 'i' => false, 'pc' => false, 'sup' => false ),
+	) === $ld_runs,
+	'la forme se lit en morceaux : petites capitales, exposant, italique ; une balise inconnue laisse son texte, les bouts sont rognés', $ld_runs );
+na_verifier( 'La rue <em>Haute</em>' === $LD::accorder( 'la rue <em>Haute</em>.', 'La rue Haute' ),
+	'la forme reçoit la capitale initiale et perd le point final, comme le champ brut' );
+na_verifier( '' === $LD::accorder( 'la rue <em>Basse</em>', 'La rue Haute' ) && '' === $LD::accorder( 'La rue Haute', 'La rue Haute' )
+	&& '' === $LD::accorder( '<em>A</em>', '' ),
+	'une forme qui ne dit pas le même texte, ou ne marque rien, ne se garde pas' );
+na_verifier( '<em>a</em>&lt;b&gt;' === $LD::accorder( '<img src=x onerror=alert(1)><em>a</em>&lt;b&gt;<script>', 'a<b>' )
+	&& '' === $LD::accorder( str_repeat( '<em>a</em>', 600 ), str_repeat( 'a', 600 ) ),
+	'la forme gardée est réécrite : ni attribut ni balise étrangère, les chevrons échappés, une forme démesurée refusée' );
+$ld_d = array( 'lieu_dit' => 'Épave du Pourquoi-Pas, XIIe s', 'lieu_dit_forme' => 'Épave du <em>Pourquoi-Pas</em>, <span class="na-pc">XII</span><sup>e</sup> s' );
+$ld_html = $LD::html_du_titre( $ld_d );
+na_verifier( Notice_Archeomed_Normes::lieu_dit_en_italique()
+	? '<em>Épave du </em>Pourquoi-Pas<em>, </em><span class="na-pc" style="font-variant:small-caps"><em>XII</em></span><em><sup>e</sup></em><em> s</em>' === $ld_html
+	: false !== strpos( $ld_html, '<em>Pourquoi-Pas</em>' ),
+	'au titre, l\'italique de l\'auteur passe en romain dans le lieu-dit en italique', $ld_html );
+na_verifier( '<em>Autre lieu</em>' === $LD::html_du_titre( array( 'lieu_dit' => 'Autre lieu', 'lieu_dit_forme' => $ld_d['lieu_dit_forme'] ) )
+	&& '<em>Sans forme</em>' === $LD::html_du_titre( array( 'lieu_dit' => 'Sans forme' ) ) && '' === $LD::html_du_titre( array() ),
+	'un lieu-dit retouché ailleurs perd sa forme, jamais une lettre' );
+$ld_xml = na_appel( $plugin, 'runs_xml', array( $doc_titre, $LD::morceaux_du_titre( $ld_d ) ) );
+$ld_vus = array();
+preg_match_all( '#<w:r>(?:<w:rPr>(.*?)</w:rPr>)?<w:t[^>]*>(.*?)</w:t></w:r>#s', $ld_xml, $ld_m, PREG_SET_ORDER );
+foreach ( $ld_m as $r ) {
+	$ld_vus[] = ( false !== strpos( $r[1], '<w:i/>' ) ? 'i' : '' ) . ( false !== strpos( $r[1], 'smallCaps' ) ? 'pc' : '' )
+		. ( false !== strpos( $r[1], 'superscript' ) ? 'sup' : '' ) . ':' . html_entity_decode( $r[2], ENT_QUOTES | ENT_XML1, 'UTF-8' );
+}
+$ld_romain = implode( '', array_map( function ( $v ) { return substr( $v, 1 ); }, preg_grep( '/^:/', $ld_vus ) ) );
+na_verifier( 'Pourquoi-Pas' === $ld_romain && 1 === count( preg_grep( '/^ipc:xii$/i', $ld_vus ) ) && in_array( 'isup:e', $ld_vus, true )
+	&& 0 === count( preg_grep( '/^[^:]*:.*<\/?(em|sup|span)/', $ld_vus ) ),
+	'au Word, le nom du navire en romain, le siècle en petites capitales et son exposant, dans le titre en italique', $ld_vus );
+$ld_rtf = na_appel( $plugin, 'runs_xml', array( null, $LD::morceaux_du_titre( $ld_d ) ) );
+na_verifier( false !== strpos( $ld_rtf, 'Pourquoi-Pas' ) && false !== strpos( $ld_rtf, '\\scaps ' ) && false !== strpos( $ld_rtf, '\\super ' )
+	&& substr_count( $ld_rtf, '{' ) === substr_count( $ld_rtf, '}' ),
+	'le RTF de repli aussi, ses groupes équilibrés', $ld_rtf );
+$ld_post = $_POST;
+$_POST   = array( 'lieu_dit' => 'la rue <i>Haute</i>.', 'lieu_dit_forme' => array( 'x' ) );
+na_appel( $plugin, 'entrees_attendues' );
+na_verifier( ! isset( $_POST['lieu_dit_forme'] ), 'une forme envoyée en tableau est écartée' );
+$_POST = array( 'lieu_dit' => 'la rue Haute.', 'lieu_dit_forme' => wp_slash( 'la rue <em>Haute</em>.' ) );
+$ld_recu = na_appel( $plugin, 'textes_postes', array( array( 'lieu_dit' ) ) );
+$_POST = array( 'lieu_dit' => 'la rue Haute.' );
+$ld_sans = na_appel( $plugin, 'textes_postes', array( array( 'lieu_dit' ) ) );
+$_POST = $ld_post;
+na_verifier( 'La rue Haute' === $ld_recu['lieu_dit'] && 'La rue <em>Haute</em>' === $ld_recu['lieu_dit_forme'] && ! array_key_exists( 'lieu_dit_forme', $ld_sans ),
+	'la forme postée est reçue avec le lieu-dit ; sans elle, rien ne s\'écrit à sa place', array( $ld_recu, $ld_sans ) );
 na_verifier( array( 'Falaise', 'Coulonces (Vire Normandie)' ) === array_column( na_appel( $plugin, 'lieux_de', array( array(
 	'departement' => '(Calvados)', 'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ),
 		array( 'nom' => 'Coulonces (Vire Normandie)', 'ark' => 'javascript:alert(1)' ) ) ) ) ), 'nom' ),
