@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.97
+ * Version: 3.98
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -382,6 +382,9 @@ class Notice_Archeomed_Pactols {
 		$this->brancher_la_file();
 		add_action( 'wp_mail_failed', array( $this, 'retenir_l_erreur_mail' ) );
 		add_action( 'phpmailer_init', array( $this, 'acheminer_par_smtp' ) );
+		// En dernier : un relais ou une extension qui pose son propre nom
+		// passe avant, et le nom de la revue doit être celui qu'on lit.
+		add_action( 'phpmailer_init', array( __CLASS__, 'nommer_l_expediteur' ), PHP_INT_MAX );
 		add_action( 'admin_post_na_feuille', array( $this, 'deposer_la_feuille' ) );
 		add_action( 'admin_post_na_document', array( $this, 'telecharger_le_document' ) );
 		add_action( 'admin_post_na_fascicule', array( $this, 'telecharger_le_fascicule' ) );
@@ -1161,6 +1164,11 @@ class Notice_Archeomed_Pactols {
 					. esc_url( $d['rapport_lien'] ) . '">'
 					. esc_html( $d['rapport_lien'] ) . '</a>';
 			}
+			if ( ! empty( $d['donnees_lien'] ) ) {
+				$meta[] = esc_html( 'Jeu de données : ' ) . '<a href="'
+					. esc_url( $d['donnees_lien'] ) . '">'
+					. esc_html( $d['donnees_lien'] ) . '</a>';
+			}
 			$organismes = $this->organismes_de( $d );
 			if ( ! empty( $organismes ) ) {
 				$meta[] = esc_html( $this->libelle_organisme( count( $organismes ) )
@@ -1613,7 +1621,7 @@ class Notice_Archeomed_Pactols {
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'lieu_dit_forme', 'annee',
-			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
+			'num_autorisation', 'id_patriarche', 'rapport_lien', 'donnees_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
 			'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
 		);
 		foreach ( $simples as $champ ) {
@@ -2009,7 +2017,7 @@ class Notice_Archeomed_Pactols {
 			'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_email', 'coauteur_inst',
 			'departement', 'lieu_dit', 'lieu_dit_forme', 'annee',
-			'num_autorisation', 'id_patriarche', 'rapport_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
+			'num_autorisation', 'id_patriarche', 'rapport_lien', 'donnees_lien', 'originaux_lien', 'originaux_jusqua', 'commentaires',
 			'texte_notice',
 		) as $champ ) {
 			if ( isset( $d[ $champ ] ) && is_scalar( $d[ $champ ] ) ) {
@@ -2646,6 +2654,7 @@ class Notice_Archeomed_Pactols {
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
 			'rapport_lien'        => array( 'na-rapport', 'Saisissez l’adresse complète du rapport, par exemple https://hal.science/hal-01234567' ),
+			'donnees_lien'        => array( 'na-donnees', 'Saisissez l’adresse complète du jeu de données, par exemple https://doi.org/10.34847/nkl.abcd1234' ),
 			'resp_prenom'         => array( 'na-resp-prenom', 'Indiquez le prénom du responsable d’opération' ),
 			'resp_nom'            => array( 'na-resp-nom', 'Indiquez le nom du responsable d’opération' ),
 			'resp_email'          => array( 'na-resp-email', 'Indiquez l’adresse électronique du responsable d’opération' ),
@@ -3763,6 +3772,14 @@ class Notice_Archeomed_Pactols {
 						spellcheck="false" autocapitalize="off" aria-describedby="na-rapport-aide"
 						value="<?php echo esc_attr( $this->repris( 'rapport_lien' ) ); ?>">
 				</div>
+
+				<div class="na-champ">
+					<label for="na-donnees">Adresse du jeu de données en ligne <span class="na-facultatif">(facultatif)</span></label>
+					<p class="na-help" id="na-donnees-aide">Les données de l’opération déposées sur Nakala, Zenodo ou un autre entrepôt, ou leur DOI. Par exemple&nbsp;: https://doi.org/10.34847/nkl.abcd1234</p>
+					<input type="text" inputmode="url" id="na-donnees" name="donnees_lien" autocomplete="off"
+						spellcheck="false" autocapitalize="off" aria-describedby="na-donnees-aide"
+						value="<?php echo esc_attr( $this->repris( 'donnees_lien' ) ); ?>">
+				</div>
 			</section>
 
 			<section class="na-section" aria-labelledby="na-s2">
@@ -4382,7 +4399,10 @@ class Notice_Archeomed_Pactols {
 			// ── L'éditeur ──────────────────────────────────────────────────
 			var quill = null;
 			// Ce que le collage a laissé de côté, pour le dire à l'auteur.
-			var oteAuCollage = [], commentairesOtes = false, collageEnCours = false;
+			// « apresCollage » : le dernier changement du texte est un collage,
+			// non une frappe. Le paragraphe où se pose le curseur n'est alors pas
+			// en cours d'écriture, et ses avis valent tout de suite.
+			var oteAuCollage = [], commentairesOtes = false, collageEnCours = false, apresCollage = false;
 			if (typeof Quill === 'undefined') {
 				showJsError('Erreur technique' + NBSP + ': l’éditeur de texte ne s’est pas chargé. Rechargez la page.');
 			} else {
@@ -4457,6 +4477,7 @@ class Notice_Archeomed_Pactols {
 					};
 					quill.container.addEventListener('paste', function () {
 						collageEnCours = true;
+						apresCollage = true;
 						oteAuCollage = [];
 						commentairesOtes = false;
 						window.setTimeout(function () { collageEnCours = false; majConseilsDuTexte(); }, 0);
@@ -7621,6 +7642,31 @@ class Notice_Archeomed_Pactols {
 				}
 				return avis;
 			}
+			// « (figure 3) », « (voir Fig. 2) », « fig 3 » : la revue écrit
+			// « (fig. 3) ». Le mot entier ne compte qu'entre parenthèses, « la
+			// figure 3 montre » étant une phrase. Comme au serveur
+			// (Notice_Archeomed_Controles::appels_mal_ecrits).
+			var CORPS_D_APPEL = '(\\d+[a-z]?(?:\\s*(?:[-–—]|à|et|,|;|\\/)\\s*\\d+[a-z]?){0,12})';
+			var APPELS_MAL_ECRITS = [
+				motif('\\((?:[^()]*?[^\\p{L}\\d()])?()([Ff]igures?|FIGURES?|Fig\\.?|FIG\\.?)\\s*' + CORPS_D_APPEL, 'gu'),
+				motif('(^|[^\\p{L}\\d])([Ff]igs\\.?|[Ff]ig)\\s*' + CORPS_D_APPEL, 'gu')
+			];
+			function appelsMalEcrits(paras) {
+				var avis = [];
+				APPELS_MAL_ECRITS.forEach(function (re) {
+					if (!re) { return; }
+					paras.forEach(function (p) {
+						var m;
+						re.lastIndex = 0;
+						while ((m = re.exec(p)) !== null) {
+							var corps = m[3].replace(/\s+/g, ' ');
+							var phrase = guillemets(m[2] + ' ' + corps) + NBSP + ': un appel de figure s’écrit ' + guillemets('fig.' + NBSP + corps) + '.';
+							if (avis.indexOf(phrase) === -1) { avis.push(phrase); }
+						}
+					});
+				});
+				return avis;
+			}
 			// « 2ème », « XIIème », « 1ère », « 2nde » : on le signale sans
 			// corriger, ce peut être une citation. Ni « Mère » ni « Cère ».
 			var ORDINAL = motif('(^|[^\\p{L}\\d])(?:(\\d+|[IVXLC]{1,6})(èmes?|emes?|ièmes?|iemes?|è)|(1|I)(ères?|eres?)|(\\d+)(nde|nd))(?![\\p{L}\\d])', 'gu');
@@ -7709,7 +7755,7 @@ class Notice_Archeomed_Pactols {
 						+ NBSP + ': le serveur en couperait la fin.'] : [],
 					avisDuCollage(paras),
 					avisActif('ponctuation') ? ponctuationFinale(sansTitres.textes, sansTitres.courant).concat(intertitresPonctues()) : [],
-					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), decalage() + selected.length) : [],
+					avisActif('figures_appelees') ? appelsDeFigure(paras.join('\n'), decalage() + selected.length).concat(appelsMalEcrits(paras)) : [],
 					avisActif('ordinaux') ? ordinauxFautifs(paras) : [],
 					avisActif('annees_espacees') ? datesEspacees(paras) : [],
 					avisActif('sigles') ? siglesNonDeveloppes(paras).concat(siglesMalEcrits(paras)) : []
@@ -7807,7 +7853,12 @@ class Notice_Archeomed_Pactols {
 				quill.on('text-change', function (d, o, source) {
 					if (source === 'user') { texteVu = true; }
 					window.clearTimeout(attenteDesConseils);
-					attenteDesConseils = window.setTimeout(function () { majConseilsDuTexte(true); }, 1000);
+					// L'avis d'un paragraphe collé sans point final paraissait au
+					// collage, s'effaçait une seconde après — le curseur étant au bout,
+					// on le croyait en cours de frappe — et ne revenait qu'en quittant
+					// le texte. Après un collage, rien n'est en cours.
+					if (!collageEnCours) { apresCollage = false; }
+					attenteDesConseils = window.setTimeout(function () { majConseilsDuTexte(!apresCollage); }, 1000);
 				});
 			}
 
@@ -7903,7 +7954,7 @@ class Notice_Archeomed_Pactols {
 				['#na-departement', 120, 'La précision géographique'], ['#na-lieu-dit', 200, 'Le lieu-dit'], ['#na-annee', 20, 'L’année'],
 				['#na-autorisation', 120, 'Le numéro d’autorisation'], ['#na-patriarche', 120, 'L’identifiant Patriarche'],
 				['.na-commune', 120, 'Le lieu'], ['.na-organisme', 200, 'L’opérateur'], ['#na-commentaires', 3000, 'Le message à la rédaction'],
-				['#na-rapport', 500, 'L’adresse du rapport'], ['#na-originaux', 500, 'Le lien des originaux']
+				['#na-rapport', 500, 'L’adresse du rapport'], ['#na-donnees', 500, 'L’adresse du jeu de données'], ['#na-originaux', 500, 'Le lien des originaux']
 			];
 			['resp', 'coresp', 'coauteur'].forEach(function (c) {
 				LONGUEURS.push(['#na-' + c + '-prenom', 100, 'Le prénom'], ['#na-' + c + '-nom', 100, 'Le nom'], ['#na-' + c + '-inst', 200, 'L’institution']);
@@ -8119,12 +8170,14 @@ class Notice_Archeomed_Pactols {
 			}
 			function normaliserRapport() {
 				normaliserUneAdresse(document.getElementById('na-rapport'));
+				normaliserUneAdresse(document.getElementById('na-donnees'));
 				normaliserUneAdresse(document.getElementById('na-originaux'));
 			}
-			document.getElementById('na-rapport').addEventListener('blur', normaliserRapport);
-			if (document.getElementById('na-originaux')) {
-				document.getElementById('na-originaux').addEventListener('blur', normaliserRapport);
-			}
+			['na-rapport', 'na-donnees', 'na-originaux'].forEach(function (id) {
+				if (document.getElementById(id)) {
+					document.getElementById(id).addEventListener('blur', normaliserRapport);
+				}
+			});
 			function el(id) { return document.getElementById(id); }
 			function uneValeur(sel) {
 				return [].some.call(form.querySelectorAll(sel), function (c) { return !vide(c.value); });
@@ -8147,6 +8200,10 @@ class Notice_Archeomed_Pactols {
 				organisme: function () { return uneValeur('.na-organisme'); },
 				rapport_lien: function () {
 					var v = el('na-rapport').value.trim();
+					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
+				},
+				donnees_lien: function () {
+					var v = el('na-donnees').value.trim();
 					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
 				},
 				resp_prenom: function () { return !vide(el('na-resp-prenom').value); },
@@ -8380,6 +8437,23 @@ class Notice_Archeomed_Pactols {
 			form.addEventListener('input', rafraichir);
 			form.addEventListener('change', rafraichir);
 			form.addEventListener('na-termes', rafraichir);
+			// Une adresse mal formée se dit dès qu'on quitte le champ : on ne
+			// l'apprenait qu'à l'envoi, loin de la saisie. Un champ laissé vide
+			// ne se signale pas en passant ; l'envoi dira s'il était attendu.
+			var VERIFIES_EN_SORTANT = {
+				'na-resp-email': 'resp_email', 'na-coresp-email': 'coresp_email',
+				'na-coauteur-email': 'coauteur_email', 'na-deposant-email': 'deposant_email',
+				'na-rapport': 'rapport_lien', 'na-donnees': 'donnees_lien', 'na-originaux': 'originaux_lien'
+			};
+			form.addEventListener('focusout', function (e) {
+				var c = e.target;
+				var cle = c && c.id && Object.prototype.hasOwnProperty.call(VERIFIES_EN_SORTANT, c.id) ? VERIFIES_EN_SORTANT[c.id] : '';
+				if (!cle || !CONTROLES[cle] || !cibleDe(cle)) { return; }
+				if (/^na-(rapport|donnees|originaux)$/.test(c.id)) { normaliserUneAdresse(c); }
+				if (vide(c.value)) { return; }
+				var r = CONTROLES[cle]();
+				if (r === true) { effacer(cle); } else { signaler(cle, messageDe(cle, r)); }
+			});
 			function valider() {
 				var liste = [];
 				Object.keys(CONTROLES).forEach(function (cle) {
@@ -10241,7 +10315,7 @@ class Notice_Archeomed_Pactols {
 			. ( ! empty( $d['resp_email'] ) && is_email( $d['resp_email'] )
 				? '<p>Si un lien a expiré, il faut redemander les fichiers à l’auteur&nbsp;: ' . esc_html( $d['resp_email'] ) . '.</p>' : '' )
 			. '</div></body></html>';
-		if ( ! wp_mail( $destinataires, $objet, $corps, $entetes ) ) {
+		if ( ! self::courriel( $destinataires, $objet, $corps, $entetes ) ) {
 			error_log( 'Notice Archeomed: alerte des originaux non envoyée (' . $titre . ').' );
 		}
 	}
@@ -10438,6 +10512,9 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $d['rapport_lien'] ) ) {
 			$admin_lines[] = $this->meta_line( 'Rapport final', $d['rapport_lien'] );
 		}
+		if ( ! empty( $d['donnees_lien'] ) ) {
+			$admin_lines[] = $this->meta_line( 'Jeu de données', $d['donnees_lien'] );
+		}
 		$organismes = $this->organismes_de( $d );
 		if ( ! empty( $organismes ) ) {
 			$admin_lines[] = $this->meta_line(
@@ -10470,25 +10547,8 @@ class Notice_Archeomed_Pactols {
 		}
 
 		// --- Bloc responsable (collé au point final du texte, entre parenthèses) ---
-		$resp_nom_complet = trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] );
-		$resp = 'Responsable de l\'opération : ' . $resp_nom_complet . ', ' . $d['resp_inst'];
-		$segments = array( $resp );
-		$coresp_nom_complet = trim( $d['coresp_prenom'] . ' ' . $d['coresp_nom'] );
-		if ( '' !== $coresp_nom_complet ) {
-			$co = 'co-responsable de l\'opération : ' . $coresp_nom_complet;
-			if ( '' !== $d['coresp_inst'] ) {
-				$co .= ', ' . $d['coresp_inst'];
-			}
-			$segments[] = $co;
-		}
-		$coauteur_nom_complet = trim( $d['coauteur_prenom'] . ' ' . $d['coauteur_nom'] );
-		if ( '' !== $coauteur_nom_complet ) {
-			$ca = 'notice rédigée avec : ' . $coauteur_nom_complet;
-			if ( '' !== $d['coauteur_inst'] ) {
-				$ca .= ', ' . $d['coauteur_inst'];
-			}
-			$segments[] = $ca;
-		}
+		// Composé une seule fois, pour la page et le courriel : les deux
+		// copies se suivaient à la main, et l'une aurait fini sans son point.
 
 		// --- Corps de la notice ---
 		// Ligne 1 : Commune (département), lieu-dit (italique)
@@ -10504,7 +10564,7 @@ class Notice_Archeomed_Pactols {
 			$loc_line .= esc_html( Notice_Archeomed_Normes::avant_le_lieu_dit() ) . self::lieu_dit_html( $d );
 		}
 		$nature_line = 'Nature de l\'opération : ' . esc_html( $d['nature'] );
-		$bloc_resp = ' (' . esc_html( implode( ' ; ', $segments ) ) . ')';
+		$bloc_resp = ' (' . esc_html( $this->responsables_inline( $d ) ) . ')';
 		// Le texte sous les normes de la revue, comme au Word et à la page de
 		// relecture : le courriel, la copie de l'auteur et la fiche montraient
 		// la saisie brute, et l'on croyait les siècles restés en capitales.
@@ -11177,6 +11237,15 @@ class Notice_Archeomed_Pactols {
 					. $doc->hyperlink( $d['rapport_lien'], $d['rapport_lien'] )
 			);
 		}
+		// Le jeu de données de l'opération, sous le rapport : c'est encore
+		// une métadonnée, que la direction gardera ou non à l'impression.
+		if ( ! empty( $d['donnees_lien'] ) ) {
+			$doc->add_raw_paragraph(
+				Notice_Archeomed_Styles::de( 'donnees' ),
+				$doc->plain( 'Jeu de données : ' )
+					. $doc->hyperlink( $d['donnees_lien'], $d['donnees_lien'] )
+			);
+		}
 		$organismes_doc = $this->organismes_de( $d );
 		if ( ! empty( $organismes_doc ) ) {
 			$doc->add_paragraph(
@@ -11585,14 +11654,19 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function responsables_rtf( $doc, $d, $entre_parentheses = true, $apres_le_texte = true ) {
 		$segments = array();
+		// Le dernier mot écrit : c'est lui qui dit si la mention a déjà son
+		// point final — « Univ. de Caen, etc. » n'en prend pas un second.
+		$fin = '';
 
 		$resp = self::nom_d_autorite( $d['resp_prenom'], $d['resp_nom'] );
 		if ( '' !== $resp ) {
 			$seg = $doc->plain( "Responsable de l'opération : " )
 				. $doc->char_run( Notice_Archeomed_Styles::de( 'responsable' ), $resp, true );
+			$fin = $resp;
 			if ( '' !== $d['resp_inst'] ) {
 				$seg .= $doc->plain( ', ' )
 					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['resp_inst'] );
+				$fin  = $d['resp_inst'];
 			}
 			$segments[] = $seg;
 		}
@@ -11601,9 +11675,11 @@ class Notice_Archeomed_Pactols {
 		if ( '' !== $coresp ) {
 			$seg = $doc->plain( "co-responsable de l'opération : " )
 				. $doc->char_run( Notice_Archeomed_Styles::de( 'coresponsable' ), $coresp, true );
+			$fin = $coresp;
 			if ( '' !== $d['coresp_inst'] ) {
 				$seg .= $doc->plain( ', ' )
 					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['coresp_inst'] );
+				$fin  = $d['coresp_inst'];
 			}
 			$segments[] = $seg;
 		}
@@ -11612,9 +11688,11 @@ class Notice_Archeomed_Pactols {
 		if ( '' !== $coauteur ) {
 			$seg = $doc->plain( 'notice rédigée avec : ' )
 				. $doc->char_run( Notice_Archeomed_Styles::de( 'coauteur' ), $coauteur, true );
+			$fin = $coauteur;
 			if ( '' !== $d['coauteur_inst'] ) {
 				$seg .= $doc->plain( ', ' )
 					. $doc->char_run( Notice_Archeomed_Styles::de( 'affiliation' ), $d['coauteur_inst'] );
+				$fin  = $d['coauteur_inst'];
 			}
 			$segments[] = $seg;
 		}
@@ -11622,12 +11700,30 @@ class Notice_Archeomed_Pactols {
 		if ( empty( $segments ) ) {
 			return '';
 		}
+		// Le point final de la notice, dans la parenthèse : « (Responsable
+		// de l'opération : …, Université Sorbonne.) ». Il est hors du style
+		// d'affiliation, comme la virgule qui la précède.
+		$point = self::point_final( $fin );
 		if ( ! $entre_parentheses ) {
-			return implode( $doc->plain( ' ; ' ), $segments );
+			return implode( $doc->plain( ' ; ' ), $segments ) . ( '' !== $point ? $doc->plain( $point ) : '' );
 		}
 		return $doc->plain( $apres_le_texte ? ' (' : '(' )
 			. implode( $doc->plain( ' ; ' ), $segments )
-			. $doc->plain( ')' );
+			. $doc->plain( $point . ')' );
+	}
+
+	/**
+	 * Le point qui clôt la mention de responsabilité, ou rien si elle finit
+	 * déjà sur un point, une abréviation, un « ? », un « ! » ou des points
+	 * de suspension — guillemets fermants compris. Une mention vide n'en
+	 * prend pas.
+	 */
+	private static function point_final( $fin ) {
+		$fin = (string) preg_replace( '/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u', '', (string) $fin );
+		if ( '' === $fin || preg_match( '/[.?!…][\s\x{00A0}\x{202F}»”’"\']*$/u', $fin ) ) {
+			return '';
+		}
+		return '.';
 	}
 
 	/**
@@ -11649,26 +11745,33 @@ class Notice_Archeomed_Pactols {
 	 * le corps du courriel HTML.
 	 */
 	private function responsables_inline( $d ) {
-		$segments = array(
-			"Responsable de l'opération : " . trim( $d['resp_prenom'] . ' ' . $d['resp_nom'] ) . ', ' . $d['resp_inst'],
+		$segments = array();
+		$fin      = '';
+		$roles    = array(
+			'resp'     => "Responsable de l'opération : ",
+			'coresp'   => "co-responsable de l'opération : ",
+			'coauteur' => 'notice rédigée avec : ',
 		);
-		$coresp = trim( $d['coresp_prenom'] . ' ' . $d['coresp_nom'] );
-		if ( '' !== $coresp ) {
-			$seg = "co-responsable de l'opération : " . $coresp;
-			if ( '' !== $d['coresp_inst'] ) {
-				$seg .= ', ' . $d['coresp_inst'];
+		$lu = function ( $cle ) use ( $d ) {
+			return isset( $d[ $cle ] ) && is_scalar( $d[ $cle ] ) ? trim( (string) $d[ $cle ] ) : '';
+		};
+		foreach ( $roles as $role => $libelle ) {
+			$nom = trim( $lu( $role . '_prenom' ) . ' ' . $lu( $role . '_nom' ) );
+			// Le responsable est toujours nommé, même vide : la mention dit
+			// alors ce qui manque au lieu de commencer par un co-responsable.
+			if ( '' === $nom && 'resp' !== $role ) {
+				continue;
+			}
+			$seg = $libelle . $nom;
+			$fin = $nom;
+			// Une institution absente ne laisse plus une virgule pendante.
+			if ( '' !== $lu( $role . '_inst' ) ) {
+				$seg .= ', ' . $lu( $role . '_inst' );
+				$fin  = $lu( $role . '_inst' );
 			}
 			$segments[] = $seg;
 		}
-		$coauteur = trim( $d['coauteur_prenom'] . ' ' . $d['coauteur_nom'] );
-		if ( '' !== $coauteur ) {
-			$seg = 'notice rédigée avec : ' . $coauteur;
-			if ( '' !== $d['coauteur_inst'] ) {
-				$seg .= ', ' . $d['coauteur_inst'];
-			}
-			$segments[] = $seg;
-		}
-		return implode( ' ; ', $segments );
+		return implode( ' ; ', $segments ) . self::point_final( $fin );
 	}
 
 	/**
@@ -11738,7 +11841,7 @@ class Notice_Archeomed_Pactols {
 			'resp_prenom', 'resp_nom', 'resp_inst', 'resp_email', 'deposant_prenom', 'deposant_nom', 'deposant_email',
 			'coresp_prenom', 'coresp_nom', 'coresp_inst', 'coresp_email',
 			'coauteur_prenom', 'coauteur_nom', 'coauteur_inst', 'coauteur_email',
-			'rapport_lien', 'originaux_lien', 'originaux_jusqua',
+			'rapport_lien', 'donnees_lien', 'originaux_lien', 'originaux_jusqua',
 		);
 		$simples = array_merge( $une_ligne, array(
 			'commentaires', 'texte_notice', 'pactols_periods', 'pactols_subjects', 'pactols_places',
@@ -11976,6 +12079,7 @@ class Notice_Archeomed_Pactols {
 		// une adresse mal formée y ferait un lien qui ne mène nulle part. Les
 		// schémas sont restreints à ce qu'un rapport peut porter.
 		$d['rapport_lien'] = $this->lien_poste( 'rapport_lien', 'le lien du rapport' );
+		$d['donnees_lien'] = $this->lien_poste( 'donnees_lien', 'le lien du jeu de données' );
 		// Le lien de téléchargement des originaux trop lourds pour le
 		// formulaire : la rédaction le trouve dans le courriel et le document.
 		$d['originaux_lien'] = $this->lien_poste( 'originaux_lien', 'le lien des originaux' );
@@ -12438,7 +12542,7 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $integrees ) ) {
 			add_action( 'phpmailer_init', $integrer );
 		}
-		$sent = wp_mail( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
+		$sent = self::courriel( $pour_la_redaction, $subject, $wrap_open . $corps . $wrap_close,
 			$headers, $joindre );
 		remove_action( 'phpmailer_init', $integrer );
 		if ( ! $sent ) {
@@ -12532,7 +12636,7 @@ class Notice_Archeomed_Pactols {
 		$copies = array();
 		foreach ( $destinataires as $dest ) {
 			$this->derniere_erreur_mail = '';
-			$partie = wp_mail( $dest, $objet_copie,
+			$partie = self::courriel( $dest, $objet_copie,
 				$wrap_open . $intro . $notice . $wrap_close, $headers_conf,
 				$pour_les_auteurs );
 			$copies[] = array( 'a' => $dest, 'partie' => (bool) $partie,
@@ -12601,8 +12705,7 @@ class Notice_Archeomed_Pactols {
 		// sans quoi il refuse le message pour usurpation.
 		$expediteur = trim( (string) Notice_Archeomed_Settings::get( 'smtp_expediteur' ) );
 		if ( is_email( $expediteur ) ) {
-			$nom = trim( (string) Notice_Archeomed_Settings::get( 'smtp_nom' ) );
-			$phpmailer->setFrom( $expediteur, '' !== $nom ? $nom : '', false );
+			$phpmailer->setFrom( $expediteur, Notice_Archeomed_Settings::nom_d_expediteur(), false );
 		}
 	}
 
@@ -12678,7 +12781,7 @@ class Notice_Archeomed_Pactols {
 
 		$encode = (int) ceil( $octets * 4 / 3 * 78 / 76 );
 		$this->derniere_erreur_mail = '';
-		$parti = wp_mail( $vers, '[ESSAI DE POIDS] ' . $mo . ' Mo de pièce jointe',
+		$parti = self::courriel( $vers, '[ESSAI DE POIDS] ' . $mo . ' Mo de pièce jointe',
 			'<html><body><p>Essai de poids du formulaire des notices : ce message porte une pièce '
 				. 'jointe de ' . $mo . ' Mo, soit environ ' . number_format_i18n( $encode / 1000 / 1000, 1 )
 				. ' Mo une fois encodée pour le courriel. S’il vous parvient, le serveur l’a accepté.</p></body></html>',
@@ -12828,7 +12931,7 @@ class Notice_Archeomed_Pactols {
 	/** Un envoi, tel quel, sans rien ajouter ni retrancher. */
 	private function poster_brut( $etape, $vers, $sujet, $corps, $entetes, $jointes ) {
 		$this->derniere_erreur_mail = '';
-		$parti = wp_mail( $vers, $sujet, $corps, $entetes, $jointes );
+		$parti = self::courriel( $vers, $sujet, $corps, $entetes, $jointes );
 		return $parti
 			? array( 'ok' => true, 'etape' => $etape, 'message' => 'parti' )
 			: array( 'ok' => false, 'etape' => $etape,
@@ -12856,7 +12959,7 @@ class Notice_Archeomed_Pactols {
 			file_put_contents( $fichier, "Pièce jointe d'essai.\r\n" );
 			$jointes[] = $fichier;
 		}
-		$parti = wp_mail(
+		$parti = self::courriel(
 			$vers,
 			'Essai d’acheminement (' . $etape . ') — notices d’archéologie médiévale',
 			'<html><body><p>Essai : ' . esc_html( $etape ) . '.</p></body></html>',
@@ -12873,6 +12976,47 @@ class Notice_Archeomed_Pactols {
 		return array( 'ok' => false, 'etape' => $etape,
 			'message' => 'refusé — ' . ( '' !== $this->derniere_erreur_mail
 				? $this->derniere_erreur_mail : 'aucune raison donnée' ) );
+	}
+
+	/** Vrai pendant qu'un courriel du formulaire est en train de partir. */
+	private static $courriel_en_cours = false;
+
+	/**
+	 * Envoie un courriel du formulaire, sous le nom de la revue.
+	 *
+	 * Les destinataires lisaient « hébergement no-reply » : le nom que
+	 * l'hébergement donne à tout ce que le site envoie. Celui de la revue ne
+	 * vaut que pour ce qui part d'ici — un mot de passe oublié, le courriel
+	 * d'une autre extension gardent le leur. L'adresse ne change pas : c'est
+	 * celle que le serveur a le droit d'employer, et en prendre une autre
+	 * ferait passer le message pour une usurpation.
+	 */
+	public static function courriel( $vers, $objet, $corps, $entetes = '', $jointes = array() ) {
+		self::$courriel_en_cours = true;
+		try {
+			return wp_mail( $vers, $objet, $corps, $entetes, $jointes );
+		} finally {
+			self::$courriel_en_cours = false;
+		}
+	}
+
+	/** Vrai si le courriel qui part est un courriel du formulaire. */
+	public static function courriel_en_cours() {
+		return self::$courriel_en_cours;
+	}
+
+	/**
+	 * Pose le nom de la revue sur un courriel du formulaire, juste avant
+	 * qu'il parte : rien de ce qui a été réglé ailleurs ne passe après.
+	 */
+	public static function nommer_l_expediteur( $phpmailer ) {
+		if ( ! self::$courriel_en_cours || ! is_object( $phpmailer ) ) {
+			return;
+		}
+		$nom = Notice_Archeomed_Settings::nom_d_expediteur();
+		if ( '' !== $nom ) {
+			$phpmailer->FromName = $nom;
+		}
 	}
 
 	/** Retient ce que le serveur de courriel a répondu, pour le dire plus haut. */
@@ -15233,6 +15377,7 @@ class Notice_Archeomed_Pactols {
 			'les autres lieux'            => array( 'pactols_places_items' ),
 			'le texte'                    => array( 'texte_notice' ),
 			'le lien du rapport'          => array( 'rapport_lien' ),
+			'le lien du jeu de données'   => array( 'donnees_lien' ),
 			'le lien des originaux'       => array( 'originaux_lien', 'originaux_jusqua' ),
 			'le message à la rédaction'   => array( 'commentaires' ),
 		);
@@ -16153,10 +16298,12 @@ class Notice_Archeomed_Pactols {
 				$d[ $champ ] = $valeur;
 			}
 		}
-		if ( isset( $_POST['rapport_lien'] ) && is_string( $_POST['rapport_lien'] ) ) {
-			$lien = $this->lien_poste( 'rapport_lien', 'le lien du rapport' );
-			if ( array_key_exists( 'rapport_lien', $avant ) || '' !== $lien ) {
-				$d['rapport_lien'] = $lien;
+		foreach ( array( 'rapport_lien' => 'le lien du rapport', 'donnees_lien' => 'le lien du jeu de données' ) as $champ_lien => $nom_lien ) {
+			if ( isset( $_POST[ $champ_lien ] ) && is_string( $_POST[ $champ_lien ] ) ) {
+				$lien = $this->lien_poste( $champ_lien, $nom_lien );
+				if ( array_key_exists( $champ_lien, $avant ) || '' !== $lien ) {
+					$d[ $champ_lien ] = $lien;
+				}
 			}
 		}
 
@@ -16585,7 +16732,7 @@ class Notice_Archeomed_Pactols {
 		$this->derniere_erreur_mail = '';
 		$parti = false;
 		try {
-			$parti = wp_mail( $d['resp_email'], 'Votre notice relue : accord demandé — ' . $titre, $corps, $entetes,
+			$parti = self::courriel( $d['resp_email'], 'Votre notice relue : accord demandé — ' . $titre, $corps, $entetes,
 				array( Notice_Archeomed_Relecture::nom_du_word( $id, max( $numeros ), 'pour accord' ) => $word ) );
 		} catch ( Throwable $e ) {
 			$this->derniere_erreur_mail = $e->getMessage();

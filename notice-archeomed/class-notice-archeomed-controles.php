@@ -149,7 +149,10 @@ class Notice_Archeomed_Controles {
 				);
 			},
 			'figures_appelees' => function () use ( $paragraphes, $figures ) {
-				return self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) );
+				return array_merge(
+					self::appels_de_figure( implode( "\n", $paragraphes ), count( $figures ) ),
+					self::appels_mal_ecrits( $paragraphes )
+				);
 			},
 			'ordinaux'         => function () use ( $paragraphes ) {
 				return self::ordinaux_fautifs( $paragraphes );
@@ -333,6 +336,36 @@ class Notice_Archeomed_Controles {
 					self::en_lettres( $combien ) );
 		}
 		return $avis;
+	}
+
+	/**
+	 * Un appel de figure qui n'a pas la forme de la revue, « (fig. 3) » :
+	 * « (figure 3) », « (voir Fig. 2) », « fig 3 », « figs. 1-2 ». Entre
+	 * parenthèses seulement pour le mot entier : « la figure 3 montre »
+	 * est une phrase, non un appel. Le navigateur dit la même chose
+	 * (appelsMalEcrits).
+	 */
+	const CORPS_D_APPEL = '(\d+[a-z]?(?:\s*(?:[-–—]|à|et|,|;|\/)\s*\d+[a-z]?){0,12})';
+
+	public static function appels_mal_ecrits( $paragraphes ) {
+		$avis   = array();
+		$motifs = array(
+			'/(*UCP)\((?:[^()]*?[^\p{L}\d()])?([Ff]igures?|FIGURES?|Fig\.?|FIG\.?)\s*' . self::CORPS_D_APPEL . '/u',
+			'/(*UCP)(?:^|(?<=[^\p{L}\d]))([Ff]igs\.?|[Ff]ig)\s*' . self::CORPS_D_APPEL . '/u',
+		);
+		foreach ( (array) $paragraphes as $p ) {
+			foreach ( $motifs as $motif ) {
+				if ( ! preg_match_all( $motif, (string) $p, $trouves, PREG_SET_ORDER ) ) {
+					continue;
+				}
+				foreach ( $trouves as $m ) {
+					$corps  = (string) preg_replace( '/\s+/u', ' ', $m[2] );
+					$avis[] = sprintf( "«\u{202F}%1\$s %2\$s\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}%2\$s\u{202F}».",
+						$m[1], $corps );
+				}
+			}
+		}
+		return array_values( array_unique( $avis ) );
 	}
 
 	/**

@@ -694,6 +694,26 @@ na_verifier( array( 'La fig. 2 n’est appelée nulle part dans le texte.' ) ===
 $ordinaux = $C::ordinaux_fautifs( array( 'Au XIIème siècle, la 1ère phase, la 2nde tour, la Mère.' ) );
 na_verifier( array( '« XIIème » s’abrège « XIIe ».', '« 1ère » s’abrège « 1re ».', '« 2nde » s’abrège « 2de ».' ) === $ordinaux,
 	'les ordinaux fautifs, et « Mère » laissée tranquille', $ordinaux );
+$mal_ecrits = array(
+	'Le mur (figure 3).'           => "«\u{202F}figure 3\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}3\u{202F}».",
+	'Le fossé (voir Fig. 2).'      => "«\u{202F}Fig. 2\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}2\u{202F}».",
+	'Voir fig 3.'                  => "«\u{202F}fig 3\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}3\u{202F}».",
+	'Les murs (figures 3 et 4).'   => "«\u{202F}figures 3 et 4\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}3 et 4\u{202F}».",
+	'Le sol (pl. 2, figure 5).'    => "«\u{202F}figure 5\u{202F}»\u{00A0}: un appel de figure s’écrit «\u{202F}fig.\u{00A0}5\u{202F}».",
+);
+$mal_lus = array();
+foreach ( $mal_ecrits as $phrase => $attendu ) {
+	$mal_lus[ $phrase ] = $C::appels_mal_ecrits( array( $phrase ) );
+}
+na_verifier( count( array_filter( array_map( function ( $phrase ) use ( $mal_ecrits, $mal_lus ) {
+		return array( $mal_ecrits[ $phrase ] ) === $mal_lus[ $phrase ];
+	}, array_keys( $mal_ecrits ) ) ) ) === count( $mal_ecrits ),
+	'« (figure 3) », « (voir Fig. 2) », « fig 3 », « (figures 3 et 4) » reçoivent un avis qui dit la forme attendue', $mal_lus );
+$bien_ecrits = $C::appels_mal_ecrits( array( 'La figure 3 montre le mur (fig. 3).', 'Voir (cf. fig. 1-3) et Figeac 3 (transfigure 3).', 'Voir fig. 1-2 et la figure 3.' ) );
+na_verifier( array() === $bien_ecrits
+	&& 1 === count( $C::appels_mal_ecrits( array( 'Le mur (figure 3), puis (figure 3).' ) ) )
+	&& 1 === count( $C::appels_mal_ecrits( array( 'Le sol (fig. 1 ; figure 2).' ) ) ),
+	'« la figure 3 montre », « (fig. 3) », « Figeac » ne reçoivent rien ; un même appel répété, un seul avis', $bien_ecrits );
 na_verifier( 1 === count( $C::dates_espacees( array( 'occupé vers 1 250 puis abandonné' ) ) ),
 	'l\'année espacée' );
 na_verifier( array() === $C::dates_espacees( array( 'on y trouve en 1 250 tessons, et après 2 000 m² de décapage, vers 1 100 individus' ) ),
@@ -820,6 +840,63 @@ $xml_id = implode( '', $corps->getValue( $doc_id ) );
 na_verifier( false !== strpos( $xml_id, '>14 118 0012<' ), 'un identifiant Patriarche garde ses espaces : la typographie ne le prend pas pour un nombre', $xml_id );
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
 $ST::oublier();
+
+WP_CLI::log( 'Le jeu de données et le point final de la mention' );
+$saisie_donnees = array_merge( $saisie_styles, array(
+	'rapport_lien' => 'https://dolia.inrap.fr/flora/rapport-12', 'donnees_lien' => 'https://doi.org/10.34847/nkl.abcd1234',
+	'coresp_prenom' => 'Claude', 'coresp_nom' => 'Burgelin', 'coresp_inst' => 'Université Sorbonne' ) );
+$doc_donnees = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_donnees, $saisie_donnees ) );
+$xml_donnees = implode( '', $corps->getValue( $doc_donnees ) );
+$pos_rapport = strpos( $xml_donnees, 'Rapport final' );
+$pos_donnees = strpos( $xml_donnees, 'Jeu de données' );
+na_verifier( false !== $pos_rapport && false !== $pos_donnees && $pos_donnees > $pos_rapport
+	&& 1 === preg_match( '#Jeu de données[^<]{0,6}</w:t></w:r><w:hyperlink r:id="rIdNA\d+">(?:(?!</w:hyperlink>).)*nkl\.abcd1234#us', $xml_donnees ),
+	'au Word, le jeu de données suit le rapport, son adresse en lien', substr( $xml_donnees, (int) $pos_rapport, 900 ) );
+$doc_sans = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_sans, $saisie_styles ) );
+na_verifier( false === strpos( implode( '', $corps->getValue( $doc_sans ) ), 'Jeu de données' ),
+	'sans jeu de données, pas de ligne vide au Word' );
+na_verifier( false !== strpos( $xml_donnees, 'Université Sorbonne</w:t></w:r><w:r><w:t xml:space="preserve">.)</w:t>' )
+	&& false === strpos( $xml_donnees, 'Sorbonne.).' ),
+	'au Word, la mention de responsabilité finit par « Sorbonne.) », le point dans la parenthèse',
+	substr( $xml_donnees, (int) strpos( $xml_donnees, 'Burgelin' ), 600 ) );
+$courriel_donnees = na_appel( $plugin, 'build_notice', array( $saisie_donnees ) );
+na_verifier( false !== strpos( $courriel_donnees, '<strong>Jeu de données :</strong> https://doi.org/10.34847/nkl.abcd1234' )
+	&& false !== strpos( $courriel_donnees, 'Université Sorbonne.)' ),
+	'le courriel donne le jeu de données et le point final dans la parenthèse', $courriel_donnees );
+$page_donnees = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_donnees ) ) );
+na_verifier( false !== strpos( $page_donnees, 'Jeu de données : <a href="https://doi.org/10.34847/nkl.abcd1234">' )
+	&& false !== strpos( $page_donnees, 'Université Sorbonne.)' ),
+	'la page de relecture donne le jeu de données en lien et le point final', substr( $page_donnees, 0, 3000 ) );
+na_verifier( array( 'le lien du jeu de données' ) === na_appel( $plugin, 'champs_changes', array( $saisie_donnees, array_merge( $saisie_donnees, array( 'donnees_lien' => 'https://zenodo.org/records/1' ) ), false ) )
+	&& array() === na_appel( $plugin, 'champs_changes', array( $saisie_styles, array_merge( $saisie_styles, array( 'donnees_lien' => 'https://zenodo.org/records/1' ) ), false ) ),
+	'un jeu de données changé se dit ; apparu sur une notice d\'avant le champ, non' );
+$mention = function ( $champs ) use ( $plugin ) {
+	return na_appel( $plugin, 'responsables_inline', array( $champs ) );
+};
+$mentions = array(
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'resp_inst' => 'CNRS', 'coresp_prenom' => 'Claude', 'coresp_nom' => 'Burgelin', 'coresp_inst' => 'Université Sorbonne' ) ),
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'resp_inst' => '' ) ),
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'resp_inst' => 'Univ. de Caen, etc.' ) ),
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'resp_inst' => 'Association « Les Amis du vieux Caen. »' ) ),
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'resp_inst' => 'Qui sait ?' ) ),
+	$mention( array( 'resp_prenom' => 'Georges', 'resp_nom' => 'Perec', 'coauteur_prenom' => 'Paul', 'coauteur_nom' => 'Fournel', 'coauteur_inst' => 'Oulipo ' ) ),
+	$mention( array( 'coresp_prenom' => 'Claude', 'coresp_nom' => 'Burgelin', 'coresp_inst' => array( 'x' ) ) ),
+);
+na_verifier( array(
+		"Responsable de l'opération : Georges Perec, CNRS ; co-responsable de l'opération : Claude Burgelin, Université Sorbonne.",
+		"Responsable de l'opération : Georges Perec.",
+		"Responsable de l'opération : Georges Perec, Univ. de Caen, etc.",
+		"Responsable de l'opération : Georges Perec, Association « Les Amis du vieux Caen. »",
+		"Responsable de l'opération : Georges Perec, Qui sait ?",
+		"Responsable de l'opération : Georges Perec ; notice rédigée avec : Paul Fournel, Oulipo.",
+		"Responsable de l'opération :  ; co-responsable de l'opération : Claude Burgelin.",
+	) === $mentions,
+	'la mention prend son point final, sauf après une abréviation, un « ? » ou un guillemet qui le porte déjà ; une clef absente ne la casse pas', $mentions );
+na_verifier( '' === na_appel( $plugin, 'point_final', array( "  \u{00A0}" ) ) && '.' === na_appel( $plugin, 'point_final', array( 'Inrap' ) )
+	&& '' === na_appel( $plugin, 'point_final', array( 'Inrap…' ) ) && '' === na_appel( $plugin, 'point_final', array( 'Inrap. ' ) ),
+	'le point final : rien sur du vide, sur des points de suspension ou un point suivi d\'une espace' );
 
 WP_CLI::log( 'La prise d\'une notice' );
 // Deux passages ne l'expédient jamais tous les deux : un seul gagne la prise,
@@ -1238,6 +1315,42 @@ $sans_chaine = $concept( $a, '2026-10-01' );
 $sans_chaine['chemin'] = array();
 na_verifier( array( $a ) === na_appel( $plugin, 'termes_manquants', array( $saisie, array( $a => $sans_chaine, $b => $concept( $b, '2026-10-01' ) ) ) ),
 	'un terme gardé sans chaîne par une version d\'avant se compte comme non lu, et se relira' );
+
+WP_CLI::log( 'Le nom de l\'expéditeur' );
+$reglages_exp = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$regler_exp = function ( $valeurs ) use ( $reglages_exp ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_exp, $valeurs ) );
+};
+$regler_exp( array( 'expediteur_nom' => '', 'smtp_nom' => '' ) );
+$nom_defaut = Notice_Archeomed_Settings::nom_d_expediteur();
+$regler_exp( array( 'expediteur_nom' => '', 'smtp_nom' => 'Secrétariat' ) );
+$nom_smtp = Notice_Archeomed_Settings::nom_d_expediteur();
+$regler_exp( array( 'expediteur_nom' => "Revue \"AM\" <b>x</b>\n", 'smtp_nom' => 'Secrétariat' ) );
+$nom_propre = Notice_Archeomed_Settings::nom_d_expediteur();
+$regler_exp( array( 'expediteur_nom' => '', 'smtp_nom' => '' ) );
+na_verifier( 'Revue Archéologie médiévale' === $nom_defaut && 'Secrétariat' === $nom_smtp && 'Revue AM x' === $nom_propre,
+	'le nom de l\'expéditeur : la revue par défaut, le nom SMTP à défaut du réglage, sans balise ni guillemet qui couperait l\'en-tête',
+	array( $nom_defaut, $nom_smtp, $nom_propre ) );
+$facteur = new stdClass();
+$facteur->FromName = 'hébergement no-reply';
+Notice_Archeomed_Pactols::nommer_l_expediteur( $facteur );
+$nom_hors = $facteur->FromName;
+$nom_pendant = null;
+$capter_nom = function ( $retour, $atts ) use ( &$nom_pendant ) {
+	$m = new stdClass();
+	$m->FromName = 'hébergement no-reply';
+	Notice_Archeomed_Pactols::nommer_l_expediteur( $m );
+	$nom_pendant = array( Notice_Archeomed_Pactols::courriel_en_cours(), $m->FromName );
+	return true;
+};
+add_filter( 'pre_wp_mail', $capter_nom, 10, 2 );
+Notice_Archeomed_Pactols::courriel( 'a@example.org', 'Objet', 'Corps' );
+remove_filter( 'pre_wp_mail', $capter_nom, 10 );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_exp );
+na_verifier( 'hébergement no-reply' === $nom_hors && array( true, 'Revue Archéologie médiévale' ) === $nom_pendant
+	&& false === Notice_Archeomed_Pactols::courriel_en_cours()
+	&& PHP_INT_MAX === has_action( 'phpmailer_init', array( 'Notice_Archeomed_Pactols', 'nommer_l_expediteur' ) ),
+	'un courriel du formulaire part au nom de la revue ; un autre courriel du site garde le sien', array( $nom_hors, $nom_pendant ) );
 
 WP_CLI::log( 'Le lien de correction' );
 $_POST['reprise_jeton'] = 'jetondessai1';
@@ -2211,6 +2324,10 @@ $suite_alt = $bloc_de_figure( $xml_alt );
 na_verifier( false !== strpos( $xml_alt, 'descr="Plan des murs &amp; du fossé"' ) && false !== strpos( $xml_alt, 'descr="Fig. 2 Vue"' )
 	&& false === strpos( $xml_alt, 'TEIfigurealttext' ),
 	'au Word, « descr » porte le texte alternatif, ou le titre d\'une figure ancienne ; pas de paragraphe par défaut', $suite_alt );
+na_verifier( false !== strpos( $xml_alt, 'descr="Plan des murs &amp; du fossé" title="Plan des murs &amp; du fossé"' )
+	&& false !== strpos( $xml_alt, 'descr="Fig. 2 Vue" title="Fig. 2 Vue"' ),
+	'le texte alternatif va aussi dans « title », que LibreOffice affiche comme texte alternatif',
+	preg_match_all( '#<wp:docPr[^>]*>#u', $xml_alt, $m_titre ) ? $m_titre[0] : array() );
 $fin_alt = array_slice( $suite_alt, -5 );
 na_verifier( 'TEIfigurecaption Le plan.' === $fin_alt[0] && 0 === strpos( $fin_alt[1], 'TEIfigurecaption Description : Deux murs' )
 	&& 'TEIfigurecaption Le fossé longe le mur ouest.' === $fin_alt[2] && 0 === strpos( $fin_alt[3], 'TEIfigurecredits' )

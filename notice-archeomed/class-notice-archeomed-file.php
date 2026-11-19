@@ -1726,7 +1726,7 @@ class Notice_Archeomed_File {
 			. '">Toutes les notices reçues</a> — le fascicule de chaque rubrique s’y '
 			. 'télécharge d’un clic, prêt à relire.</p>';
 
-		wp_mail(
+		Notice_Archeomed_Pactols::courriel(
 			$destinataires,
 			sprintf( 'Notices Archéomed — %d reçue(s) le %s',
 				count( $ids ), date_i18n( 'j F Y' ) ),

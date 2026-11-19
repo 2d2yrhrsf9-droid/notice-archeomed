@@ -66,6 +66,7 @@ class Notice_Archeomed_Styles {
 					'num_autorisation' => array( 'libelle' => 'Numéro d’autorisation', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_IDpatriarche' ),
 					'id_patriarche'    => array( 'libelle' => 'Identifiant Patriarche', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_IDpatriarche' ),
 					'rapport'          => array( 'libelle' => 'Rapport final (lien)', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_reportlink' ),
+					'donnees'          => array( 'libelle' => 'Jeu de données (lien)', 'type' => 'paragraphe', 'defaut' => 'TEI_linked_data' ),
 					'organismes'       => array( 'libelle' => 'Organisme(s) porteur(s) de l’opération', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_holder' ),
 					'mots_cles'        => array( 'libelle' => 'Mots-clés', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_keywords_subjects' ),
 				),

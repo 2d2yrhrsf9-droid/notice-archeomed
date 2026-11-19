@@ -224,6 +224,12 @@ Pactols, Relecture, Courriel (avec le rythme d'envoi), Feuille de styles,
 Mises à jour, Hébergement, Stockage, Annuaire, Documentation. Chacun
 s'enregistre pour son compte.
 
+L'onglet **Courriel** règle le **nom de l'expéditeur** : « Revue Archéologie
+médiévale » par défaut, au lieu du nom que l'hébergement donne à tout ce que
+le site envoie. Il ne vaut que pour les courriels du formulaire, et l'adresse
+d'expédition ne change pas. Le serveur de courriel de l'hébergement peut
+encore réécrire ce nom : s'il le fait, c'est à lui qu'il faut le demander.
+
 ## Qui reçoit quoi
 
 Deux sortes de courriels partent du plugin, et l'on choisit destinataire par
@@ -361,6 +367,8 @@ elles paraissent en tête de notice, dans l'ordre de la mise en page et
 [TEI_archeoCHR_keywords_subjects:chronology]  Période historique : Temps modernes, Époque contemporaine
 [TEI_archeoCHR_fieldwork_year]                Année de l'opération : 2024
 [TEI_archeoCHR_IDpatriarche]                  Numéro d'autorisation : 2269
+[TEI_archeoCHR_reportlink]                    Rapport final : https://…
+[TEI_linked_data]                             Jeu de données : https://doi.org/…
 [TEI_archeoCHR_holder]                        Organisme porteur de l'opération : …
 [TEI_archeoCHR_keywords_subjects]             Mots-clés : couvent, chartreux, cloître
 ```
@@ -368,7 +376,17 @@ elles paraissent en tête de notice, dans l'ordre de la mise en page et
 Un **point** sépare la commune du lieu-dit, qui s'écrit en italique. Les
 natures gardent la casse de Pactols — « archéologie du bâti » —, les périodes
 prennent une capitale initiale — « Bas Moyen Âge ». Le bloc de responsabilité
-reste collé au point final du texte : « (Responsable de l'opération : …) ».
+reste collé au point final du texte et porte lui-même le point final de la
+notice, dans la parenthèse : « (Responsable de l'opération : Georges Perec,
+CNRS ; co-responsable de l'opération : Claude Burgelin, Université
+Sorbonne.) ». Une institution qui finit déjà sur un point (« etc. »), un
+« ? », un « ! » ou des points de suspension n'en prend pas un second ; le
+bloc mis à part dans son propre paragraphe finit de même.
+
+Le **jeu de données** de l'opération (Nakala, Zenodo, un DOI…) est facultatif :
+quand l'auteur le donne, il suit le rapport final, son adresse en lien. La
+direction décidera s'il reste à l'impression ; son style se règle comme les
+autres (« à supprimer » pour le tenir hors du volume).
 
 ## Le nom des illustrations
 
@@ -596,6 +614,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Année de l'opération | `TEI_archeoCHR_fieldwork_year` |
 | Numéro d'autorisation, identifiant Patriarche | `TEI_archeoCHR_IDpatriarche` |
 | Rapport final (lien) | `TEI_archeoCHR_reportlink` |
+| Jeu de données (lien, facultatif) | `TEI_linked_data` |
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
@@ -1680,7 +1699,9 @@ Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 Au dépôt, la notice est relue par des règles qui **avertissent sans jamais
 refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), un
 paragraphe coupé en deux, un intertitre qui finit par un point, une figure appelée dans le texte qui n'est pas
-jointe ou une figure jamais appelée, une photographie sous la norme annoncée
+jointe ou une figure jamais appelée, un appel écrit « (figure 3) » ou
+« fig 3 » au lieu de « (fig. 3) » — le mot entier n'est relevé qu'entre
+parenthèses, « la figure 3 montre » étant une phrase —, une photographie sous la norme annoncée
 (10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
 fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée
 « 1 250 », un nom en capitales, deux personnes
@@ -1710,7 +1731,10 @@ avis signale la casse fautive : « INRAP » pour « Inrap », « Cnrs » 
 s'y tromper. L'aide du texte de la notice invite à développer chaque sigle à
 sa première mention.
 
-Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ, et
+Ces avis s'affichent à l'auteur dans le formulaire, à la sortie du champ
+(ceux du texte une seconde après la dernière frappe, y compris après un
+collage ; une adresse électronique ou web mal formée dès qu'on quitte son
+champ), et
 partent sous « À vérifier » dans le courriel, dans le document (style « à
 supprimer ») et dans la page de relecture du dossier. La norme des
 photographies est posée en un seul endroit, qui sert à l'aide et au contrôle.

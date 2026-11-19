@@ -1973,6 +1973,7 @@ class Notice_Archeomed_Relecture {
 		self::champ( 'num_autorisation', 'Numéro d’arrêté', $valeur( 'num_autorisation' ) );
 		self::champ( 'id_patriarche', 'Code Patriarche', $valeur( 'id_patriarche' ) );
 		self::champ( 'rapport_lien', 'Lien du rapport', $valeur( 'rapport_lien' ) );
+		self::champ( 'donnees_lien', 'Lien du jeu de données', $valeur( 'donnees_lien' ) );
 		$organismes = $notice['organismes'];
 		for ( $i = 0; $i < Notice_Archeomed_Pactols::MAX_ORGANISMES; $i++ ) {
 			if ( $i > count( $organismes ) ) {

@@ -793,7 +793,8 @@ class Notice_Archeomed_DOCX {
 		$cx = max( 1, $cx );
 		$cy = max( 1, $cy );
 
-		$id = 1000 + count( $this->images ) + count( $this->medias );
+		$id  = 1000 + count( $this->images ) + count( $this->medias );
+		$alt = self::esc( self::une_ligne( '' !== trim( (string) $descr ) ? $descr : $nom ) );
 
 		return '<w:r><w:drawing>'
 			. '<wp:inline distT="0" distB="0" distL="0" distR="0">'
@@ -804,8 +805,11 @@ class Notice_Archeomed_DOCX {
 			// Métopes (« Styler les figures ») dit de décrire le visuel. C'est
 			// le texte alternatif que l'auteur a écrit ; à défaut, pour une
 			// notice d'avant ce champ, le titre de la figure, comme avant.
-			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '" descr="'
-			. self::esc( self::une_ligne( '' !== trim( (string) $descr ) ? $descr : $nom ) ) . '"/>'
+			// Le même texte va dans « title » : LibreOffice range « descr »
+			// sous « Description » et affiche « title » comme texte
+			// alternatif — sous Linux, on le croyait absent.
+			. '<wp:docPr id="' . $id . '" name="' . self::esc( $nom ) . '" descr="' . $alt
+			. '" title="' . $alt . '"/>'
 			. '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
 			. '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
 			. '<pic:pic>'

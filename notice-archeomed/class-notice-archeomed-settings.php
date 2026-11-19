@@ -119,6 +119,10 @@ class Notice_Archeomed_Settings {
 		'smtp_motdepasse'    => '',
 		'smtp_expediteur'    => '',
 		'smtp_nom'           => '',
+		// Le nom que lit le destinataire d'un courriel du formulaire, quel
+		// que soit le chemin du courriel. Sans lui, c'est celui que
+		// l'hébergement donne à tout le site : « hébergement no-reply ».
+		'expediteur_nom'     => 'Revue Archéologie médiévale',
 		// Le poids qu'un courriel peut atteindre, pièces jointes encodées
 		// comprises, en méga-octets. Dix : c'est la limite de Postfix par
 		// défaut, et celle qu'a montrée l'hébergement de la revue — une image
@@ -189,6 +193,34 @@ class Notice_Archeomed_Settings {
 			return trim( (string) $options[ $key ] );
 		}
 		return isset( self::$defaults[ $key ] ) ? self::$defaults[ $key ] : '';
+	}
+
+	/**
+	 * Le nom sous lequel partent les courriels du formulaire.
+	 *
+	 * Le nom donné au relais SMTP, d'avant ce réglage, vaut encore tant
+	 * qu'on n'en a pas réglé d'autre ; à défaut, celui de la revue.
+	 */
+	public static function nom_d_expediteur() {
+		$options = get_option( self::OPTION_NAME, array() );
+		$options = is_array( $options ) ? $options : array();
+		foreach ( array( 'expediteur_nom', 'smtp_nom' ) as $cle ) {
+			$nom = isset( $options[ $cle ] ) ? self::nom_propre( $options[ $cle ] ) : '';
+			if ( '' !== $nom ) {
+				return $nom;
+			}
+		}
+		return self::$defaults['expediteur_nom'];
+	}
+
+	/**
+	 * Un nom d'expéditeur sûr : une ligne, sans balise, sans chevrons ni
+	 * guillemets qui couperaient l'en-tête, cent caractères au plus.
+	 */
+	private static function nom_propre( $nom ) {
+		$nom = sanitize_text_field( (string) $nom );
+		$nom = trim( preg_replace( '/[\s<>"]+/u', ' ', $nom ) );
+		return function_exists( 'mb_substr' ) ? mb_substr( $nom, 0, 100 ) : substr( $nom, 0, 100 );
 	}
 
 	/**
@@ -584,8 +616,11 @@ class Notice_Archeomed_Settings {
 					'L’adresse d’expédition n’est pas valide. L’ancienne a été conservée.', 'error' );
 			}
 		}
-		if ( isset( $input['smtp_nom'] ) ) {
-			$out['smtp_nom'] = trim( sanitize_text_field( $input['smtp_nom'] ) );
+		if ( isset( $input['expediteur_nom'] ) ) {
+			$out['expediteur_nom'] = self::nom_propre( $input['expediteur_nom'] );
+			// L'ancien nom du relais cède la place : deux réglages pour un
+			// même nom en feraient deux vérités.
+			$out['smtp_nom'] = '';
 		}
 
 		// — Les mises à jour —
@@ -2190,14 +2225,17 @@ class Notice_Archeomed_Settings {
 					</p>
 				</td>
 			</tr>
-			<tr data-si="smtp">
-				<th scope="row"><label for="na_smtp_nom">Nom affiché</label></th>
+			<tr>
+				<th scope="row"><label for="na_expediteur_nom">Nom de l’expéditeur</label></th>
 				<td>
-					<input type="text" id="na_smtp_nom" class="regular-text"
-						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[smtp_nom]"
-						value="<?php echo esc_attr( self::get( 'smtp_nom' ) ); ?>"
-						placeholder="Archéologie médiévale">
-					<p class="description">Le nom que le destinataire voit à côté de l’adresse d’expédition.</p>
+					<input type="text" id="na_expediteur_nom" class="regular-text" maxlength="100"
+						name="<?php echo esc_attr( self::OPTION_NAME ); ?>[expediteur_nom]"
+						value="<?php echo esc_attr( self::nom_d_expediteur() ); ?>">
+					<p class="description">
+						Le nom que les auteurs et la rédaction lisent dans leur boîte, à côté de
+						l’adresse d’expédition, pour les courriels du formulaire seulement. Laissé
+						vide, il redevient « Revue Archéologie médiévale ».
+					</p>
 				</td>
 			</tr>
 			<tr>
