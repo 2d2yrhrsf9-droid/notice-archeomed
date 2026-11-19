@@ -111,7 +111,9 @@ for ( $i = 1; $i <= $n; $i++ ) {
 		'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => $jeton, 'na_ts' => $ts, 'na_website' => '',
 		'rubrique_principale' => $rubrique,
 		'commune[0]' => 'Caen', 'departement' => 'Calvados', 'lieu_dit' => 'ESSAI-CHARGE ' . $i, 'annee' => '2025',
-		'nature[0]' => $nature, 'organisme[0]' => 'Inrap',
+		// Le premier type, dans son cadre : la notice garde « Fouille
+		// préventive », que la correction doit rouvrir en deux cases.
+		'nature[0]' => $nature, 'cadre[0]' => 'Préventive', 'organisme[0]' => 'Inrap', 'id_patriarche' => '14 118 0012',
 		'resp_prenom' => 'Essai', 'resp_nom' => 'Charge' . $i, 'resp_email' => 'charge' . $i . '@example.org', 'resp_inst' => 'Inrap',
 		'texte_notice' => $texte,
 		// Une période et un sujet au moins : sans eux, le dépôt est refusé.

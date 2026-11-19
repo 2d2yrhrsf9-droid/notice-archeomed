@@ -1984,14 +1984,22 @@ class Notice_Archeomed_Relecture {
 			self::champ( 'organisme[]', 0 === $i ? 'Organisme' : 'Autre organisme', isset( $organismes[ $i ] ) ? $organismes[ $i ] : '', 'na-rel-organisme-' . $i );
 		}
 		echo '<div class="na-rel-champ"><span class="na-rel-libelle" id="na-rel-natures">' . esc_html__( 'Nature de l’opération', 'notice-archeomed' ) . '</span><div class="na-rel-cases" role="group" aria-labelledby="na-rel-natures">';
+		// Le cadre d'abord, comme au formulaire, puis les types et les autres
+		// natures : la notice se rouvre en cases, « Fouille préventive » en
+		// Fouille et Préventive. Une nature qu'on ne propose plus reste une
+		// case à elle, cochée.
+		$etat = $plugin->decomposer_les_natures( $notice['natures'] );
+		foreach ( $plugin->cadres_proposes() as $cadre ) {
+			echo '<label><input type="checkbox" name="cadre[]" value="' . esc_attr( $cadre ) . '"' . checked( in_array( $cadre, $etat['cadres'], true ), true, false ) . '> ' . esc_html( $cadre ) . '</label>';
+		}
 		$natures = $plugin->natures_proposees();
-		foreach ( $notice['natures'] as $portee ) {
+		foreach ( $etat['natures'] as $portee ) {
 			if ( ! isset( $natures[ $portee ] ) ) {
 				$natures[ $portee ] = $portee;
 			}
 		}
 		foreach ( $natures as $nature => $libelle ) {
-			echo '<label><input type="checkbox" name="nature[]" value="' . esc_attr( $nature ) . '"' . checked( in_array( $nature, $notice['natures'], true ), true, false ) . '> ' . esc_html( $libelle ) . '</label>';
+			echo '<label><input type="checkbox" name="nature[]" value="' . esc_attr( $nature ) . '"' . checked( in_array( $nature, $etat['natures'], true ), true, false ) . '> ' . esc_html( $libelle ) . '</label>';
 		}
 		echo '</div></div></fieldset>';
 

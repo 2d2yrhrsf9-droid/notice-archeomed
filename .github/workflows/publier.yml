@@ -291,6 +291,51 @@ jobs:
               + 'process.exit(ok ? 0 : 1);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # Un brouillon gardé avant les types porte « Fouille préventive » :
+          # il doit revenir en Fouille et Préventive, l'inconnu tel quel. La
+          # table vient du serveur, telle que la page la sert.
+          python3 - <<'PY'
+          import re, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          m = re.search(r'var NATURES_D_AVANT = (\{.*?\});\n', t)
+          i = t.find('function casesDAujourdhui(')
+          if not m or i < 0:
+              print("::error::La reprise des brouillons d'avant les types manque au formulaire."); sys.exit(1)
+          j, n = t.index('{', i), 0
+          for k in range(j, len(t)):
+              n += {'{': 1, '}': -1}.get(t[k], 0)
+              if n == 0:
+                  f = t[i:k + 1]; break
+          js = 'var NATURES_D_AVANT = ' + m.group(1) + ';\n' + f + '\n' + r"""
+          var r1 = casesDAujourdhui({ 'nature[]': ['Fouille préventive', 'Archéologie du bâti', 'Prospection pédestre', 'Terme d’autrefois'], lieu_dit: 'Le Castel' });
+          var r2 = casesDAujourdhui({ 'nature[]': ['Sondage'], 'cadre[]': ['Programmée'] });
+          var r3 = casesDAujourdhui({ lieu_dit: 'x' });
+          var ok = JSON.stringify(r1['nature[]']) === JSON.stringify(['Fouille', 'Étude de bâti', 'Prospection pédestre', 'Terme d’autrefois'])
+            && JSON.stringify(r1['cadre[]']) === JSON.stringify(['Préventive']) && r1.lieu_dit === 'Le Castel'
+            && JSON.stringify(r2['nature[]']) === JSON.stringify(['Sondage']) && JSON.stringify(r2['cadre[]']) === JSON.stringify(['Programmée'])
+            && r3.lieu_dit === 'x' && !('cadre[]' in r3);
+          if (!ok) { console.log('::error::Un brouillon d’avant les types ne se rouvre pas en type et cadre : ' + JSON.stringify([r1, r2, r3])); }
+          process.exit(ok ? 0 : 1);
+          """
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
+          grep -q "id_patriarche: function () { return !vide(el('na-patriarche').value); }" /tmp/formulaire.js \
+            || { echo "::error::Le navigateur n'exige pas le code Patriarche."; exit 1; }
+          # La page telle que la rédaction l'a voulue : les deux cadres sous la
+          # consigne, puis les cinq types dans leur ordre, et le code
+          # Patriarche exigé dès le champ.
+          python3 - <<'PY'
+          import re, sys
+          t = open('/tmp/page.html', encoding='utf-8').read()
+          rangs = [t.find(x) for x in ('Cochez toutes celles qui s’appliquent', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"',
+                   'Type d’opération</legend>', 'value="Fouille"', 'value="Étude de bâti"', 'value="Sondage"', 'value="Diagnostic"', 'value="Surveillance de travaux"')]
+          if -1 in rangs or rangs != sorted(rangs):
+              print("::error::La nature de l'opération n'est pas dans l'ordre voulu : " + repr(rangs)); sys.exit(1)
+          if 'value="Fouille préventive"' in t or 'Opérations de terrain</legend>' in t:
+              print("::error::La page propose encore les anciennes natures."); sys.exit(1)
+          if not re.search(r'<input[^>]*id="na-patriarche"[^>]*required', t):
+              print("::error::Le code Patriarche n'est pas obligatoire dans la page."); sys.exit(1)
+          PY
           # L'envoi en arrière-plan : une coupure fait demander au serveur ce
           # que la notice est devenue, renvoyer une fois si rien n'est arrivé,
           # attendre un envoi en route, et ne jamais quitter la page sans

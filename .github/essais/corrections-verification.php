@@ -103,6 +103,11 @@ foreach ( $notes as $id => $avant ) {
 	if ( ! isset( $d['lieu_dit'] ) || $avant['lieu_dit'] . ' (corrigé)' !== $d['lieu_dit'] ) {
 		$fautes( $id, 'lieu-dit « ' . ( isset( $d['lieu_dit'] ) ? $d['lieu_dit'] : '' ) . ' ».' );
 	}
+	// La nature rouverte en deux cases, Fouille et Préventive, doit revenir
+	// telle qu'elle était, et le code Patriarche avec elle.
+	if ( ! isset( $d['nature'] ) || 'Fouille préventive' !== $d['nature'] || empty( $d['id_patriarche'] ) ) {
+		$fautes( $id, 'nature « ' . ( isset( $d['nature'] ) ? $d['nature'] : '' ) . ' » ou code Patriarche perdu.' );
+	}
 	if ( 'envoyee' !== get_post_meta( $id, '_na_etat', true ) ) {
 		$fautes( $id, 'pas repartie (« ' . get_post_meta( $id, '_na_etat', true ) . ' »).' );
 	}

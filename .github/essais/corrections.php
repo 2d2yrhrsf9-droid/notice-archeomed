@@ -125,7 +125,7 @@ foreach ( $liens as $n => $lien ) {
 			exit( 2 );
 		}
 		$champs = champs_du_formulaire( $page );
-		foreach ( array( 'reprise_jeton', 'corrige_version', 'notice_archeomed_nonce', 'na_ts', 'lieu_dit', 'texte_notice', 'resp_email', 'garde_titre[1]', 'garde_titre[2]' ) as $attendu ) {
+		foreach ( array( 'reprise_jeton', 'corrige_version', 'notice_archeomed_nonce', 'na_ts', 'lieu_dit', 'texte_notice', 'resp_email', 'garde_titre[1]', 'garde_titre[2]', 'nature[0]', 'cadre[0]', 'id_patriarche' ) as $attendu ) {
 			if ( ! isset( $champs[ $attendu ] ) || '' === $champs[ $attendu ] ) {
 				fwrite( STDERR, "Le formulaire rouvert par $lien n'a pas « $attendu » rempli.\n" );
 				exit( 2 );

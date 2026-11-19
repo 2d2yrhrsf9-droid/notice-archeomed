@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.106
+ * Version:           3.107
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -276,13 +276,27 @@ class Notice_Archeomed_Pactols {
 	 * accompagnée d'une prospection reste une fouille.
 	 */
 	private $familles = array(
+		// Les types que le formulaire propose, chacun seul ou dans son cadre,
+		// puis les termes qu'il proposait avant, que portent des notices
+		// reçues. Le titre du volume ne change pas avec celui du formulaire.
 		'Opérations de terrain' => array(
-			'Archéologie du bâti',
+			'Fouille',
 			'Fouille préventive',
 			'Fouille programmée',
-			'Opération de diagnostic',
+			'Étude de bâti',
+			'Étude de bâti préventive',
+			'Étude de bâti programmée',
+			'Sondage',
+			'Sondage préventif',
 			'Sondage programmé',
+			'Diagnostic',
+			'Diagnostic préventif',
+			'Diagnostic programmé',
 			'Surveillance de travaux',
+			'Surveillance de travaux préventive',
+			'Surveillance de travaux programmée',
+			'Archéologie du bâti',
+			'Opération de diagnostic',
 		),
 		'Prospections' => array(
 			'Prospection archéologique',
@@ -302,7 +316,28 @@ class Notice_Archeomed_Pactols {
 		),
 	);
 
+	/**
+	 * Chaque terme que la notice peut porter, et son concept dans Pactols.
+	 *
+	 * Un type composé avec son cadre n'a pas toujours de concept à lui : il
+	 * prend alors celui de son type — « Étude de bâti programmée », celui de
+	 * l'archéologie du bâti ; « Sondage préventif », celui du diagnostic,
+	 * dont Pactols fait un synonyme.
+	 */
 	private $natures = array(
+		'Fouille'                           => 'https://ark.frantiq.fr/ark:/26678/pcrtb1E0Dz7cSX',
+		'Étude de bâti'                     => 'https://ark.frantiq.fr/ark:/26678/pcrtaodMT8j83O',
+		'Étude de bâti préventive'          => 'https://ark.frantiq.fr/ark:/26678/pcrtaodMT8j83O',
+		'Étude de bâti programmée'          => 'https://ark.frantiq.fr/ark:/26678/pcrtaodMT8j83O',
+		'Sondage'                           => 'https://ark.frantiq.fr/ark:/26678/pcrt1t17kd7jn6982pgfp859',
+		'Sondage préventif'                 => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
+		'Diagnostic'                        => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
+		'Diagnostic préventif'              => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
+		'Diagnostic programmé'              => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
+		'Surveillance de travaux préventive' => 'https://ark.frantiq.fr/ark:/26678/crtZ49Dtn1aMT',
+		'Surveillance de travaux programmée' => 'https://ark.frantiq.fr/ark:/26678/crtZ49Dtn1aMT',
+		'Opération d’archéologie préventive' => 'https://ark.frantiq.fr/ark:/26678/pcrt9A9KDllfAq',
+		'Opération d’archéologie programmée' => 'https://ark.frantiq.fr/ark:/26678/pcrtUpTKpEpXJ5',
 		'Archéologie du bâti'           => 'https://ark.frantiq.fr/ark:/26678/pcrtaodMT8j83O',
 		'Fouille préventive'            => 'https://ark.frantiq.fr/ark:/26678/pcrtcJxzOpgs7T',
 		'Fouille programmée'            => 'https://ark.frantiq.fr/ark:/26678/crtSrWQs2w2KV',
@@ -328,6 +363,56 @@ class Notice_Archeomed_Pactols {
 	 */
 	private $libelles_des_natures = array(
 		'Prospection archéologique' => 'Prospection (autre ou sans précision)',
+	);
+	/**
+	 * Les termes qui s'impriment tels que la case les dit, et non sous la
+	 * forme préférée de leur concept.
+	 *
+	 * Leur concept est celui d'un voisin : sous sa forme préférée, un
+	 * sondage s'imprimait « tranchée archéologique », une étude de bâti
+	 * programmée « archéologie du bâti » — le cadre se perdait.
+	 */
+	private $natures_a_la_lettre = array(
+		'Étude de bâti', 'Étude de bâti préventive', 'Étude de bâti programmée',
+		'Sondage', 'Sondage préventif',
+		'Diagnostic', 'Diagnostic préventif', 'Diagnostic programmé',
+		'Surveillance de travaux préventive', 'Surveillance de travaux programmée',
+	);
+	/**
+	 * Le cadre d'une opération, coché une fois pour tous ses types, et ses
+	 * deux accords.
+	 *
+	 * La rédaction a sorti « préventive » et « programmée » des fouilles
+	 * pour les mettre en tête : le cadre vaut aussi pour un sondage, un
+	 * diagnostic, une étude de bâti. Le serveur compose le terme —
+	 * « Sondage préventif », « Étude de bâti programmée » — et c'est lui que
+	 * la notice garde : le Word, le fascicule et les courriels le lisent
+	 * comme avant.
+	 */
+	const CADRES = array(
+		'Préventive' => array( 'f' => 'préventive', 'm' => 'préventif' ),
+		'Programmée' => array( 'f' => 'programmée', 'm' => 'programmé' ),
+	);
+	/** Les types d'opération, dans l'ordre que la rédaction a fixé, et leur genre. */
+	const TYPES_D_OPERATION = array(
+		'Fouille'                 => 'f',
+		'Étude de bâti'           => 'f',
+		'Sondage'                 => 'm',
+		'Diagnostic'              => 'm',
+		'Surveillance de travaux' => 'f',
+	);
+	/**
+	 * Un cadre coché sans type, à côté d'une prospection ou d'un projet
+	 * collectif : il ne se perd pas, il devient ce terme.
+	 */
+	const NATURES_DU_CADRE = array(
+		'Préventive' => 'Opération d’archéologie préventive',
+		'Programmée' => 'Opération d’archéologie programmée',
+	);
+	/** Les termes d'avant les types, et le type qui les remplace. */
+	const NATURES_RENOMMEES = array(
+		'Archéologie du bâti'     => 'Étude de bâti',
+		'Opération de diagnostic' => 'Diagnostic',
 	);
 
 	/** Les scripts du formulaire, mis de côté pour le pied de page. */
@@ -1405,13 +1490,152 @@ class Notice_Archeomed_Pactols {
 		return $this->rubriques;
 	}
 
-	/** Les natures d'opération que le formulaire propose, par leur libellé. */
+	/**
+	 * Les cases de la nature, hors cadre, par groupe et dans l'ordre de la
+	 * page : les types, les prospections, les projets collectifs.
+	 *
+	 * Les termes composés et ceux d'avant les types ne s'y cochent pas : ils
+	 * se lisent dans les notices, et reviennent à leur type et à leur cadre.
+	 */
+	private function groupes_de_natures() {
+		$groupes = array( 'Type d’opération' => array_keys( self::TYPES_D_OPERATION ) );
+		foreach ( array( 'Prospections', 'Projets collectifs de recherche' ) as $famille ) {
+			$groupes[ $famille ] = array_values( array_filter( $this->familles[ $famille ], function ( $nature ) {
+				return isset( $this->natures[ $nature ] );
+			} ) );
+		}
+		return $groupes;
+	}
+
+	/** Les cases de la nature que le formulaire propose, hors cadre : valeur => libellé. */
 	public function natures_proposees() {
 		$natures = array();
-		foreach ( array_keys( $this->natures ) as $nature ) {
-			$natures[ $nature ] = isset( $this->libelles_des_natures[ $nature ] ) ? $this->libelles_des_natures[ $nature ] : $nature;
+		foreach ( $this->groupes_de_natures() as $liste ) {
+			foreach ( $liste as $nature ) {
+				$natures[ $nature ] = isset( $this->libelles_des_natures[ $nature ] ) ? $this->libelles_des_natures[ $nature ] : $nature;
+			}
 		}
 		return $natures;
+	}
+
+	/** Les cadres que le formulaire propose, dans leur ordre. */
+	public function cadres_proposes() {
+		return array_keys( self::CADRES );
+	}
+
+	/**
+	 * Les termes que la notice garde, composés des cases cochées.
+	 *
+	 * Chaque type se compose avec chaque cadre coché — une fouille à la fois
+	 * préventive et programmée porte les deux termes —, ou reste seul sans
+	 * cadre. Une prospection ou un projet collectif passe tel quel, comme un
+	 * terme d'avant les types qu'envoie encore une page ouverte avant la
+	 * mise à jour. Un cadre sans aucun type, à côté d'une prospection, garde
+	 * son sens par « Opération d'archéologie programmée ». Un cadre seul ne
+	 * fait aucune nature : il reste à cocher ce qui a été fait.
+	 */
+	public function composer_les_natures( $cadres, $cochees ) {
+		$cadres = array_values( array_intersect( array_keys( self::CADRES ), array_map( 'strval', (array) $cadres ) ) );
+		$termes = array();
+		$type   = false;
+		$autre  = false;
+		foreach ( array_map( 'strval', (array) $cochees ) as $cochee ) {
+			if ( isset( self::TYPES_D_OPERATION[ $cochee ] ) ) {
+				$type = true;
+				if ( empty( $cadres ) ) {
+					$termes[] = $cochee;
+				}
+				foreach ( $cadres as $cadre ) {
+					$termes[] = $cochee . ' ' . self::CADRES[ $cadre ][ self::TYPES_D_OPERATION[ $cochee ] ];
+				}
+			} elseif ( isset( $this->natures[ $cochee ] ) ) {
+				$termes[] = $cochee;
+				if ( in_array( $cochee, $this->familles['Opérations de terrain'], true ) ) {
+					$type = true;
+				} else {
+					$autre = true;
+				}
+			}
+		}
+		if ( ! $type && $autre ) {
+			foreach ( $cadres as $cadre ) {
+				$termes[] = self::NATURES_DU_CADRE[ $cadre ];
+			}
+		}
+		return array_values( array_unique( $termes ) );
+	}
+
+	/**
+	 * Les termes composés des cases, plus ceux que la notice portait déjà et
+	 * qu'on ne propose plus ni ne sait défaire : la relecture les laisse
+	 * cochés, ils ne doivent pas se perdre en passant par elle.
+	 */
+	public function recomposer_les_natures( $cadres, $cochees, $gardees ) {
+		$termes = $this->composer_les_natures( $cadres, $cochees );
+		foreach ( array_map( 'strval', (array) $cochees ) as $cochee ) {
+			if ( ! isset( $this->natures[ $cochee ] ) && in_array( $cochee, (array) $gardees, true ) ) {
+				$termes[] = $cochee;
+			}
+		}
+		return array_values( array_unique( $termes ) );
+	}
+
+	/**
+	 * Les termes qui ne sont plus une case à eux, et celles qu'ils cochent
+	 * aujourd'hui : un brouillon gardé dans le navigateur avant les types
+	 * porte encore « Fouille préventive ».
+	 */
+	private function natures_d_avant() {
+		$table = array();
+		foreach ( array_keys( $this->natures ) as $terme ) {
+			$etat = $this->decomposer_les_natures( array( $terme ) );
+			if ( array( $terme ) !== $etat['natures'] || ! empty( $etat['cadres'] ) ) {
+				$table[ $terme ] = $etat;
+			}
+		}
+		return $table;
+	}
+
+	/**
+	 * Les cases qu'il faut cocher pour retrouver des termes gardés : les
+	 * cadres d'un côté, les types et les autres natures de l'autre.
+	 *
+	 * Une notice reçue avant les types se rouvre ainsi dans le formulaire
+	 * d'aujourd'hui : « Fouille préventive » coche Fouille et Préventive,
+	 * « Archéologie du bâti » coche Étude de bâti. Un terme qu'on ne sait
+	 * pas défaire reste tel quel, pour que rien ne se perde.
+	 */
+	public function decomposer_les_natures( $termes ) {
+		$cadres  = array();
+		$natures = array();
+		foreach ( array_map( 'strval', (array) $termes ) as $terme ) {
+			$terme = trim( $terme );
+			if ( '' === $terme ) {
+				continue;
+			}
+			$cadre = array_search( $terme, self::NATURES_DU_CADRE, true );
+			if ( false !== $cadre ) {
+				$cadres[] = $cadre;
+				continue;
+			}
+			if ( isset( self::NATURES_RENOMMEES[ $terme ] ) ) {
+				$terme = self::NATURES_RENOMMEES[ $terme ];
+			}
+			foreach ( self::TYPES_D_OPERATION as $type => $genre ) {
+				foreach ( self::CADRES as $nom => $accords ) {
+					if ( $type . ' ' . $accords[ $genre ] === $terme ) {
+						$cadres[] = $nom;
+						$terme    = $type;
+						break 2;
+					}
+				}
+			}
+			$natures[] = $terme;
+		}
+		return array(
+			'cadres'  => array_values( array_intersect( array_keys( self::CADRES ), $cadres ) ),
+			'natures' => array_values( array_unique( $natures ) ),
+		);
 	}
 
 	/**
@@ -1652,6 +1876,10 @@ class Notice_Archeomed_Pactols {
 		if ( isset( $_POST['nature'] ) && is_array( $_POST['nature'] ) ) {
 			$garde['nature'] = array_map( 'sanitize_text_field',
 				array_map( 'strval', array_slice( wp_unslash( $_POST['nature'] ), 0, 30 ) ) );
+		}
+		if ( isset( $_POST['cadre'] ) && is_array( $_POST['cadre'] ) ) {
+			$garde['cadre'] = array_map( 'sanitize_text_field',
+				array_map( 'strval', array_slice( wp_unslash( $_POST['cadre'] ), 0, 5 ) ) );
 		}
 		foreach ( array( 'commune', 'commune_ark', 'organisme',
 			'illus_titre', 'illus_legende', 'illus_credits', 'illus_alt', 'illus_description', 'illus_type',
@@ -2382,52 +2610,54 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * Les natures cochables, rangées par famille d'opérations.
+	 * Une case de la nature est-elle à cocher, d'après la saisie reprise ?
 	 *
-	 * Douze cases à plat se lisaient mal, et ne disaient rien de ce que la
-	 * Chronique en fait. Les familles sont celles du volume ; une nature
-	 * qu'aucune n'aurait rangée se coche quand même, dans un dernier groupe.
+	 * La reprise d'un refus garde les cases telles qu'elles ont été
+	 * envoyées ; celle d'une notice à corriger, les termes gardés, qui
+	 * reviennent ici à leur type et à leur cadre.
 	 */
-	private function natures_par_famille() {
-		$groupes = array();
-		$rangees = array();
-		foreach ( $this->familles as $famille => $liste ) {
-			$gardees = array();
-			foreach ( $liste as $nature ) {
-				if ( isset( $this->natures[ $nature ] ) ) {
-					$gardees[] = $nature;
-					$rangees[] = $nature;
-				}
-			}
-			if ( ! empty( $gardees ) ) {
-				$groupes[ $famille ] = $gardees;
-			}
-		}
-		$reste = array_values( array_diff( array_keys( $this->natures ), $rangees ) );
-		if ( ! empty( $reste ) ) {
-			$groupes['Autres natures'] = $reste;
-		}
-		return $groupes;
+	private function repris_nature( $champ, $valeur ) {
+		$garde = $this->reprise();
+		$etat  = $this->decomposer_les_natures( isset( $garde['nature'] ) ? (array) $garde['nature'] : array() );
+		$liste = 'cadre' === $champ
+			? array_merge( $etat['cadres'], isset( $garde['cadre'] ) ? (array) $garde['cadre'] : array() )
+			: $etat['natures'];
+		return in_array( $valeur, $liste, true ) ? ' checked' : '';
 	}
 
 	/**
-	 * Le groupe « Nature de l'opération » : un vrai groupe de cases, avec sa
-	 * légende, là où il n'y avait qu'un libellé orphelin.
+	 * Le groupe « Nature de l'opération » : le cadre en tête, puis les types
+	 * d'opération, les prospections et les projets collectifs.
+	 *
+	 * La rédaction a voulu le cadre à part, juste sous la consigne : il vaut
+	 * pour tous les types, et une fouille préventive n'est plus une case
+	 * parmi six. Les cases gardent leur nom, « nature[] », et le cadre le
+	 * sien, « cadre[] ».
 	 */
 	private function natures_html() {
 		$html  = '<fieldset class="na-sous-groupe na-champ" id="na-nature" aria-describedby="na-nature-aide">';
 		$html .= '<legend>Nature de l’opération <span class="na-requis" aria-hidden="true">*</span></legend>';
 		$html .= '<p class="na-help" id="na-nature-aide">Cochez toutes celles qui s’appliquent.</p>';
+		$html .= '<div class="na-checkboxes na-cadres" role="group" aria-label="Cadre de l’opération">';
+		$n = 0;
+		foreach ( $this->cadres_proposes() as $cadre ) {
+			++$n;
+			$html .= '<label class="na-check" for="na-cadre-' . $n . '">'
+				. '<input type="checkbox" id="na-cadre-' . $n . '" name="cadre[]" value="'
+				. esc_attr( $cadre ) . '"' . $this->repris_nature( 'cadre', $cadre ) . '> '
+				. esc_html( $cadre ) . '</label>';
+		}
+		$html .= '</div>';
 		$html .= '<div class="na-familles na-ancre">';
 		$n = 0;
-		foreach ( $this->natures_par_famille() as $famille => $liste ) {
-			$html .= '<fieldset class="na-famille"><legend>' . esc_html( $famille ) . '</legend>';
+		foreach ( $this->groupes_de_natures() as $groupe => $liste ) {
+			$html .= '<fieldset class="na-famille"><legend>' . esc_html( $groupe ) . '</legend>';
 			$html .= '<div class="na-checkboxes">';
 			foreach ( $liste as $opt ) {
 				++$n;
 				$html .= '<label class="na-check" for="na-nature-' . $n . '">'
 					. '<input type="checkbox" id="na-nature-' . $n . '" name="nature[]" value="'
-					. esc_attr( $opt ) . '"' . $this->repris_coche( 'nature', $opt ) . '> '
+					. esc_attr( $opt ) . '"' . $this->repris_nature( 'nature', $opt ) . '> '
 					. esc_html( isset( $this->libelles_des_natures[ $opt ] ) ? $this->libelles_des_natures[ $opt ] : $opt )
 					. '</label>';
 			}
@@ -2681,9 +2911,10 @@ class Notice_Archeomed_Pactols {
 			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez un lieu-dit, une adresse ou le nom du projet' ),
 			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
 			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la sous-rubrique de l’installation artisanale (A, B ou C)' ),
-			'nature'              => array( 'na-nature-1', 'Cochez au moins une nature d’opération' ),
+			'nature'              => array( 'na-nature-1', 'Cochez au moins un type d’opération, une prospection ou un projet collectif de recherche' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
+			'id_patriarche'       => array( 'na-patriarche', 'Indiquez le code d’opération Patriarche (n° d’OA), que le service régional de l’archéologie peut vous donner' ),
 			'rapport_lien'        => array( 'na-rapport', 'Saisissez l’adresse complète du rapport, par exemple https://hal.science/hal-01234567' ),
 			'donnees_lien'        => array( 'na-donnees', 'Saisissez l’adresse complète du jeu de données, par exemple https://doi.org/10.34847/nkl.abcd1234' ),
 			'resp_prenom'         => array( 'na-resp-prenom', 'Indiquez le prénom du responsable d’opération' ),
@@ -3241,6 +3472,7 @@ class Notice_Archeomed_Pactols {
 
 			/* ── Nature de l'opération ── */
 			.na-form#na-form .na-familles { display: grid; gap: var(--na-e3); }
+			.na-form#na-form .na-cadres { margin-bottom: var(--na-e3); }
 			.na-form#na-form .na-famille > legend { margin: 0; font-size: var(--na-t-s); font-weight: 600; color: var(--na-sourd); }
 			.na-form#na-form .na-checkboxes { display: grid; gap: 0 var(--na-e5);
 				grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
@@ -3635,8 +3867,8 @@ class Notice_Archeomed_Pactols {
 				<p><strong>Ayez sous la main&nbsp;:</strong></p>
 				<ul>
 					<li>le texte de la notice (<?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots), à coller depuis votre traitement de texte&nbsp;;</li>
-					<li>l’année et la nature de l’opération, et, si vous les connaissez, son numéro d’arrêté et son code Patriarche (n° d’OA)&nbsp;;</li>
-					<li>jusqu’à trois illustrations (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>), avec pour chacune sa légende, son crédit et une phrase qui décrit l’image pour les lecteurs aveugles ou malvoyants.</li>
+					<li>l’année et la nature de l’opération, son code Patriarche (n° d’OA) et, si vous le connaissez, son numéro d’arrêté&nbsp;;</li>
+					<li>jusqu’à trois illustrations, de préférence un plan, une vue d’ensemble et un échantillon du mobilier (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>), avec pour chacune sa légende, son crédit et une phrase qui décrit l’image pour les lecteurs aveugles ou malvoyants.</li>
 				</ul>
 				<p>Les champs obligatoires portent un astérisque (<span class="na-requis">*</span>)&nbsp;; les autres sont marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?></p>
 				<p><strong>Vous pouvez vous interrompre</strong> et revenir plus tard à cette page, sur le même appareil et dans le même navigateur&nbsp;: votre saisie y est gardée trente jours. Seuls les fichiers des illustrations sont à redéposer&nbsp;; leurs textes reviennent d’eux-mêmes.<?php endif; ?><?php if ( $en_place ) : ?> La correction met à jour la notice sous sa référence&nbsp;: aucun second dépôt n’est fait.<?php else : ?> Après l’envoi, le responsable d’opération — et, s’il y a lieu, le co-responsable et le co-auteur — reçoit une copie par courriel, avec un lien pour corriger la notice pendant un mois.<?php endif; ?></p>
@@ -3802,9 +4034,9 @@ class Notice_Archeomed_Pactols {
 							value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
 					</div>
 					<div class="na-champ">
-						<label for="na-patriarche">Code d’opération Patriarche (n° d’OA) <span class="na-facultatif">(facultatif)</span></label>
-						<p class="na-help" id="na-patriarche-aide">Le numéro d’opération archéologique (OA) que le service régional de l’archéologie a donné à l’opération dans Patriarche, s’il vous est connu.</p>
-						<input type="text" id="na-patriarche" name="id_patriarche" aria-describedby="na-patriarche-aide"
+						<label for="na-patriarche">Code d’opération Patriarche (n° d’OA) <span class="na-requis" aria-hidden="true">*</span></label>
+						<p class="na-help" id="na-patriarche-aide">Le numéro d’opération archéologique (OA) que le service régional de l’archéologie a donné à l’opération dans Patriarche&nbsp;: c’est lui qui permet de retrouver le rapport.</p>
+						<input type="text" id="na-patriarche" name="id_patriarche" required aria-describedby="na-patriarche-aide"
 							value="<?php echo esc_attr( $this->repris( 'id_patriarche' ) ); ?>">
 					</div>
 				</div>
@@ -3970,7 +4202,7 @@ class Notice_Archeomed_Pactols {
 
 			<section class="na-section" aria-labelledby="na-s5">
 				<h2 class="na-section-titre" id="na-s5"><span class="na-section-num" aria-hidden="true">5</span> Illustrations <span class="na-facultatif">(facultatif)</span></h2>
-				<p class="na-help" id="na-illus-aide">Trois fichiers au plus<?php echo ( $en_place && ! empty( $gardees ) ) ? ', figures déjà déposées comprises' : ''; ?>, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. <?php echo esc_html( $this->norme_des_illustrations() ); ?> Appelez chaque figure dans le texte, à l’endroit qui en parle&nbsp;: (fig.&nbsp;1).</p>
+				<p class="na-help" id="na-illus-aide">Trois fichiers au plus<?php echo ( $en_place && ! empty( $gardees ) ) ? ', figures déjà déposées comprises' : ''; ?>, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>, en JPEG, TIFF ou PDF. Privilégiez un plan, une vue d’ensemble et un échantillon du mobilier. <?php echo esc_html( $this->norme_des_illustrations() ); ?> Appelez chaque figure dans le texte, à l’endroit qui en parle&nbsp;: (fig.&nbsp;1).</p>
 				<?php if ( $en_place && ! empty( $gardees ) ) : ?>
 				<?php
 				// Les figures que la notice porte déjà : leurs fichiers sont sur
@@ -8390,6 +8622,7 @@ class Notice_Archeomed_Pactols {
 				nature: function () { return !!form.querySelector('input[name="nature[]"]:checked'); },
 				annee: function () { return !vide(el('na-annee').value); },
 				organisme: function () { return uneValeur('.na-organisme'); },
+				id_patriarche: function () { return !vide(el('na-patriarche').value); },
 				rapport_lien: function () {
 					var v = el('na-rapport').value.trim();
 					return !v || /^https?:\/\/[^\s\/]+\.[^\s]+$/i.test(v);
@@ -8887,8 +9120,27 @@ class Notice_Archeomed_Pactols {
 					avisBrouillon = null;
 				}
 			}
+			// Un brouillon d'avant les types gardait « Fouille préventive » en
+			// une case : elle revient à Fouille et à Préventive, sans quoi la
+			// nature se perdrait à la reprise.
+			var NATURES_D_AVANT = <?php echo wp_json_encode( $this->natures_d_avant(), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			function casesDAujourdhui(ch) {
+				if (!Array.isArray(ch['nature[]'])) { return ch; }
+				var copie = {};
+				Object.keys(ch).forEach(function (k) { copie[k] = ch[k]; });
+				var cadres = Array.isArray(ch['cadre[]']) ? ch['cadre[]'].slice() : [];
+				var natures = [];
+				ch['nature[]'].forEach(function (t) {
+					var d = Object.prototype.hasOwnProperty.call(NATURES_D_AVANT, t) ? NATURES_D_AVANT[t] : { cadres: [], natures: [t] };
+					d.cadres.forEach(function (c) { if (cadres.indexOf(c) === -1) { cadres.push(c); } });
+					d.natures.forEach(function (n) { if (natures.indexOf(n) === -1) { natures.push(n); } });
+				});
+				copie['nature[]'] = natures;
+				copie['cadre[]'] = cadres;
+				return copie;
+			}
 			function restaurer(b) {
-				var ch = b.champs || {};
+				var ch = casesDAujourdhui(b.champs || {});
 				var rangs = {};
 				[].forEach.call(form.elements, function (c) {
 					if (!c.name || !Object.prototype.hasOwnProperty.call(ch, c.name) || c.type === 'file') { return; }
@@ -9532,46 +9784,34 @@ class Notice_Archeomed_Pactols {
 		}
 		return in_array( $val, $allowed, true ) ? $val : '';
 	}
-	private function collect_checkbox( $name, $allowed ) {
+	/** Les cases d'un groupe envoyé, nettoyées : des chaînes, rien d'autre. */
+	private function cases_postees( $name ) {
 		if ( empty( $_POST[ $name ] ) || ! is_array( $_POST[ $name ] ) ) {
-			return '';
+			return array();
 		}
-		// $allowed peut être une liste simple ou un tableau associatif (libellé => ARK).
-		$labels = $this->is_assoc( $allowed ) ? array_keys( $allowed ) : $allowed;
-		$values = array();
-		foreach ( wp_unslash( $_POST[ $name ] ) as $val ) {
-			$val = sanitize_text_field( $val );
-			if ( in_array( $val, $labels, true ) ) {
-				$values[] = $val;
+		$cases = array();
+		foreach ( array_slice( wp_unslash( $_POST[ $name ] ), 0, 30 ) as $val ) {
+			if ( is_string( $val ) ) {
+				$cases[] = sanitize_text_field( $val );
 			}
 		}
-		return implode( ', ', $values );
+		return $cases;
 	}
+
 	/**
-	 * Collecte les natures cochées avec leur ARK : renvoie un tableau d'items { label, ark }.
+	 * Les termes de la nature, composés des cases cochées, avec leur ARK :
+	 * un tableau d'items { label, ark }.
 	 */
 	private function collect_natures_items() {
 		$items = array();
-		if ( empty( $_POST['nature'] ) || ! is_array( $_POST['nature'] ) ) {
-			return $items;
-		}
-		foreach ( wp_unslash( $_POST['nature'] ) as $val ) {
-			$val = sanitize_text_field( $val );
-			if ( isset( $this->natures[ $val ] ) ) {
-				$items[] = array(
-					'label'     => $val,
-					'ark'       => $this->natures[ $val ],
-					'idConcept' => '',
-				);
-			}
+		foreach ( $this->composer_les_natures( $this->cases_postees( 'cadre' ), $this->cases_postees( 'nature' ) ) as $terme ) {
+			$items[] = array(
+				'label'     => $terme,
+				'ark'       => $this->natures[ $terme ],
+				'idConcept' => '',
+			);
 		}
 		return $items;
-	}
-	private function is_assoc( $arr ) {
-		if ( ! is_array( $arr ) || array() === $arr ) {
-			return false;
-		}
-		return array_keys( $arr ) !== range( 0, count( $arr ) - 1 );
 	}
 	private function collect_pactols_keywords( $field_name ) {
 		$raw = isset( $_POST[ $field_name ] ) ? wp_unslash( $_POST[ $field_name ] ) : '';
@@ -9897,11 +10137,11 @@ class Notice_Archeomed_Pactols {
 		// La capitale des périodes vaut aussi pour la forme du thésaurus :
 		// sans elle, le dépôt imprimait « Haut Moyen Âge » et le fascicule,
 		// une fois les termes lus, « haut Moyen Âge ».
-		if ( ! empty( $item['prefLabel'] ) ) {
+		$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
+		if ( ! empty( $item['prefLabel'] ) && ! in_array( $label, $this->natures_a_la_lettre, true ) ) {
 			$prefere = trim( (string) $item['prefLabel'] );
 			return $capitale ? $this->capitale_initiale( $prefere ) : $prefere;
 		}
-		$label = isset( $item['label'] ) ? trim( (string) $item['label'] ) : '';
 		if ( $capitale ) {
 			return $this->capitale_initiale( $label );
 		}
@@ -10640,7 +10880,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function champs_manquants( $d ) {
 		$manquants = array();
-		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'rubrique_principale', 'nature', 'annee', 'organisme',
+		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'rubrique_principale', 'nature', 'annee', 'organisme', 'id_patriarche',
 			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'texte' );
 		foreach ( $ordre as $champ ) {
 			if ( 'resp_email' === $champ ) {
@@ -12707,8 +12947,8 @@ class Notice_Archeomed_Pactols {
 		// avec lui.
 		$d['organisme'] = implode( ', ', $d['organismes'] );
 		$d['illustrations'] = $this->collect_illustrations();
-		$d['nature'] = $this->collect_checkbox( 'nature', $this->natures );
 		$d['nature_items'] = $this->collect_natures_items();
+		$d['nature']       = implode( ', ', wp_list_pluck( $d['nature_items'], 'label' ) );
 		$d['pactols_periods_items'] = $this->collect_pactols_keywords( 'pactols_periods' );
 		$d['pactols_subjects_items'] = $this->collect_pactols_keywords( 'pactols_subjects' );
 		$d['pactols_places_items'] = $this->collect_pactols_keywords( 'pactols_places' );
@@ -17110,9 +17350,13 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 
-		// ── Les natures : celles du formulaire, et celles que la notice
-		// portait déjà — une nature qu'on ne propose plus ne se perd pas à
-		// la relecture. Les décocher toutes ne s'enregistre pas. ──────────
+		// ── Les natures : celles du formulaire, composées avec le cadre, et
+		// celles que la notice portait déjà — une nature qu'on ne propose
+		// plus ne se perd pas à la relecture. Les décocher toutes ne
+		// s'enregistre pas. On compare à la notice telle que les cases la
+		// rouvrent : « Fouille préventive » et « Sondage » se rouvrent en
+		// Fouille, Sondage et Préventive, et la page enregistrée sans y
+		// toucher ne doit pas en faire un sondage préventif. ──────────────
 		if ( isset( $_POST['nature'] ) && is_array( $_POST['nature'] ) ) {
 			$anciennes = self::natures_saisies( $avant );
 			$items_anc = array();
@@ -17121,16 +17365,10 @@ class Notice_Archeomed_Pactols {
 					$items_anc[ (string) $item['label'] ] = $item;
 				}
 			}
-			$admises = array_values( array_unique( array_merge( array_keys( $this->natures ), $anciennes ) ) );
-			$cochees = array();
-			foreach ( wp_unslash( $_POST['nature'] ) as $valeur ) {
-				$valeur = is_string( $valeur ) ? sanitize_text_field( $valeur ) : '';
-				if ( '' !== $valeur && in_array( $valeur, $admises, true ) && ! in_array( $valeur, $cochees, true ) ) {
-					$cochees[] = $valeur;
-				}
-			}
+			$etat    = $this->decomposer_les_natures( $anciennes );
+			$cochees = $this->recomposer_les_natures( $this->cases_postees( 'cadre' ), $this->cases_postees( 'nature' ), $anciennes );
 			$triees_neuves = $cochees;
-			$triees_avant  = $anciennes;
+			$triees_avant  = $this->recomposer_les_natures( $etat['cadres'], $etat['natures'], $anciennes );
 			sort( $triees_neuves );
 			sort( $triees_avant );
 			if ( ! empty( $cochees ) && $triees_neuves !== $triees_avant ) {

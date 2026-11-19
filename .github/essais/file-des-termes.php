@@ -1240,6 +1240,128 @@ na_verifier( '2004-2005' === $saisie_sortie['annee'] && 'REFOUT' === $saisie_sor
 na_verifier( 'Saint-Étienne' === na_appel( $plugin, 'graphie_imprimee', array( $saisie_sortie['pactols_subjects_items'][0] ) )
 	&& 'fouille préventive' === na_appel( $plugin, 'graphie_imprimee', array( $saisie_sortie['nature_items'][0] ) ),
 	'un mot-clé libre garde sa capitale ; une nature prend le bas de casse' );
+
+// La nature : le cadre coché une fois, les types dans l'ordre de la rédaction.
+$compo = function ( $cadres, $cochees ) use ( $plugin ) {
+	return $plugin->composer_les_natures( $cadres, $cochees );
+};
+na_verifier( array( 'Fouille préventive', 'Sondage préventif' ) === $compo( array( 'Préventive' ), array( 'Fouille', 'Sondage' ) )
+	&& array( 'Diagnostic préventif', 'Diagnostic programmé' ) === $compo( array( 'Programmée', 'Préventive' ), array( 'Diagnostic' ) )
+	&& array( 'Étude de bâti', 'Surveillance de travaux' ) === $compo( array(), array( 'Étude de bâti', 'Surveillance de travaux' ) )
+	&& array( 'Étude de bâti programmée', 'Surveillance de travaux programmée' ) === $compo( array( 'Programmée' ), array( 'Étude de bâti', 'Surveillance de travaux' ) ),
+	'chaque type se compose avec chaque cadre coché, accordé à son genre, ou reste seul sans cadre',
+	array( $compo( array( 'Préventive' ), array( 'Fouille', 'Sondage' ) ), $compo( array( 'Programmée', 'Préventive' ), array( 'Diagnostic' ) ) ) );
+na_verifier( array( 'Prospection pédestre', 'Opération d’archéologie programmée' ) === $compo( array( 'Programmée' ), array( 'Prospection pédestre' ) )
+	&& array( 'Fouille préventive', 'Prospection pédestre' ) === $compo( array( 'Préventive' ), array( 'Fouille', 'Prospection pédestre' ) )
+	&& array() === $compo( array( 'Préventive', 'Programmée' ), array() )
+	&& array( 'Fouille' ) === $compo( array( 'Inventé' ), array( 'Fouille', 'Terme forgé' ) )
+	&& array( 'Fouille préventive' ) === $compo( array(), array( 'Fouille préventive' ) ),
+	'un cadre sans type garde son sens à côté d\'une prospection ; seul, il ne fait aucune nature ; un cadre ou un terme forgé n\'entre pas ; une page d\'avant la mise à jour envoie encore « Fouille préventive », qui passe',
+	array( $compo( array( 'Programmée' ), array( 'Prospection pédestre' ) ), $compo( array( 'Préventive', 'Programmée' ), array() ) ) );
+$_POST = wp_slash( array( 'cadre' => array( 'Préventive', 'Programmée' ), 'nature' => array( 'Fouille', 'Étude de bâti', 'Sondage', 'Diagnostic', 'Surveillance de travaux' ) ) );
+$items_compo = na_appel( $plugin, 'collect_natures_items' );
+$_POST = array();
+$sans_ark_compo = array();
+$hors_famille   = array();
+$non_defaits    = array();
+foreach ( $items_compo as $item ) {
+	if ( 0 !== strpos( (string) $item['ark'], 'https://ark.frantiq.fr/ark:/26678/' ) ) {
+		$sans_ark_compo[] = $item['label'];
+	}
+	$famille_compo = $plugin->famille_de( array( 'nature' => $item['label'] ) );
+	if ( 'Opérations de terrain' !== $famille_compo['nom'] || 1 !== $famille_compo['rang'] ) {
+		$hors_famille[] = $item['label'];
+	}
+	$defait = $plugin->decomposer_les_natures( array( $item['label'] ) );
+	if ( 1 !== count( $defait['cadres'] ) || array( $item['label'] ) !== $compo( $defait['cadres'], $defait['natures'] ) ) {
+		$non_defaits[] = $item['label'];
+	}
+}
+na_verifier( 10 === count( $items_compo ) && array() === $sans_ark_compo && array() === $hors_famille && array() === $non_defaits,
+	'les dix termes composés ont leur ARK, restent des opérations de terrain en tête du volume, et se défont en leur type et leur cadre',
+	array( wp_list_pluck( $items_compo, 'label' ), $sans_ark_compo, $hors_famille, $non_defaits ) );
+$famille_cadre = $plugin->famille_de( array( 'nature' => 'Prospection pédestre, Opération d’archéologie programmée' ) );
+na_verifier( 'Prospections' === $famille_cadre['nom'],
+	'une prospection dans un cadre programmé reste une prospection dans le volume', $famille_cadre );
+$defaits = $plugin->decomposer_les_natures( array( 'Fouille préventive', 'Archéologie du bâti', 'Opération de diagnostic', 'Sondage programmé',
+	'Opération d’archéologie préventive', 'Prospection pédestre', 'Terme d’autrefois', ' ' ) );
+na_verifier( array( 'Préventive', 'Programmée' ) === $defaits['cadres']
+	&& array( 'Fouille', 'Étude de bâti', 'Diagnostic', 'Sondage', 'Prospection pédestre', 'Terme d’autrefois' ) === $defaits['natures'],
+	'une notice reçue avant les types se rouvre en cases : les termes composés en type et cadre, les anciens noms en leur type, l\'inconnu tel quel', $defaits );
+$avant_types = na_appel( $plugin, 'natures_d_avant' );
+na_verifier( isset( $avant_types['Fouille préventive'] ) && array( 'Préventive' ) === $avant_types['Fouille préventive']['cadres']
+	&& array( 'Fouille' ) === $avant_types['Fouille préventive']['natures'] && array( 'Étude de bâti' ) === $avant_types['Archéologie du bâti']['natures']
+	&& ! isset( $avant_types['Fouille'] ) && ! isset( $avant_types['Prospection pédestre'] ),
+	'le navigateur reçoit de quoi rouvrir un brouillon d\'avant les types', $avant_types );
+$graphies = array();
+foreach ( array( array( 'Sondage préventif', 'diagnostic' ), array( 'Sondage', 'tranchée archéologique' ), array( 'Étude de bâti programmée', 'bâti' ),
+	array( 'Diagnostic programmé', 'diagnostic' ), array( 'Fouille préventive', 'fouille préventive' ) ) as $cas_g ) {
+	$graphies[] = na_appel( $plugin, 'graphie_imprimee', array( array( 'label' => $cas_g[0], 'ark' => '', 'prefLabel' => $cas_g[1] ) ) );
+}
+na_verifier( array( 'sondage préventif', 'sondage', 'étude de bâti programmée', 'diagnostic programmé', 'fouille préventive' ) === $graphies,
+	'un terme composé qui emprunte le concept d\'un voisin s\'imprime tel que la case le dit : le cadre ne se perd pas', $graphies );
+$html_natures = na_appel( $plugin, 'natures_html' );
+$pos_natures  = array();
+foreach ( array( 'Cochez toutes celles qui s’appliquent', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"', '<legend>Type d’opération</legend>',
+	'value="Fouille"', 'value="Étude de bâti"', 'value="Sondage"', 'value="Diagnostic"', 'value="Surveillance de travaux"', '<legend>Prospections</legend>',
+	'<legend>Projets collectifs de recherche</legend>' ) as $repere ) {
+	$pos_natures[] = strpos( $html_natures, $repere );
+}
+$triees_natures = $pos_natures;
+sort( $triees_natures );
+na_verifier( ! in_array( false, $pos_natures, true ) && $triees_natures === $pos_natures
+	&& false === strpos( $html_natures, 'value="Fouille préventive"' ) && false === strpos( $html_natures, 'Opérations de terrain' )
+	&& false === strpos( $html_natures, 'value="Archéologie du bâti"' ) && 2 === substr_count( $html_natures, 'name="cadre[]"' ),
+	'le formulaire met les deux cadres sous la consigne, puis « Type d’opération » dans l\'ordre de la rédaction, sans fouille préventive à part', $pos_natures );
+$reprise_nat = new ReflectionProperty( $plugin, 'reprise' );
+$reprise_nat->setAccessible( true );
+$reprise_nat->setValue( $plugin, array( 'nature' => array( 'Fouille programmée', 'Prospection pédestre' ) ) );
+$html_repris = na_appel( $plugin, 'natures_html' );
+$reprise_nat->setValue( $plugin, array( 'nature' => array( 'Sondage' ), 'cadre' => array( 'Préventive' ) ) );
+$html_refus  = na_appel( $plugin, 'natures_html' );
+$reprise_nat->setValue( $plugin, null );
+$cochee_nat = function ( $html, $valeur ) {
+	return 1 === preg_match( '/value="' . preg_quote( $valeur, '/' ) . '" checked>/u', $html );
+};
+na_verifier( $cochee_nat( $html_repris, 'Programmée' ) && $cochee_nat( $html_repris, 'Fouille' ) && $cochee_nat( $html_repris, 'Prospection pédestre' )
+	&& ! $cochee_nat( $html_repris, 'Préventive' ) && ! $cochee_nat( $html_repris, 'Sondage' )
+	&& $cochee_nat( $html_refus, 'Préventive' ) && $cochee_nat( $html_refus, 'Sondage' ) && ! $cochee_nat( $html_refus, 'Programmée' ),
+	'une notice à corriger rouvre « Fouille programmée » en Fouille et Programmée ; un refus rend les cases telles qu\'envoyées' );
+$manque_pat = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'id_patriarche' => '  ' ) ) ) );
+$avec_pat   = na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'id_patriarche' => '14 118 0012' ) ) ) );
+$table_pat  = array_keys( na_appel( $plugin, 'champs_du_formulaire' ) );
+na_verifier( in_array( 'id_patriarche', $manque_pat, true ) && ! in_array( 'id_patriarche', $avec_pat, true )
+	&& array_search( 'organisme', $table_pat, true ) < array_search( 'id_patriarche', $table_pat, true ),
+	'le code Patriarche est obligatoire, pour toutes les notices ; le numéro d\'arrêté reste facultatif',
+	array( $manque_pat, $avec_pat ) );
+na_verifier( ! in_array( 'num_autorisation', na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'num_autorisation' => '' ) ) ) ), true ),
+	'le numéro d\'arrêté ne manque jamais' );
+
+// La relecture ne réécrit pas une nature qu'on n'a pas touchée.
+$avant_nat = array_merge( $saisie_styles, array( 'nature' => 'Fouille préventive, Sondage',
+	'nature_items' => array( array( 'label' => 'Fouille préventive', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrtcJxzOpgs7T', 'idConcept' => '7' ),
+		array( 'label' => 'Sondage', 'ark' => 'https://ark.frantiq.fr/ark:/26678/pcrt1t17kd7jn6982pgfp859', 'idConcept' => '' ) ) ) );
+$relire_nat = function ( $avant, $post ) use ( $plugin, $sortie ) {
+	$_POST = wp_slash( $post );
+	$rendu = na_appel( $plugin, 'saisie_relue', array( $sortie, $avant, array( 'tout' => false, 'renvoi' => '' ), 'Essai' ) );
+	$_POST = array();
+	return is_array( $rendu ) ? $rendu[0] : $rendu;
+};
+$nat_intacte = $relire_nat( $avant_nat, array( 'nature' => array( 'Fouille', 'Sondage' ), 'cadre' => array( 'Préventive' ) ) );
+$nat_changee = $relire_nat( $avant_nat, array( 'nature' => array( 'Fouille', 'Sondage' ), 'cadre' => array( 'Programmée' ) ) );
+$nat_vide    = $relire_nat( $avant_nat, array( 'nature' => array( 'Terme forgé' ), 'cadre' => array( 'Préventive' ) ) );
+na_verifier( is_array( $nat_intacte ) && 'Fouille préventive, Sondage' === $nat_intacte['nature'] && $avant_nat['nature_items'] === $nat_intacte['nature_items']
+	&& is_array( $nat_changee ) && 'Fouille programmée, Sondage programmé' === $nat_changee['nature']
+	&& 'https://ark.frantiq.fr/ark:/26678/crtSrWQs2w2KV' === $nat_changee['nature_items'][0]['ark']
+	&& is_array( $nat_vide ) && 'Fouille préventive, Sondage' === $nat_vide['nature'],
+	'la relecture garde « Fouille préventive, Sondage » qu\'on n\'a pas touchée, change le cadre quand on le change, et n\'efface rien pour un terme forgé',
+	array( is_array( $nat_intacte ) ? $nat_intacte['nature'] : $nat_intacte, is_array( $nat_changee ) ? $nat_changee['nature'] : $nat_changee ) );
+$avant_vieux = array_merge( $saisie_styles, array( 'nature' => 'Prospection électrique',
+	'nature_items' => array( array( 'label' => 'Prospection électrique', 'ark' => 'https://ark.frantiq.fr/ark:/26678/crtAncien', 'idConcept' => '' ) ) ) );
+$nat_vieux = $relire_nat( $avant_vieux, array( 'nature' => array( 'Prospection électrique', 'Fouille' ), 'cadre' => array( 'Programmée' ) ) );
+na_verifier( is_array( $nat_vieux ) && 'Fouille programmée, Prospection électrique' === $nat_vieux['nature']
+	&& 'https://ark.frantiq.fr/ark:/26678/crtAncien' === $nat_vieux['nature_items'][1]['ark'],
+	'une nature qu\'on ne propose plus reste cochée à la relecture, avec son ARK, à côté d\'un type ajouté', is_array( $nat_vieux ) ? $nat_vieux['nature'] : $nat_vieux );
 $doc_sortie = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
 na_appel( $plugin, 'remplir_le_document', array( $doc_sortie, $saisie_sortie ) );
 $xml_sortie = implode( '', $corps->getValue( $doc_sortie ) );
@@ -1751,7 +1873,7 @@ $jouer_un_depot = function ( $mode ) use ( $plugin, $reglages_avant ) {
 		'na_ts' => (string) $ts_defi, 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
 		'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Caen' ), 'commune_ark' => array( '' ),
 		'departement' => 'Calvados', 'lieu_dit' => 'Château ' . $mode, 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
-		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.' . $mode . '@example.org',
+		'organisme' => array( 'Inrap' ), 'id_patriarche' => '14 118 0012', 'resp_prenom' => 'Aude', 'resp_nom' => 'Ferrand', 'resp_email' => 'aude.' . $mode . '@example.org',
 		'resp_inst' => 'Inrap', 'texte_notice' => '<p>Le mur du XIIe siècle.</p>',
 		'pactols_periods' => wp_slash( wp_json_encode( array( array( 'label' => 'XIIe siècle', 'ark' => '' ) ) ) ),
 		'pactols_subjects' => wp_slash( wp_json_encode( array( array( 'label' => 'château', 'ark' => '' ) ) ) ),
@@ -4503,8 +4625,8 @@ $ap_notice = function ( $page, $ts_defi, $texte ) use ( $plugin ) {
 		'na_ts' => (string) $ts_defi, 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
 		'na_arriere_plan' => '1', 'na_page' => $page,
 		'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Bayeux' ), 'commune_ark' => array( '' ),
-		'departement' => 'Calvados', 'lieu_dit' => 'Four de potier', 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
-		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Lise', 'resp_nom' => 'Hamon', 'resp_email' => 'lise.arriere-plan@example.org',
+		'departement' => 'Calvados', 'lieu_dit' => 'Four de potier', 'annee' => '2025', 'nature' => array( 'Fouille' ), 'cadre' => array( 'Préventive' ),
+		'organisme' => array( 'Inrap' ), 'id_patriarche' => '14 118 0012', 'resp_prenom' => 'Lise', 'resp_nom' => 'Hamon', 'resp_email' => 'lise.arriere-plan@example.org',
 		'resp_inst' => 'Inrap', 'texte_notice' => $texte,
 		'pactols_periods' => wp_slash( wp_json_encode( array( array( 'label' => 'XIIIe siècle', 'ark' => '' ) ) ) ),
 		'pactols_subjects' => wp_slash( wp_json_encode( array( array( 'label' => 'four', 'ark' => '' ) ) ) ),

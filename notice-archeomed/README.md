@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.106
+# Formulaire des notices d’archéologie médiévale — version 3.107
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -363,7 +363,7 @@ elles paraissent en tête de notice, dans l'ordre de la mise en page et
 
 ```
 [TEI_Titre 2+notice]                          Aix-en-Provence (Bouches-du-Rhône). Rue des Chartreux
-[TEI_archeoCHR_fieldwork_method]              Nature de l'opération : archéologie du bâti
+[TEI_archeoCHR_fieldwork_method]              Nature de l'opération : étude de bâti
 [TEI_archeoCHR_keywords_subjects:chronology]  Période historique : Temps modernes, Époque contemporaine
 [TEI_archeoCHR_fieldwork_year]                Année de l'opération : 2024
 [TEI_archeoCHR_IDpatriarche]                  Numéro d'autorisation : 2269
@@ -374,7 +374,7 @@ elles paraissent en tête de notice, dans l'ordre de la mise en page et
 ```
 
 Un **point** sépare la commune du lieu-dit, qui s'écrit en italique. Les
-natures gardent la casse de Pactols — « archéologie du bâti » —, les périodes
+natures gardent la casse de Pactols — « étude de bâti » —, les périodes
 prennent une capitale initiale — « Bas Moyen Âge ». Le bloc de responsabilité
 reste collé au point final du texte et porte lui-même le point final de la
 notice, dans la parenthèse : « (Responsable de l'opération : Georges Perec,
@@ -759,6 +759,39 @@ un thésaurus.
 Les notices reçues avant cette version portent une commune unique ; le
 fascicule les refabrique sans rien perdre.
 
+## La nature de l'opération, et le code Patriarche
+
+Depuis la version 3.107, la section « Nature de l'opération » s'ouvre, sous la
+consigne « Cochez toutes celles qui s'appliquent », sur deux cases de
+**cadre** : **Préventive** et **Programmée**. Vient ensuite le groupe **Type
+d'opération**, dans l'ordre voulu par la rédaction : Fouille, Étude de bâti,
+Sondage, Diagnostic, Surveillance de travaux. Les prospections, les projets
+collectifs et les autres natures suivent, comme avant.
+
+Le cadre et le type se recomposent à l'enregistrement : Fouille et Préventive
+donnent « Fouille préventive », Étude de bâti et Programmée « Étude de bâti
+programmée », chacun avec son identifiant Pactols. La notice garde ainsi les
+mêmes termes qu'auparavant, et le document Word, le fascicule et l'ordre du
+volume n'en voient rien. Un type sans cadre reste tel quel. Les cadres ne
+s'appliquent qu'aux types : une prospection reste une prospection, et un cadre
+coché à côté d'elle, sans type, ajoute « Opération d'archéologie préventive »
+ou « programmée ». Un cadre seul ne suffit pas : il faut cocher une nature.
+
+Une notice reçue avant la 3.107 se rouvre — à la correction, à la relecture —
+dans ces cases : « Fouille préventive » coche Fouille et Préventive,
+« Archéologie du bâti » coche Étude de bâti, « Opération de diagnostic »
+Diagnostic. Si l'on ne touche pas aux cases, la notice n'est pas réécrite :
+une notice qui mêlait une fouille préventive et un sondage programmé ne
+devient pas, sans qu'on l'ait voulu, une fouille et un sondage préventifs. Un
+brouillon gardé par le navigateur avant la mise à jour se rouvre de même, et
+une page ouverte avant la mise à jour envoie encore les anciens termes, qui
+sont acceptés tels quels.
+
+Le **code d'opération Patriarche** (le numéro d'OA) est **obligatoire** pour
+toutes les notices : c'est lui qui permet de retrouver le rapport auprès du
+service régional de l'archéologie. Le navigateur le demande avant l'envoi, et
+le serveur le redemande. Le numéro d'arrêté reste facultatif.
+
 ## La hiérarchie du document
 
 Un fascicule, et une notice isolée, se composent ainsi :
@@ -788,7 +821,8 @@ alphabétique.
 ## Les illustrations
 
 Chaque fichier déposé reçoit sa propre carte dans le formulaire, nettement
-détachée de la page (« Figure 1 » en titre, fond teinté). Elle a deux parties.
+détachée de la page (« Figure 1 » en titre, fond teinté). Elle a deux parties. Sur les trois figures au plus, l'aide demande de
+privilégier **un plan, une vue d'ensemble et un échantillon du mobilier**.
 **Pour la publication** : le **titre** et les **crédits**, obligatoires, la
 **légende** et l'**autorisation de reproduction**, facultatives. Puis, en fin de
 carte, encadré et teinté parce que c'est un autre travail : **Pour un public
