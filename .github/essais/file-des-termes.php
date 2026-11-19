@@ -1246,11 +1246,23 @@ $compo = function ( $cadres, $cochees ) use ( $plugin ) {
 	return $plugin->composer_les_natures( $cadres, $cochees );
 };
 na_verifier( array( 'Fouille préventive', 'Sondage préventif' ) === $compo( array( 'Préventive' ), array( 'Fouille', 'Sondage' ) )
-	&& array( 'Diagnostic préventif', 'Diagnostic programmé' ) === $compo( array( 'Programmée', 'Préventive' ), array( 'Diagnostic' ) )
+	&& array( 'Diagnostic préventif' ) === $compo( array( 'Programmée', 'Préventive' ), array( 'Diagnostic' ) )
 	&& array( 'Étude de bâti', 'Surveillance de travaux' ) === $compo( array(), array( 'Étude de bâti', 'Surveillance de travaux' ) )
 	&& array( 'Étude de bâti programmée', 'Surveillance de travaux programmée' ) === $compo( array( 'Programmée' ), array( 'Étude de bâti', 'Surveillance de travaux' ) ),
 	'chaque type se compose avec chaque cadre coché, accordé à son genre, ou reste seul sans cadre',
 	array( $compo( array( 'Préventive' ), array( 'Fouille', 'Sondage' ) ), $compo( array( 'Programmée', 'Préventive' ), array( 'Diagnostic' ) ) ) );
+$familles_diag = new ReflectionProperty( $plugin, 'familles' );
+$familles_diag->setAccessible( true );
+$natures_diag = new ReflectionProperty( $plugin, 'natures' );
+$natures_diag->setAccessible( true );
+na_verifier( array( 'Diagnostic' ) === $compo( array( 'Programmée' ), array( 'Diagnostic' ) )
+	&& array( 'Fouille programmée', 'Diagnostic' ) === $compo( array( 'Programmée' ), array( 'Fouille', 'Diagnostic' ) )
+	&& array( 'Programmée' ) === $plugin->decomposer_les_natures( array( 'Fouille programmée', 'Diagnostic' ) )['cadres']
+	&& array( 'Fouille programmée', 'Diagnostic' ) === $compo( array( 'Programmée' ), $plugin->decomposer_les_natures( array( 'Fouille programmée', 'Diagnostic' ) )['natures'] )
+	&& ! isset( $natures_diag->getValue( $plugin )['Diagnostic programmé'] )
+	&& ! in_array( 'Diagnostic programmé', $familles_diag->getValue( $plugin )['Opérations de terrain'], true ),
+	'un diagnostic n\'est jamais programmé : avec ce seul cadre il reste « Diagnostic », et une fouille programmée jointe à un diagnostic se rouvre et se recompose à l\'identique',
+	array( $compo( array( 'Programmée' ), array( 'Diagnostic' ) ), $compo( array( 'Programmée' ), array( 'Fouille', 'Diagnostic' ) ) ) );
 na_verifier( array( 'Prospection pédestre', 'Opération d’archéologie programmée' ) === $compo( array( 'Programmée' ), array( 'Prospection pédestre' ) )
 	&& array( 'Fouille préventive', 'Prospection pédestre' ) === $compo( array( 'Préventive' ), array( 'Fouille', 'Prospection pédestre' ) )
 	&& array() === $compo( array( 'Préventive', 'Programmée' ), array() )
@@ -1277,8 +1289,8 @@ foreach ( $items_compo as $item ) {
 		$non_defaits[] = $item['label'];
 	}
 }
-na_verifier( 10 === count( $items_compo ) && array() === $sans_ark_compo && array() === $hors_famille && array() === $non_defaits,
-	'les dix termes composés ont leur ARK, restent des opérations de terrain en tête du volume, et se défont en leur type et leur cadre',
+na_verifier( 9 === count( $items_compo ) && ! in_array( 'Diagnostic programmé', wp_list_pluck( $items_compo, 'label' ), true ) && array() === $sans_ark_compo && array() === $hors_famille && array() === $non_defaits,
+	'les neuf termes composés — le diagnostic n\'est que préventif — ont leur ARK, restent des opérations de terrain en tête du volume, et se défont en leur type et leur cadre',
 	array( wp_list_pluck( $items_compo, 'label' ), $sans_ark_compo, $hors_famille, $non_defaits ) );
 $famille_cadre = $plugin->famille_de( array( 'nature' => 'Prospection pédestre, Opération d’archéologie programmée' ) );
 na_verifier( 'Prospections' === $famille_cadre['nom'],
@@ -1295,10 +1307,10 @@ na_verifier( isset( $avant_types['Fouille préventive'] ) && array( 'Préventive
 	'le navigateur reçoit de quoi rouvrir un brouillon d\'avant les types', $avant_types );
 $graphies = array();
 foreach ( array( array( 'Sondage préventif', 'diagnostic' ), array( 'Sondage', 'tranchée archéologique' ), array( 'Étude de bâti programmée', 'bâti' ),
-	array( 'Diagnostic programmé', 'diagnostic' ), array( 'Fouille préventive', 'fouille préventive' ) ) as $cas_g ) {
+	array( 'Diagnostic préventif', 'opération de diagnostic' ), array( 'Fouille préventive', 'fouille préventive' ) ) as $cas_g ) {
 	$graphies[] = na_appel( $plugin, 'graphie_imprimee', array( array( 'label' => $cas_g[0], 'ark' => '', 'prefLabel' => $cas_g[1] ) ) );
 }
-na_verifier( array( 'sondage préventif', 'sondage', 'étude de bâti programmée', 'diagnostic programmé', 'fouille préventive' ) === $graphies,
+na_verifier( array( 'sondage préventif', 'sondage', 'étude de bâti programmée', 'diagnostic préventif', 'fouille préventive' ) === $graphies,
 	'un terme composé qui emprunte le concept d\'un voisin s\'imprime tel que la case le dit : le cadre ne se perd pas', $graphies );
 $html_natures = na_appel( $plugin, 'natures_html' );
 $pos_natures  = array();
@@ -1311,8 +1323,10 @@ $triees_natures = $pos_natures;
 sort( $triees_natures );
 na_verifier( ! in_array( false, $pos_natures, true ) && $triees_natures === $pos_natures
 	&& false === strpos( $html_natures, 'value="Fouille préventive"' ) && false === strpos( $html_natures, 'Opérations de terrain' )
-	&& false === strpos( $html_natures, 'value="Archéologie du bâti"' ) && 2 === substr_count( $html_natures, 'name="cadre[]"' ),
-	'le formulaire met les deux cadres sous la consigne, puis « Type d’opération » dans l\'ordre de la rédaction, sans fouille préventive à part', $pos_natures );
+	&& false === strpos( $html_natures, 'value="Archéologie du bâti"' ) && 2 === substr_count( $html_natures, 'name="cadre[]"' )
+	&& 1 === preg_match( '#value="Diagnostic">\s*Diagnostic <span class="na-note-cadre">\(toujours préventif\)</span></label>#u', $html_natures )
+	&& 1 === substr_count( $html_natures, 'na-note-cadre' ),
+	'le formulaire met les deux cadres sous la consigne, puis « Type d’opération » dans l\'ordre de la rédaction, sans fouille préventive à part ; seul le diagnostic porte « (toujours préventif) »', $pos_natures );
 $reprise_nat = new ReflectionProperty( $plugin, 'reprise' );
 $reprise_nat->setAccessible( true );
 $reprise_nat->setValue( $plugin, array( 'nature' => array( 'Fouille programmée', 'Prospection pédestre' ) ) );

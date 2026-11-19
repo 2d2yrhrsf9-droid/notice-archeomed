@@ -319,6 +319,50 @@ jobs:
           """
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # Le diagnostic n'est jamais programmé : avec ce seul cadre, sa case
+          # se grise ; déjà cochée, elle ne se décoche jamais d'elle-même.
+          python3 - <<'PY'
+          import re, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          m = re.search(r'var CADRES_EXCLUS = (\{.*?\});\n', t)
+          i = t.find('function accorderLesCadres(')
+          if not m or i < 0:
+              print("::error::Le formulaire ne grise pas le diagnostic d'un cadre programmé."); sys.exit(1)
+          j, n = t.index('{', i), 0
+          for k in range(j, len(t)):
+              n += {'{': 1, '}': -1}.get(t[k], 0)
+              if n == 0:
+                  f = t[i:k + 1]; break
+          js = 'var CADRES_EXCLUS = ' + m.group(1) + ';\n' + r"""
+          function caseDe(nom, valeur) {
+            var c = { name: nom, value: valeur, checked: false, disabled: false, hors: false };
+            c.closest = function () { return { classList: { toggle: function (k, v) { if (k === 'na-hors-cadre') { c.hors = !!v; } } } }; };
+            return c;
+          }
+          var cadres = [caseDe('cadre[]', 'Préventive'), caseDe('cadre[]', 'Programmée')];
+          var natures = [caseDe('nature[]', 'Fouille'), caseDe('nature[]', 'Diagnostic'), caseDe('nature[]', 'Prospection pédestre')];
+          var form = { querySelectorAll: function (sel) {
+            if (sel === 'input[name="cadre[]"]:checked') { return cadres.filter(function (c) { return c.checked; }); }
+            if (sel === 'input[name="nature[]"]') { return natures; }
+            throw new Error(sel);
+          } };
+          """ + f + '\n' + r"""
+          var diag = natures[1], vu = [];
+          function etat() { accorderLesCadres(); vu.push([diag.disabled, diag.hors, diag.checked, natures[0].disabled, natures[2].disabled]); }
+          etat();                                                    // aucun cadre
+          cadres[1].checked = true; etat();                          // programmée seule
+          cadres[0].checked = true; etat();                          // les deux
+          cadres[0].checked = false; diag.checked = true; etat();    // programmée seule, diagnostic déjà coché
+          diag.checked = false; etat();                              // on le décoche
+          cadres[1].checked = false; cadres[0].checked = true; etat(); // préventive seule
+          var attendu = [[false, false, false, false, false], [true, true, false, false, false], [false, false, false, false, false],
+            [false, false, true, false, false], [true, true, false, false, false], [false, false, false, false, false]];
+          var ok = JSON.stringify(vu) === JSON.stringify(attendu);
+          if (!ok) { console.log('::error::La case Diagnostic ne suit pas le cadre programmé : ' + JSON.stringify(vu)); }
+          process.exit(ok ? 0 : 1);
+          """
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
           grep -q "id_patriarche: function () { return !vide(el('na-patriarche').value); }" /tmp/formulaire.js \
             || { echo "::error::Le navigateur n'exige pas le code Patriarche."; exit 1; }
           # La page telle que la rédaction l'a voulue : les deux cadres sous la
@@ -333,6 +377,8 @@ jobs:
               print("::error::La nature de l'opération n'est pas dans l'ordre voulu : " + repr(rangs)); sys.exit(1)
           if 'value="Fouille préventive"' in t or 'Opérations de terrain</legend>' in t:
               print("::error::La page propose encore les anciennes natures."); sys.exit(1)
+          if t.count('<span class="na-note-cadre">(toujours préventif)</span>') != 1:
+              print("::error::La case Diagnostic ne dit pas qu'il est toujours préventif."); sys.exit(1)
           if not re.search(r'<input[^>]*id="na-patriarche"[^>]*required', t):
               print("::error::Le code Patriarche n'est pas obligatoire dans la page."); sys.exit(1)
           PY

@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.107
+# Formulaire des notices d’archéologie médiévale — version 3.108
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -776,6 +776,14 @@ volume n'en voient rien. Un type sans cadre reste tel quel. Les cadres ne
 s'appliquent qu'aux types : une prospection reste une prospection, et un cadre
 coché à côté d'elle, sans type, ajoute « Opération d'archéologie préventive »
 ou « programmée ». Un cadre seul ne suffit pas : il faut cocher une nature.
+
+Depuis la version 3.108, **un diagnostic n'est jamais programmé** : Pactols en
+fait une « opération préventive de diagnostic ». Quand seul Programmée est
+coché, la case Diagnostic se grise et porte la mention « (toujours
+préventif) ». Une case déjà cochée ne se décoche jamais d'elle-même : une
+notice qui joint un diagnostic à une fouille programmée garde « Fouille
+programmée » et « Diagnostic ». La page de relecture applique la même règle à
+l'enregistrement.
 
 Une notice reçue avant la 3.107 se rouvre — à la correction, à la relecture —
 dans ces cases : « Fouille préventive » coche Fouille et Préventive,

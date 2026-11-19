@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.107
+ * Version:           3.108
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -291,7 +291,6 @@ class Notice_Archeomed_Pactols {
 			'Sondage programmé',
 			'Diagnostic',
 			'Diagnostic préventif',
-			'Diagnostic programmé',
 			'Surveillance de travaux',
 			'Surveillance de travaux préventive',
 			'Surveillance de travaux programmée',
@@ -333,7 +332,6 @@ class Notice_Archeomed_Pactols {
 		'Sondage préventif'                 => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
 		'Diagnostic'                        => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
 		'Diagnostic préventif'              => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
-		'Diagnostic programmé'              => 'https://ark.frantiq.fr/ark:/26678/pcrtWWQS75V5Bc',
 		'Surveillance de travaux préventive' => 'https://ark.frantiq.fr/ark:/26678/crtZ49Dtn1aMT',
 		'Surveillance de travaux programmée' => 'https://ark.frantiq.fr/ark:/26678/crtZ49Dtn1aMT',
 		'Opération d’archéologie préventive' => 'https://ark.frantiq.fr/ark:/26678/pcrt9A9KDllfAq',
@@ -375,7 +373,7 @@ class Notice_Archeomed_Pactols {
 	private $natures_a_la_lettre = array(
 		'Étude de bâti', 'Étude de bâti préventive', 'Étude de bâti programmée',
 		'Sondage', 'Sondage préventif',
-		'Diagnostic', 'Diagnostic préventif', 'Diagnostic programmé',
+		'Diagnostic', 'Diagnostic préventif',
 		'Surveillance de travaux préventive', 'Surveillance de travaux programmée',
 	);
 	/**
@@ -408,6 +406,19 @@ class Notice_Archeomed_Pactols {
 	const NATURES_DU_CADRE = array(
 		'Préventive' => 'Opération d’archéologie préventive',
 		'Programmée' => 'Opération d’archéologie programmée',
+	);
+	/**
+	 * Les cadres qu'un type n'admet pas.
+	 *
+	 * Un diagnostic est toujours préventif — Pactols en fait une « opération
+	 * préventive de diagnostic » — et la rédaction ne veut pas de
+	 * « Diagnostic programmé ». Coché avec le seul cadre programmé, il reste
+	 * « Diagnostic » : rien ne se perd d'une notice qui joint une fouille
+	 * programmée et un diagnostic. La page grise la case tant qu'elle n'est
+	 * pas cochée.
+	 */
+	const CADRES_EXCLUS = array(
+		'Diagnostic' => array( 'Programmée' ),
 	);
 	/** Les termes d'avant les types, et le type qui les remplace. */
 	const NATURES_RENOMMEES = array(
@@ -1541,11 +1552,12 @@ class Notice_Archeomed_Pactols {
 		$autre  = false;
 		foreach ( array_map( 'strval', (array) $cochees ) as $cochee ) {
 			if ( isset( self::TYPES_D_OPERATION[ $cochee ] ) ) {
-				$type = true;
-				if ( empty( $cadres ) ) {
+				$type  = true;
+				$siens = isset( self::CADRES_EXCLUS[ $cochee ] ) ? array_values( array_diff( $cadres, self::CADRES_EXCLUS[ $cochee ] ) ) : $cadres;
+				if ( empty( $siens ) ) {
 					$termes[] = $cochee;
 				}
-				foreach ( $cadres as $cadre ) {
+				foreach ( $siens as $cadre ) {
 					$termes[] = $cochee . ' ' . self::CADRES[ $cadre ][ self::TYPES_D_OPERATION[ $cochee ] ];
 				}
 			} elseif ( isset( $this->natures[ $cochee ] ) ) {
@@ -2626,6 +2638,26 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * La mention d'un type qui n'admet pas tous les cadres — « (toujours
+	 * préventif) » pour le diagnostic —, que la page montre quand elle
+	 * grise sa case.
+	 */
+	private function note_hors_cadre( $type ) {
+		if ( ! isset( self::CADRES_EXCLUS[ $type ], self::TYPES_D_OPERATION[ $type ] ) ) {
+			return '';
+		}
+		$restants = array_diff( array_keys( self::CADRES ), self::CADRES_EXCLUS[ $type ] );
+		$accords  = array();
+		foreach ( $restants as $cadre ) {
+			$accords[] = self::CADRES[ $cadre ][ self::TYPES_D_OPERATION[ $type ] ];
+		}
+		if ( empty( $accords ) ) {
+			return '';
+		}
+		return ' <span class="na-note-cadre">(toujours ' . esc_html( implode( ' ou ', $accords ) ) . ')</span>';
+	}
+
+	/**
 	 * Le groupe « Nature de l'opération » : le cadre en tête, puis les types
 	 * d'opération, les prospections et les projets collectifs.
 	 *
@@ -2659,6 +2691,7 @@ class Notice_Archeomed_Pactols {
 					. '<input type="checkbox" id="na-nature-' . $n . '" name="nature[]" value="'
 					. esc_attr( $opt ) . '"' . $this->repris_nature( 'nature', $opt ) . '> '
 					. esc_html( isset( $this->libelles_des_natures[ $opt ] ) ? $this->libelles_des_natures[ $opt ] : $opt )
+					. $this->note_hors_cadre( $opt )
 					. '</label>';
 			}
 			$html .= '</div></fieldset>';
@@ -3479,6 +3512,11 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form label.na-check { display: flex; align-items: center; gap: var(--na-e3); min-height: var(--na-cible);
 				margin: 0; padding: var(--na-e1) var(--na-e2); font-weight: 400; line-height: 1.35; border-radius: var(--na-r1); cursor: pointer; }
 			.na-form#na-form label.na-check:hover { background: var(--na-fond); }
+			.na-form#na-form label.na-check .na-note-cadre { display: none; }
+			.na-form#na-form label.na-check.na-hors-cadre { color: var(--na-sourd); cursor: not-allowed; }
+			.na-form#na-form label.na-check.na-hors-cadre:hover { background: none; }
+			.na-form#na-form label.na-check.na-hors-cadre .na-note-cadre { display: inline; }
+			.na-form#na-form label.na-check.na-hors-cadre input[type=checkbox] { cursor: not-allowed; }
 			.na-form#na-form input[type=checkbox] { -webkit-appearance: auto; appearance: auto; flex: none;
 				width: 1.5rem; height: 1.5rem; margin: 0; accent-color: var(--na-accent); cursor: pointer; }
 
@@ -9120,6 +9158,26 @@ class Notice_Archeomed_Pactols {
 					avisBrouillon = null;
 				}
 			}
+			// Un diagnostic n'est jamais programmé : avec ce seul cadre, sa case
+			// se grise et dit « (toujours préventif) ». Une case déjà cochée —
+			// une notice qui joint un diagnostic à une fouille programmée — ne
+			// se décoche jamais d'elle-même : le serveur en fait « Diagnostic ».
+			var CADRES_EXCLUS = <?php echo wp_json_encode( self::CADRES_EXCLUS, JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			function accorderLesCadres() {
+				var cadres = [].map.call(form.querySelectorAll('input[name="cadre[]"]:checked'), function (c) { return c.value; });
+				[].forEach.call(form.querySelectorAll('input[name="nature[]"]'), function (c) {
+					var exclus = Object.prototype.hasOwnProperty.call(CADRES_EXCLUS, c.value) ? CADRES_EXCLUS[c.value] : null;
+					var hors = !!exclus && !c.checked && cadres.length > 0
+						&& cadres.every(function (k) { return exclus.indexOf(k) !== -1; });
+					c.disabled = hors;
+					var l = c.closest('label');
+					if (l) { l.classList.toggle('na-hors-cadre', hors); }
+				});
+			}
+			form.addEventListener('change', function (e) {
+				if (e.target && (e.target.name === 'cadre[]' || e.target.name === 'nature[]')) { accorderLesCadres(); }
+			});
+			accorderLesCadres();
 			// Un brouillon d'avant les types gardait « Fouille préventive » en
 			// une case : elle revient à Fouille et à Préventive, sans quoi la
 			// nature se perdrait à la reprise.
@@ -9165,6 +9223,7 @@ class Notice_Archeomed_Pactols {
 					refreshFileInput();
 				}
 				categories.forEach(function (c) { c.relire(); });
+				accorderLesCadres();
 				suivreLaMatiere();
 				jugerLaParenthese();
 				ajusterLesReplis();
