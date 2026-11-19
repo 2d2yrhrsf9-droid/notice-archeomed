@@ -4390,7 +4390,8 @@ na_verifier( true === $pur_efface['ok'] && null === get_post( $pur_1 ) && null =
 	&& false === get_option( 'na_dossier_' . md5( 'essai-purge/Evreux' ) ) && (string) $pur_3 === get_option( 'na_dossier_' . md5( 'essai-purge/Vernon' ) )
 	&& in_array( 'pur@annuaire.test', $pur_ann2, true ) && in_array( 'anne@annuaire.test', $pur_ann2, true ),
 	'l\'effacement vide la corbeille, rend les noms de dossier des seules notices effacées, et l\'annuaire garde leurs auteurs',
-	array( $pur_efface, $pur_ann2 ) );
+	array( $pur_efface, $pur_ann2, get_post_status( $pur_1 ), get_post_status( $pur_3 ), $S_::compter_au_statut( 'trash' ),
+		get_option( 'na_dossier_' . md5( 'essai-purge/Evreux' ) ), get_option( 'na_dossier_' . md5( 'essai-purge/Vernon' ) ) ) );
 
 $pur_conf   = new Notice_Archeomed_Confidentialite();
 $pur_export = $pur_conf->exporter( 'PUR@annuaire.test', 1 );

@@ -591,13 +591,27 @@ class Notice_Archeomed_Rangement {
 	 * À ne faire qu'une fois leurs dossiers supprimés de sDrive : une
 	 * nouvelle notice de la même commune reprendrait le nom, et ses fichiers
 	 * iraient dans l'ancien dossier. Rend le nombre de noms rendus.
+	 *
+	 * Les noms sont lus avant d'être effacés : WordPress garde en mémoire
+	 * les réglages qu'il a lus, et un nom rendu en base resterait pris pour
+	 * lui jusqu'à la fin de la page. Un nom orphelin ne change plus de
+	 * valeur — une notice nouvelle ne le prend pas tant qu'il existe —, et
+	 * l'effacement le vérifie encore.
 	 */
 	public static function liberer_les_noms_orphelins() {
 		global $wpdb;
-		return (int) $wpdb->query( $wpdb->prepare(
-			"DELETE o FROM {$wpdb->options} o LEFT JOIN {$wpdb->posts} p ON p.ID = CAST(o.option_value AS UNSIGNED)
-			WHERE o.option_name LIKE %s AND p.ID IS NULL",
-			$wpdb->esc_like( 'na_dossier_' ) . '%' ) );
+		$orphelin = "FROM {$wpdb->options} o LEFT JOIN {$wpdb->posts} p ON p.ID = CAST(o.option_value AS UNSIGNED)
+			WHERE o.option_name LIKE %s AND p.ID IS NULL";
+		$motif = $wpdb->esc_like( 'na_dossier_' ) . '%';
+		$noms  = (array) $wpdb->get_col( $wpdb->prepare( "SELECT o.option_name {$orphelin}", $motif ) );
+		$rendus = (int) $wpdb->query( $wpdb->prepare( "DELETE o {$orphelin}", $motif ) );
+		foreach ( $noms as $nom ) {
+			wp_cache_delete( $nom, 'options' );
+		}
+		if ( $noms ) {
+			wp_cache_delete( 'alloptions', 'options' );
+		}
+		return $rendus;
 	}
 
 	/** Ce que la notice sait de ses fichiers rangés : chemin du serveur ⇒ copie. */
