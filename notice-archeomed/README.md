@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.105
+# Formulaire des notices d’archéologie médiévale — version 3.106
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -672,6 +672,13 @@ en A4 ; chaque image a pour texte de remplacement le texte alternatif de l'auteu
 défaut, pour une notice d'avant ce champ, le titre de sa figure).
 
 ## Texte saisi dans l'éditeur
+
+Depuis la 3.106, **la barre de mise en forme reste en haut de l'écran**
+tant que le texte y est : dans une longue notice, on ne remonte plus pour
+mettre un mot en italique. Elle revient à sa place quand le texte quitte
+l'écran. Le collage CSS y suffit d'ordinaire ; sous un thème qui enveloppe la
+page dans un bloc à défilement, ce qui le défait, la barre se fixe d'elle-même
+à la largeur de l'éditeur, sous la barre d'administration s'il y en a une.
 
 Gras, italique, exposant et indice sont convertis. L'**intertitre** se pose
 par le bouton T1 de la barre (écrit `h3`). La notice n'en a qu'un niveau :

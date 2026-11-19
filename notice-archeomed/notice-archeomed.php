@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.105
+ * Version:           3.106
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3271,6 +3271,10 @@ class Notice_Archeomed_Pactols {
 				display: flex; flex-wrap: wrap; gap: var(--na-e1); padding: var(--na-e1) var(--na-e2);
 				font-family: inherit; background: var(--na-fond); border: 1px solid var(--na-filet);
 				border-bottom-color: var(--na-filet-doux); border-radius: var(--na-r1) var(--na-r1) 0 0; }
+			/* Le collage se défait quand le thème enveloppe la page dans un bloc
+			   à défilement : la barre se fixe alors d'elle-même, le long du texte. */
+			.na-form#na-form .ql-toolbar.ql-snow.na-barre-flottante { position: fixed; z-index: 20;
+				box-shadow: 0 4px 12px rgba(31, 26, 23, .12); }
 			.na-form#na-form .ql-toolbar.ql-snow .ql-formats { display: flex; gap: 2px; margin: 0 var(--na-e3) 0 0; }
 			.na-form#na-form .ql-toolbar.ql-snow button { float: none; width: 2.25rem; height: 2.25rem; padding: .4375rem;
 				border-radius: var(--na-r1); background: none; color: var(--na-encre); }
@@ -4621,7 +4625,57 @@ class Notice_Archeomed_Pactols {
 						var h = barre.querySelector('.ql-header[value="' + t[0] + '"]');
 						if (h) { h.innerHTML = '<span aria-hidden="true">' + t[1] + '</span>'; h.classList.add('na-bouton-titre'); }
 					});
+					// La barre reste en haut de l'écran tant que le texte y est, sans
+					// quoi il fallait remonter à chaque mot à mettre en italique dans
+					// une longue notice. Le collage CSS y suffit, sauf sous un thème
+					// qui enveloppe la page dans un bloc à défilement : la barre s'y
+					// fixe alors d'elle-même, une cale tenant sa place, et revient
+					// quand le texte quitte l'écran.
+					var editeurTexte = document.getElementById('na-texte');
+					var cale = document.createElement('div');
+					cale.setAttribute('aria-hidden', 'true');
+					var barreFixee = false, placementPrevu = false;
+					function placerLaBarre() {
+						placementPrevu = false;
+						var e = editeurTexte.getBoundingClientRect();
+						var h = barre.offsetHeight;
+						var fixer = barreAFixer({ haut: parseFloat(window.getComputedStyle(barre).top) || 0, hBarre: h,
+							edHaut: e.top, edBas: e.bottom, barreHaut: barre.getBoundingClientRect().top, fixee: barreFixee });
+						if (fixer && !barreFixee) {
+							cale.style.height = h + 'px';
+							barre.parentNode.insertBefore(cale, barre);
+							barre.classList.add('na-barre-flottante');
+						} else if (!fixer && barreFixee) {
+							barre.classList.remove('na-barre-flottante');
+							barre.style.left = '';
+							barre.style.width = '';
+							if (cale.parentNode) { cale.parentNode.removeChild(cale); }
+						}
+						barreFixee = fixer;
+						if (barreFixee) {
+							barre.style.left = e.left + 'px';
+							barre.style.width = e.width + 'px';
+							cale.style.height = barre.offsetHeight + 'px';
+						}
+					}
+					function prevoirLaBarre() {
+						if (placementPrevu) { return; }
+						placementPrevu = true;
+						(window.requestAnimationFrame || function (f) { window.setTimeout(f, 16); })(placerLaBarre);
+					}
+					document.addEventListener('scroll', prevoirLaBarre, { capture: true, passive: true });
+					window.addEventListener('resize', prevoirLaBarre);
+					quill.on('text-change', prevoirLaBarre);
+					prevoirLaBarre();
 				}
+			}
+			// La barre se fixe quand le haut du texte a passé le haut de l'écran
+			// (barre d'administration comprise), que son bas y laisse encore la
+			// place de la barre, et que le collage CSS ne la retient pas déjà.
+			function barreAFixer(m) {
+				if (m.edBas - m.edHaut <= 0) { return false; }
+				var dedans = m.edHaut < m.haut && m.edBas > m.haut + m.hBarre;
+				return m.fixee ? dedans : dedans && m.barreHaut < m.haut - 0.5;
 			}
 			// Le compteur passait au rouge dès le premier mot et jusqu'au
 			// deux-cent-quatre-vingt-dix-neuvième : il alarmait pendant qu'on

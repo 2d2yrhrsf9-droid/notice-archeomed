@@ -386,6 +386,49 @@ jobs:
           js = '\n'.join(fonction(f) for f in noms) + '\n' + decor
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # La barre de mise en forme reste en haut de l'écran le long du
+          # texte : elle se fixe quand le collage CSS ne la retient pas, et
+          # seulement tant que le texte occupe le haut de l'écran.
+          python3 - <<'PY'
+          import subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          i = t.find('function barreAFixer(')
+          if i < 0:
+              print("::error::La fonction barreAFixer manque au formulaire."); sys.exit(1)
+          j, n = t.index('{', i), 0
+          for k in range(j, len(t)):
+              n += {'{': 1, '}': -1}.get(t[k], 0)
+              if n == 0:
+                  break
+          for attendu in ("document.addEventListener('scroll', prevoirLaBarre, { capture: true, passive: true })",
+                          "window.addEventListener('resize', prevoirLaBarre)", "quill.on('text-change', prevoirLaBarre)",
+                          "barre.classList.add('na-barre-flottante')", "barre.classList.remove('na-barre-flottante')"):
+              if attendu not in t:
+                  print("::error::La barre flottante n'est plus branchée : " + attendu); sys.exit(1)
+          if '.ql-toolbar.ql-snow.na-barre-flottante { position: fixed;' not in open('/tmp/page.html', encoding='utf-8').read():
+              print("::error::La barre flottante n'a plus son style."); sys.exit(1)
+          decor = r'''
+          var B = 42, cas = [
+            ['texte plus bas que l\'écran : rien', { haut: 0, hBarre: B, edHaut: 300, edBas: 3000, barreHaut: 300, fixee: false }, false],
+            ['texte passé, collage défait : se fixe', { haut: 0, hBarre: B, edHaut: -800, edBas: 2200, barreHaut: -800, fixee: false }, true],
+            ['collage CSS qui tient : ne touche à rien', { haut: 0, hBarre: B, edHaut: -800, edBas: 2200, barreHaut: 0, fixee: false }, false],
+            ['barre d\'administration : compte au-dessous', { haut: 32, hBarre: B, edHaut: 10, edBas: 2200, barreHaut: 10, fixee: false }, true],
+            ['barre d\'administration, texte encore dessous : rien', { haut: 32, hBarre: B, edHaut: 40, edBas: 2200, barreHaut: 40, fixee: false }, false],
+            ['fixée, toujours dans le texte : reste', { haut: 0, hBarre: B, edHaut: -1500, edBas: 1500, barreHaut: 0, fixee: true }, true],
+            ['fixée, bas du texte qui monte : revient', { haut: 0, hBarre: B, edHaut: -3000, edBas: 30, barreHaut: 0, fixee: true }, false],
+            ['fixée, texte passé tout entier : revient', { haut: 0, hBarre: B, edHaut: -3200, edBas: -150, barreHaut: 0, fixee: true }, false],
+            ['fixée, retour au-dessus du texte : revient', { haut: 0, hBarre: B, edHaut: 200, edBas: 3200, barreHaut: 0, fixee: true }, false],
+            ['éditeur masqué : rien', { haut: 0, hBarre: B, edHaut: 0, edBas: 0, barreHaut: -10, fixee: false }, false],
+          ];
+          var faux = 0;
+          cas.forEach(function (c) {
+            var r = barreAFixer(c[1]);
+            if (r !== c[2]) { faux++; console.log('::error::Barre de mise en forme, ' + c[0] + ' : ' + r); }
+          });
+          process.exit(faux ? 1 : 0);
+          '''
+          sys.exit(subprocess.run(['node', '-e', t[i:k + 1] + '\n' + decor]).returncode)
+          PY
 
       - name: La relecture se fait sur une page du site, et le coordinateur n'entre pas dans l'administration
         working-directory: /tmp/wp
