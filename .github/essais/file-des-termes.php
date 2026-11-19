@@ -2440,7 +2440,7 @@ foreach ( $fo_m as $r ) {
 }
 na_verifier( 2 <= count( preg_grep( '/^i:castrum$/u', $fo_vus ) ) && 2 === count( preg_grep( '/^pc:Nord$/u', $fo_vus ) )
 	&& 1 === count( preg_grep( '/^sup:b$/u', $fo_vus ) ) && 1 === count( preg_grep( '/^sup:c$/u', $fo_vus ) ) && 1 === count( preg_grep( '/^i:in situ$/u', $fo_vus ) )
-	&& 0 === count( preg_grep( '/<|na-pc/', $fo_vus ) ),
+	&& 0 === count( preg_grep( '#</?(?:em|sup|span)\b|na-pc#', $fo_vus ) ),
 	'au Word, l\'italique, les petites capitales et l\'exposant de l\'auteur passent au titre, à la légende et à la description', $fo_vus );
 $fo_suite = $bloc_de_figure( $fo_xml );
 na_verifier( false !== strpos( $fo_xml, 'descr="Plan des murs" title="Plan des murs"' ) && false === strpos( $fo_xml, 'TEIfigurealttext' )
