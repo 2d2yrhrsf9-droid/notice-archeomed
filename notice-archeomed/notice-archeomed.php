@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.95
+ * Version: 3.96
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -655,6 +655,45 @@ class Notice_Archeomed_Pactols {
 		}
 		$lettre = isset( $d['rubrique_matiere'] ) && is_scalar( $d['rubrique_matiere'] ) ? strtoupper( trim( (string) $d['rubrique_matiere'] ) ) : '';
 		return array_key_exists( $lettre, self::MATIERES ) ? $lettre : '';
+	}
+
+	/**
+	 * La sous-rubrique où se range, dans la rubrique V, le renvoi qu'une
+	 * notice d'une autre rubrique y fait ; une chaîne vide sans renvoi vers
+	 * V, ou tant que personne ne l'a classé.
+	 *
+	 * Distincte de la matière de la notice : l'auteur ne la choisit pas, le
+	 * coordinateur de V la pose à la relecture. Sans elle, tous les renvois
+	 * se rangeaient en tête de V, sous « V. 1. ».
+	 */
+	public static function renvoi_matiere_de( $d ) {
+		if ( ! is_array( $d ) || self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( isset( $d['rubrique_principale'] ) && is_scalar( $d['rubrique_principale'] ) ? (string) $d['rubrique_principale'] : '' ) ) {
+			return '';
+		}
+		$vers_v = false;
+		foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
+			if ( isset( $d[ $champ ] ) && is_scalar( $d[ $champ ] ) && self::RUBRIQUE_ARTISANAT === self::rubrique_actuelle( (string) $d[ $champ ] ) ) {
+				$vers_v = true;
+			}
+		}
+		$lettre = isset( $d['renvoi_matiere'] ) && is_scalar( $d['renvoi_matiere'] ) ? strtoupper( trim( (string) $d['renvoi_matiere'] ) ) : '';
+		return ( $vers_v && array_key_exists( $lettre, self::MATIERES ) ) ? $lettre : '';
+	}
+
+	/**
+	 * La saisie d'une notice telle que la rubrique d'un de ses renvois la
+	 * range et la titre : sous cette rubrique, et dans V sous la
+	 * sous-rubrique que le coordinateur a choisie pour le renvoi.
+	 *
+	 * Le fascicule et le sommaire de la relecture passent tous deux par ici,
+	 * pour ranger un renvoi au même endroit.
+	 */
+	public static function saisie_du_renvoi( $d, $rubrique ) {
+		$rubrique = self::rubrique_actuelle( $rubrique );
+		return array_merge( (array) $d, array(
+			'rubrique_principale' => $rubrique,
+			'rubrique_matiere'    => self::RUBRIQUE_ARTISANAT === $rubrique ? self::renvoi_matiere_de( $d ) : '',
+		) );
 	}
 
 	/**
@@ -1398,9 +1437,10 @@ class Notice_Archeomed_Pactols {
 			// c'est la même opération, vue d'une autre rubrique. Mais il se
 			// range sous la rubrique du fascicule, comme il s'y titre : un
 			// renvoi venu de V gardait sa matière, « A1 », qui se classe après
-			// « 2 », et rouvrait « I. 1. » derrière « I. 2. ».
+			// « 2 », et rouvrait « I. 1. » derrière « I. 2. ». Dans V, il prend
+			// la sous-rubrique que son coordinateur lui a donnée.
 			$entrees[] = array( 'quoi' => 'renvoi', 'd' => $d, 'clef' => $this->classement_de(
-				array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ) );
+				self::saisie_du_renvoi( $d, $rubrique ) ) );
 		}
 		$entrees = $this->ranger_comme_au_fascicule( $entrees );
 
@@ -1411,7 +1451,7 @@ class Notice_Archeomed_Pactols {
 			// la rubrique II, et coupait la vraie en deux. La famille, elle,
 			// reste celle de l'opération.
 			$famille = $this->titre_de_famille( 'renvoi' === $entree['quoi']
-				? array_merge( $entree['d'], array( 'rubrique_principale' => $rubrique ) )
+				? self::saisie_du_renvoi( $entree['d'], $rubrique )
 				: $entree['d'] );
 			if ( $famille !== $famille_en_cours ) {
 				$doc->add_paragraph( Notice_Archeomed_Styles::de( 'sous_rubrique' ),
@@ -4357,7 +4397,7 @@ class Notice_Archeomed_Pactols {
 					// Un seul niveau d'intertitre, « h3 » : sous le titre de la
 					// notice, c'est un titre de niveau 3, que le document pose sous
 					// le style Métopes réglé pour lui. Le second niveau, « h4 », a
-					// quitté la barre ; une notice qui en porte déjà le garde.
+					// quitté la barre ; le serveur le ramène au premier.
 					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
@@ -5239,7 +5279,7 @@ class Notice_Archeomed_Pactols {
 					dessiner();
 					champ.value = '';
 					effacerLErreurDe(champ);
-					dire(guillemets(item.label) + (item.ark ? ' ajouté.' : ' gardé, mais absent de Pactols' + NBSP + ': il ne sera pas utilisé dans la notice.')
+					dire(guillemets(item.label) + (item.ark ? ' ajouté.' : ' gardé hors de la liste de Pactols' + NBSP + ': il ne sera pas utilisé dans la notice.')
 						+ (cat.type === 'place' && estUnLieuDuTitre(item) ? ' C’est déjà un lieu de l’opération, dans le titre' + NBSP + ': il y paraîtra deux fois.' : ''));
 					marquerModifie();
 					verifierLeConcept(cat, item);
@@ -5321,7 +5361,7 @@ class Notice_Archeomed_Pactols {
 				function avertirAvantDeGarder(q) {
 					confirmer = q;
 					dire('Aucune proposition n’est exactement ' + guillemets(q) + NBSP + ': choisissez-en une avec les flèches, '
-						+ 'ou appuyez de nouveau sur Entrée pour garder ' + guillemets(q) + ' tel quel' + NBSP + '; absent de Pactols, il ne sera pas utilisé dans la notice.');
+						+ 'ou appuyez de nouveau sur Entrée pour garder ' + guillemets(q) + ' tel quel' + NBSP + '; pris hors de la liste de Pactols, il ne sera pas utilisé dans la notice.');
 				}
 				champ.addEventListener('keydown', function (e) {
 					if (e.key !== 'Enter' || e.defaultPrevented) { return; }
@@ -8812,12 +8852,12 @@ class Notice_Archeomed_Pactols {
 			'br' => array(),
 			'span' => array( 'class' => true ),
 			'h3' => array(),
-			'h4' => array(),
 		);
-		// Les deux niveaux d'intertitre de l'éditeur, « h3 » et « h4 » ; un
-		// titre d'un autre niveau, venu d'ailleurs, rejoint le plus proche.
-		$html = preg_replace( '#<(/?)h[12](\s[^>]*)?>#i', '<$1h3>', (string) $html );
-		$html = preg_replace( '#<(/?)h[56](\s[^>]*)?>#i', '<$1h4>', (string) $html );
+		// La notice n'a qu'un niveau d'intertitre, « h3 » : un titre d'un
+		// autre niveau, collé d'ailleurs ou gardé d'une notice ancienne, le
+		// rejoint. Le second niveau, « h4 », en donnait un quatrième au
+		// fascicule, sous la rubrique, la sous-rubrique et le titre.
+		$html = preg_replace( '#<(/?)h[1-6](\s[^>]*)?>#i', '<$1h3>', (string) $html );
 		// Un élément de liste ou une citation collés font chacun un
 		// paragraphe. Sans cela, kses ôtait la balise en gardant le texte, et
 		// « Phase 1 : fossé » se soudait à « Phase 2 : mur ».
@@ -9412,7 +9452,7 @@ class Notice_Archeomed_Pactols {
 		}
 		if ( ! empty( $libres ) ) {
 			$doc->add_paragraph( Notice_Archeomed_DOCX::STYLE_A_SUPPRIMER, array(
-				array( 'text' => ( 1 === count( $libres ) ? 'Terme absent de Pactols, non retenu' : 'Termes absents de Pactols, non retenus' )
+				array( 'text' => ( 1 === count( $libres ) ? 'Terme pris hors de la liste de Pactols, non retenu' : 'Termes pris hors de la liste de Pactols, non retenus' )
 					. ' (' . $categorie . ') : ' . implode( ', ', $libres ) . '.' ),
 			) );
 		}
@@ -10244,7 +10284,7 @@ class Notice_Archeomed_Pactols {
 			if ( ! empty( $item['ark'] ) ) {
 				$line .= ' ' . $this->ark_link( $item['ark'] );
 			} elseif ( self::hors_pactols( $item ) ) {
-				$line .= esc_html( " — absent de Pactols, non retenu" );
+				$line .= esc_html( " — pris hors de la liste de Pactols, non retenu" );
 			} elseif ( ! empty( $item['idConcept'] ) ) {
 				$line .= ' [ID concept : ' . esc_html( $item['idConcept'] ) . ']';
 			}
@@ -11127,8 +11167,9 @@ class Notice_Archeomed_Pactols {
 		// Ou, si la correspondance des styles le demande, dans un paragraphe
 		// à lui, sans parenthèses : c'est la forme que la documentation
 		// Métopes donne au paragraphe d'autorités.
-		// Les paragraphes et les deux niveaux d'intertitre, chacun sous son
-		// style.
+		// Les paragraphes et les intertitres, chacun sous son style. Un
+		// « h4 » d'une notice ancienne est un intertitre comme un autre : la
+		// notice n'en a qu'un niveau.
 		$blocs     = $doc->html_to_blocs( $d['texte_notice'] );
 		$a_part    = Notice_Archeomed_Styles::responsabilites_a_part();
 		$bloc_resp = $this->responsables_rtf( $doc, $d, ! $a_part );
@@ -11144,9 +11185,8 @@ class Notice_Archeomed_Pactols {
 				$blocs[ $last ]['runs'] .= $bloc_resp;
 			}
 		}
-		$styles_des_niveaux = array( 0 => 'texte', 1 => 'intertitre_1', 2 => 'intertitre_2' );
 		foreach ( $blocs as $bloc ) {
-			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( $styles_des_niveaux[ $bloc['niveau'] ] ), $bloc['runs'] );
+			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 0 === $bloc['niveau'] ? 'texte' : 'intertitre_1' ), $bloc['runs'] );
 		}
 		if ( $a_part && '' !== $bloc_resp ) {
 			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'responsabilites' ), $bloc_resp );
@@ -11888,6 +11928,17 @@ class Notice_Archeomed_Pactols {
 		$d['commune_ark'] = isset( $d['lieux'][0] ) ? $d['lieux'][0]['ark'] : '';
 		// Corrigée en place, la notice ne remplace rien : elle reste elle-même.
 		$d['remplace'] = null !== $contexte ? '' : $this->reference_corrigee();
+		// Le rang de son renvoi dans V, que le coordinateur a posé à la
+		// relecture et que le formulaire ne montre pas, demeure tant que le
+		// renvoi demeure.
+		if ( null !== $contexte ) {
+			$ancienne = get_post_meta( (int) $contexte['id'], '_na_donnees', true );
+			$classe   = self::renvoi_matiere_de( array_merge( $d, array(
+				'renvoi_matiere' => is_array( $ancienne ) && isset( $ancienne['renvoi_matiere'] ) ? $ancienne['renvoi_matiere'] : '' ) ) );
+			if ( '' !== $classe ) {
+				$d['renvoi_matiere'] = $classe;
+			}
+		}
 		$d['organismes'] = $this->collect_organismes();
 		// Comme pour les lieux : « organisme » reste la ligne unique que le
 		// reste du plugin sait lire, et le contrôle des champs obligatoires
@@ -15092,7 +15143,7 @@ class Notice_Archeomed_Pactols {
 	 */
 	private function champs_changes( $avant, $d, $figures_changees ) {
 		$groupes = array(
-			'la rubrique'                 => array( 'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2' ),
+			'la rubrique'                 => array( 'rubrique_principale', 'rubrique_matiere', 'renvoi_1', 'renvoi_2', 'renvoi_matiere' ),
 			'les lieux'                   => array( 'lieux', 'commune', 'commune_ark' ),
 			'la précision géographique'   => array( 'departement' ),
 			'le lieu-dit'                 => array( 'lieu_dit' ),
@@ -15118,11 +15169,14 @@ class Notice_Archeomed_Pactols {
 			foreach ( $cles as $cle ) {
 				// Une clef que l'ancienne saisie ne portait pas — une notice
 				// d'avant le champ — n'a pas « changé » : elle est apparue.
-				if ( ! array_key_exists( $cle, (array) $avant ) ) {
+				// Sauf la sous-rubrique d'un renvoi vers V, que nul dépôt ne
+				// porte : la poser la première fois est déjà la changer.
+				if ( ! array_key_exists( $cle, (array) $avant ) && 'renvoi_matiere' !== $cle ) {
 					continue;
 				}
-				$neuf = isset( $d[ $cle ] ) ? $d[ $cle ] : '';
-				if ( wp_json_encode( $avant[ $cle ] ) !== wp_json_encode( $neuf ) ) {
+				$vieux = isset( $avant[ $cle ] ) ? $avant[ $cle ] : '';
+				$neuf  = isset( $d[ $cle ] ) ? $d[ $cle ] : '';
+				if ( wp_json_encode( $vieux ) !== wp_json_encode( $neuf ) ) {
 					$changes[] = $libelle;
 					break;
 				}
@@ -15979,6 +16033,24 @@ class Notice_Archeomed_Pactols {
 		$apres_vises              = array_values( array_filter( $renvois, 'strlen' ) );
 		$faits['renvois_retires'] = array_values( array_diff( $avant_vises, $apres_vises ) );
 		$faits['renvois_ajoutes'] = array_values( array_diff( $apres_vises, $avant_vises ) );
+
+		// ── La sous-rubrique d'un renvoi vers V : qui relit V la pose, ou la
+		// direction. Le renvoi retiré, elle s'efface avec lui. ────────────
+		$classe_avant = isset( $avant['renvoi_matiere'] ) && is_scalar( $avant['renvoi_matiere'] ) ? (string) $avant['renvoi_matiere'] : '';
+		$classe       = self::renvoi_matiere_de( $avant );
+		if ( self::RUBRIQUE_ARTISANAT === $rubrique || ! in_array( self::RUBRIQUE_ARTISANAT, $apres_vises, true ) ) {
+			$classe = '';
+		} elseif ( ! empty( $portee['classer_renvoi'] ) && isset( $_POST['renvoi_matiere'] ) && is_string( $_POST['renvoi_matiere'] ) ) {
+			$postee = strtoupper( sanitize_key( wp_unslash( $_POST['renvoi_matiere'] ) ) );
+			$classe = array_key_exists( $postee, self::MATIERES ) ? $postee : '';
+		}
+		if ( $classe !== $classe_avant && ( '' !== $classe || array_key_exists( 'renvoi_matiere', $avant ) ) ) {
+			$d['renvoi_matiere'] = $classe;
+			// Le renvoi retiré emporte son classement sans qu'on le redise.
+			if ( in_array( self::RUBRIQUE_ARTISANAT, $apres_vises, true ) ) {
+				$faits['renvoi_classe'] = $classe;
+			}
+		}
 		if ( ! empty( $portee['renvoi'] ) ) {
 			return array( $d, $faits );
 		}

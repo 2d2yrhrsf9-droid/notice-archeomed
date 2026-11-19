@@ -403,8 +403,9 @@ class Notice_Archeomed_RTF {
 
 	/**
 	 * Le texte de l'éditeur en blocs : paragraphes et intertitres. Chaque
-	 * bloc porte son niveau — 0 pour un paragraphe, 1 et 2 pour les deux
-	 * niveaux d'intertitre, écrits « h3 » et « h4 » par l'éditeur — et ses
+	 * bloc porte son niveau — 0 pour un paragraphe, 1 pour un intertitre
+	 * « h3 », 2 pour le « h4 » d'une notice ancienne, que le document rend
+	 * comme un intertitre — et ses
 	 * runs. Le style de chaque niveau est celui que la correspondance des
 	 * styles lui donne.
 	 */

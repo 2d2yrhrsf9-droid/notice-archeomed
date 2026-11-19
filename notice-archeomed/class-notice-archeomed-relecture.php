@@ -529,11 +529,15 @@ class Notice_Archeomed_Relecture {
 		$rendu['etat'] = $etat;
 		$valider       = isset( $_POST['suite'] ) && 'valider' === $_POST['suite'];
 		$fige          = 'validee' === $etat;
-		if ( $fige && ( isset( $_POST['texte_notice'] ) || ! empty( $_POST['retirer_renvoi'] ) || $valider ) ) {
+		// Qui range le renvoi dans V, et s'il le range ailleurs qu'il n'est :
+		// le choix laissé tel quel ne prend pas le verrou de la notice.
+		$classer       = self::peut_classer_le_renvoi( $droit, $compte );
+		$reclasse      = $classer && self::renvoi_reclasse( $id );
+		if ( $fige && ( isset( $_POST['texte_notice'] ) || ! empty( $_POST['retirer_renvoi'] ) || $reclasse || $valider ) ) {
 			$rendu['issue'] = 'figee';
 			return $rendu;
 		}
-		$corrige       = ( 'renvoi' === $droit['sorte'] ) ? ! empty( $_POST['retirer_renvoi'] ) : self::peut_corriger( $droit, $etat );
+		$corrige       = ( 'renvoi' === $droit['sorte'] ) ? ( ! empty( $_POST['retirer_renvoi'] ) || $reclasse ) : self::peut_corriger( $droit, $etat );
 		$rendu['issue'] = 'inchangee';
 		if ( $corrige ) {
 			$verrou = self::prendre_le_verrou( $id, $compte->ID );
@@ -543,7 +547,7 @@ class Notice_Archeomed_Relecture {
 				$rendu['par']   = $tenant ? (string) $tenant->display_name : '';
 				return $rendu;
 			}
-			$portee = array( 'tout' => 'tout' === $droit['sorte'], 'renvoi' => 'renvoi' === $droit['sorte'] ? $droit['rubrique'] : '' );
+			$portee = array( 'tout' => 'tout' === $droit['sorte'], 'renvoi' => 'renvoi' === $droit['sorte'] ? $droit['rubrique'] : '', 'classer_renvoi' => $classer );
 			$rendu  = array_merge( $rendu, $plugin->enregistrer_la_relecture( $id, $lue, $compte, $portee ) );
 			if ( 'renvoi' === $droit['sorte'] ) {
 				self::liberer_le_verrou( $id, $compte->ID );
@@ -611,6 +615,68 @@ class Notice_Archeomed_Relecture {
 		return $rendu;
 	}
 
+	/**
+	 * Ce compte range-t-il le renvoi de cette notice dans la rubrique V ? La
+	 * direction, et qui relit V — que la notice lui vienne en renvoi ou
+	 * qu'il relise aussi sa rubrique principale.
+	 */
+	public static function peut_classer_le_renvoi( $droit, $compte = null ) {
+		if ( ! is_array( $droit ) ) {
+			return false;
+		}
+		return 'tout' === $droit['sorte']
+			|| in_array( Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT, self::rubriques_de( $compte ), true );
+	}
+
+	/**
+	 * Le formulaire posté range-t-il le renvoi vers V ailleurs qu'il n'est
+	 * rangé ?
+	 */
+	private static function renvoi_reclasse( $id ) {
+		if ( ! isset( $_POST['renvoi_matiere'] ) || ! is_string( $_POST['renvoi_matiere'] ) ) {
+			return false;
+		}
+		$d = get_post_meta( (int) $id, '_na_donnees', true );
+		if ( '' === self::rubrique_du_renvoi_en_v( $d ) ) {
+			return false;
+		}
+		$postee = strtoupper( sanitize_key( wp_unslash( $_POST['renvoi_matiere'] ) ) );
+		$postee = array_key_exists( $postee, Notice_Archeomed_Pactols::MATIERES ) ? $postee : '';
+		return $postee !== Notice_Archeomed_Pactols::renvoi_matiere_de( $d );
+	}
+
+	/**
+	 * L'emplacement du renvoi vers V d'une notice d'une autre rubrique, ou
+	 * une chaîne vide.
+	 */
+	private static function rubrique_du_renvoi_en_v( $d ) {
+		if ( ! is_array( $d ) || Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === Notice_Archeomed_Pactols::rubrique_actuelle( isset( $d['rubrique_principale'] ) && is_scalar( $d['rubrique_principale'] ) ? (string) $d['rubrique_principale'] : '' ) ) {
+			return '';
+		}
+		foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
+			if ( isset( $d[ $champ ] ) && is_scalar( $d[ $champ ] ) && Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT === Notice_Archeomed_Pactols::rubrique_actuelle( (string) $d[ $champ ] ) ) {
+				return $champ;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Le choix de la sous-rubrique où le renvoi se range dans V. Le
+	 * coordinateur de V lit la notice sans la corriger ; c'est pourtant lui
+	 * qui sait où son fascicule la donne.
+	 */
+	private static function choix_du_classement_du_renvoi( $d, $actif ) {
+		echo '<p class="na-rel-champ na-rel-classement"><label for="na-rel-renvoi-matiere">'
+			. esc_html__( 'Sous-rubrique de ce renvoi dans la rubrique V', 'notice-archeomed' ) . '</label>'
+			. '<select id="na-rel-renvoi-matiere" name="renvoi_matiere"' . ( $actif ? '' : ' disabled' ) . '><option value="">'
+			. esc_html__( '— à classer (en tête de V)', 'notice-archeomed' ) . '</option>';
+		foreach ( Notice_Archeomed_Pactols::MATIERES as $lettre => $matiere ) {
+			echo '<option value="' . esc_attr( $lettre ) . '"' . selected( $lettre, Notice_Archeomed_Pactols::renvoi_matiere_de( $d ), false ) . '>' . esc_html( $lettre . ' — ' . $matiere ) . '</option>';
+		}
+		echo '</select></p>';
+	}
+
 	/** Ce qu'un enregistrement a fait, en lignes pour le journal. */
 	private static function ce_qui_s_est_fait( $rendu ) {
 		$quoi = array();
@@ -636,6 +702,11 @@ class Notice_Archeomed_Relecture {
 		}
 		foreach ( isset( $faits['renvois_ajoutes'] ) ? (array) $faits['renvois_ajoutes'] : array() as $rubrique ) {
 			$quoi[] = 'renvoi ajouté : ' . $rubrique;
+		}
+		if ( isset( $faits['renvoi_classe'] ) && is_string( $faits['renvoi_classe'] ) ) {
+			$quoi[] = '' !== $faits['renvoi_classe'] && isset( Notice_Archeomed_Pactols::MATIERES[ $faits['renvoi_classe'] ] )
+				? 'renvoi rangé dans V sous ' . $faits['renvoi_classe'] . ' — ' . Notice_Archeomed_Pactols::MATIERES[ $faits['renvoi_classe'] ]
+				: 'renvoi dans V : plus de sous-rubrique';
 		}
 		return $quoi;
 	}
@@ -824,11 +895,12 @@ class Notice_Archeomed_Relecture {
 		$renvois = array();
 		if ( $notice_archeomed_file instanceof Notice_Archeomed_File ) {
 			foreach ( $notice_archeomed_file->renvois_vers( $rubrique, true ) as $id => $d ) {
-				$renvois[] = array(
+				// Rangé et titré sous la rubrique lue, comme au fascicule.
+				$comme_renvoi = Notice_Archeomed_Pactols::saisie_du_renvoi( $d, $rubrique );
+				$renvois[]    = array(
 					'id'      => (int) $id,
-					// Rangé et titré sous la rubrique lue, comme au fascicule.
-					'clef'    => $plugin->classement_de( array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ),
-					'famille' => $plugin->titre_de_famille( array_merge( $d, array( 'rubrique_principale' => $rubrique ) ) ),
+					'clef'    => $plugin->classement_de( $comme_renvoi ),
+					'famille' => $plugin->titre_de_famille( $comme_renvoi ),
 					'titre'   => $plugin->titre_de_liste( $d ),
 				);
 			}
@@ -1065,8 +1137,9 @@ class Notice_Archeomed_Relecture {
 	}
 
 	/**
-	 * Ce que l'entrée du menu montre : où est la page de relecture, et, pour
-	 * la direction, de quoi la voir comme un coordinateur.
+	 * Ce que l'entrée du menu montre : d'abord, en grand, le lien de la page
+	 * de relecture, adressé à la personne ; puis, pour la direction, dans un
+	 * cadre plus discret, de quoi voir la relecture comme un coordinateur.
 	 */
 	public function afficher_le_lien() {
 		echo '<div class="wrap"><h1>' . esc_html__( 'Relecture de la Chronique', 'notice-archeomed' ) . '</h1>';
@@ -1077,17 +1150,44 @@ class Notice_Archeomed_Relecture {
 		echo '</div>';
 	}
 
-	/** L'adresse de la page de relecture, ou ce qu'il faut faire pour en avoir une. */
+	/**
+	 * Le prénom sous lequel saluer un compte, ou, s'il n'en a pas, le nom
+	 * qu'il affiche.
+	 */
+	private static function prenom_de( $compte ) {
+		if ( ! ( $compte instanceof WP_User ) ) {
+			return '';
+		}
+		$prenom = trim( (string) $compte->first_name );
+		return '' !== $prenom ? $prenom : trim( (string) $compte->display_name );
+	}
+
+	/**
+	 * L'adresse de la page de relecture, adressée à qui la lit, ou ce qu'il
+	 * faut faire pour en avoir une.
+	 */
 	private static function dire_la_page() {
 		$page = self::page();
-		if ( '' !== $page ) {
-			echo '<p>' . esc_html__( 'La relecture se fait sur le site, à cette adresse :', 'notice-archeomed' )
-				. ' <a href="' . esc_url( $page ) . '">' . esc_html( $page ) . '</a></p>';
+		if ( '' === $page ) {
+			echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
+				'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et direction relisent.',
+				self::SHORTCODE ) ) . '</p></div>';
 			return;
 		}
-		echo '<div class="notice inline notice-warning"><p>' . esc_html( sprintf(
-			'Aucune page publiée ne porte l’écran de relecture. Créez une page, posez-y le shortcode [%s], publiez-la : c’est là que coordinateurs et direction relisent.',
-			self::SHORTCODE ) ) . '</p></div>';
+		$compte    = wp_get_current_user();
+		$prenom    = self::prenom_de( $compte );
+		$rubriques = self::peut_tout( $compte ) ? array() : self::rubriques_de( $compte );
+		if ( self::peut_tout( $compte ) || empty( $rubriques ) ) {
+			$quoi = 'de l’ensemble des notices';
+		} else {
+			$courtes = self::rubriques_courtes( $rubriques );
+			$quoi    = 'des notices ' . ( 0 === strpos( $courtes, 'rubriques ' ) ? 'des ' : 'de la ' ) . $courtes;
+		}
+		$phrase = ( '' !== $prenom ? 'Bonjour ' . $prenom . ', voici' : 'Voici' ) . ' le lien pour effectuer la correction ' . $quoi . "\u{00A0}:";
+		echo '<p class="na-rel-accueil" style="font-size:1.6em;line-height:1.4;max-width:34em;margin:1.2em 0 .6em">' . esc_html( $phrase ) . '</p>'
+			. '<p style="font-size:1.25em;margin:0 0 2em"><a class="button button-primary button-hero" href="' . esc_url( $page ) . '">'
+			. esc_html__( 'Ouvrir la relecture', 'notice-archeomed' ) . '</a><br><a href="' . esc_url( $page ) . '" style="display:inline-block;margin-top:.6em;word-break:break-all">'
+			. esc_html( $page ) . '</a></p>';
 	}
 
 	// ── La relecture vue comme un coordinateur ────────────────────────────
@@ -1260,8 +1360,10 @@ class Notice_Archeomed_Relecture {
 		$vue       = self::vue();
 		$choisie   = self::valeur_du_regard( $vue );
 		$page      = self::page();
-		echo '<h2>' . esc_html__( 'Voir la relecture comme un coordinateur', 'notice-archeomed' ) . '</h2>'
-			. '<p class="description" style="max-width:46em">' . esc_html__( 'La page de relecture telle que la voit un coordinateur : ses rubriques, ses notices et ses renvois, ce qu’il corrige et ce qu’il lit seulement, avec ses boutons. Rien de ce qu’on y fait ne s’enregistre, et rien ne s’y verrouille. Le choix ne vaut que pour votre compte, deux heures au plus ; l’administration ne change pas. Avant la clôture de la campagne, la page se montre comme si elle était close.', 'notice-archeomed' ) . '</p>';
+		// Un cadre plus discret que le lien : c'est un outil de contrôle.
+		echo '<div class="card na-rel-regard" style="max-width:40em;margin-top:0">'
+			. '<h2 class="title" style="font-size:1.1em;margin:.4em 0">' . esc_html__( 'Voir le rôle de chacun', 'notice-archeomed' ) . '</h2>'
+			. '<p class="description">' . esc_html__( 'La relecture telle que la voit un coordinateur : ses notices, ses renvois, ce qu’il corrige et ce qu’il lit seulement. Rien ne s’y enregistre ni ne s’y verrouille ; le choix ne vaut que pour votre compte, deux heures au plus. Avant la clôture de la campagne, la page se montre comme si elle était close.', 'notice-archeomed' ) . '</p>';
 		if ( isset( $_GET['na_vue'] ) && 'refusee' === $_GET['na_vue'] ) {
 			echo '<div class="notice inline notice-error"><p>' . esc_html__( 'Ce choix n’est plus possible : le compte ne coordonne plus de rubrique, ou la page de relecture manque.', 'notice-archeomed' ) . '</p></div>';
 		}
@@ -1286,7 +1388,7 @@ class Notice_Archeomed_Relecture {
 		}
 		echo '</select> ';
 		submit_button( __( 'Voir la relecture comme lui', 'notice-archeomed' ), 'secondary', 'submit', false, '' === $page ? array( 'disabled' => 'disabled' ) : null );
-		echo '</p></form>';
+		echo '</p></form></div>';
 	}
 
 	/** L'adresse qui rend à chacun sa propre vue ; vers l'administration si l'on en vient. */
@@ -1790,11 +1892,14 @@ class Notice_Archeomed_Relecture {
 		echo '</select></p>';
 	}
 
-	/** Le texte d'une notice, réduit aux balises que l'éditeur connaît. */
+	/**
+	 * Le texte d'une notice, réduit aux balises que l'éditeur connaît : un
+	 * seul niveau d'intertitre, où un « h4 » d'une notice ancienne revient.
+	 */
 	private static function texte_propre( $html ) {
-		return wp_kses( (string) $html, array(
+		return wp_kses( (string) preg_replace( '#<(/?)h[1-6](\s[^>]*)?>#i', '<$1h3>', (string) $html ), array(
 			'p' => array(), 'br' => array(), 'em' => array(), 'strong' => array(), 'i' => array(), 'b' => array(),
-			'sup' => array(), 'sub' => array(), 'h3' => array(), 'h4' => array(), 'span' => array( 'class' => true ),
+			'sup' => array(), 'sub' => array(), 'h3' => array(), 'span' => array( 'class' => true ),
 		) );
 	}
 
@@ -1838,6 +1943,9 @@ class Notice_Archeomed_Relecture {
 		$autres = array_values( array_diff( $plugin->rubriques(), array( $principale ) ) );
 		self::choix_de_rubrique( 'renvoi_1', 'Renvoi', $autres, $valeur( 'renvoi_1' ), 'Aucun' );
 		self::choix_de_rubrique( 'renvoi_2', 'Second renvoi', $autres, $valeur( 'renvoi_2' ), 'Aucun' );
+		if ( '' !== self::rubrique_du_renvoi_en_v( $d ) && self::peut_classer_le_renvoi( $droit, $this->vu_par() ) ) {
+			self::choix_du_classement_du_renvoi( $d, true );
+		}
 		echo '</fieldset>';
 
 		// ── Lieu ──
@@ -2026,13 +2134,19 @@ class Notice_Archeomed_Relecture {
 	 */
 	private function afficher_la_lecture( $id, $notice, $droit, $rubrique ) {
 		$plugin = self::plugin();
-		echo '<iframe class="na-rel-lecture" title="' . esc_attr__( 'La notice, en lecture seule', 'notice-archeomed' ) . '" src="'
-			. esc_url( wp_nonce_url( add_query_arg( array( 'action' => 'na_relecture_lire', 'notice' => (int) $id ), admin_url( 'admin-post.php' ) ), 'na_relecture_lire_' . (int) $id ) ) . '"></iframe>';
+		// Le formulaire s'ouvre avant la notice : le classement d'un renvoi
+		// dans V se choisit au-dessus d'elle, et part avec le reste.
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="na-rel-form">'
 			. '<input type="hidden" name="action" value="na_relecture"><input type="hidden" name="notice" value="' . (int) $id . '">'
 			. '<input type="hidden" name="version" value="' . (int) $notice['version'] . '">'
 			. '<input type="hidden" name="rubrique" value="' . esc_attr( (string) ( array_search( $rubrique, $plugin->rubriques(), true ) + 1 ) ) . '">';
 		wp_nonce_field( 'na_relecture_' . (int) $id );
+		if ( '' !== self::rubrique_du_renvoi_en_v( $notice['d'] )
+			&& ( 'tout' === $droit['sorte'] || ( 'renvoi' === $droit['sorte'] && self::peut_classer_le_renvoi( $droit, $this->vu_par() ) ) ) ) {
+			self::choix_du_classement_du_renvoi( $notice['d'], 'renvoi' === $droit['sorte'] && 'validee' !== self::etat_de( $id ) );
+		}
+		echo '<iframe class="na-rel-lecture" title="' . esc_attr__( 'La notice, en lecture seule', 'notice-archeomed' ) . '" src="'
+			. esc_url( wp_nonce_url( add_query_arg( array( 'action' => 'na_relecture_lire', 'notice' => (int) $id ), admin_url( 'admin-post.php' ) ), 'na_relecture_lire_' . (int) $id ) ) . '"></iframe>';
 		if ( 'renvoi' === $droit['sorte'] && 'validee' !== self::etat_de( $id ) ) {
 			foreach ( array( 'renvoi_1', 'renvoi_2' ) as $champ ) {
 				if ( isset( $notice['d'][ $champ ] ) && $notice['d'][ $champ ] === $droit['rubrique'] ) {

@@ -599,8 +599,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
-| Intertitre du texte, premier niveau (T1) | `heading 3` (Titre 3) |
-| Intertitre du texte, second niveau (`h4` des notices anciennes) | `heading 4` (Titre 4) |
+| Intertitre du texte (T1) | `heading 3` (Titre 3) |
 | Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
 | Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
 | Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
@@ -653,13 +652,12 @@ défaut, pour une notice d'avant ce champ, le titre de sa figure).
 ## Texte saisi dans l'éditeur
 
 Gras, italique, exposant et indice sont convertis. L'**intertitre** se pose
-par le bouton T1 de la barre (écrit `h3`) ; le bouton T2 du second niveau
-(`h4`) en a été retiré, mais une notice qui en porte déjà le garde. Sous le
-titre de la notice, qui est de niveau 2, ce sont des titres de niveau 3 et 4,
-que le document pose sous les styles des blocs « Intertitre du texte » de
-l'onglet Styles Métopes — « heading 3 » et « heading 4 » (Titre 3 et Titre 4
-de Word) par défaut. Un titre collé dans l'éditeur, de quelque niveau qu'il
-soit, devient un intertitre T1 ; un intertitre ne reçoit pas
+par le bouton T1 de la barre (écrit `h3`). La notice n'en a qu'un niveau :
+sous le titre de la notice, qui est de niveau 2, c'est un titre de niveau 3,
+que le document pose sous le style du bloc « Intertitre du texte » de
+l'onglet Styles Métopes — « heading 3 » (Titre 3 de Word) par défaut. Un titre
+collé dans l'éditeur, de quelque niveau qu'il soit, et le `h4` d'une notice
+ancienne deviennent un intertitre T1 ; un intertitre ne reçoit pas
 l'avis de ponctuation finale — il en reçoit un, au contraire, s'il finit par
 « . », « , », « ; » ou « : » (« ? », « ! » et « … » restent permis) —, et le bloc de responsabilité ne s'y colle pas.
 Une liste ou une citation collées depuis Word deviennent chacune un paragraphe,
@@ -1325,6 +1323,12 @@ l'onglet « Relecture » affecte à une rubrique — on voit alors toutes ses
 rubriques —, soit une rubrique, même si personne n'y est encore affecté ; le
 bouton « Voir la relecture comme lui » mène à la page de relecture.
 
+L'entrée « Relecture » salue d'abord chacun par son prénom (à défaut, par le
+nom qu'affiche son compte) et donne en grand le lien de la page : « l'ensemble
+des notices » pour la direction, les notices de ses rubriques pour un
+coordinateur. Le choix du regard vient dessous, dans un cadre plus discret,
+sous le titre « Voir le rôle de chacun ».
+
 Tout s'y calcule avec les droits du coordinateur : son sommaire, ses notices
 et ses renvois, ce qu'il corrige et ce qu'il lit seulement, les états, les
 boutons et les messages. Une adresse forgée n'ouvre rien de plus qu'à lui.
@@ -1721,11 +1725,12 @@ heure et par connexion, le relais cesse de répondre — assez large pour qu'on
 ne le voie jamais en remplissant un formulaire, assez étroit pour que le site
 ne serve pas à marteler frantiq.fr.
 
-**Un terme absent de Pactols n'est pas utilisé.** L'auteur peut garder un
+**Un terme pris hors de la liste de Pactols ne sert pas.** L'auteur peut garder un
 terme tapé hors de la liste (deux fois Entrée), mais le formulaire le prévient
 qu'il ne servira pas. Le terme est marqué à la réception ; il sort de la ligne
 de sa catégorie dans le Word et la page de relecture, et se lit en dessous,
-« à supprimer » (« Terme absent de Pactols, non retenu (mots-clés) : … »), pour
+« à supprimer » (« Terme pris hors de la liste de Pactols, non
+retenu (mots-clés) : … »), pour
 que la rédaction puisse en choisir l'équivalent. Le courriel le dit aussi. Les
 termes sans identifiant d'une notice antérieure à cette marque restent tels
 qu'ils étaient.

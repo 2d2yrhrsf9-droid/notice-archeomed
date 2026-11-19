@@ -1721,10 +1721,10 @@ $xml_libres = str_replace( "\u{00A0}", ' ', html_entity_decode( strip_tags( str_
 $ligne_mots = preg_grep( '/^Mots-clés/u', explode( "\n", $xml_libres ) );
 na_verifier( 1 === count( $ligne_mots ) && false !== strpos( implode( '', $ligne_mots ), 'motte castrale' )
 	&& false !== strpos( implode( '', $ligne_mots ), 'ancien terme' ) && false === strpos( implode( '', $ligne_mots ), 'chemin creux' )
-	&& false !== strpos( $xml_libres, 'Terme absent de Pactols, non retenu (mots-clés) : chemin creux.' ),
+	&& false !== strpos( $xml_libres, 'Terme pris hors de la liste de Pactols, non retenu (mots-clés) : chemin creux.' ),
 	'le terme hors Pactols sort de la ligne des mots-clés et se lit « à supprimer » ; un terme sans ARK d\'une notice ancienne reste', $ligne_mots );
 $courriel_libres = na_appel( $plugin, 'pactols_keywords_block', array( 'Mots-clés', $recus_libres ) );
-na_verifier( false !== strpos( $courriel_libres, 'chemin creux — absent de Pactols, non retenu' ),
+na_verifier( false !== strpos( $courriel_libres, 'chemin creux — pris hors de la liste de Pactols, non retenu' ),
 	'le courriel dit le terme hors Pactols non retenu', $courriel_libres );
 
 WP_CLI::log( 'La lecture des termes par le serveur, coupée' );
@@ -2987,8 +2987,9 @@ foreach ( array( $cand_a, $cand_b, $cand_remplacee, $cand_correction ) as $cand_
 
 WP_CLI::log( 'Les intertitres du texte et le lieu-dit' );
 $propre_titres = na_appel( $plugin, 'clean_richtext', array( '<h1 class="x">Le site</h1><p>Texte.</p><h2>Phase 1</h2><h5>Le mur</h5><h3>Garde</h3><ul><li>un</li></ul>' ) );
-na_verifier( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h4>Le mur</h4><h3>Garde</h3>' === substr( $propre_titres, 0, strlen( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h4>Le mur</h4><h3>Garde</h3>' ) ),
-	'les titres collés rejoignent les deux niveaux d\'intertitre, « h3 » et « h4 »', $propre_titres );
+na_verifier( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h3>Le mur</h3><h3>Garde</h3>' === substr( $propre_titres, 0, strlen( '<h3>Le site</h3><p>Texte.</p><h3>Phase 1</h3><h3>Le mur</h3><h3>Garde</h3>' ) )
+	&& '<h3>Le comblement</h3>' === na_appel( $plugin, 'clean_richtext', array( '<h4>Le comblement</h4>' ) ),
+	'les titres collés, et le « h4 » d\'une notice ancienne, rejoignent l\'unique niveau d\'intertitre, « h3 »', $propre_titres );
 $doc_titres = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
 na_appel( $plugin, 'remplir_le_document', array( $doc_titres, array_merge( $saisie_styles, array(
 	'texte_notice' => '<p>Le site domine la vallée.</p><h3>La phase 1</h3><p>Un fossé.</p><h4>Le comblement</h4><p>Des tessons.</p><h3>Bilan</h3>' ) ) ) );
@@ -3000,12 +3001,13 @@ $styles_titres = array();
 foreach ( array( 'heading 3', 'heading 4' ) as $nom_titre ) {
 	$styles_titres[ $nom_titre ] = isset( $ids_titres[ $nom_titre ] ) ? $ids_titres[ $nom_titre ] : '';
 }
-na_verifier( '' !== $styles_titres['heading 3'] && '' !== $styles_titres['heading 4']
+na_verifier( '' !== $styles_titres['heading 3']
 	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>.*?La phase 1#s', $xml_titres )
-	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 4'] . '"/>.*?Le comblement#s', $xml_titres )
-	&& 2 === substr_count( $xml_titres, '<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>' )
+	&& 1 === preg_match( '#<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>(?:(?!</w:p>).)*Le comblement#s', $xml_titres )
+	&& ( '' === $styles_titres['heading 4'] || false === strpos( $xml_titres, '<w:pStyle w:val="' . $styles_titres['heading 4'] . '"/>' ) )
+	&& 3 === substr_count( $xml_titres, '<w:pStyle w:val="' . $styles_titres['heading 3'] . '"/>' )
 	&& 1 === preg_match( '#Bilan</w:t>.*?</w:p><w:p><w:pPr><w:pStyle w:val="[^"]+"/></w:pPr><w:r><w:t[^>]*>\(</w:t>.*?Responsable#s', $xml_titres ),
-	'au Word, les intertitres prennent les styles de leurs niveaux, « Titre 3 » et « Titre 4 » ; la responsabilité ne se colle pas à un intertitre final, et son paragraphe ne commence pas par une espace', $styles_titres );
+	'au Word, les intertitres, même le « h4 » d\'une notice ancienne, prennent le seul style « Titre 3 » ; la responsabilité ne se colle pas à un intertitre final, et son paragraphe ne commence pas par une espace', $styles_titres );
 na_verifier( array() === Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>' ) + array( 'illustrations' => array() ) )
 	|| ! preg_grep( '/La phase 1/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
 	'un intertitre sans point final ne reçoit pas l\'avis de ponctuation' );
@@ -3565,6 +3567,81 @@ $R::liberer_le_verrou( $rel_a, $coord_1 );
 na_verifier( 'enregistree' === $retrait_principal['issue'] && $rubs_rel[1] === $d_principal['renvoi_1'] && '' === $d_principal['renvoi_2']
 	&& array( $rubs_rel[3] ) === $retrait_principal['faits']['renvois_retires'],
 	'le coordinateur de la rubrique principale retire n\'importe quel renvoi de sa notice', $retrait_principal );
+
+// Un renvoi vers V se range dans l'une de ses trois sous-rubriques : qui
+// relit V la choisit, au-dessus de la notice qu'il ne corrige pas.
+$rub_v   = Notice_Archeomed_Pactols::RUBRIQUE_ARTISANAT;
+$rang_v  = array_search( $rub_v, $rubs_rel, true );
+$coord_v = $compte_rel( 'coord-cinq', 'Claire Petit', $R::ROLE );
+$R::regler( true, array( 0 => array( $coord_1, 999999 ), 1 => array( $coord_2 ), 9 => array( $coord_1 ), $rang_v => array( $coord_v ) ) );
+$_POST = wp_slash( array( 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rub_v ) );
+$R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_1 );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+$famille_en_v = function () use ( $R, $rub_v, $rel_a ) {
+	foreach ( $R::sommaire( $rub_v )['renvois'] as $e ) {
+		if ( $rel_a === (int) $e['id'] ) {
+			return (string) preg_replace( '/[\s\x{00A0}\x{202F}]+/u', ' ', $e['famille'] );
+		}
+	}
+	return null;
+};
+$famille_v_avant = $famille_en_v();
+$droit_v         = $R::droit_sur( $rel_a, $coord_v );
+na_verifier( false !== $rang_v && is_string( $famille_v_avant ) && false === strpos( $famille_v_avant, 'V. B' )
+	&& is_array( $droit_v ) && 'renvoi' === $droit_v['sorte'] && $R::peut_classer_le_renvoi( $droit_v, $coord_v )
+	&& ! $R::peut_classer_le_renvoi( $R::droit_sur( $rel_a, $coord_2 ), $coord_2 ),
+	'un renvoi vers V paraît au sommaire de V sans sous-rubrique, et seul qui relit V peut l\'y ranger', array( $famille_v_avant, $droit_v ) );
+$_POST = wp_slash( array( 'renvoi_matiere' => 'b' ) );
+$classe_par_ii = $R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_2 );
+$d_classe_ii   = $lire_rel( $rel_a );
+na_verifier( 'inchangee' === $classe_par_ii['issue'] && empty( $d_classe_ii['renvoi_matiere'] ),
+	'le coordinateur d\'une autre rubrique de renvoi ne range pas le renvoi dans V', $classe_par_ii );
+$version_v  = $file_rel->version_de( $rel_a );
+$classe_v   = $R::enregistrer( $rel_a, $version_v, $coord_v );
+$d_classe_v = $lire_rel( $rel_a );
+$journal_v  = $R::journal_de( $rel_a );
+$derniere_v = end( $journal_v );
+$famille_v  = $famille_en_v();
+na_verifier( 'enregistree' === $classe_v['issue'] && 'B' === $d_classe_v['renvoi_matiere'] && $version_v + 1 === $file_rel->version_de( $rel_a )
+	&& false !== strpos( implode( ' | ', $derniere_v['quoi'] ), 'renvoi rangé dans V sous B' ) && 'Claire Petit' === $derniere_v['par']
+	&& false === strpos( $d_classe_v['texte_notice'], 'récrit' ) && $rubs_rel[0] === $d_classe_v['rubrique_principale']
+	&& empty( $d_classe_v['rubrique_matiere'] ),
+	'qui relit V range le renvoi dans sa sous-rubrique, sans toucher à la notice ; le geste est au journal', array( $classe_v, $derniere_v ) );
+na_verifier( is_string( $famille_v ) && 0 === strpos( $famille_v, 'V. B1. –' ),
+	'au sommaire de V, le renvoi rangé paraît sous sa sous-rubrique', $famille_v );
+$famille_ii = null;
+foreach ( $R::sommaire( $rubs_rel[1] )['renvois'] as $e ) {
+	if ( $rel_a === (int) $e['id'] ) {
+		$famille_ii = (string) preg_replace( '/[\s\x{00A0}\x{202F}]+/u', ' ', $e['famille'] );
+	}
+}
+na_verifier( is_string( $famille_ii ) && 0 === strpos( $famille_ii, 'II. 1.' ),
+	'dans une autre rubrique, le même renvoi garde la sous-rubrique de celle-ci', $famille_ii );
+$classe_redite = $R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_v );
+na_verifier( 'inchangee' === $classe_redite['issue'] && $coord_v !== $R::verrou_de( $rel_a )['par'],
+	'redire le même rang ne fait pas de version', $classe_redite );
+$d_v_a = array_merge( $saisie_styles, array( 'commune' => 'Bayeux', 'lieux' => array( array( 'nom' => 'Bayeux', 'ark' => '' ) ),
+	'rubrique_principale' => $rub_v, 'rubrique_matiere' => 'A', 'renvoi_1' => '', 'nature' => 'Fouille préventive' ) );
+$erreur_v = '';
+$fasc_v   = na_appel( $plugin, 'fabriquer_le_fascicule', array( $rub_v, array( $d_v_a ), &$erreur_v ) );
+$xml_v    = str_replace( "\u{00A0}", ' ', $xml_du_docx( $fasc_v ) );
+if ( '' !== (string) $fasc_v ) {
+	@unlink( $fasc_v );
+}
+$pos_va = strpos( $xml_v, 'V. A1. –' );
+$pos_vb = strpos( $xml_v, 'V. B1. –' );
+$pos_vi = false !== $pos_vb ? strpos( $xml_v, 'Vire', $pos_vb ) : false;
+na_verifier( false !== $pos_va && false !== $pos_vb && $pos_va < $pos_vb && false !== $pos_vi,
+	'au fascicule de V, le renvoi rangé paraît sous sa sous-rubrique, après la matière qui la précède', '' !== $erreur_v ? $erreur_v : array( $pos_va, $pos_vb, $pos_vi ) );
+$_POST = wp_slash( array( 'retirer_renvoi' => array( 'renvoi_2' => '1' ), 'renvoi_1' => $rubs_rel[1], 'renvoi_2' => $rub_v ) );
+$retrait_v = $R::enregistrer( $rel_a, $file_rel->version_de( $rel_a ), $coord_1 );
+$R::liberer_le_verrou( $rel_a, $coord_1 );
+$d_retrait_v = $lire_rel( $rel_a );
+na_verifier( 'enregistree' === $retrait_v['issue'] && '' === $d_retrait_v['renvoi_2'] && '' === $d_retrait_v['renvoi_matiere']
+	&& null === $famille_en_v() && ! isset( $retrait_v['faits']['renvoi_classe'] ),
+	'le renvoi vers V retiré emporte sa sous-rubrique', $retrait_v );
+$R::regler( true, array( 0 => array( $coord_1, 999999 ), 1 => array( $coord_2 ), 9 => array( $coord_1 ) ) );
+wp_delete_user( $coord_v );
 
 // Les lieux du titre : un nom choisi prend l'identifiant du terme, un nom inchangé garde le sien.
 $ark_falaise = 'https://ark.frantiq.fr/ark:/26678/pcrtFalaiseEssai';
