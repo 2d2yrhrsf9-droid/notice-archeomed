@@ -387,6 +387,24 @@ class Notice_Archeomed_Forme {
 				t = lignes ? t.replace(/\r\n?/g, '\n').replace(/[\t\v\f]/g, ' ') : t.replace(/[\t\n\v\f\r]/g, ' ');
 				return t.replace(/[\x00-\x08\x0E-\x1F\x7F]/g, '');
 			}
+			// Le texte d'une notice n'a qu'une liste, à puces : une liste
+			// collée, numérotée ou à cocher, la rejoint. Avec « titres », un
+			// titre de tout rang devient l'intertitre, le seul niveau.
+			function naUneListeAPuces(delta, Delta, titres) {
+				var aRevoir = function (a) {
+					return !!a && ((!!a.list && a.list !== 'bullet') || (!!titres && !!a.header && a.header !== 3));
+				};
+				if (!delta.ops.some(function (op) { return aRevoir(op.attributes); })) { return delta; }
+				return delta.reduce(function (d, op) {
+					var a = op.attributes;
+					if (!aRevoir(a)) { return d.insert(op.insert, a); }
+					var b = {};
+					Object.keys(a).forEach(function (k) { b[k] = a[k]; });
+					if (b.list) { b.list = 'bullet'; }
+					if (titres && b.header) { b.header = 3; }
+					return d.insert(op.insert, b);
+				}, new Delta());
+			}
 			var NA_SANS_MARQUE = { i: false, pc: false, sup: false };
 			var NA_BLANC = /^[\s  ]$/;
 			function naFigurePousser(runs, texte, m) {

@@ -1895,12 +1895,14 @@ class Notice_Archeomed_Relecture {
 
 	/**
 	 * Le texte d'une notice, réduit aux balises que l'éditeur connaît : un
-	 * seul niveau d'intertitre, où un « h4 » d'une notice ancienne revient.
+	 * seul niveau d'intertitre, où un « h4 » d'une notice ancienne revient,
+	 * et la liste à puces.
 	 */
 	private static function texte_propre( $html ) {
 		return wp_kses( (string) preg_replace( '#<(/?)h[1-6](\s[^>]*)?>#i', '<$1h3>', (string) $html ), array(
 			'p' => array(), 'br' => array(), 'em' => array(), 'strong' => array(), 'i' => array(), 'b' => array(),
 			'sup' => array(), 'sub' => array(), 'h3' => array(), 'span' => array( 'class' => true ),
+			'ul' => array(), 'li' => array(),
 		) );
 	}
 
@@ -2367,23 +2369,34 @@ class Notice_Archeomed_Relecture {
 				quill = new Quill('#na-rel-editeur', {
 					theme: 'snow',
 					readOnly: !!R.vue,
-					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
+					formats: ['bold', 'italic', 'script', 'header', 'list'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
-							[{ 'header': 3 }],
+							[{ 'header': 3 }, { 'list': 'bullet' }],
 							['bold', 'italic'].concat(petitesCapitales ? ['petitescapitales'] : []),
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
 						],
-						keyboard: { bindings: { tab: { key: 'Tab', handler: function () { return true; } } } }
+						keyboard: { bindings: {
+							tab: { key: 'Tab', handler: function () { return true; } },
+							indent: false, outdent: false, 'list autofill': false
+						} }
 					}
 				});
+				// Comme au dépôt : une liste collée est à puces, un titre est
+				// l'intertitre.
+				try {
+					var DeltaRel = Quill.import('delta');
+					quill.clipboard.addMatcher(Node.ELEMENT_NODE, function (node, delta) {
+						return naUneListeAPuces(delta, DeltaRel, true);
+					});
+				} catch (e) {}
 				quill.root.setAttribute('role', 'textbox');
 				quill.root.setAttribute('aria-multiline', 'true');
 				quill.root.setAttribute('aria-labelledby', 'na-rel-texte-libelle');
 				var barre = form.querySelector('.ql-toolbar');
 				if (barre) {
-					[['.ql-header[value="3"]', 'Intertitre', 'T1'],
+					[['.ql-header[value="3"]', 'Intertitre', 'T1'], ['.ql-list[value="bullet"]', 'Liste à puces', ''],
 						['.ql-bold', 'Gras', ''], ['.ql-italic', 'Italique', ''], ['.ql-petitescapitales', 'Petites capitales', 'Pc'],
 						['.ql-script[value="super"]', 'Exposant', ''], ['.ql-script[value="sub"]', 'Indice', ''],
 						['.ql-clean', 'Effacer la mise en forme', '']].forEach(function (p) {

@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.101
+# Formulaire des notices d’archéologie médiévale — version 3.102
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -619,6 +619,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Mots-clés | `TEI_archeoCHR_keywords_subjects` |
 | Texte de la notice | Normal |
 | Intertitre du texte (T1) | `heading 3` (Titre 3) |
+| Élément de liste du texte (bouton Liste à puces) | `List Paragraph` (Paragraphe de liste), avec la puce de Word |
 | Image d'une illustration (texte alternatif dans son texte de remplacement, `descr`) | Normal |
 | Texte alternatif, à la fin du bloc de figure | aucun paragraphe (réglable) |
 | Description détaillée, en fin de légende (« Description : … ») | `TEI_figure_caption` |
@@ -681,8 +682,19 @@ collé dans l'éditeur, de quelque niveau qu'il soit, et le `h4` d'une notice
 ancienne deviennent un intertitre T1 ; un intertitre ne reçoit pas
 l'avis de ponctuation finale — il en reçoit un, au contraire, s'il finit par
 « . », « , », « ; » ou « : » (« ? », « ! » et « … » restent permis) —, et le bloc de responsabilité ne s'y colle pas.
-Une liste ou une citation collées depuis Word deviennent chacune un paragraphe,
-au lieu de se souder au suivant. Les entités HTML sont
+Depuis la 3.102, la **liste à puces** se pose par le bouton Liste à puces de
+la barre (écrite `<ul><li>`). Elle n'a qu'un niveau et qu'une sorte : une
+liste collée, numérotée ou emboîtée, devient une liste à puces à plat, et un
+tiret tapé en début de ligne reste un tiret. Au Word, chaque élément prend le
+style du bloc « Élément de liste du texte » — « List Paragraph » (Paragraphe
+de liste) par défaut — et la puce de Word, la vraie, celle du bouton
+« Puces » : c'est elle que la conversion Métopes reconnaît pour une liste,
+une puce tapée n'y étant qu'un caractère. La définition de cette puce
+s'ajoute à la numérotation du modèle, après les siennes ; un document sans
+liste garde la numérotation du modèle telle quelle. Un élément de liste ne
+reçoit pas l'avis de ponctuation finale, et le bloc de responsabilité ne s'y
+colle pas. Une citation collée depuis Word devient un paragraphe, au lieu de
+se souder au suivant. Les entités HTML sont
 résolues. Les caractères accentués et typographiques (œ, €, guillemets,
 apostrophes courbes) sont encodés en notation Unicode RTF, que Word et
 LibreOffice lisent sans réglage particulier. Un balisage mal équilibré est
@@ -1715,7 +1727,7 @@ Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 Au dépôt, la notice est relue par des règles qui **avertissent sans jamais
 refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), une
 ligne courte — moins de huit mots — sans ponctuation, qui est un intertitre
-posé sans le bouton T1 ou une liste (depuis la 3.101 ; les lignes courtes qui
+posé sans le bouton T1 ou une liste posée sans le bouton Liste à puces (depuis la 3.101 ; les lignes courtes qui
 se suivent ne donnent qu'un avis, « Les paragraphes 2 à 4… »), un
 paragraphe coupé en deux, un intertitre qui finit par un point, une figure appelée dans le texte qui n'est pas
 jointe ou une figure jamais appelée, un appel écrit « (figure 3) » ou

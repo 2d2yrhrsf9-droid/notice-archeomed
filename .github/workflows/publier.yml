@@ -236,7 +236,7 @@ jobs:
                             + [fonction(f) for f in ('finitBien', 'reprendEnBasDeCasse', 'citeCourt', 'lignesCourtes', 'ponctuationFinale')])
           long_ok = 'Le fossé nord de l’enclos a livré un abondant mobilier céramique.'
           titre = 'Établissement agropastoral carolingien et constructions seigneuriales'
-          suite = ' ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.'
+          suite = ' ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces ; sinon, terminez les phrases.'
           cas = [
               [[long_ok, 'fdgdfgfdg', long_ok, 'vcvcvcbc', 'cvbvcb', long_ok, 'Phase 1', 'Phase 2', 'Phase 3', titre], -1, [
                   'Le paragraphe 2 (« fdgdfgfdg ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
@@ -253,6 +253,42 @@ jobs:
               + 'var faux = cas.filter(function (c) { return JSON.stringify(ponctuationFinale(c[0], c[1]).map(function (a) { return a.split(NBSP).join(" "); })) !== JSON.stringify(c[2]); });\n' \
               + 'faux.forEach(function (c) { console.log("::error::" + JSON.stringify(c[0]) + " donne " + JSON.stringify(ponctuationFinale(c[0], c[1]))); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
+          # La liste à puces : le bouton est à la barre, la liste ne se crée
+          # pas à la frappe, et une liste collée, numérotée, devient à puces.
+          grep -q "{ 'list': 'bullet' }" /tmp/formulaire.js \
+            || { echo "::error::Le bouton de liste à puces manque à la barre du texte."; exit 1; }
+          grep -q "'list autofill': false" /tmp/formulaire.js \
+            || { echo "::error::Une liste se crée encore à la frappe d'un tiret."; exit 1; }
+          python3 - <<'PY'
+          import json, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          i = t.find('function naUneListeAPuces(')
+          if i < 0:
+              print("::error::La conversion des listes collées manque au formulaire."); sys.exit(1)
+          j, n = t.index('{', i), 0
+          for k in range(j, len(t)):
+              n += {'{': 1, '}': -1}.get(t[k], 0)
+              if n == 0:
+                  break
+          delta = ('function Delta(ops) { this.ops = ops || []; }\n'
+                   'Delta.prototype.insert = function (x, a) { var o = { insert: x }; if (a) { o.attributes = a; } this.ops.push(o); return this; };\n'
+                   'Delta.prototype.reduce = function (f, d) { return this.ops.reduce(f, d); };\n')
+          entree = [{'insert': 'un'}, {'insert': '\n', 'attributes': {'list': 'ordered'}},
+                    {'insert': 'deux'}, {'insert': '\n', 'attributes': {'list': 'checked', 'align': 'center'}},
+                    {'insert': 'Titre'}, {'insert': '\n', 'attributes': {'header': 1}},
+                    {'insert': 'trois'}, {'insert': '\n', 'attributes': {'list': 'bullet'}}]
+          voulu = [{'insert': 'un'}, {'insert': '\n', 'attributes': {'list': 'bullet'}},
+                   {'insert': 'deux'}, {'insert': '\n', 'attributes': {'list': 'bullet', 'align': 'center'}},
+                   {'insert': 'Titre'}, {'insert': '\n', 'attributes': {'header': 3}},
+                   {'insert': 'trois'}, {'insert': '\n', 'attributes': {'list': 'bullet'}}]
+          js = delta + t[i:k + 1] + '\nvar e = ' + json.dumps(entree) + ';\n' \
+              + 'var r = naUneListeAPuces(new Delta(e), Delta, true).ops;\n' \
+              + 'var s = naUneListeAPuces(new Delta([{ insert: "x" }, { insert: "\\n", attributes: { header: 1 } }]), Delta, false).ops;\n' \
+              + 'var ok = JSON.stringify(r) === ' + json.dumps(json.dumps(voulu, separators=(',', ':'))) + ' && s[1].attributes.header === 1;\n' \
+              + 'if (!ok) { console.log("::error::Les listes collées ne deviennent pas des listes à puces : " + JSON.stringify(r)); }\n' \
+              + 'process.exit(ok ? 0 : 1);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
 

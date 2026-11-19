@@ -80,6 +80,10 @@ class Notice_Archeomed_Styles {
 					// de niveau 3 : « Titre 3 » de Word, nommé « heading 3 »
 					// dans la feuille.
 					'intertitre_1'    => array( 'libelle' => 'Intertitre du texte', 'type' => 'paragraphe', 'defaut' => 'heading 3' ),
+					// Un élément de liste à puces : le « Paragraphe de liste »
+					// que Word pose avec ses puces, et que la conversion
+					// Métopes attend.
+					'liste'           => array( 'libelle' => 'Élément de liste du texte', 'type' => 'paragraphe', 'defaut' => 'List Paragraph' ),
 					'responsabilites' => array( 'libelle' => 'Bloc de responsabilité « (Responsable de l’opération : … ; …) »', 'type' => 'paragraphe', 'defaut' => self::COLLE_AU_TEXTE, 'colle' => true ),
 					'responsable'     => array( 'libelle' => 'Nom du responsable', 'type' => 'caractere', 'defaut' => 'TEI_archeoCHR_name:fld' ),
 					'coresponsable'   => array( 'libelle' => 'Nom du co-responsable', 'type' => 'caractere', 'defaut' => 'TEI_archeoCHR_name:fld' ),

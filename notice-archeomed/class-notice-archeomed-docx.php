@@ -91,6 +91,19 @@ class Notice_Archeomed_DOCX {
 	/** Le titre du fichier, que Word montre dans ses propriétés. */
 	private $titre = '';
 
+	/**
+	 * La numérotation à puces des listes du texte : son numéro dans la
+	 * numérotation du gabarit, et celui de sa définition. Zéro si le gabarit
+	 * n'a pas de numérotation où l'écrire.
+	 *
+	 * @var int
+	 */
+	private $num_liste      = 0;
+	private $abstract_liste = 0;
+
+	/** Vrai dès qu'un paragraphe de liste entre dans le document. */
+	private $listes_posees = false;
+
 	public function __construct( $template_path ) {
 		$this->template = $template_path;
 		$this->load_template();
@@ -167,8 +180,19 @@ class Notice_Archeomed_DOCX {
 			$this->error = 'Modèle DOCX illisible (archive invalide).';
 			return;
 		}
-		$styles = $zip->getFromName( 'word/styles.xml' );
+		$styles     = $zip->getFromName( 'word/styles.xml' );
+		$numerotage = $zip->getFromName( 'word/numbering.xml' );
 		$zip->close();
+		// Les numéros de la puce suivent ceux du gabarit : ils ne prennent
+		// la place d'aucune de ses listes.
+		if ( is_string( $numerotage ) && false !== strpos( $numerotage, '</w:numbering>' ) ) {
+			$max = function ( $motif ) use ( $numerotage ) {
+				preg_match_all( $motif, $numerotage, $m );
+				return $m[1] ? max( array_map( 'intval', $m[1] ) ) : 0;
+			};
+			$this->num_liste      = $max( '#<w:num\b[^>]*\bw:numId="(\d+)"#' ) + 1;
+			$this->abstract_liste = $max( '#<w:abstractNum\b[^>]*\bw:abstractNumId="(\d+)"#' ) + 1;
+		}
 		if ( false === $styles || '' === $styles ) {
 			$this->error = 'Le modèle DOCX ne contient pas de feuille de styles.';
 			return;
@@ -613,6 +637,49 @@ class Notice_Archeomed_DOCX {
 	}
 
 	/**
+	 * Un élément de liste : le paragraphe sous son style, et la puce de
+	 * Word, celle que pose le bouton « Puces ». C'est elle que la
+	 * conversion Métopes reconnaît pour une liste ; une puce tapée dans le
+	 * texte n'y serait qu'un caractère.
+	 */
+	public function add_list_item( $style_name, $xml_content ) {
+		$style = isset( $this->styles[ $style_name ] )
+			? '<w:pStyle w:val="' . self::esc( $this->styles[ $style_name ] ) . '"/>' : '';
+		$puce  = '';
+		if ( $this->num_liste > 0 ) {
+			$puce                = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="' . (int) $this->num_liste . '"/></w:numPr>';
+			$this->listes_posees = true;
+		}
+		$props        = $style . $puce;
+		$this->body[] = '<w:p>' . ( '' !== $props ? '<w:pPr>' . $props . '</w:pPr>' : '' ) . $xml_content . '</w:p>';
+	}
+
+	/**
+	 * La numérotation du gabarit, avec la puce des listes du texte : sa
+	 * définition après les siennes, son numéro après les siens. L'ordre
+	 * est celui que Word exige ; une numérotation qu'on ne sait pas lire
+	 * reste telle quelle.
+	 */
+	private function numerotation_avec_la_puce( $contenu ) {
+		if ( ! $this->listes_posees || false === strpos( $contenu, '</w:numbering>' ) ) {
+			return $contenu;
+		}
+		$definition = '<w:abstractNum w:abstractNumId="' . (int) $this->abstract_liste . '">'
+			. '<w:multiLevelType w:val="singleLevel"/>'
+			. '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>'
+			. '<w:lvlText w:val="' . "\u{2022}" . '"/><w:lvlJc w:val="left"/>'
+			. '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>';
+		$numero     = '<w:num w:numId="' . (int) $this->num_liste . '"><w:abstractNumId w:val="' . (int) $this->abstract_liste . '"/></w:num>';
+		// Le numéro, après le dernier « w:num » : avant la marque de
+		// nettoyage de Word pour Mac s'il y en a une, sinon avant la fin.
+		$fin     = preg_match( '#<w:numIdMacAtCleanup\b#', $contenu, $m, PREG_OFFSET_CAPTURE ) ? $m[0][1] : strrpos( $contenu, '</w:numbering>' );
+		$contenu = substr( $contenu, 0, $fin ) . $numero . substr( $contenu, $fin );
+		// La définition, avant le premier « w:num », qui vient d'être assuré.
+		preg_match( '#<w:num(?=[\s>])#', $contenu, $m, PREG_OFFSET_CAPTURE );
+		return substr( $contenu, 0, $m[0][1] ) . $definition . substr( $contenu, $m[0][1] );
+	}
+
+	/**
 	 * Un paragraphe encadré de rouge : ce qui doit arrêter l'œil du
 	 * préparateur avant l'import, là où une figure manque.
 	 *
@@ -878,19 +945,26 @@ class Notice_Archeomed_DOCX {
 		// Un intertitre s'ouvre sur une marque de bloc suivie de son niveau.
 		$html   = preg_replace( '#<h([34])\b[^>]*>#i', "\x00\x01$1", $html );
 		$html   = preg_replace( '#</h[34]\s*>#i', "\x00", $html );
+		// Un élément de liste, sur sa marque à lui.
+		$html   = preg_replace( '#<li\b[^>]*>#i', "\x00\x02", $html );
+		$html   = preg_replace( '#</li\s*>|</?[uo]l\b[^>]*>#i', "\x00", $html );
 		$html   = preg_replace( '#</p>#i', "\x00", $html );
 		$html   = preg_replace( '#<p[^>]*>#i', '', $html );
 		$out    = array();
 		foreach ( explode( "\x00", $html ) as $chunk ) {
 			$niveau = 0;
+			$liste  = false;
 			if ( preg_match( '/^\x01([34])/', $chunk, $m ) ) {
 				$niveau = (int) $m[1] - 2;
 				$chunk  = substr( $chunk, 2 );
+			} elseif ( 0 === strpos( $chunk, "\x02" ) ) {
+				$liste = true;
+				$chunk = substr( $chunk, 1 );
 			}
 			if ( '' === trim( wp_strip_all_tags( $chunk ) ) ) {
 				continue;
 			}
-			$out[] = array( 'niveau' => $niveau, 'runs' => $this->inline_html_to_runs( $chunk ) );
+			$out[] = array( 'niveau' => $niveau, 'liste' => $liste, 'runs' => $this->inline_html_to_runs( $chunk ) );
 		}
 		return $out;
 	}
@@ -1036,6 +1110,9 @@ class Notice_Archeomed_DOCX {
 			}
 			if ( '[Content_Types].xml' === $name && is_string( $contenu ) ) {
 				$contenu = $this->types_de_contenu( $contenu );
+			}
+			if ( 'word/numbering.xml' === $name && is_string( $contenu ) ) {
+				$contenu = $this->numerotation_avec_la_puce( $contenu );
 			}
 			if ( 'word/styles.xml' === $name && is_string( $contenu ) ) {
 				$contenu = self::langue_francaise( $contenu );

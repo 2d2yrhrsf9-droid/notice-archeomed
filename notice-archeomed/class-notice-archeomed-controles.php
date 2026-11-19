@@ -39,7 +39,7 @@ class Notice_Archeomed_Controles {
 	/**
 	 * En deçà de ce nombre de mots, un paragraphe qui ne finit pas par une
 	 * ponctuation n'est pas pris pour un texte tronqué : c'est un intertitre
-	 * posé sans le bouton T1, un élément de liste, une cellule de tableau, un
+	 * posé sans le bouton T1, une liste tapée sans ses puces, une cellule de tableau, un
 	 * libellé. L'avis le dit autrement, et réunit les lignes courtes qui se
 	 * suivent : une liste collée ne donne qu'un avis.
 	 */
@@ -141,11 +141,12 @@ class Notice_Archeomed_Controles {
 		// Chaque famille d'avis se donne ou non, selon les normes de la revue.
 		$familles = array(
 			// Un intertitre ne prend pas de point final : l'avis porte au
-			// contraire sur celui qui en a un.
+			// contraire sur celui qui en a un. Un élément de liste n'en prend
+			// pas davantage.
 			'ponctuation'      => function () use ( $d ) {
 				$texte = isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '';
 				return array_merge(
-					self::ponctuation_finale( self::paragraphes( preg_replace( '#<h([1-6])\b[^>]*>.*?</h\1\s*>#is', '', $texte ) ) ),
+					self::ponctuation_finale( self::paragraphes( preg_replace( '#<h([1-6])\b[^>]*>.*?</h\1\s*>|<li\b[^>]*>.*?</li\s*>#is', '', $texte ) ) ),
 					self::intertitres_ponctues( $texte )
 				);
 			},
@@ -281,7 +282,7 @@ class Notice_Archeomed_Controles {
 			return sprintf( 'Le paragraphe %1$d (%2$s) ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
 				$premier + 1, self::cite_court( $paragraphes[ $premier ] ) );
 		}
-		return sprintf( 'Les paragraphes %1$d %2$s %3$d (%4$s %5$s %6$s) ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
+		return sprintf( 'Les paragraphes %1$d %2$s %3$d (%4$s %5$s %6$s) ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces ; sinon, terminez les phrases.',
 			$premier + 1, 2 === count( $suite ) ? 'et' : 'à', $dernier + 1,
 			self::cite_court( $paragraphes[ $premier ] ), 2 === count( $suite ) ? 'et' : '…', self::cite_court( $paragraphes[ $dernier ] ) );
 	}

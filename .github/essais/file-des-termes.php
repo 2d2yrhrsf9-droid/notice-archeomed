@@ -676,14 +676,14 @@ na_verifier( 2 === count( $avis_ponct ) && false !== strpos( $avis_ponct[0], 'su
 	&& false !== strpos( $avis_ponct[1], 'aucune ponctuation' ),
 	'le paragraphe coupé et le texte tronqué se nomment chacun', $avis_ponct );
 $avis_liste = $C::ponctuation_finale( array( 'Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau' ) );
-na_verifier( array( 'Les paragraphes 1 à 4 (« Fosse 12 » … « Trou de poteau ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.' ) === $avis_liste,
+na_verifier( array( 'Les paragraphes 1 à 4 (« Fosse 12 » … « Trou de poteau ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces ; sinon, terminez les phrases.' ) === $avis_liste,
 	'des éléments de liste collés (moins de huit mots) font un seul avis, qui ne parle pas de texte tronqué', $avis_liste );
 $long_ok = 'Le fossé nord de l’enclos a livré un abondant mobilier céramique.';
 $avis_court = $C::ponctuation_finale( array( $long_ok, 'fdgdfgfdg', $long_ok, 'vcvcvcbc', 'cvbvcb', $long_ok, 'Phase 1', 'Phase 2', 'Phase 3', 'Établissement agropastoral carolingien et constructions seigneuriales' ) );
 na_verifier( array(
 		'Le paragraphe 2 (« fdgdfgfdg ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
-		'Les paragraphes 4 et 5 (« vcvcvcbc » et « cvbvcb ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
-		'Les paragraphes 7 à 10 (« Phase 1 » … « Établissement agropastoral carolingien e… ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
+		'Les paragraphes 4 et 5 (« vcvcvcbc » et « cvbvcb ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces ; sinon, terminez les phrases.',
+		'Les paragraphes 7 à 10 (« Phase 1 » … « Établissement agropastoral carolingien e… ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces ; sinon, terminez les phrases.',
 	) === $avis_court,
 	'une ligne courte sans ponctuation se signale seule, les lignes courtes qui se suivent ensemble, et un paragraphe ponctué sépare les suites', $avis_court );
 $avis_mixte = $C::ponctuation_finale( array( 'Sondage 3', 'Une fin sans point mais assez longue pour être une phrase tronquée au collage', 'Sondage 4' ) );
@@ -3302,6 +3302,81 @@ na_verifier( '' !== $styles_titres['heading 3']
 na_verifier( array() === Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>' ) + array( 'illustrations' => array() ) )
 	|| ! preg_grep( '/La phase 1/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<h3>La phase 1</h3><p>Un fossé.</p>', 'illustrations' => array() ) ) ),
 	'un intertitre sans point final ne reçoit pas l\'avis de ponctuation' );
+WP_CLI::log( 'La liste à puces du texte' );
+$propre_liste = na_appel( $plugin, 'clean_richtext', array( '<p>Trois phases :</p><ol><li data-list="ordered"><span class="ql-ui" contenteditable="false"></span>le fossé</li><li><p>le mur</p><ul><li>sa tranchée</li></ul></li><li>  </li></ol><p>Fin.</p>' ) );
+na_verifier( '<p>Trois phases :</p><ul><li>le fossé</li><li>le mur</li><li>sa tranchée</li></ul><p>Fin.</p>' === $propre_liste,
+	'une liste numérotée ou emboîtée devient une liste à puces d\'un seul niveau, sans élément vide ni paragraphe dans ses éléments', $propre_liste );
+$propre_isole = na_appel( $plugin, 'clean_richtext', array( '<p>Avant.</p><li>orphelin</li><p>Après.</p>' ) );
+na_verifier( '<p>Avant.</p><ul><li>orphelin</li></ul><p>Après.</p>' === $propre_isole,
+	'un élément de liste égaré reçoit sa liste', $propre_isole );
+$blocs_liste = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->html_to_blocs( $propre_liste );
+na_verifier( 5 === count( $blocs_liste )
+	&& array( false, true, true, true, false ) === array_column( $blocs_liste, 'liste' ),
+	'au Word, chaque élément de liste fait son bloc, marqué comme tel', $blocs_liste );
+$blocs_rtf = ( new Notice_Archeomed_RTF( Notice_Archeomed_Pactols::feuille_de_style( 'rtf' ) ) )->html_to_blocs( $propre_liste );
+na_verifier( array( false, true, true, true, false ) === array_column( $blocs_rtf, 'liste' ),
+	'au RTF de même', $blocs_rtf );
+$doc_liste = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_liste, array_merge( $saisie_styles, array(
+	'texte_notice' => '<p>Trois phases :</p><ul><li>le fossé</li><li>le mur</li></ul>' ) ) ) );
+$xml_liste   = implode( '', $corps->getValue( $doc_liste ) );
+$index_liste = new ReflectionProperty( $doc_liste, 'styles' );
+$index_liste->setAccessible( true );
+$ids_liste   = $index_liste->getValue( $doc_liste );
+$id_liste    = isset( $ids_liste['List Paragraph'] ) ? $ids_liste['List Paragraph'] : '';
+$num_liste   = new ReflectionProperty( $doc_liste, 'num_liste' );
+$num_liste->setAccessible( true );
+$numero_liste = (int) $num_liste->getValue( $doc_liste );
+na_verifier( '' !== $id_liste && $numero_liste > 0
+	&& 2 === substr_count( $xml_liste, '<w:pPr><w:pStyle w:val="' . $id_liste . '"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="' . $numero_liste . '"/></w:numPr></w:pPr>' )
+	&& 1 === preg_match( '#le mur</w:t>.*?</w:p><w:p><w:pPr><w:pStyle w:val="[^"]+"/></w:pPr><w:r><w:t[^>]*>\(</w:t>.*?Ferrand#si', $xml_liste ),
+	'au Word, les éléments de liste prennent le style « Paragraphe de liste » et la puce de Word ; la responsabilité ne se colle pas au dernier élément', array( $id_liste, $numero_liste ) );
+$dir_liste  = trailingslashit( get_temp_dir() ) . 'notice-archeomed-liste-' . wp_generate_password( 6, false, false );
+$docx_liste = $doc_liste->write_to( $dir_liste, 'liste.docx' );
+$numerotation = '';
+$document_liste = '';
+if ( '' !== $docx_liste && class_exists( 'ZipArchive' ) ) {
+	$zip_liste = new ZipArchive();
+	if ( true === $zip_liste->open( $docx_liste ) ) {
+		$numerotation   = (string) $zip_liste->getFromName( 'word/numbering.xml' );
+		$document_liste = (string) $zip_liste->getFromName( 'word/document.xml' );
+		$zip_liste->close();
+	}
+}
+$abstrait_liste = new ReflectionProperty( $doc_liste, 'abstract_liste' );
+$abstrait_liste->setAccessible( true );
+$abstrait = (int) $abstrait_liste->getValue( $doc_liste );
+$xml_num  = '' !== $numerotation ? simplexml_load_string( $numerotation ) : false;
+na_verifier( false !== $xml_num
+	&& 1 === substr_count( $numerotation, '<w:num w:numId="' . $numero_liste . '"><w:abstractNumId w:val="' . $abstrait . '"/></w:num>' )
+	&& 1 === substr_count( $numerotation, '<w:abstractNum w:abstractNumId="' . $abstrait . '">' )
+	&& false !== strpos( $numerotation, '<w:numFmt w:val="bullet"/>' )
+	&& strpos( $numerotation, '<w:abstractNum w:abstractNumId="' . $abstrait . '">' ) < strpos( $numerotation, '<w:num ' )
+	&& strrpos( $numerotation, '<w:num w:numId="' . $numero_liste . '">' ) > strrpos( $numerotation, '</w:abstractNum>' )
+	&& false !== strpos( $document_liste, '<w:numId w:val="' . $numero_liste . '"/>' ),
+	'le fichier Word porte la définition de la puce avant les numéros, et son numéro après ceux du modèle', substr( $numerotation, 0, 300 ) );
+$doc_sans = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_sans, $saisie_styles ) );
+$docx_sans = $doc_sans->write_to( $dir_liste, 'sans.docx' );
+$num_sans  = '';
+if ( '' !== $docx_sans && class_exists( 'ZipArchive' ) ) {
+	$zip_sans = new ZipArchive();
+	if ( true === $zip_sans->open( $docx_sans ) ) {
+		$num_sans = (string) $zip_sans->getFromName( 'word/numbering.xml' );
+		$zip_sans->close();
+	}
+}
+na_verifier( '' !== $num_sans && false === strpos( $num_sans, '<w:num w:numId="' . $numero_liste . '">' ),
+	'sans liste, la numérotation du modèle reste telle quelle' );
+@unlink( $docx_liste );
+@unlink( $docx_sans );
+@rmdir( $dir_liste );
+$courriel_liste = na_appel( $plugin, 'build_notice', array( array_merge( $saisie_styles, array(
+	'texte_notice' => '<p>Trois phases :</p><ul><li>le fossé</li><li>le mur</li></ul>', 'reference' => 'REFLISTE' ) ) ) );
+na_verifier( false !== strpos( $courriel_liste, '<ul style="margin:0 0 14px;padding-left:24px;"><li>le fossé</li><li>le mur</li></ul><p style="margin:0;">(' ),
+	'au courriel, la liste garde ses puces et la responsabilité prend son paragraphe après elle', $courriel_liste );
+na_verifier( ! preg_grep( '/aucune ponctuation/u', Notice_Archeomed_Controles::avis( array( 'texte_notice' => '<p>Trois phases :</p><ul><li>Fosse 12</li><li>Silo 4</li><li>Trou de poteau</li></ul><p>Le reste suit.</p>', 'illustrations' => array() ) ) ),
+	'un élément de liste sans point final ne reçoit pas l\'avis de ponctuation' );
 $avis_titres = Notice_Archeomed_Controles::intertitres_ponctues( '<h3>La phase 1.</h3><p>Un fossé.</p><h4>Le comblement&nbsp;:</h4><h3>Un enclos ?</h3><h4>Et ensuite...</h4><h3>Bilan</h3>' );
 na_verifier( 2 === count( $avis_titres )
 	&& false !== strpos( $avis_titres[0], '« La phase 1. » finit par « . »' )

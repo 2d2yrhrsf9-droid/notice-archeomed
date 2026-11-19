@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.101
+ * Version:           3.102
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -3948,7 +3948,7 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants et les paragraphes sont conservés&nbsp;; les listes deviennent des paragraphes. Un intertitre se pose par le bouton T1. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants, les paragraphes et les listes sont conservés. Un intertitre se pose par le bouton T1, une liste par le bouton Liste à puces&nbsp;; une liste numérotée devient une liste à puces. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -4471,17 +4471,26 @@ class Notice_Archeomed_Pactols {
 					// notice, c'est un titre de niveau 3, que le document pose sous
 					// le style Métopes réglé pour lui. Le second niveau, « h4 », a
 					// quitté la barre ; le serveur le ramène au premier.
-					formats: ['bold', 'italic', 'script', 'header'].concat(petitesCapitales ? ['petitescapitales'] : []),
+					// La liste est à puces et d'un niveau : le Word la pose en
+					// « Paragraphe de liste », avec la puce de Word.
+					formats: ['bold', 'italic', 'script', 'header', 'list'].concat(petitesCapitales ? ['petitescapitales'] : []),
 					modules: {
 						toolbar: [
-							[{ 'header': 3 }],
+							[{ 'header': 3 }, { 'list': 'bullet' }],
 							['bold', 'italic'].concat(petitesCapitales ? ['petitescapitales'] : []),
 							[{ 'script': 'super' }, { 'script': 'sub' }],
 							['clean']
 						],
 						// Tab insérait une tabulation : au clavier, on ne sortait
-						// plus de l'éditeur qu'à reculons.
-						keyboard: { bindings: { tab: { key: 'Tab', handler: function () { return true; } } } }
+						// plus de l'éditeur qu'à reculons. Dans une liste, il
+						// l'aurait décalée d'un cran, que le document n'a pas.
+						// « 1. » ou « - » en tête de ligne ne font pas de liste
+						// d'eux-mêmes : un paragraphe qui commence par une date
+						// ou un numéro de phase en serait devenu une.
+						keyboard: { bindings: {
+							tab: { key: 'Tab', handler: function () { return true; } },
+							indent: false, outdent: false, 'list autofill': false
+						} }
 					}
 				});
 				// Le collage depuis Word apportait tout ce que porte son
@@ -4529,19 +4538,9 @@ class Notice_Archeomed_Pactols {
 							return new Delta();
 						}
 						// Un titre collé devient l'intertitre, le seul niveau
-						// qu'offre la barre, quel que soit son rang.
-						if (delta.ops.some(function (op) { return op.attributes && op.attributes.header; })) {
-							delta = delta.reduce(function (d, op) {
-								var a = op.attributes;
-								if (a && a.header) {
-									var b = {};
-									Object.keys(a).forEach(function (k) { b[k] = a[k]; });
-									b.header = 3;
-									return d.insert(op.insert, b);
-								}
-								return d.insert(op.insert, a);
-							}, new Delta());
-						}
+						// qu'offre la barre, quel que soit son rang ; une liste
+						// numérotée ou à cocher, la liste à puces.
+						delta = naUneListeAPuces(delta, Delta, true);
 						// Les petites capitales de Word — « xii » d'un siècle —
 						// arrivaient en bas de casse.
 						if (petitesCapitales && /font-variant\s*:\s*small-caps/i.test(styleDe(node))) {
@@ -4575,7 +4574,7 @@ class Notice_Archeomed_Pactols {
 				if (barre) {
 					barre.setAttribute('role', 'toolbar');
 					barre.setAttribute('aria-label', 'Mise en forme du texte');
-					[['.ql-header[value="3"]', 'Intertitre'],
+					[['.ql-header[value="3"]', 'Intertitre'], ['.ql-list[value="bullet"]', 'Liste à puces'],
 						['.ql-bold', 'Gras'], ['.ql-italic', 'Italique'], ['.ql-petitescapitales', 'Petites capitales'],
 						['.ql-script[value="super"]', 'Exposant'],
 						['.ql-script[value="sub"]', 'Indice'], ['.ql-clean', 'Effacer la mise en forme']].forEach(function (p) {
@@ -7664,8 +7663,9 @@ class Notice_Archeomed_Pactols {
 			// Le paragraphe en cours de frappe (« sauf ») attend sa fin.
 			var PARAGRAPHE_COURT = <?php echo (int) Notice_Archeomed_Controles::PARAGRAPHE_COURT; ?>;
 			function citeCourt(t) { return guillemets(points(t).length > 40 ? extrait(t, 40) + '…' : t); }
-			// Moins de huit mots : un intertitre posé sans le bouton T1, un
-			// élément de liste, une cellule de tableau, non une phrase tronquée.
+			// Moins de huit mots : un intertitre posé sans le bouton T1, une
+			// liste tapée sans ses puces, une cellule de tableau, non une
+			// phrase tronquée.
 			// Les lignes courtes qui se suivent ne font qu'un avis (comme au
 			// serveur, Notice_Archeomed_Controles::lignes_courtes).
 			function lignesCourtes(paras, suite) {
@@ -7677,7 +7677,7 @@ class Notice_Archeomed_Pactols {
 				var deux = suite.length === 2;
 				return 'Les paragraphes ' + (premier + 1) + (deux ? ' et ' : ' à ') + (dernier + 1)
 					+ ' (' + citeCourt(paras[premier]) + (deux ? ' et ' : ' … ') + citeCourt(paras[dernier]) + ') ne se terminent par aucune ponctuation'
-					+ NBSP + ': des intertitres se posent avec le bouton T1, une liste peut rester ainsi' + NBSP + '; sinon, terminez les phrases.';
+					+ NBSP + ': des intertitres se posent avec le bouton T1, une liste avec le bouton Liste à puces' + NBSP + '; sinon, terminez les phrases.';
 			}
 			function ponctuationFinale(paras, sauf) {
 				var avis = [], suite = [];
@@ -7823,16 +7823,18 @@ class Notice_Archeomed_Pactols {
 			var texteVu = false;
 			var zoneTexte = zoneDeConseils('na-texte-conseils', wc);
 			function estIntertitre(l) { return !!(l.formats && l.formats().header); }
+			function estElementDeListe(l) { return !!(l.formats && l.formats().list); }
 			function texteDeLigne(l) { return quill.getText(quill.getIndex(l), l.length()).trim(); }
-			// Les paragraphes du texte sans ses intertitres, qui ne prennent pas
-			// de point final : comme au serveur. « courant » est le rang de
-			// celui où l'on écrit, quand on y écrit.
+			// Les paragraphes du texte sans ses intertitres ni les éléments de
+			// ses listes, qui ne prennent pas de point final : comme au
+			// serveur. « courant » est le rang de celui où l'on écrit, quand on
+			// y écrit.
 			function parasSansIntertitres(enCours) {
 				var sel = enCours && quill.hasFocus() ? quill.getSelection() : null;
 				var ligne = sel ? quill.getLine(sel.index)[0] : null;
 				var textes = [], courant = -1;
 				quill.getLines().forEach(function (l) {
-					var t = estIntertitre(l) ? '' : texteDeLigne(l);
+					var t = estIntertitre(l) || estElementDeListe(l) ? '' : texteDeLigne(l);
 					if (!t) { return; }
 					if (l === ligne) { courant = textes.length; }
 					textes.push(t);
@@ -7942,7 +7944,7 @@ class Notice_Archeomed_Pactols {
 					if (!marque) { var c = /\[[A-Z]{1,4}\d{1,3}\]/.exec(p); if (c) { marque = c[0]; } }
 					if (/^[·•▪◦§o–-]\s{2,}/.test(p)) {
 						avis.push('Le paragraphe ' + (i + 1) + ' commence par une puce collée (' + guillemets(p.charAt(0)) + ')'
-							+ NBSP + ': les listes deviennent des paragraphes.');
+							+ NBSP + ': retirez-la et posez la liste avec le bouton Liste à puces.');
 					}
 				});
 				// Un chiffre en exposant après un mot — non « m² » — est un appel
@@ -9112,17 +9114,95 @@ class Notice_Archeomed_Pactols {
 			'br' => array(),
 			'span' => array( 'class' => true ),
 			'h3' => array(),
+			'ul' => array(),
+			'li' => array(),
 		);
 		// La notice n'a qu'un niveau d'intertitre, « h3 » : un titre d'un
 		// autre niveau, collé d'ailleurs ou gardé d'une notice ancienne, le
 		// rejoint. Le second niveau, « h4 », en donnait un quatrième au
 		// fascicule, sous la rubrique, la sous-rubrique et le titre.
 		$html = preg_replace( '#<(/?)h[1-6](\s[^>]*)?>#i', '<$1h3>', (string) $html );
-		// Un élément de liste ou une citation collés font chacun un
-		// paragraphe. Sans cela, kses ôtait la balise en gardant le texte, et
-		// « Phase 1 : fossé » se soudait à « Phase 2 : mur ».
-		$html = preg_replace( '#</(li|blockquote|div|pre|tr)\s*>#i', '</p><p>', (string) $html );
-		return self::petites_capitales_seules( wp_kses( $html, $allowed ) );
+		// Une citation collée fait un paragraphe. Sans cela, kses ôtait la
+		// balise en gardant le texte, et deux blocs se soudaient.
+		$html = preg_replace( '#</(blockquote|div|pre|tr)\s*>#i', '</p><p>', (string) $html );
+		// La liste est à puces, et n'a qu'un niveau : une liste numérotée la
+		// rejoint, comme le titre d'un autre niveau rejoint l'intertitre.
+		$html = preg_replace( '#<(/?)ol\b[^>]*>#i', '<$1ul>', (string) $html );
+		return self::listes_a_un_niveau( self::petites_capitales_seules( wp_kses( $html, $allowed ) ) );
+	}
+
+	/**
+	 * Les listes du texte, à plat : « <ul><li>…</li></ul> », un élément par
+	 * ligne de la liste, sans liste dans la liste.
+	 *
+	 * Une liste emboîtée, collée d'ailleurs, donne ses éléments à la liste
+	 * qui la contient. Un paragraphe dans un élément s'y réduit à un saut de
+	 * ligne ; un élément vide s'ôte, une liste vide aussi. Un élément égaré
+	 * hors de toute liste en reçoit une.
+	 */
+	private static function listes_a_un_niveau( $html ) {
+		$html = (string) $html;
+		if ( ! preg_match( '#<(?:ul|li)\b#i', $html ) ) {
+			return $html;
+		}
+		$morceaux  = preg_split( '#(</?(?:ul|li)\b[^>]*>)#i', $html, -1, PREG_SPLIT_DELIM_CAPTURE );
+		$sortie    = '';
+		$elements  = array();
+		$profondeur = 0;
+		$element   = null;
+		$clore     = function () use ( &$element, &$elements ) {
+			if ( null === $element ) {
+				return;
+			}
+			$propre  = preg_replace( '#<(?:p|h3)\b[^>]*>#i', '', $element );
+			$propre  = preg_replace( '#</(?:p|h3)\s*>#i', '<br>', $propre );
+			$propre  = preg_replace( '#^(?:\s|<br\s*/?>)+|(?:\s|<br\s*/?>)+$#i', '', $propre );
+			if ( '' !== trim( wp_strip_all_tags( $propre ) ) ) {
+				$elements[] = $propre;
+			}
+			$element = null;
+		};
+		$vider     = function () use ( &$elements, &$sortie ) {
+			if ( $elements ) {
+				$sortie  .= '<ul><li>' . implode( '</li><li>', $elements ) . '</li></ul>';
+				$elements = array();
+			}
+		};
+		foreach ( $morceaux as $i => $morceau ) {
+			if ( 1 === $i % 2 ) {
+				$balise = strtolower( preg_replace( '#^</?(\w+).*$#s', '$1', $morceau ) );
+				$ferme  = '/' === $morceau[1];
+				if ( 'ul' === $balise ) {
+					$profondeur = max( 0, $profondeur + ( $ferme ? -1 : 1 ) );
+					if ( $ferme && 0 === $profondeur ) {
+						$clore();
+						$vider();
+					}
+				} elseif ( $ferme ) {
+					$clore();
+				} else {
+					$clore();
+					$element = '';
+				}
+				continue;
+			}
+			if ( null !== $element ) {
+				$element .= $morceau;
+			} elseif ( $profondeur > 0 ) {
+				// Du texte entre deux éléments, après une liste emboîtée :
+				// il devient un élément, plutôt que de se perdre.
+				if ( '' !== trim( wp_strip_all_tags( $morceau ) ) ) {
+					$element = $morceau;
+					$clore();
+				}
+			} else {
+				$vider();
+				$sortie .= $morceau;
+			}
+		}
+		$clore();
+		$vider();
+		return $sortie;
 	}
 
 	/**
@@ -10752,6 +10832,10 @@ class Notice_Archeomed_Pactols {
 			$texte_html = '<p style="margin:0;">' . $bloc_resp . '</p>';
 		} elseif ( preg_match( '#</p>\s*$#', $texte ) ) {
 			$texte_html = preg_replace( '#</p>\s*$#', $bloc_resp . '</p>', $texte, 1 );
+		} elseif ( preg_match( '#</(?:ul|h3)>\s*$#', $texte ) ) {
+			// Après une liste ou un intertitre final, le bloc prend son
+			// paragraphe, comme au Word : il flottait sous la liste.
+			$texte_html = $texte . '<p style="margin:0;">' . ltrim( $bloc_resp ) . '</p>';
 		} else {
 			$texte_html = $texte . $bloc_resp;
 		}
@@ -10808,6 +10892,9 @@ class Notice_Archeomed_Pactols {
 		// L'intertitre T1 en simple gras, à la taille du texte : sans style,
 		// les messageries le grossissaient comme un titre de page.
 		$texte_html = preg_replace( '#<h3(\s[^>]*)?>#i', '<h3 style="font-size:15px;font-weight:bold;margin:14px 0 4px;">', $texte_html );
+		// La liste, en retrait mesuré : sans style, chaque messagerie
+		// choisissait le sien.
+		$texte_html = preg_replace( '#<ul(\s[^>]*)?>#i', '<ul style="margin:0 0 14px;padding-left:24px;">', $texte_html );
 		$html .= '<div style="' . $style_corps . '">' . $texte_html . '</div>';
 		$suffixe = array();
 		$bloc_illustrations = $this->illustrations_block( $d );
@@ -11496,9 +11583,10 @@ class Notice_Archeomed_Pactols {
 		$bloc_resp = $this->responsables_rtf( $doc, $d, ! $a_part );
 		if ( ! $a_part ) {
 			$last = count( $blocs ) - 1;
-			// Collé au dernier paragraphe — jamais à un intertitre, qu'un
-			// texte finirait par hasard : il prend alors son paragraphe.
-			if ( $last < 0 || 0 !== $blocs[ $last ]['niveau'] ) {
+			// Collé au dernier paragraphe — jamais à un intertitre ni à un
+			// élément de liste, qu'un texte finirait par hasard : il prend
+			// alors son paragraphe.
+			if ( $last < 0 || 0 !== $blocs[ $last ]['niveau'] || ! empty( $blocs[ $last ]['liste'] ) ) {
 				// Sans l'espace qui le séparait du point final : en tête de
 				// paragraphe, elle s'imprimait « ␣(Responsable… ».
 				$blocs[] = array( 'niveau' => 0, 'runs' => $this->responsables_rtf( $doc, $d, true, false ) );
@@ -11507,7 +11595,11 @@ class Notice_Archeomed_Pactols {
 			}
 		}
 		foreach ( $blocs as $bloc ) {
-			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 0 === $bloc['niveau'] ? 'texte' : 'intertitre_1' ), $bloc['runs'] );
+			if ( ! empty( $bloc['liste'] ) ) {
+				$doc->add_list_item( Notice_Archeomed_Styles::de( 'liste' ), $bloc['runs'] );
+			} else {
+				$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 0 === $bloc['niveau'] ? 'texte' : 'intertitre_1' ), $bloc['runs'] );
+			}
 		}
 		if ( $a_part && '' !== $bloc_resp ) {
 			$doc->add_raw_paragraph( Notice_Archeomed_Styles::de( 'responsabilites' ), $bloc_resp );
@@ -16402,7 +16494,7 @@ class Notice_Archeomed_Pactols {
 		}
 		$d = self::sans_les_masquees( self::figures_lisibles( $d ) );
 		return Notice_Archeomed_Controles::appels_de_figure(
-			wp_strip_all_tags( str_replace( array( '</p>', '</h3>', '</h4>', '<br>' ), "\n", isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '' ) ),
+			wp_strip_all_tags( str_replace( array( '</p>', '</h3>', '</h4>', '</li>', '<br>' ), "\n", isset( $d['texte_notice'] ) ? (string) $d['texte_notice'] : '' ) ),
 			count( isset( $d['illustrations'] ) ? (array) $d['illustrations'] : array() ) );
 	}
 

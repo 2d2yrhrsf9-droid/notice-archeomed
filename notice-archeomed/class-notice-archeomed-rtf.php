@@ -320,6 +320,14 @@ class Notice_Archeomed_RTF {
 		$this->body[] = '\\pard\\plain' . $code . ' ' . $rtf_content . '\\par';
 	}
 
+	/**
+	 * Un élément de liste : son style, une puce et un retrait en sommet.
+	 */
+	public function add_list_item( $style_name, $rtf_content ) {
+		$code         = $this->style_code( $style_name );
+		$this->body[] = '\\pard\\plain' . $code . '\\fi-360\\li720 \\bullet\\tab ' . $rtf_content . '\\par';
+	}
+
 	private function render_run( $run ) {
 		if ( is_string( $run ) ) {
 			return self::esc( $run );
@@ -418,19 +426,26 @@ class Notice_Archeomed_RTF {
 		// Un intertitre s'ouvre sur une marque de bloc suivie de son niveau.
 		$html   = preg_replace( '#<h([34])\b[^>]*>#i', "\x00\x01$1", $html );
 		$html   = preg_replace( '#</h[34]\s*>#i', "\x00", $html );
+		// Un élément de liste, sur sa marque à lui.
+		$html   = preg_replace( '#<li\b[^>]*>#i', "\x00\x02", $html );
+		$html   = preg_replace( '#</li\s*>|</?[uo]l\b[^>]*>#i', "\x00", $html );
 		$html   = preg_replace( '#</p>#i', "\x00", $html );
 		$html   = preg_replace( '#<p[^>]*>#i', '', $html );
 		$out    = array();
 		foreach ( explode( "\x00", $html ) as $chunk ) {
 			$niveau = 0;
+			$liste  = false;
 			if ( preg_match( '/^\x01([34])/', $chunk, $m ) ) {
 				$niveau = (int) $m[1] - 2;
 				$chunk  = substr( $chunk, 2 );
+			} elseif ( 0 === strpos( $chunk, "\x02" ) ) {
+				$liste = true;
+				$chunk = substr( $chunk, 1 );
 			}
 			if ( '' === trim( wp_strip_all_tags( $chunk ) ) ) {
 				continue;
 			}
-			$out[] = array( 'niveau' => $niveau, 'runs' => $this->inline_html_to_rtf( $chunk ) );
+			$out[] = array( 'niveau' => $niveau, 'liste' => $liste, 'runs' => $this->inline_html_to_rtf( $chunk ) );
 		}
 		return $out;
 	}
