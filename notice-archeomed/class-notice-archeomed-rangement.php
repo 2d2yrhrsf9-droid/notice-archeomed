@@ -586,6 +586,20 @@ class Notice_Archeomed_Rangement {
 			"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $cle ) );
 	}
 
+	/**
+	 * Rend les noms de dossier retenus pour des notices qui n'existent plus.
+	 * À ne faire qu'une fois leurs dossiers supprimés de sDrive : une
+	 * nouvelle notice de la même commune reprendrait le nom, et ses fichiers
+	 * iraient dans l'ancien dossier. Rend le nombre de noms rendus.
+	 */
+	public static function liberer_les_noms_orphelins() {
+		global $wpdb;
+		return (int) $wpdb->query( $wpdb->prepare(
+			"DELETE o FROM {$wpdb->options} o LEFT JOIN {$wpdb->posts} p ON p.ID = CAST(o.option_value AS UNSIGNED)
+			WHERE o.option_name LIKE %s AND p.ID IS NULL",
+			$wpdb->esc_like( 'na_dossier_' ) . '%' ) );
+	}
+
 	/** Ce que la notice sait de ses fichiers rangés : chemin du serveur ⇒ copie. */
 	public static function table_de( $id ) {
 		$table = get_post_meta( (int) $id, '_na_sdrive', true );

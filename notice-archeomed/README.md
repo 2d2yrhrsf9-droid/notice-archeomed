@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.102
+# Formulaire des notices d’archéologie médiévale — version 3.103
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1162,6 +1162,41 @@ Un fichier se classe d'après la notice qui le désigne, non d'après son nom,
 tiré au sort. Les fichiers se comptent à l'ouverture de l'onglet, en huit
 secondes au plus ; au-delà, les chiffres sont donnés pour des minimums.
 
+### Purger les notices
+
+Depuis la 3.103, le bas de l'onglet **Stockage** vide la Chronique de ses
+notices — après les essais, ou d'un numéro à l'autre. En deux temps, chacun
+demandé par un mot tapé en capitales, puis confirmé :
+
+1. **Mettre toutes les notices à la corbeille** (taper `PURGER`). Seules
+   partent les notices reçues quand la page s'est affichée : une notice
+   déposée entre-temps reste. De la corbeille, une notice se remet d'un
+   clic depuis la liste des notices, et redevient privée ;
+2. **Effacer les notices de la corbeille** (taper `EFFACER`), sans retour,
+   leurs fichiers avec elles. WordPress vide aussi la corbeille de lui-même
+   au bout de trente jours.
+
+Ce que la purge laisse et ce qu'elle vide :
+
+- **l'annuaire des auteurs n'est pas touché** : les auteurs des notices
+  purgées y restent, avec la référence de leurs notices, et passent dans
+  les deux exports. Une notice reçue plus tard complète leur ligne et, s'il
+  a changé, met à jour leur nom ou leur institution ;
+- la file d'export vers sDrive est vidée : elle n'aurait plus rien à
+  copier ;
+- les dossiers rangés sur sDrive restent tels quels ; ils se suppriment
+  là-bas, si on le veut. Leurs noms restent pris, pour qu'une nouvelle
+  notice de la même commune n'aille pas dans l'ancien dossier. Une case de
+  l'effacement, décochée d'office, les rend libres : à ne cocher qu'une fois
+  les dossiers supprimés de sDrive.
+
+Pendant une purge, le rangement, l'export et le dépôt des relectures sur
+sDrive s'arrêtent ; si l'un d'eux travaille, la purge ne fait rien et le
+dit. Une purge s'accorde une minute : si les notices sont trop nombreuses,
+elle dit combien restent, et un second clic les emporte. Sans corbeille sur
+le site (`EMPTY_TRASH_DAYS` à 0), elle refuse : les notices seraient
+effacées sans retour.
+
 ### L'annuaire des auteurs
 
 L'onglet **Annuaire** réunit les personnes nommées dans les notices reçues :
@@ -1183,6 +1218,12 @@ définitivement**. Ce dernier, après confirmation, ôte la ligne des
 retirées sans retour : l'adresse reste écartée pour de bon, et l'on n'en
 garde qu'une empreinte (`na_annuaire_supprimes`), ni l'adresse, ni le nom,
 ni la date. Seule une adresse déjà retirée se supprime.
+
+Une purge des notices ne vide pas l'annuaire : avant de mettre les notices
+à la corbeille, elle en garde les auteurs à part (`na_annuaire_gardees`),
+avec le nom, l'institution, les rôles et la référence de leurs notices. Une
+adresse supprimée définitivement n'y reste pas ; l'outil d'effacement des
+données personnelles de WordPress en ôte aussi la ligne.
 
 Deux boutons l'emportent :
 

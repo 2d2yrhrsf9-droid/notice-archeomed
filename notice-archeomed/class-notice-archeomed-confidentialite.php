@@ -111,6 +111,29 @@ class Notice_Archeomed_Confidentialite {
 				),
 			);
 		}
+		// La ligne que l'annuaire garde après une purge des notices : elle
+		// porte encore l'adresse, le nom et l'institution. Une fois, à la
+		// première page.
+		$gardees = Notice_Archeomed_Annuaire::gardees();
+		$cle     = strtolower( trim( (string) $courriel ) );
+		if ( 1 === max( 1, (int) $page ) && '' !== $cle && isset( $gardees[ $cle ] ) && is_array( $gardees[ $cle ] ) ) {
+			$g        = $gardees[ $cle ];
+			$valeur   = function ( $champ ) use ( $g ) {
+				return isset( $g[ $champ ] ) && is_scalar( $g[ $champ ] ) ? (string) $g[ $champ ] : '';
+			};
+			$export[] = array(
+				'group_id'    => 'na_annuaire',
+				'group_label' => __( 'Annuaire des auteurs', 'notice-archeomed' ),
+				'item_id'     => 'na-annuaire-garde',
+				'data'        => array(
+					array( 'name' => __( 'Prénom', 'notice-archeomed' ), 'value' => $valeur( 'prenom' ) ),
+					array( 'name' => __( 'Nom', 'notice-archeomed' ), 'value' => $valeur( 'nom' ) ),
+					array( 'name' => __( 'Adresse de courriel', 'notice-archeomed' ), 'value' => $valeur( 'courriel' ) ),
+					array( 'name' => __( 'Institution', 'notice-archeomed' ), 'value' => $valeur( 'institution' ) ),
+					array( 'name' => __( 'Notices', 'notice-archeomed' ), 'value' => implode( ', ', array_map( 'strval', isset( $g['notices'] ) ? (array) $g['notices'] : array() ) ) ),
+				),
+			);
+		}
 		return array( 'data' => $export, 'done' => $fini );
 	}
 
@@ -121,6 +144,12 @@ class Notice_Archeomed_Confidentialite {
 	public function effacer( $courriel, $page = 1 ) {
 		list( $trouvees, $fini ) = $this->notices_de( $courriel, $page );
 		$messages = array();
+		// La ligne gardée par l'annuaire après une purge n'est pas une
+		// archive éditoriale : elle s'efface.
+		$retiree = 1 === max( 1, (int) $page ) && Notice_Archeomed_Annuaire::oublier_la_gardee( $courriel );
+		if ( $retiree ) {
+			$messages[] = __( 'La ligne que l’annuaire des auteurs gardait des notices purgées est effacée.', 'notice-archeomed' );
+		}
 		if ( ! empty( $trouvees ) ) {
 			$messages[] = sprintf(
 				/* translators: %d : nombre de notices */
@@ -130,7 +159,7 @@ class Notice_Archeomed_Confidentialite {
 				count( $trouvees ) );
 		}
 		return array(
-			'items_removed'  => false,
+			'items_removed'  => $retiree,
 			'items_retained' => ! empty( $trouvees ),
 			'messages'       => $messages,
 			'done'           => $fini,

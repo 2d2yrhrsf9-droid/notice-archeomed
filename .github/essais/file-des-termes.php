@@ -4281,6 +4281,139 @@ foreach ( array( $coord_1, $coord_2, $redac ) as $compte ) {
 }
 delete_option( $R::OPTION );
 
+WP_CLI::log( 'La purge des notices' );
+$S_   = 'Notice_Archeomed_Settings';
+$A_   = 'Notice_Archeomed_Annuaire';
+$fondu = $A_::fondre(
+	array( 'pur@annuaire.test' => array( 'nom' => 'Ancien', 'prenom' => 'Jean', 'courriel' => 'pur@annuaire.test', 'institution' => 'Inrap',
+		'roles' => array( 'responsable' => true ), 'notices' => array( 'PURGE-1', 'PURGE-0' ) ),
+		'seul@annuaire.test' => array( 'nom' => 'Seul', 'prenom' => '', 'courriel' => 'seul@annuaire.test', 'institution' => '', 'roles' => array(), 'notices' => array( 'X-1' ) ) ),
+	array( 'pur@annuaire.test' => array( 'nom' => 'Nouveau', 'prenom' => '', 'courriel' => 'Pur@annuaire.test', 'institution' => '',
+		'roles' => array( 'co-auteur' => true ), 'notices' => array( 12 => 'PURGE-1', 13 => 'PURGE-2' ) ) ) );
+na_verifier( 'Nouveau' === $fondu['pur@annuaire.test']['nom'] && 'Jean' === $fondu['pur@annuaire.test']['prenom'] && 'Inrap' === $fondu['pur@annuaire.test']['institution']
+	&& 'Pur@annuaire.test' === $fondu['pur@annuaire.test']['courriel']
+	&& array( 'responsable' => true, 'co-auteur' => true ) === $fondu['pur@annuaire.test']['roles']
+	&& array( 'g1' => 'PURGE-0', 12 => 'PURGE-1', 13 => 'PURGE-2' ) === $fondu['pur@annuaire.test']['notices']
+	&& isset( $fondu['seul@annuaire.test'] ) && array( 'g0' => 'X-1' ) === $fondu['seul@annuaire.test']['notices'],
+	'l\'annuaire fond les auteurs gardés et ceux des notices : la notice récente nomme, une référence revenue ne compte qu\'une fois', $fondu );
+
+delete_option( $A_::OPTION_GARDEES );
+$pur_1 = na_notice( array( 'commune' => 'Évreux', 'resp_nom' => 'Purgé', 'resp_prenom' => 'Jean', 'resp_email' => 'pur@annuaire.test', 'resp_inst' => 'Inrap' ) );
+update_post_meta( $pur_1, '_na_reference', 'PURGE-1' );
+$pur_2 = na_notice( array( 'commune' => 'Dreux', 'resp_nom' => 'Purgé', 'resp_prenom' => 'Jean', 'resp_email' => 'pur@annuaire.test',
+	'coauteur_nom' => 'Second', 'coauteur_prenom' => 'Anne', 'coauteur_email' => 'anne@annuaire.test' ) );
+update_post_meta( $pur_2, '_na_reference', 'PURGE-2' );
+$pur_jusqua = $S_::derniere_notice();
+$pur_3 = na_notice( array( 'commune' => 'Vernon', 'resp_nom' => 'Tardif', 'resp_prenom' => 'Luc', 'resp_email' => 'tardif@annuaire.test' ) );
+wp_schedule_single_event( time() + 600, Notice_Archeomed_File::HOOK_UNE, array( (int) $pur_1 ) );
+update_option( Notice_Archeomed_Export::TRAVAIL, array( 'essai' => 1 ), false );
+update_option( Notice_Archeomed_Export::ATTENTE, array( 'essai' => 1 ), false );
+update_option( Notice_Archeomed_Export::MANIFESTES, array( 'AM-essai' => array( 'essai' => 1 ) ), false );
+wp_schedule_single_event( time() + 600, Notice_Archeomed_Export::HOOK );
+$pur_noms = array( 'na_dossier_' . md5( 'essai-purge/Evreux' ) => $pur_1, 'na_dossier_' . md5( 'essai-purge/Vernon' ) => $pur_3 );
+foreach ( $pur_noms as $pur_cle => $pur_id ) {
+	update_option( $pur_cle, (string) $pur_id, false );
+}
+
+$pur_faux = $S_::purger_les_notices( $pur_jusqua, 'purger' );
+na_verifier( false === $pur_faux['ok'] && 'private' === get_post_status( $pur_1 ) && array() === $A_::gardees()
+	&& false !== get_option( Notice_Archeomed_Export::ATTENTE ),
+	'sans le mot en capitales, la purge ne fait rien', $pur_faux );
+
+$pur_pris = Notice_Archeomed_Rangement::prendre_le_verrou( Notice_Archeomed_Export::VERROU );
+$pur_occupe = $S_::purger_les_notices( $pur_jusqua, 'PURGER' );
+$pur_libres = array();
+foreach ( array( Notice_Archeomed_Rangement::VERROU, Notice_Archeomed_Relecture::VERROU_DEPOT ) as $pur_nom ) {
+	$pur_libres[ $pur_nom ] = Notice_Archeomed_Rangement::prendre_le_verrou( $pur_nom );
+	Notice_Archeomed_Rangement::rendre_le_verrou( $pur_libres[ $pur_nom ], $pur_nom );
+}
+Notice_Archeomed_Rangement::rendre_le_verrou( $pur_pris, Notice_Archeomed_Export::VERROU );
+na_verifier( $pur_pris && false === $pur_occupe['ok'] && 'private' === get_post_status( $pur_1 ) && array() === $A_::gardees()
+	&& ! in_array( 0, $pur_libres, true ),
+	'quand l\'export travaille, la purge attend et rend les verrous qu\'elle avait pris', array( $pur_occupe, $pur_libres ) );
+
+$pur_fait = $S_::purger_les_notices( $pur_jusqua, ' PURGER ' );
+$pur_ann  = array();
+foreach ( $A_::recenser() as $pur_p ) {
+	$pur_ann[ strtolower( $pur_p['courriel'] ) ] = $pur_p;
+}
+$pur_verrous = array();
+foreach ( array( Notice_Archeomed_Rangement::VERROU, Notice_Archeomed_Export::VERROU, Notice_Archeomed_Relecture::VERROU_DEPOT ) as $pur_nom ) {
+	$pur_verrous[ $pur_nom ] = Notice_Archeomed_Rangement::prendre_le_verrou( $pur_nom );
+	Notice_Archeomed_Rangement::rendre_le_verrou( $pur_verrous[ $pur_nom ], $pur_nom );
+}
+na_verifier( true === $pur_fait['ok'] && 'trash' === get_post_status( $pur_1 ) && 'trash' === get_post_status( $pur_2 ) && 'private' === get_post_status( $pur_3 )
+	&& false === wp_next_scheduled( Notice_Archeomed_File::HOOK_UNE, array( (int) $pur_1 ) ) && false === wp_next_scheduled( Notice_Archeomed_Export::HOOK )
+	&& false === get_option( Notice_Archeomed_Export::TRAVAIL ) && false === get_option( Notice_Archeomed_Export::ATTENTE )
+	&& array( 'AM-essai' => array( 'essai' => 1 ) ) === get_option( Notice_Archeomed_Export::MANIFESTES )
+	&& ! in_array( 0, $pur_verrous, true ),
+	'la purge met à la corbeille les notices de la page, non celle déposée depuis ; elle vide la file d\'export, garde les manifestes et rend les verrous',
+	array( $pur_fait, get_post_status( $pur_1 ), get_post_status( $pur_3 ), $pur_verrous ) );
+na_verifier( isset( $pur_ann['pur@annuaire.test'], $pur_ann['anne@annuaire.test'], $pur_ann['tardif@annuaire.test'] )
+	&& 'Purgé' === $pur_ann['pur@annuaire.test']['nom'] && 'Inrap' === $pur_ann['pur@annuaire.test']['institution']
+	&& array( 'PURGE-1', 'PURGE-2' ) === array_values( $pur_ann['pur@annuaire.test']['notices'] )
+	&& array( 'co-auteur' => true ) === $pur_ann['anne@annuaire.test']['roles'],
+	'après la purge, l\'annuaire garde les auteurs des notices purgées, avec la référence de leurs notices', $pur_ann );
+
+wp_untrash_post( $pur_2 );
+$pur_revenu = array();
+foreach ( $A_::recenser() as $pur_p ) {
+	$pur_revenu[ strtolower( $pur_p['courriel'] ) ] = $pur_p['notices'];
+}
+na_verifier( 'private' === get_post_status( $pur_2 ) && 2 === count( $pur_revenu['pur@annuaire.test'] )
+	&& isset( $pur_revenu['pur@annuaire.test'][ $pur_2 ] ) && array( 'PURGE-1', 'PURGE-2' ) === array_values( $pur_revenu['pur@annuaire.test'] ),
+	'une notice remise de la corbeille redevient privée et ne compte pas deux fois dans l\'annuaire', $pur_revenu );
+wp_trash_post( $pur_2 );
+
+ob_start();
+$A_::onglet();
+$pur_rendu = ob_get_clean();
+na_verifier( false !== strpos( $pur_rendu, 'PURGE-1' ) && false !== strpos( $pur_rendu, 'Une purge des notices n’y touche pas' ),
+	'l\'onglet de l\'annuaire montre les notices purgées par leur référence', $pur_rendu );
+
+$_GET = array();
+ob_start();
+na_appel( $S_, 'la_purge', array( array( 'quoi' => '', 'resultat' => null ) ) );
+$pur_onglet = ob_get_clean();
+na_verifier( false !== strpos( $pur_onglet, 'id="na-purge"' ) && false !== strpos( $pur_onglet, 'value="purge_corbeille"' )
+	&& false !== strpos( $pur_onglet, 'value="purge_effacer"' ) && false !== strpos( $pur_onglet, 'name="na_purge_jusqua" value="' . $S_::derniere_notice() . '"' )
+	&& false !== strpos( $pur_onglet, 'name="na_purge_noms"' ) && false === strpos( $pur_onglet, 'checked' ),
+	'l\'onglet Stockage propose la corbeille puis l\'effacement, la case des noms de dossier décochée', $pur_onglet );
+
+$pur_mal = $S_::vider_la_corbeille_des_notices( 'effacer', true );
+na_verifier( false === $pur_mal['ok'] && 'trash' === get_post_status( $pur_1 ),
+	'sans le mot en capitales, la corbeille ne se vide pas', $pur_mal );
+$pur_efface = $S_::vider_la_corbeille_des_notices( 'EFFACER', true );
+$pur_ann2   = array_map( 'strtolower', array_column( $A_::recenser(), 'courriel' ) );
+na_verifier( true === $pur_efface['ok'] && null === get_post( $pur_1 ) && null === get_post( $pur_2 ) && 'private' === get_post_status( $pur_3 )
+	&& 0 === $S_::compter_au_statut( 'trash' )
+	&& false === get_option( 'na_dossier_' . md5( 'essai-purge/Evreux' ) ) && (string) $pur_3 === get_option( 'na_dossier_' . md5( 'essai-purge/Vernon' ) )
+	&& in_array( 'pur@annuaire.test', $pur_ann2, true ) && in_array( 'anne@annuaire.test', $pur_ann2, true ),
+	'l\'effacement vide la corbeille, rend les noms de dossier des seules notices effacées, et l\'annuaire garde leurs auteurs',
+	array( $pur_efface, $pur_ann2 ) );
+
+$pur_conf   = new Notice_Archeomed_Confidentialite();
+$pur_export = $pur_conf->exporter( 'PUR@annuaire.test', 1 );
+$pur_groupes = array_column( $pur_export['data'], 'group_id' );
+$pur_efface2 = $pur_conf->effacer( 'pur@annuaire.test', 1 );
+na_verifier( in_array( 'na_annuaire', $pur_groupes, true ) && true === $pur_efface2['items_removed']
+	&& ! in_array( 'pur@annuaire.test', array_map( 'strtolower', array_column( $A_::recenser(), 'courriel' ) ), true ),
+	'l\'outil de confidentialité exporte puis efface la ligne que l\'annuaire gardait', array( $pur_export, $pur_efface2 ) );
+
+$A_::retirer( 'anne@annuaire.test', 'Second', 'Anne' );
+$A_::supprimer( 'anne@annuaire.test' );
+na_verifier( ! isset( $A_::gardees()['anne@annuaire.test'] ) && false === stripos( wp_json_encode( get_option( $A_::OPTION_GARDEES ) ), 'anne@' ),
+	'une adresse supprimée définitivement ne reste pas écrite parmi les auteurs gardés', $A_::gardees() );
+
+foreach ( $pur_noms as $pur_cle => $pur_id ) {
+	delete_option( $pur_cle );
+}
+delete_option( Notice_Archeomed_Export::MANIFESTES );
+delete_option( $A_::OPTION_GARDEES );
+delete_option( $A_::OPTION_RETIRES );
+delete_option( $A_::OPTION_SUPPRIMES );
+wp_delete_post( $pur_3, true );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

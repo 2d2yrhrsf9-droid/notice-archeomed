@@ -52,6 +52,19 @@ class Notice_Archeomed_Settings {
 	 */
 	const PART_SANS_FICHIERS = 0.85;
 
+	/** Le mot à taper pour mettre toutes les notices à la corbeille. */
+	const MOT_DE_LA_PURGE = 'PURGER';
+
+	/** Le mot à taper pour effacer les notices de la corbeille. */
+	const MOT_DE_L_EFFACEMENT = 'EFFACER';
+
+	/**
+	 * Les secondes qu'une purge s'accorde dans une requête : la moitié des
+	 * 120 de l'hébergement, et bien moins que les cinq minutes au bout
+	 * desquelles un verrou passe pour abandonné.
+	 */
+	const BUDGET_DE_LA_PURGE = 60;
+
 	/**
 	 * Valeurs par défaut, reprises de la version précédente du plugin.
 	 */
@@ -1196,6 +1209,8 @@ class Notice_Archeomed_Settings {
 			'sdrive_delier'  => 'diagnostic',
 			'sdrive_dossier' => 'diagnostic',
 			'sdrive_ranger'  => 'diagnostic',
+			'purge_corbeille' => 'stockage',
+			'purge_effacer'   => 'stockage',
 		);
 		if ( ! isset( $onglets[ $quoi ] ) ) {
 			wp_die( esc_html__( 'Essai inconnu.', 'notice-archeomed' ) );
@@ -1241,6 +1256,14 @@ class Notice_Archeomed_Settings {
 			$resultat = Notice_Archeomed_Sdrive::delier();
 		} elseif ( 'sdrive_ranger' === $quoi ) {
 			$resultat = Notice_Archeomed_Rangement::ranger_maintenant();
+		} elseif ( 'purge_corbeille' === $quoi ) {
+			$resultat = self::purger_les_notices(
+				isset( $_POST['na_purge_jusqua'] ) ? (int) $_POST['na_purge_jusqua'] : 0,
+				isset( $_POST['na_purge_mot'] ) ? sanitize_text_field( wp_unslash( $_POST['na_purge_mot'] ) ) : '' );
+		} elseif ( 'purge_effacer' === $quoi ) {
+			$resultat = self::vider_la_corbeille_des_notices(
+				isset( $_POST['na_purge_mot'] ) ? sanitize_text_field( wp_unslash( $_POST['na_purge_mot'] ) ) : '',
+				! empty( $_POST['na_purge_noms'] ) );
 		} elseif ( 'sdrive_dossier' === $quoi ) {
 			$resultat = Notice_Archeomed_Sdrive::enregistrer_le_dossier(
 				isset( $_POST['na_sdrive_dossier'] ) ? sanitize_text_field( wp_unslash( $_POST['na_sdrive_dossier'] ) ) : '' );
@@ -1253,7 +1276,8 @@ class Notice_Archeomed_Settings {
 		}
 		set_transient( 'na_essai_' . get_current_user_id(),
 			array( 'quoi' => $quoi, 'resultat' => $resultat ), 10 * MINUTE_IN_SECONDS );
-		wp_safe_redirect( add_query_arg( 'na_essai', $quoi, self::url( $onglets[ $quoi ] ) ) );
+		$ancre = in_array( $quoi, array( 'purge_corbeille', 'purge_effacer' ), true ) ? '#na-purge' : '';
+		wp_safe_redirect( add_query_arg( 'na_essai', $quoi, self::url( $onglets[ $quoi ] ) ) . $ancre );
 		exit;
 	}
 
@@ -1365,6 +1389,188 @@ class Notice_Archeomed_Settings {
 		return array( 'ok' => $mises === count( $ids ), 'message' => sprintf(
 			'%d notice(s) d’essai sur %d mise(s) à la corbeille de la Chronique. Leurs dossiers sur sDrive restent à supprimer là-bas.',
 			$mises, count( $ids ) ) );
+	}
+
+	/** La notice la plus récente, toute situation confondue : 0 s'il n'y en a pas. */
+	public static function derniere_notice() {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT MAX(ID) FROM {$wpdb->posts} WHERE post_type = %s", Notice_Archeomed_File::CPT ) );
+	}
+
+	/**
+	 * Les notices d'une situation, par identifiant croissant, à partir de
+	 * $depuis exclu et, avec $jusqua, jusqu'à lui inclus. Lu en base et non
+	 * par WP_Query : la corbeille n'y est pas « any ».
+	 */
+	public static function notices_au_statut( $statut, $jusqua = 0, $lot = 200, $depuis = 0 ) {
+		global $wpdb;
+		$jusqua = max( 0, (int) $jusqua );
+		return array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s AND ID > %d AND ( %d = 0 OR ID <= %d ) ORDER BY ID ASC LIMIT %d",
+			Notice_Archeomed_File::CPT, (string) $statut, (int) $depuis, $jusqua, $jusqua, max( 1, (int) $lot ) ) ) );
+	}
+
+	/** Combien de notices sont dans une situation. */
+	public static function compter_au_statut( $statut ) {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s",
+			Notice_Archeomed_File::CPT, (string) $statut ) );
+	}
+
+	/**
+	 * Arrête le rangement, l'export et le dépôt des relectures sur sDrive le
+	 * temps d'une purge : chacun tient un verrou, et la purge les prend tous.
+	 * Rend les jetons, ou null si l'un d'eux travaille — ce qui était pris
+	 * est alors rendu.
+	 */
+	private static function arreter_les_taches() {
+		$jetons = array();
+		foreach ( array( Notice_Archeomed_Rangement::VERROU, Notice_Archeomed_Export::VERROU, Notice_Archeomed_Relecture::VERROU_DEPOT ) as $nom ) {
+			$jeton = Notice_Archeomed_Rangement::prendre_le_verrou( $nom );
+			if ( ! $jeton ) {
+				self::reprendre_les_taches( $jetons );
+				return null;
+			}
+			$jetons[ $nom ] = $jeton;
+		}
+		return $jetons;
+	}
+
+	/** Rend les verrous pris par arreter_les_taches(). */
+	private static function reprendre_les_taches( $jetons ) {
+		foreach ( (array) $jetons as $nom => $jeton ) {
+			Notice_Archeomed_Rangement::rendre_le_verrou( $jeton, $nom );
+		}
+	}
+
+	/** Le refus d'une purge, quand une tâche sur sDrive travaille. */
+	private static function purge_occupee() {
+		return array( 'ok' => false, 'message' => 'Le rangement, l’export ou un dépôt de relecture travaille sur sDrive en ce moment. Rien n’a été fait : réessayez dans quelques minutes.' );
+	}
+
+	/**
+	 * Met à la corbeille toutes les notices reçues jusqu'à $jusqua — la plus
+	 * récente quand la page s'est affichée : une notice déposée entre-temps
+	 * n'est pas emportée.
+	 *
+	 * Avant tout, l'annuaire garde leurs auteurs, et l'export qui attendait
+	 * est vidé : il n'aurait plus rien à copier. Les dossiers de sDrive ne
+	 * sont pas touchés. Si le temps manque, ce qui reste se purge d'un
+	 * second clic.
+	 */
+	public static function purger_les_notices( $jusqua, $mot ) {
+		$jusqua = (int) $jusqua;
+		if ( self::MOT_DE_LA_PURGE !== trim( (string) $mot ) ) {
+			return array( 'ok' => false, 'message' => 'Rien n’a été fait : il fallait taper ' . self::MOT_DE_LA_PURGE . ' en capitales.' );
+		}
+		if ( $jusqua < 1 ) {
+			return array( 'ok' => false, 'message' => 'Rien n’a été fait : la page était trop ancienne. Rechargez-la et recommencez.' );
+		}
+		// Sans corbeille, WordPress efface tout de suite : la purge ne se
+		// fait pas sans la possibilité de revenir en arrière.
+		if ( ! EMPTY_TRASH_DAYS ) {
+			return array( 'ok' => false, 'message' => 'Rien n’a été fait : la corbeille de WordPress est désactivée sur ce site (EMPTY_TRASH_DAYS vaut 0), et les notices seraient effacées sans retour.' );
+		}
+		$jetons = self::arreter_les_taches();
+		if ( null === $jetons ) {
+			return self::purge_occupee();
+		}
+		try {
+			if ( false === Notice_Archeomed_Annuaire::garder_avant_la_purge( $jusqua ) ) {
+				return array( 'ok' => false, 'message' => 'Rien n’a été fait : l’annuaire n’a pas pu garder les auteurs des notices.' );
+			}
+			Notice_Archeomed_Export::vider_la_file();
+			$echeance = microtime( true ) + self::BUDGET_DE_LA_PURGE;
+			$mises    = 0;
+			$manquees = 0;
+			$depuis   = 0;
+			$temps    = true;
+			do {
+				$ids = self::notices_au_statut( 'private', $jusqua, 100, $depuis );
+				foreach ( $ids as $id ) {
+					$depuis = $id;
+					if ( microtime( true ) > $echeance ) {
+						$temps = false;
+						break 2;
+					}
+					// L'expédition attendue ne partirait plus : la notice
+					// n'est plus privée. On la retire du planificateur.
+					wp_clear_scheduled_hook( Notice_Archeomed_File::HOOK_UNE, array( (int) $id ) );
+					if ( wp_trash_post( $id ) ) {
+						++$mises;
+					} else {
+						++$manquees;
+					}
+				}
+			} while ( count( $ids ) === 100 );
+		} finally {
+			self::reprendre_les_taches( $jetons );
+		}
+		$restent = count( self::notices_au_statut( 'private', $jusqua, 1000 ) );
+		$message = sprintf( '%d notice(s) mise(s) à la corbeille. L’annuaire garde leurs auteurs ; la file d’export vers sDrive est vidée ; les dossiers sur sDrive restent tels quels.', $mises );
+		if ( ! $temps ) {
+			$message .= sprintf( ' Le temps a manqué : %d notice(s) restent à purger, recommencez.', $restent );
+		} elseif ( $manquees ) {
+			$message .= sprintf( ' %d notice(s) n’ont pas pu aller à la corbeille.', $manquees );
+		}
+		return array( 'ok' => $temps && 0 === $manquees, 'message' => $message );
+	}
+
+	/**
+	 * Efface pour de bon les notices de la corbeille, leurs fichiers avec
+	 * elles. Avec $oublier_les_noms, les noms de leurs dossiers sur sDrive
+	 * redeviennent libres : à ne cocher qu'une fois ces dossiers supprimés
+	 * là-bas, sans quoi une nouvelle notice de la même commune rangerait
+	 * ses fichiers dans l'ancien dossier.
+	 */
+	public static function vider_la_corbeille_des_notices( $mot, $oublier_les_noms = false ) {
+		if ( self::MOT_DE_L_EFFACEMENT !== trim( (string) $mot ) ) {
+			return array( 'ok' => false, 'message' => 'Rien n’a été effacé : il fallait taper ' . self::MOT_DE_L_EFFACEMENT . ' en capitales.' );
+		}
+		$jetons = self::arreter_les_taches();
+		if ( null === $jetons ) {
+			return self::purge_occupee();
+		}
+		$effacees = 0;
+		$manquees = 0;
+		$temps    = true;
+		$noms     = 0;
+		try {
+			$echeance = microtime( true ) + self::BUDGET_DE_LA_PURGE;
+			$depuis   = 0;
+			do {
+				$ids = self::notices_au_statut( 'trash', 0, 50, $depuis );
+				foreach ( $ids as $id ) {
+					$depuis = $id;
+					if ( microtime( true ) > $echeance ) {
+						$temps = false;
+						break 2;
+					}
+					if ( wp_delete_post( $id, true ) ) {
+						++$effacees;
+					} else {
+						++$manquees;
+					}
+				}
+			} while ( count( $ids ) === 50 );
+			if ( $oublier_les_noms && $temps ) {
+				$noms = Notice_Archeomed_Rangement::liberer_les_noms_orphelins();
+			}
+		} finally {
+			self::reprendre_les_taches( $jetons );
+		}
+		$message = sprintf( '%d notice(s) effacée(s) avec leurs fichiers. L’annuaire garde leurs auteurs.', $effacees );
+		if ( $oublier_les_noms && $temps ) {
+			$message .= sprintf( ' %d nom(s) de dossier sur sDrive redeviennent libres.', $noms );
+		}
+		if ( ! $temps ) {
+			$message .= sprintf( ' Le temps a manqué : %d notice(s) restent dans la corbeille, recommencez.', self::compter_au_statut( 'trash' ) );
+		} elseif ( $manquees ) {
+			$message .= sprintf( ' %d notice(s) n’ont pas pu être effacées.', $manquees );
+		}
+		return array( 'ok' => $temps && 0 === $manquees, 'message' => $message );
 	}
 
 	/** Le formulaire d'un essai, adressé au gestionnaire des essais. */
@@ -1738,8 +1944,52 @@ class Notice_Archeomed_Settings {
 
 	/** La place que prennent les notices, catégorie par catégorie. */
 	private function onglet_stockage( $essai ) {
-		unset( $essai );
 		Notice_Archeomed_Stockage::onglet();
+		self::la_purge( $essai );
+	}
+
+	/**
+	 * Purger les notices : la corbeille d'abord, d'où une notice se remet
+	 * d'un clic, l'effacement ensuite. Chaque geste demande un mot tapé :
+	 * un clic égaré ne suffit pas.
+	 */
+	private static function la_purge( $essai ) {
+		$privees   = self::compter_au_statut( 'private' );
+		$corbeille = self::compter_au_statut( 'trash' );
+		?>
+		<div id="na-purge" style="max-width:46em;margin-top:2em">
+			<h2>Purger les notices</h2>
+			<p>Pour repartir d’une Chronique vide, après les essais ou d’un numéro à l’autre. En deux temps&nbsp;: toutes les notices vont d’abord à la corbeille, d’où chacune se remet d’un clic depuis la liste des notices&nbsp;; on efface ensuite la corbeille, et les fichiers des notices avec elle. WordPress vide aussi la corbeille de lui-même au bout de trente jours.</p>
+			<p>L’annuaire des auteurs n’est pas touché&nbsp;: les auteurs des notices purgées y restent, avec la référence de leurs notices. La file d’export vers sDrive est vidée. Les dossiers rangés sur sDrive restent tels quels&nbsp;: ils se suppriment là-bas, si on le veut.</p>
+			<?php if ( $privees > 0 ) : ?>
+				<?php self::ouvrir_un_essai(); ?>
+					<input type="hidden" name="na_purge_jusqua" value="<?php echo (int) self::derniere_notice(); ?>">
+					<p><label for="na-purge-mot">Pour mettre les <?php echo (int) $privees; ?> notices à la corbeille, tapez <code><?php echo esc_html( self::MOT_DE_LA_PURGE ); ?></code>&nbsp;:</label>
+						<input type="text" id="na-purge-mot" name="na_purge_mot" autocomplete="off" spellcheck="false" class="regular-text" style="width:10em"></p>
+					<p><button type="submit" class="button" name="na_quoi" value="purge_corbeille"
+						onclick="return confirm('Mettre les <?php echo (int) $privees; ?> notices à la corbeille ?');">Mettre toutes les notices à la corbeille</button></p>
+				</form>
+			<?php else : ?>
+				<p>Aucune notice reçue n’est hors de la corbeille.</p>
+			<?php endif; ?>
+			<?php if ( $corbeille > 0 ) : ?>
+				<h3>Effacer la corbeille</h3>
+				<?php self::ouvrir_un_essai(); ?>
+					<p><label><input type="checkbox" name="na_purge_noms" value="1"> Les dossiers de ces notices ont été supprimés de sDrive&nbsp;: leurs noms peuvent resservir</label><br>
+						<span class="description">À ne cocher qu’une fois les dossiers supprimés là-bas. Sinon, une nouvelle notice de la même commune rangerait ses fichiers dans l’ancien dossier.</span></p>
+					<p><label for="na-purge-effacer">Pour effacer les <?php echo (int) $corbeille; ?> notices de la corbeille, sans retour, tapez <code><?php echo esc_html( self::MOT_DE_L_EFFACEMENT ); ?></code>&nbsp;:</label>
+						<input type="text" id="na-purge-effacer" name="na_purge_mot" autocomplete="off" spellcheck="false" class="regular-text" style="width:10em"></p>
+					<p><button type="submit" class="button" name="na_quoi" value="purge_effacer"
+						onclick="return confirm('Effacer pour de bon les <?php echo (int) $corbeille; ?> notices de la corbeille, et leurs fichiers ? Cela ne se défait pas.');">Effacer les notices de la corbeille</button></p>
+				</form>
+			<?php endif; ?>
+			<?php
+			if ( in_array( $essai['quoi'], array( 'purge_corbeille', 'purge_effacer' ), true ) ) {
+				self::resultat( $essai['resultat'] );
+			}
+			?>
+		</div>
+		<?php
 	}
 
 	/** Les auteurs des notices, et leur export pour la liste de diffusion. */

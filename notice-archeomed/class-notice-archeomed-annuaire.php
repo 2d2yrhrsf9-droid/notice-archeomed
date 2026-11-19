@@ -27,6 +27,12 @@
  * On n'en garde que l'empreinte, qui suffit à la reconnaître : ni l'adresse,
  * ni le nom, ni la date. Les notices, là encore, ne changent pas.
  *
+ * La purge des notices ne vide pas l'annuaire : c'est le document de
+ * travail de la revue, la liste de ceux à qui l'on écrit. Avant qu'une
+ * notice parte à la corbeille, ses personnes sont gardées à part, telles que
+ * l'annuaire les montrait ; les notices reçues ensuite les complètent et,
+ * plus récentes, les nomment.
+ *
  * @package notice-archeomed
  */
 
@@ -50,6 +56,12 @@ class Notice_Archeomed_Annuaire {
 
 	/** Les adresses supprimées définitivement : empreinte ⇒ vrai, rien d'autre. */
 	const OPTION_SUPPRIMES = 'na_annuaire_supprimes';
+
+	/**
+	 * Les personnes des notices purgées : adresse en minuscules ⇒ nom,
+	 * prénom, adresse, institution, rôles et références des notices.
+	 */
+	const OPTION_GARDEES = 'na_annuaire_gardees';
 
 	/** Les personnes d'une notice : préfixe des champs ⇒ rôle. */
 	const ROLES = array(
@@ -77,7 +89,34 @@ class Notice_Archeomed_Annuaire {
 	 * de deux cents.
 	 */
 	public static function recenser() {
+		$personnes = self::fondre( self::gardees(), self::des_notices() );
+		$personnes = array_diff_key( $personnes, self::retires() );
+		$supprimes = self::supprimes();
+		if ( ! empty( $supprimes ) ) {
+			$personnes = array_filter( $personnes, function ( $cle ) use ( $supprimes ) {
+				return ! isset( $supprimes[ self::empreinte( $cle ) ] );
+			}, ARRAY_FILTER_USE_KEY );
+		}
+		$personnes = array_values( $personnes );
+		usort( $personnes, function ( $a, $b ) {
+			$ordre = strcmp( self::cle_de_tri( $a['nom'] ), self::cle_de_tri( $b['nom'] ) );
+			if ( 0 === $ordre ) {
+				$ordre = strcmp( self::cle_de_tri( $a['prenom'] ), self::cle_de_tri( $b['prenom'] ) );
+			}
+			return 0 !== $ordre ? $ordre : strcmp( $a['courriel'], $b['courriel'] );
+		} );
+		return $personnes;
+	}
+
+	/**
+	 * Les personnes des notices privées, adresse en minuscules ⇒ personne,
+	 * sans rien écarter des retirées ni des supprimées. Avec $jusqua, les
+	 * seules notices d'identifiant au plus égal : celles qu'une purge va
+	 * mettre à la corbeille.
+	 */
+	public static function des_notices( $jusqua = 0 ) {
 		global $wpdb;
+		$jusqua = max( 0, (int) $jusqua );
 		$remplacees = array_map( 'strtoupper', array_map( 'trim', (array) $wpdb->get_col( $wpdb->prepare(
 			"SELECT DISTINCT m.meta_value FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id
 			WHERE m.meta_key = '_na_remplace' AND m.meta_value <> '' AND p.post_type = %s AND p.post_status = 'private'",
@@ -92,8 +131,8 @@ class Notice_Archeomed_Annuaire {
 				JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_na_donnees'
 				LEFT JOIN {$wpdb->postmeta} r ON r.post_id = p.ID AND r.meta_key = '_na_reference'
 				LEFT JOIN {$wpdb->postmeta} e ON e.post_id = p.ID AND e.meta_key = '_na_essai'
-				WHERE p.post_type = %s AND p.post_status = 'private' AND e.meta_id IS NULL AND p.ID > %d ORDER BY p.ID ASC LIMIT 200",
-				Notice_Archeomed_File::CPT, $depuis ) );
+				WHERE p.post_type = %s AND p.post_status = 'private' AND e.meta_id IS NULL AND p.ID > %d AND ( %d = 0 OR p.ID <= %d ) ORDER BY p.ID ASC LIMIT 200",
+				Notice_Archeomed_File::CPT, $depuis, $jusqua, $jusqua ) );
 			foreach ( (array) $lignes as $ligne ) {
 				$depuis = (int) $ligne->ID;
 				$d      = maybe_unserialize( $ligne->meta_value );
@@ -137,23 +176,99 @@ class Notice_Archeomed_Annuaire {
 				}
 			}
 		} while ( count( (array) $lignes ) === 200 );
-
-		$personnes = array_diff_key( $personnes, self::retires() );
-		$supprimes = self::supprimes();
-		if ( ! empty( $supprimes ) ) {
-			$personnes = array_filter( $personnes, function ( $cle ) use ( $supprimes ) {
-				return ! isset( $supprimes[ self::empreinte( $cle ) ] );
-			}, ARRAY_FILTER_USE_KEY );
-		}
-		$personnes = array_values( $personnes );
-		usort( $personnes, function ( $a, $b ) {
-			$ordre = strcmp( self::cle_de_tri( $a['nom'] ), self::cle_de_tri( $b['nom'] ) );
-			if ( 0 === $ordre ) {
-				$ordre = strcmp( self::cle_de_tri( $a['prenom'] ), self::cle_de_tri( $b['prenom'] ) );
-			}
-			return 0 !== $ordre ? $ordre : strcmp( $a['courriel'], $b['courriel'] );
-		} );
 		return $personnes;
+	}
+
+	/** Les personnes gardées des notices purgées, adresse en minuscules ⇒ personne. */
+	public static function gardees() {
+		$gardees = get_option( self::OPTION_GARDEES, array() );
+		return is_array( $gardees ) ? $gardees : array();
+	}
+
+	/**
+	 * Fond les personnes gardées et celles des notices, une par adresse.
+	 * Les notices sont plus récentes que toute purge : leur nom, leur
+	 * prénom et leur institution l'emportent, quand elles les donnent. Les
+	 * notices d'une personne gardée n'ont plus d'identifiant ; leur clé
+	 * commence par « g », et elles ne se lient à aucune fiche.
+	 */
+	public static function fondre( $anciennes, $recentes ) {
+		$toutes = array();
+		foreach ( (array) $anciennes as $p ) {
+			if ( ! is_array( $p ) || ! isset( $p['courriel'] ) || ! is_email( $p['courriel'] ) ) {
+				continue;
+			}
+			$notices = array();
+			foreach ( array_values( isset( $p['notices'] ) ? (array) $p['notices'] : array() ) as $n => $libelle ) {
+				$notices[ 'g' . $n ] = (string) $libelle;
+			}
+			$toutes[ strtolower( (string) $p['courriel'] ) ] = array(
+				'nom'         => isset( $p['nom'] ) ? (string) $p['nom'] : '',
+				'prenom'      => isset( $p['prenom'] ) ? (string) $p['prenom'] : '',
+				'courriel'    => (string) $p['courriel'],
+				'institution' => isset( $p['institution'] ) ? (string) $p['institution'] : '',
+				'roles'       => isset( $p['roles'] ) ? (array) $p['roles'] : array(),
+				'notices'     => $notices,
+			);
+		}
+		foreach ( (array) $recentes as $cle => $p ) {
+			$cle = strtolower( (string) $cle );
+			if ( ! isset( $toutes[ $cle ] ) ) {
+				$toutes[ $cle ] = $p;
+				continue;
+			}
+			foreach ( array( 'nom', 'prenom', 'institution' ) as $champ ) {
+				if ( '' !== $p[ $champ ] ) {
+					$toutes[ $cle ][ $champ ] = $p[ $champ ];
+				}
+			}
+			$toutes[ $cle ]['courriel'] = $p['courriel'];
+			$toutes[ $cle ]['roles']    = $toutes[ $cle ]['roles'] + $p['roles'];
+			foreach ( $p['notices'] as $id => $libelle ) {
+				// Une notice remise de la corbeille ne compte pas deux fois :
+				// sa référence gardée cède la place à sa fiche.
+				$toutes[ $cle ]['notices'] = array_filter( $toutes[ $cle ]['notices'], function ( $ancien, $k ) use ( $libelle ) {
+					return ! ( is_string( $k ) && $ancien === $libelle );
+				}, ARRAY_FILTER_USE_BOTH );
+				$toutes[ $cle ]['notices'][ $id ] = $libelle;
+			}
+		}
+		return $toutes;
+	}
+
+	/**
+	 * Garde les personnes des notices d'identifiant au plus $jusqua, avant
+	 * qu'une purge ne les mette à la corbeille. Une adresse supprimée
+	 * définitivement ne se garde pas : on n'en tient que l'empreinte. Rend
+	 * le nombre de personnes gardées, ou false si l'écriture a manqué —
+	 * la purge ne se fait pas alors.
+	 */
+	public static function garder_avant_la_purge( $jusqua ) {
+		$avant     = self::gardees();
+		$supprimes = self::supprimes();
+		$a_garder  = array();
+		foreach ( self::fondre( $avant, self::des_notices( (int) $jusqua ) ) as $cle => $p ) {
+			if ( isset( $supprimes[ self::empreinte( $cle ) ] ) ) {
+				continue;
+			}
+			$p['notices']     = array_values( array_unique( array_map( 'strval', $p['notices'] ) ) );
+			$a_garder[ $cle ] = $p;
+		}
+		if ( $a_garder === $avant ) {
+			return count( $a_garder );
+		}
+		return update_option( self::OPTION_GARDEES, $a_garder, false ) ? count( $a_garder ) : false;
+	}
+
+	/** Oublie une personne gardée ; rend vrai si elle l'était. */
+	public static function oublier_la_gardee( $courriel ) {
+		$gardees = self::gardees();
+		$cle     = strtolower( trim( (string) $courriel ) );
+		if ( '' === $cle || ! isset( $gardees[ $cle ] ) ) {
+			return false;
+		}
+		unset( $gardees[ $cle ] );
+		return update_option( self::OPTION_GARDEES, $gardees, false );
 	}
 
 	/** Les adresses retirées, en minuscules, avec le nom qu'elles portaient. */
@@ -226,6 +341,8 @@ class Notice_Archeomed_Annuaire {
 		update_option( self::OPTION_SUPPRIMES, $supprimes, false );
 		unset( $retires[ $cle ] );
 		update_option( self::OPTION_RETIRES, $retires, false );
+		// Gardée d'une purge, l'adresse ne resterait écrite que là.
+		self::oublier_la_gardee( $cle );
 		return true;
 	}
 
@@ -292,7 +409,7 @@ class Notice_Archeomed_Annuaire {
 		}
 		echo '<h2>' . esc_html__( 'Annuaire des auteurs', 'notice-archeomed' ) . '</h2>';
 		echo '<p class="description" style="max-width:46em">' . esc_html(
-			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable y figure comme déposant\u{00A0}; avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans nom." ) . '</p>';
+			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable y figure comme déposant\u{00A0}; avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans nom. Une purge des notices n’y touche pas\u{00A0}: les auteurs des notices purgées restent, avec la référence de leurs notices." ) . '</p>';
 		if ( empty( $personnes ) ) {
 			echo '<p>' . esc_html( empty( $retires ) && empty( self::supprimes() ) ? 'Aucune notice reçue pour l’instant.'
 				: 'Personne à montrer : toutes les adresses des notices sont retirées.' ) . '</p>';
@@ -328,7 +445,8 @@ class Notice_Archeomed_Annuaire {
 			$qui = '' !== $qui ? $qui . ' (' . $p['courriel'] . ')' : $p['courriel'];
 			$notices = array();
 			foreach ( $p['notices'] as $id => $libelle ) {
-				$lien      = get_edit_post_link( $id, '' );
+				// Une notice purgée n'a plus de fiche : sa référence seule.
+				$lien      = is_int( $id ) ? get_edit_post_link( $id, '' ) : '';
 				$notices[] = $lien ? '<a href="' . esc_url( $lien ) . '">' . esc_html( $libelle ) . '</a>' : esc_html( $libelle );
 			}
 			$roles = array_keys( $p['roles'] );

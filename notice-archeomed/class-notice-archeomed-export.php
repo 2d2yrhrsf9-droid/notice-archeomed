@@ -88,6 +88,17 @@ class Notice_Archeomed_Export {
 		wp_unschedule_hook( self::HOOK );
 	}
 
+	/**
+	 * Vide la file : l'export en cours et ceux qui attendent. Les manifestes
+	 * restent : ils disent ce qui est sur sDrive, où la purge des notices ne
+	 * touche à rien. L'appelant tient le verrou de l'export.
+	 */
+	public static function vider_la_file() {
+		wp_clear_scheduled_hook( self::HOOK );
+		delete_option( self::TRAVAIL );
+		delete_option( self::ATTENTE );
+	}
+
 	/** L'export n'a lieu que là où le rangement a lieu : sDrive prêt, un numéro réglé. */
 	public static function peut_exporter() {
 		return Notice_Archeomed_Rangement::peut_ranger();
