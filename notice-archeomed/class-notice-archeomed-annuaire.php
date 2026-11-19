@@ -27,11 +27,12 @@
  * On n'en garde que l'empreinte, qui suffit à la reconnaître : ni l'adresse,
  * ni le nom, ni la date. Les notices, là encore, ne changent pas.
  *
- * La purge des notices ne vide pas l'annuaire : c'est le document de
- * travail de la revue, la liste de ceux à qui l'on écrit. Avant qu'une
- * notice parte à la corbeille, ses personnes sont gardées à part, telles que
- * l'annuaire les montrait ; les notices reçues ensuite les complètent et,
- * plus récentes, les nomment.
+ * Ni la purge ni la suppression d'une notice ne vident l'annuaire : c'est
+ * le document de travail de la revue, la liste de ceux à qui l'on écrit.
+ * Avant qu'une notice parte à la corbeille, ou s'efface sans y passer, ses
+ * personnes sont gardées à part, telles que l'annuaire les montrait ; les
+ * notices reçues ensuite les complètent et, plus récentes, les nomment. On
+ * ôte quelqu'un de l'annuaire en le retirant, puis en le supprimant.
  *
  * @package notice-archeomed
  */
@@ -58,10 +59,17 @@ class Notice_Archeomed_Annuaire {
 	const OPTION_SUPPRIMES = 'na_annuaire_supprimes';
 
 	/**
-	 * Les personnes des notices purgées : adresse en minuscules ⇒ nom,
+	 * Les personnes des notices purgées ou supprimées : adresse en minuscules ⇒ nom,
 	 * prénom, adresse, institution, rôles et références des notices.
 	 */
 	const OPTION_GARDEES = 'na_annuaire_gardees';
+
+	/**
+	 * Faux pendant qu'une purge, qui a déjà gardé les auteurs de toutes ses
+	 * notices, les met à la corbeille, ou qu'une inscription manquée défait
+	 * la notice qu'elle venait de créer.
+	 */
+	public static $garder_a_l_effacement = true;
 
 	/** Les personnes d'une notice : préfixe des champs ⇒ rôle. */
 	const ROLES = array(
@@ -75,6 +83,9 @@ class Notice_Archeomed_Annuaire {
 		add_action( 'admin_post_' . self::ACTION_SYMPA, array( $this, 'fichier_sympa' ) );
 		add_action( 'admin_post_' . self::ACTION_TABLEUR, array( $this, 'tableur' ) );
 		add_action( 'admin_post_' . self::ACTION_RETIRER, array( $this, 'retirer_ou_retablir' ) );
+		// Avant le changement : la notice est encore privée, et se lit.
+		add_action( 'wp_trash_post', array( __CLASS__, 'garder_la_notice' ) );
+		add_action( 'before_delete_post', array( __CLASS__, 'garder_la_notice' ) );
 	}
 
 	/**
@@ -112,9 +123,9 @@ class Notice_Archeomed_Annuaire {
 	 * Les personnes des notices privées, adresse en minuscules ⇒ personne,
 	 * sans rien écarter des retirées ni des supprimées. Avec $jusqua, les
 	 * seules notices d'identifiant au plus égal : celles qu'une purge va
-	 * mettre à la corbeille.
+	 * mettre à la corbeille. Avec $apres, les seules d'identifiant plus grand.
 	 */
-	public static function des_notices( $jusqua = 0 ) {
+	public static function des_notices( $jusqua = 0, $apres = 0 ) {
 		global $wpdb;
 		$jusqua = max( 0, (int) $jusqua );
 		$remplacees = array_map( 'strtoupper', array_map( 'trim', (array) $wpdb->get_col( $wpdb->prepare(
@@ -122,7 +133,7 @@ class Notice_Archeomed_Annuaire {
 			WHERE m.meta_key = '_na_remplace' AND m.meta_value <> '' AND p.post_type = %s AND p.post_status = 'private'",
 			Notice_Archeomed_File::CPT ) ) ) );
 		$personnes = array();
-		$depuis    = 0;
+		$depuis    = max( 0, (int) $apres );
 		do {
 			// Par identifiant croissant : la dernière notice lue est la plus
 			// récente, et c'est elle qui nomme.
@@ -179,7 +190,7 @@ class Notice_Archeomed_Annuaire {
 		return $personnes;
 	}
 
-	/** Les personnes gardées des notices purgées, adresse en minuscules ⇒ personne. */
+	/** Les personnes gardées des notices purgées ou supprimées, adresse en minuscules ⇒ personne. */
 	public static function gardees() {
 		$gardees = get_option( self::OPTION_GARDEES, array() );
 		return is_array( $gardees ) ? $gardees : array();
@@ -244,10 +255,45 @@ class Notice_Archeomed_Annuaire {
 	 * la purge ne se fait pas alors.
 	 */
 	public static function garder_avant_la_purge( $jusqua ) {
+		return self::garder( self::des_notices( (int) $jusqua ) );
+	}
+
+	/**
+	 * Garde les personnes d'une notice qui part à la corbeille ou s'efface
+	 * sans y passer. Une notice déjà à la corbeille, d'un essai de charge,
+	 * ou qu'une correction remplace n'a rien à garder. Rien ici n'empêche
+	 * la notice de partir.
+	 */
+	public static function garder_la_notice( $id ) {
+		$id = (int) $id;
+		if ( ! self::$garder_a_l_effacement || $id < 1 ) {
+			return;
+		}
+		$notice = get_post( $id );
+		if ( ! $notice || Notice_Archeomed_File::CPT !== $notice->post_type || 'private' !== $notice->post_status ) {
+			return;
+		}
+		try {
+			$personnes = self::des_notices( $id, $id - 1 );
+			if ( ! empty( $personnes ) ) {
+				self::garder( $personnes );
+			}
+		} catch ( Throwable $e ) {
+			// La notice part quand même : l'annuaire n'est pas une raison de la retenir.
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Ajoute des personnes à celles qu'on garde, une adresse supprimée
+	 * définitivement exceptée. Rend leur nombre, ou false si l'écriture a
+	 * manqué.
+	 */
+	private static function garder( $personnes ) {
 		$avant     = self::gardees();
 		$supprimes = self::supprimes();
 		$a_garder  = array();
-		foreach ( self::fondre( $avant, self::des_notices( (int) $jusqua ) ) as $cle => $p ) {
+		foreach ( self::fondre( $avant, $personnes ) as $cle => $p ) {
 			if ( isset( $supprimes[ self::empreinte( $cle ) ] ) ) {
 				continue;
 			}
@@ -409,7 +455,7 @@ class Notice_Archeomed_Annuaire {
 		}
 		echo '<h2>' . esc_html__( 'Annuaire des auteurs', 'notice-archeomed' ) . '</h2>';
 		echo '<p class="description" style="max-width:46em">' . esc_html(
-			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente. Qui dépose pour le responsable y figure comme déposant\u{00A0}; avant la version 3.81, il ne laissait que son adresse, et sa ligne est sans nom. Une purge des notices n’y touche pas\u{00A0}: les auteurs des notices purgées restent, avec la référence de leurs notices." ) . '</p>';
+			"Les personnes nommées dans les notices reçues, une ligne par adresse, classées par nom. Le nom et l’institution sont ceux de la notice la plus récente." ) . '</p>';
 		if ( empty( $personnes ) ) {
 			echo '<p>' . esc_html( empty( $retires ) && empty( self::supprimes() ) ? 'Aucune notice reçue pour l’instant.'
 				: 'Personne à montrer : toutes les adresses des notices sont retirées.' ) . '</p>';

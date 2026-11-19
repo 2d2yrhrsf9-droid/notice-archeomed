@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.104
+# Formulaire des notices d’archéologie médiévale — version 3.105
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1219,11 +1219,14 @@ retirées sans retour : l'adresse reste écartée pour de bon, et l'on n'en
 garde qu'une empreinte (`na_annuaire_supprimes`), ni l'adresse, ni le nom,
 ni la date. Seule une adresse déjà retirée se supprime.
 
-Une purge des notices ne vide pas l'annuaire : avant de mettre les notices
-à la corbeille, elle en garde les auteurs à part (`na_annuaire_gardees`),
-avec le nom, l'institution, les rôles et la référence de leurs notices. Une
-adresse supprimée définitivement n'y reste pas ; l'outil d'effacement des
-données personnelles de WordPress en ôte aussi la ligne.
+Ni une purge ni la suppression d'une notice ne vident l'annuaire : avant
+qu'une notice parte à la corbeille, ou s'efface sans y passer, ses auteurs
+sont gardés à part (`na_annuaire_gardees`), avec le nom, l'institution, les
+rôles et la référence de leurs notices. Une notice d'essai de charge, ou
+qu'une correction remplace, n'y laisse rien. On ôte quelqu'un de l'annuaire
+en le retirant, puis en le supprimant définitivement : une adresse
+supprimée n'y reste pas ; l'outil d'effacement des données personnelles de
+WordPress en ôte aussi la ligne.
 
 Deux boutons l'emportent :
 

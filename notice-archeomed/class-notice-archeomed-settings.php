@@ -1477,11 +1477,14 @@ class Notice_Archeomed_Settings {
 		if ( null === $jetons ) {
 			return self::purge_occupee();
 		}
+		$garder = Notice_Archeomed_Annuaire::$garder_a_l_effacement;
 		try {
 			if ( false === Notice_Archeomed_Annuaire::garder_avant_la_purge( $jusqua ) ) {
 				return array( 'ok' => false, 'message' => 'Rien n’a été fait : l’annuaire n’a pas pu garder les auteurs des notices.' );
 			}
 			Notice_Archeomed_Export::vider_la_file();
+			// Les auteurs sont gardés : chaque notice n'a plus à le faire.
+			Notice_Archeomed_Annuaire::$garder_a_l_effacement = false;
 			$echeance = microtime( true ) + self::BUDGET_DE_LA_PURGE;
 			$mises    = 0;
 			$manquees = 0;
@@ -1506,6 +1509,7 @@ class Notice_Archeomed_Settings {
 				}
 			} while ( count( $ids ) === 100 );
 		} finally {
+			Notice_Archeomed_Annuaire::$garder_a_l_effacement = $garder;
 			self::reprendre_les_taches( $jetons );
 		}
 		$restent = count( self::notices_au_statut( 'private', $jusqua, 1000 ) );

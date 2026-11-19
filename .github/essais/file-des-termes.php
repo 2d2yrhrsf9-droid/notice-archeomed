@@ -57,6 +57,10 @@ function na_notice( $donnees, $termes = null ) {
 	return $id;
 }
 
+// Les essais effacent leurs notices au fur et à mesure : l'annuaire en
+// garderait les auteurs. La mise de côté s'éprouve à part, avec la purge.
+Notice_Archeomed_Annuaire::$garder_a_l_effacement = false;
+
 $a = 'https://ark.frantiq.fr/ark:/26678/pcrtA';
 $b = 'https://ark.frantiq.fr/ark:/26678/pcrtB';
 $concept = function ( $ark, $lu_le ) {
@@ -4368,8 +4372,9 @@ wp_trash_post( $pur_2 );
 ob_start();
 $A_::onglet();
 $pur_rendu = ob_get_clean();
-na_verifier( false !== strpos( $pur_rendu, 'PURGE-1' ) && false !== strpos( $pur_rendu, 'Une purge des notices n’y touche pas' ),
-	'l\'onglet de l\'annuaire montre les notices purgées par leur référence', $pur_rendu );
+na_verifier( false !== strpos( $pur_rendu, 'PURGE-1' ) && false === strpos( $pur_rendu, 'Une purge des notices' )
+	&& false === strpos( $pur_rendu, 'Qui dépose pour le responsable' ),
+	'l\'onglet de l\'annuaire montre les notices purgées par leur référence, sans s\'en expliquer', $pur_rendu );
 
 $_GET = array();
 ob_start();
@@ -4405,6 +4410,52 @@ $A_::retirer( 'anne@annuaire.test', 'Second', 'Anne' );
 $A_::supprimer( 'anne@annuaire.test' );
 na_verifier( ! isset( $A_::gardees()['anne@annuaire.test'] ) && false === stripos( wp_json_encode( get_option( $A_::OPTION_GARDEES ) ), 'anne@' ),
 	'une adresse supprimée définitivement ne reste pas écrite parmi les auteurs gardés', $A_::gardees() );
+
+// Une notice supprimée seule, depuis la liste ou sans passer par la
+// corbeille, laisse aussi ses auteurs dans l'annuaire.
+na_verifier( false === $A_::$garder_a_l_effacement, 'la purge rend la mise de côté des auteurs telle qu\'elle l\'a trouvée' );
+$A_::$garder_a_l_effacement = true;
+delete_option( $A_::OPTION_GARDEES );
+$seu_1 = na_notice( array( 'commune' => 'Lisieux', 'resp_nom' => 'Seule', 'resp_prenom' => 'Marie', 'resp_email' => 'seule@annuaire.test', 'resp_inst' => 'Inrap' ) );
+update_post_meta( $seu_1, '_na_reference', 'SEULE-1' );
+wp_trash_post( $seu_1 );
+$seu_g1 = $A_::gardees();
+wp_delete_post( $seu_1, true );
+$seu_g2 = $A_::gardees();
+$seu_2 = na_notice( array( 'commune' => 'Orbec', 'resp_nom' => 'Directe', 'resp_prenom' => 'Paul', 'resp_email' => 'directe@annuaire.test' ) );
+update_post_meta( $seu_2, '_na_reference', 'SEULE-2' );
+wp_delete_post( $seu_2, true );
+$seu_ann = array();
+foreach ( $A_::recenser() as $seu_p ) {
+	$seu_ann[ strtolower( $seu_p['courriel'] ) ] = $seu_p;
+}
+na_verifier( isset( $seu_g1['seule@annuaire.test'] ) && array( 'SEULE-1' ) === $seu_g1['seule@annuaire.test']['notices']
+	&& 'Inrap' === $seu_g1['seule@annuaire.test']['institution'] && $seu_g1 === $seu_g2
+	&& isset( $seu_ann['seule@annuaire.test'], $seu_ann['directe@annuaire.test'] ) && 'Paul' === $seu_ann['directe@annuaire.test']['prenom']
+	&& array( 'SEULE-2' ) === array_values( $seu_ann['directe@annuaire.test']['notices'] ),
+	'une notice mise à la corbeille ou effacée d\'un coup laisse ses auteurs dans l\'annuaire, une seule fois', array( $seu_g1, $seu_g2, $seu_ann ) );
+
+$seu_essai = na_notice( array( 'commune' => 'Essaiville', 'resp_nom' => 'Fictif', 'resp_prenom' => 'Jean', 'resp_email' => 'fictif@annuaire.test' ) );
+update_post_meta( $seu_essai, '_na_essai', 1 );
+wp_delete_post( $seu_essai, true );
+$seu_vieille = na_notice( array( 'commune' => 'Vire', 'resp_nom' => 'Ancien', 'resp_prenom' => 'Nom', 'resp_email' => 'corrige@annuaire.test' ) );
+update_post_meta( $seu_vieille, '_na_reference', 'VIEILLE-1' );
+$seu_neuve = na_notice( array( 'commune' => 'Vire', 'resp_nom' => 'Corrigé', 'resp_prenom' => 'Nom', 'resp_email' => 'corrige@annuaire.test' ) );
+update_post_meta( $seu_neuve, '_na_reference', 'NEUVE-1' );
+update_post_meta( $seu_neuve, '_na_remplace', 'VIEILLE-1' );
+wp_trash_post( $seu_vieille );
+$A_::retirer( 'oubli@annuaire.test', 'Oubli', 'Léa' );
+$A_::supprimer( 'oubli@annuaire.test' );
+$seu_oubli = na_notice( array( 'commune' => 'Caen', 'resp_nom' => 'Oubli', 'resp_prenom' => 'Léa', 'resp_email' => 'oubli@annuaire.test' ) );
+wp_delete_post( $seu_oubli, true );
+$seu_g3 = wp_json_encode( $A_::gardees() );
+na_verifier( false === strpos( $seu_g3, 'fictif@' ) && false === strpos( $seu_g3, 'corrige@' ) && false === strpos( $seu_g3, 'VIEILLE-1' )
+	&& false === strpos( $seu_g3, 'oubli@' ) && false === strpos( $seu_g3, 'Oubli' ),
+	'une notice d\'essai, une notice remplacée par sa correction, une adresse supprimée définitivement ne laissent rien dans l\'annuaire gardé', $seu_g3 );
+
+$A_::$garder_a_l_effacement = false;
+wp_delete_post( $seu_vieille, true );
+wp_delete_post( $seu_neuve, true );
 
 foreach ( $pur_noms as $pur_cle => $pur_id ) {
 	delete_option( $pur_cle );

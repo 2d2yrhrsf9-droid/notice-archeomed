@@ -111,7 +111,7 @@ class Notice_Archeomed_Confidentialite {
 				),
 			);
 		}
-		// La ligne que l'annuaire garde après une purge des notices : elle
+		// La ligne que l'annuaire garde des notices purgées ou supprimées : elle
 		// porte encore l'adresse, le nom et l'institution. Une fois, à la
 		// première page.
 		$gardees = Notice_Archeomed_Annuaire::gardees();
@@ -144,17 +144,17 @@ class Notice_Archeomed_Confidentialite {
 	public function effacer( $courriel, $page = 1 ) {
 		list( $trouvees, $fini ) = $this->notices_de( $courriel, $page );
 		$messages = array();
-		// La ligne gardée par l'annuaire après une purge n'est pas une
+		// La ligne gardée par l'annuaire d'une notice partie n'est pas une
 		// archive éditoriale : elle s'efface.
 		$retiree = 1 === max( 1, (int) $page ) && Notice_Archeomed_Annuaire::oublier_la_gardee( $courriel );
 		if ( $retiree ) {
-			$messages[] = __( 'La ligne que l’annuaire des auteurs gardait des notices purgées est effacée.', 'notice-archeomed' );
+			$messages[] = __( 'La ligne que l’annuaire des auteurs gardait des notices purgées ou supprimées est effacée.', 'notice-archeomed' );
 		}
 		if ( ! empty( $trouvees ) ) {
 			$messages[] = sprintf(
 				/* translators: %d : nombre de notices */
-				_n( '%d notice porte cette adresse. Les notices sont des archives éditoriales : elles ne sont pas effacées par cet outil. La rédaction décide de leur anonymisation ou de leur suppression, depuis la liste des notices.',
-					'%d notices portent cette adresse. Les notices sont des archives éditoriales : elles ne sont pas effacées par cet outil. La rédaction décide de leur anonymisation ou de leur suppression, depuis la liste des notices.',
+				_n( '%d notice porte cette adresse. Les notices sont des archives éditoriales : elles ne sont pas effacées par cet outil. La rédaction décide de leur anonymisation ou de leur suppression, depuis la liste des notices. Une notice supprimée laisse ses auteurs dans l’annuaire : l’adresse s’en ôte ensuite par « Retirer », puis « Supprimer définitivement ».',
+					'%d notices portent cette adresse. Les notices sont des archives éditoriales : elles ne sont pas effacées par cet outil. La rédaction décide de leur anonymisation ou de leur suppression, depuis la liste des notices. Une notice supprimée laisse ses auteurs dans l’annuaire : l’adresse s’en ôte ensuite par « Retirer », puis « Supprimer définitivement ».',
 					count( $trouvees ), 'notice-archeomed' ),
 				count( $trouvees ) );
 		}

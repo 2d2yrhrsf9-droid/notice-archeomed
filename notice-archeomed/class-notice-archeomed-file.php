@@ -314,7 +314,12 @@ class Notice_Archeomed_File {
 		// erreur SQL) défait l'inscription : l'appelant bascule alors sur
 		// l'envoi direct, qui ne dépend pas de la file.
 		if ( false === update_post_meta( $id, '_na_etat', 'en_attente' ) ) {
+			// L'envoi direct qui prend le relais n'en laisse pas trace dans
+			// l'annuaire : la notice défaite non plus.
+			$garder = Notice_Archeomed_Annuaire::$garder_a_l_effacement;
+			Notice_Archeomed_Annuaire::$garder_a_l_effacement = false;
 			wp_delete_post( $id, true );
+			Notice_Archeomed_Annuaire::$garder_a_l_effacement = $garder;
 			return 0;
 		}
 		update_post_meta( $id, '_na_essais', 0 );
