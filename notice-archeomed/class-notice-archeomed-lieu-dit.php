@@ -179,7 +179,7 @@ class Notice_Archeomed_Lieu_Dit {
 		}
 		$italique = Notice_Archeomed_Normes::lieu_dit_en_italique();
 		foreach ( $runs as $k => $run ) {
-			$runs[ $k ]['i'] = $italique xor ! empty( $run['i'] );
+			$runs[ $k ]['i'] = ( $italique !== ! empty( $run['i'] ) );
 		}
 		return $runs;
 	}
