@@ -4415,6 +4415,150 @@ delete_option( $A_::OPTION_RETIRES );
 delete_option( $A_::OPTION_SUPPRIMES );
 wp_delete_post( $pur_3, true );
 
+WP_CLI::log( 'L\'envoi en arrière-plan' );
+// La page envoie elle-même et lit une réponse courte. Une coupure la fait
+// renvoyer, avec le même jeton : le serveur doit lui dire ce que sa notice
+// est devenue, sans en déposer une seconde.
+$ap_reglages = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $ap_reglages, array(
+	'mode_envoi'    => 'differe',
+	'destinataires' => array( array( 'email' => 'redaction@example.org', 'notices' => 1, 'recap' => 0 ) ) ) ) );
+$ap_rendu = function ( $donnees ) {
+	throw new RuntimeException( 'json:' . wp_json_encode( $donnees ) );
+};
+add_action( 'notice_archeomed_reponse_en_arriere_plan', $ap_rendu );
+add_filter( 'wp_redirect', $sortir );
+add_filter( 'pre_wp_mail', '__return_true' );
+$ap_jouer = function ( array $post, $entete = true ) use ( $plugin ) {
+	$_SERVER['REQUEST_METHOD'] = 'POST';
+	if ( $entete ) {
+		$_SERVER['HTTP_X_NA_ENVOI'] = '1';
+	}
+	$_POST = $post;
+	$vers  = 'aucune sortie';
+	try {
+		$plugin->handle_submission();
+	} catch ( RuntimeException $e ) {
+		$vers = $e->getMessage();
+	}
+	$_POST = array();
+	unset( $_SERVER['HTTP_X_NA_ENVOI'] );
+	return 0 === strpos( $vers, 'json:' ) ? (array) json_decode( substr( $vers, 5 ), true ) : array( 'sans_json' => $vers );
+};
+$ap_notice = function ( $page, $ts_defi, $texte ) use ( $plugin ) {
+	$defi = na_appel( $plugin, 'defi_du_puzzle', array( $ts_defi ) );
+	return array(
+		'notice_archeomed_envoi' => '1', 'notice_archeomed_nonce' => wp_create_nonce( 'notice_archeomed_submit' ),
+		'na_ts' => (string) $ts_defi, 'na_curseur' => (string) $defi['cible'], 'na_preuve' => $defi['preuve'],
+		'na_arriere_plan' => '1', 'na_page' => $page,
+		'rubrique_principale' => 'I. Constructions et habitats civils', 'commune' => array( 'Bayeux' ), 'commune_ark' => array( '' ),
+		'departement' => 'Calvados', 'lieu_dit' => 'Four de potier', 'annee' => '2025', 'nature' => array( 'Fouille préventive' ),
+		'organisme' => array( 'Inrap' ), 'resp_prenom' => 'Lise', 'resp_nom' => 'Hamon', 'resp_email' => 'lise.arriere-plan@example.org',
+		'resp_inst' => 'Inrap', 'texte_notice' => $texte,
+		'pactols_periods' => wp_slash( wp_json_encode( array( array( 'label' => 'XIIIe siècle', 'ark' => '' ) ) ) ),
+		'pactols_subjects' => wp_slash( wp_json_encode( array( array( 'label' => 'four', 'ark' => '' ) ) ) ),
+	);
+};
+$ap_sonde = function ( $page ) {
+	return array( 'notice_archeomed_envoi' => '1', 'na_arriere_plan' => '1', 'na_page' => $page, 'na_sonde' => '1' );
+};
+$ap_lire = function ( $page ) {
+	global $wpdb;
+	return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'na_page_' . md5( $page ) ) );
+};
+$ap_poser = function ( $page, $valeur ) {
+	global $wpdb;
+	$wpdb->query( $wpdb->prepare( "INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')
+		ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)", 'na_page_' . md5( $page ), $valeur ) );
+};
+$ap_compter = function () {
+	return count( get_posts( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'any', 'fields' => 'ids', 'numberposts' => -1 ) ) );
+};
+$ap_attente = constant( get_class( $plugin ) . '::ATTENTE_D_UN_ENVOI' );
+
+// Un jeton d'avant-hier, que le prochain envoi retenu efface.
+$ap_poser( 'essaivieux000001', ( time() - 2 * DAY_IN_SECONDS ) . '|https://example.org/vieux/' );
+
+$ap_refus = $ap_jouer( $ap_notice( 'essairefus000001', time() - 61, '' ) );
+na_verifier( isset( $ap_refus['redirect'] ) && false !== strpos( $ap_refus['redirect'], 'notice_envoyee=0' )
+	&& null === $ap_lire( 'essairefus000001' ),
+	'un refus répond par l\'adresse de la page de résultat, et rend la page libre de renvoyer', array( $ap_refus, $ap_lire( 'essairefus000001' ) ) );
+
+$ap_avant = $ap_compter();
+$ap_depot = $ap_jouer( $ap_notice( 'essaidepot000001', time() - 62, '<p>Le four du XIIIe siècle.</p>' ) );
+$ap_garde = (string) $ap_lire( 'essaidepot000001' );
+na_verifier( isset( $ap_depot['redirect'] ) && false !== strpos( $ap_depot['redirect'], 'notice_envoyee=1' )
+	&& false !== strpos( $ap_depot['redirect'], 'notice_ref=' ) && $ap_avant + 1 === $ap_compter()
+	&& '|' . $ap_depot['redirect'] === strstr( $ap_garde, '|' ) && null === $ap_lire( 'essaivieux000001' ),
+	'un dépôt répond par la page de confirmation, la retient sous le jeton, et efface les jetons d\'avant-hier',
+	array( $ap_depot, $ap_garde, $ap_avant, $ap_compter(), $ap_lire( 'essaivieux000001' ) ) );
+
+$ap_renvoi = $ap_jouer( $ap_notice( 'essaidepot000001', time() - 63, '<p>Le four du XIIIe siècle.</p>' ) );
+$ap_sondee = $ap_jouer( $ap_sonde( 'essaidepot000001' ) );
+na_verifier( isset( $ap_depot['redirect'], $ap_renvoi['redirect'], $ap_sondee['redirect'] )
+	&& $ap_depot['redirect'] === $ap_renvoi['redirect'] && $ap_depot['redirect'] === $ap_sondee['redirect']
+	&& $ap_avant + 1 === $ap_compter(),
+	'la page qui renvoie après une coupure, ou qui demande, retrouve la confirmation, sans seconde notice',
+	array( $ap_renvoi, $ap_sondee, $ap_compter() ) );
+
+$ap_poser( 'essaienroute0001', time() . '|' );
+$ap_route_sonde = $ap_jouer( $ap_sonde( 'essaienroute0001' ) );
+$ap_route_envoi = $ap_jouer( $ap_notice( 'essaienroute0001', time() - 64, '<p>Le four du XIIIe siècle.</p>' ) );
+na_verifier( ! empty( $ap_route_sonde['attendre'] ) && ! empty( $ap_route_envoi['attendre'] )
+	&& $ap_avant + 1 === $ap_compter() && null !== $ap_lire( 'essaienroute0001' ),
+	'un envoi encore en route fait attendre la page qui demande ou renvoie, sans rien déposer',
+	array( $ap_route_sonde, $ap_route_envoi, $ap_compter() ) );
+
+$ap_poser( 'essaiperime00001', ( time() - $ap_attente - 10 ) . '|' );
+$ap_perime = $ap_jouer( $ap_sonde( 'essaiperime00001' ) );
+$ap_rien   = $ap_jouer( $ap_sonde( 'essairien0000001' ) );
+na_verifier( ! empty( $ap_perime['absente'] ) && null === $ap_lire( 'essaiperime00001' ) && ! empty( $ap_rien['absente'] ),
+	'un envoi mort en route s\'efface, et la page qui demande apprend que rien n\'est arrivé',
+	array( $ap_perime, $ap_lire( 'essaiperime00001' ), $ap_rien ) );
+
+// Deux renvois arrivés ensemble : le second trouve la page déjà retenue.
+$ap_poser( 'essaiconcur00001', time() . '|' );
+$ap_prop = new ReflectionProperty( $plugin, 'page_envoyee' );
+$ap_prop->setAccessible( true );
+$ap_prop->setValue( $plugin, 'essaiconcur00001' );
+$ap_concur = '';
+try {
+	na_appel( $plugin, 'reserver_la_page' );
+} catch ( RuntimeException $e ) {
+	$ap_concur = $e->getMessage();
+}
+$ap_reservee = new ReflectionProperty( $plugin, 'page_reservee' );
+$ap_reservee->setAccessible( true );
+na_verifier( false !== strpos( $ap_concur, '"attendre"' ) && false === $ap_reservee->getValue( $plugin ),
+	'la page qu\'un autre envoi a déjà retenue n\'est pas prise une seconde fois', array( $ap_concur, $ap_reservee->getValue( $plugin ) ) );
+$ap_prop->setValue( $plugin, '' );
+
+$ap_natif = $ap_notice( 'essainatif000001', time() - 65, '<p>Le four.</p>' );
+unset( $ap_natif['na_arriere_plan'], $ap_natif['notice_archeomed_nonce'] );
+$ap_natif = $ap_jouer( $ap_natif, false );
+na_verifier( isset( $ap_natif['sans_json'] ) && false !== strpos( $ap_natif['sans_json'], 'notice_envoyee=0' )
+	&& null === $ap_lire( 'essainatif000001' ),
+	'envoyée par le navigateur, la page est redirigée comme avant', $ap_natif );
+
+remove_action( 'notice_archeomed_reponse_en_arriere_plan', $ap_rendu );
+remove_filter( 'wp_redirect', $sortir );
+remove_filter( 'pre_wp_mail', '__return_true' );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $ap_reglages );
+parse_str( (string) wp_parse_url( isset( $ap_depot['redirect'] ) ? $ap_depot['redirect'] : '', PHP_URL_QUERY ), $ap_retour );
+if ( ! empty( $ap_retour['notice_ref'] ) ) {
+	foreach ( get_posts( array( 'post_type' => Notice_Archeomed_File::CPT, 'post_status' => 'any', 'fields' => 'ids',
+		'meta_query' => array( array( 'key' => '_na_reference', 'value' => $ap_retour['notice_ref'] ) ) ) ) as $ap_id ) {
+		$ap_doc = (string) get_post_meta( $ap_id, '_na_document', true );
+		if ( '' !== $ap_doc ) {
+			@unlink( $ap_doc );
+		}
+		wp_delete_post( $ap_id, true );
+	}
+}
+wp_unschedule_hook( Notice_Archeomed_File::HOOK_UNE );
+$GLOBALS['wpdb']->query( $GLOBALS['wpdb']->prepare( "DELETE FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE %s",
+	$GLOBALS['wpdb']->esc_like( 'na_page_' ) . '%' ) );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

@@ -242,6 +242,7 @@ Les sorties ne lisent jamais `_na_donnees` directement : elles passent par `sais
 | `na_annuaire_retires` | les adresses retirées de l'annuaire |
 | `na_annuaire_supprimes` | les empreintes des adresses supprimées définitivement de l'annuaire |
 | `na_annuaire_gardees` | depuis la 3.103, les auteurs des notices purgées, que l'annuaire continue de montrer |
+| `na_page_<md5 du jeton>` | depuis la 3.104, une page qui envoie en arrière-plan (`na_page`, en-tête `X-NA-Envoi`) : `heure\|` tant que l'envoi est en route, `heure\|adresse du résultat` ensuite. Prise par `INSERT IGNORE` une fois les contrôles passés ; périmée en route au bout de `ATTENTE_D_UN_ENVOI` secondes, effacée au bout d'un jour. Une sonde (`na_sonde`) lit la réponse sans rien renvoyer : `{redirect}`, `{attendre}` ou `{absente}` |
 
 ### Transients
 

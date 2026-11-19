@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.103
+ * Version:           3.104
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -503,6 +503,12 @@ class Notice_Archeomed_Pactols {
 
 	/** Le sceau que ce dépôt a présenté, à retenir s'il aboutit. */
 	private $sceau_presente = '';
+
+	/** La page qui envoie en arrière-plan, par le jeton qu'elle a tiré. */
+	private $page_envoyee = '';
+
+	/** Ce dépôt a retenu la page : il dira ce qu'il est devenu. */
+	private $page_reservee = false;
 
 	/** La clé qui retient un sceau déjà servi. */
 	private static function cle_du_sceau( $preuve ) {
@@ -3527,6 +3533,9 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-envoi-piste { max-width: 24rem; height: 4px; overflow: hidden; background: var(--na-surface); border-radius: 2px; }
 			.na-form#na-form .na-envoi-barre { width: 35%; height: 100%; background: var(--na-accent); border-radius: 2px; animation: na-va-et-vient 1.4s ease-in-out infinite; }
 			@keyframes na-va-et-vient { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+			/* Ce qui est parti se mesure : la barre avance, au lieu d'aller et venir. */
+			.na-form#na-form .na-envoi-barre.na-envoi-barre--mesuree { margin-left: 0; animation: none; transition: width .3s ease; }
+			.na-form#na-form .na-envoi-rate { max-width: var(--na-mesure); margin: var(--na-e3) 0 0; }
 			.na-form#na-form .na-envoi-mot { max-width: var(--na-mesure); margin-top: var(--na-e2); font-size: var(--na-t-s); color: var(--na-encre); }
 			.na-form#na-form .na-donnees { max-width: var(--na-mesure); margin-top: var(--na-e5); font-size: 13px; line-height: 1.5; color: #555; }
 			.na-form#na-form .na-credit { max-width: var(--na-mesure); margin-top: var(--na-e3); font-size: 11px; line-height: 1.4; color: #777; }
@@ -4167,6 +4176,7 @@ class Notice_Archeomed_Pactols {
 						<div class="na-envoi-piste"><div class="na-envoi-barre"></div></div>
 						<p class="na-envoi-mot">Envoi en cours. Avec des illustrations lourdes et une connexion lente, cela peut prendre deux ou trois minutes. Ne fermez pas cette page.</p>
 					</div>
+					<p class="na-message na-error na-envoi-rate" id="na-envoi-rate" role="alert" tabindex="-1" hidden></p>
 					<p class="na-donnees">Les informations transmises via ce formulaire sont utilisées uniquement pour l’instruction éditoriale des notices destinées à la Chronique d’<em>Archéologie médiévale</em>. Elles sont adressées à la rédaction de la revue et ne sont pas utilisées à d’autres fins. Elles sont conservées pendant la durée nécessaire au traitement éditorial de la notice. Pour toute demande relative à ces données, vous pouvez contacter la rédaction à l’adresse indiquée sur le site.</p>
 					<p class="na-credit">Ce formulaire est une extension WordPress développée par la rédaction de la revue à l’aide de l’IA.</p>
 				</div>
@@ -8967,6 +8977,192 @@ class Notice_Archeomed_Pactols {
 				form.insertBefore(m, el('na-intro'));
 				m.focus();
 			}());
+			// ── L'envoi en arrière-plan ──
+			//
+			// La page envoie elle-même, et non le navigateur : une connexion
+			// qui flanchait laissait une page blanche, « Request Time-out »,
+			// sans dire si la notice était partie. La barre mesure désormais
+			// ce qui est parti. Une coupure laisse la page en place, saisie et
+			// fichiers compris ; elle demande au serveur s'il a reçu la notice,
+			// renvoie une fois d'elle-même si rien n'est arrivé, puis dit quoi
+			// faire. Le jeton, le même à chaque renvoi, empêche le doublon.
+			var jetonDEnvoi = (function () {
+				var t = '';
+				try {
+					var a = new Uint8Array(16);
+					window.crypto.getRandomValues(a);
+					t = Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+				} catch (x) { t = ''; }
+				while (t.length < 24) { t += Math.random().toString(36).slice(2); }
+				return t.replace(/[^a-z0-9]/g, '').slice(0, 32);
+			}());
+			var enArrierePlan = (function () {
+				try { return !!(window.FormData && window.XMLHttpRequest && ('upload' in new XMLHttpRequest())); } catch (x) { return false; }
+			}());
+			var envoiRate = el('na-envoi-rate');
+			var pisteEnvoi = form.querySelector('.na-envoi-piste');
+			var barreEnvoi = form.querySelector('.na-envoi-barre');
+			var motEnvoi = form.querySelector('.na-envoi-mot');
+			var motEnvoiInitial = motEnvoi ? motEnvoi.textContent : '';
+			var renvoisAuto = 0;
+			var attentes = 0;
+			function megaOctets(n) {
+				return (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', ',') + NBSP + 'Mo';
+			}
+			function direEnvoi(texte) { if (motEnvoi) { motEnvoi.textContent = texte; } }
+			function mesurerEnvoi(fait, total) {
+				if (!barreEnvoi || !pisteEnvoi) { return; }
+				if (!(total > 0)) {
+					barreEnvoi.classList.remove('na-envoi-barre--mesuree');
+					barreEnvoi.style.width = '';
+					['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-label'].forEach(function (a) { pisteEnvoi.removeAttribute(a); });
+					return;
+				}
+				var pc = Math.max(0, Math.min(100, Math.floor(fait * 100 / total)));
+				barreEnvoi.classList.add('na-envoi-barre--mesuree');
+				barreEnvoi.style.width = pc + '%';
+				pisteEnvoi.setAttribute('role', 'progressbar');
+				pisteEnvoi.setAttribute('aria-label', 'Envoi de la notice');
+				pisteEnvoi.setAttribute('aria-valuemin', '0');
+				pisteEnvoi.setAttribute('aria-valuemax', '100');
+				pisteEnvoi.setAttribute('aria-valuenow', String(pc));
+				direEnvoi('Envoi en cours' + NBSP + ': ' + pc + NBSP + '%, ' + megaOctets(fait) + ' sur ' + megaOctets(total) + '. Ne fermez pas cette page.');
+			}
+			// La page redevient utilisable, telle qu'avant le clic.
+			function rendreLaPage(message) {
+				form.removeAttribute('data-envoi');
+				if (bouton) {
+					bouton.disabled = false;
+					bouton.textContent = libelleBouton;
+				}
+				document.getElementById('na-envoi').hidden = true;
+				mesurerEnvoi(0, 0);
+				direEnvoi(motEnvoiInitial);
+				var relais = form.querySelector('input[type=hidden][name="notice_archeomed_envoi"]');
+				if (relais) { relais.remove(); }
+				try { window.sessionStorage.removeItem('na_envoi'); } catch (x) {}
+				if (envoiRate && message) {
+					envoiRate.textContent = message;
+					envoiRate.hidden = false;
+					envoiRate.scrollIntoView({ block: 'center' });
+					envoiRate.focus();
+				}
+			}
+			function messageDeCoupure() {
+				return 'L’envoi n’a pas abouti' + NBSP + ': la connexion avec le serveur s’est interrompue. Votre saisie et vos fichiers sont toujours dans cette page. '
+					+ 'Vérifiez votre connexion, puis cliquez de nouveau sur ' + guillemets(libelleBouton) + NBSP + ': la notice ne partira pas en double.';
+			}
+			function messageTropLourd() {
+				return 'L’envoi dépasse ce que le serveur accepte en une fois' + NBSP + ': rien n’a été reçu. Votre saisie et vos fichiers sont toujours dans cette page. '
+					+ 'Allégez les illustrations, ou envoyez la plus lourde à part par un service de transfert, puis cliquez de nouveau sur ' + guillemets(libelleBouton) + '.';
+			}
+			function poster(donnees, progres, fin) {
+				var xhr = new XMLHttpRequest();
+				var fini = false;
+				function finir(r) { if (fini) { return; } fini = true; fin(r); }
+				xhr.open('POST', form.action || window.location.href, true);
+				xhr.setRequestHeader('X-NA-Envoi', '1');
+				if (progres && xhr.upload) {
+					xhr.upload.onprogress = function (ev) { if (ev.lengthComputable) { progres(ev.loaded, ev.total); } };
+					xhr.upload.onload = function () { progres(-1, 0); };
+				}
+				xhr.onload = function () { finir(xhr); };
+				xhr.onerror = xhr.ontimeout = xhr.onabort = function () { finir(null); };
+				try { xhr.send(donnees); } catch (x) { finir(null); }
+			}
+			// Ce que le serveur a répondu : une adresse où aller, une attente,
+			// rien de reçu, ou un échec avec son code.
+			function issue(xhr) {
+				if (!xhr) { return { echec: 0 }; }
+				var r = null;
+				if (xhr.status === 200) {
+					try { r = JSON.parse(xhr.responseText); } catch (x) { r = null; }
+				}
+				if (r && typeof r === 'object' && (r.redirect || r.attendre || r.absente)) { return r; }
+				// Un serveur qui aurait redirigé quand même : le navigateur a
+				// suivi, et l'adresse finale est la page du résultat.
+				if (xhr.status === 200 && xhr.responseURL && /[?&]notice_envoyee=/.test(xhr.responseURL)) { return { redirect: xhr.responseURL }; }
+				return { echec: xhr.status };
+			}
+			function aller(adresse) {
+				var u = null;
+				try { u = new URL(adresse, window.location.href); } catch (x) { u = null; }
+				if (!u || u.origin !== window.location.origin) { return false; }
+				// Trop lourd : rien n'a été reçu ni gardé. La page reste, avec
+				// ses fichiers, pour qu'on en retire un.
+				if (u.searchParams.get('notice_erreur') === 'trop_lourd') {
+					rendreLaPage(messageTropLourd());
+					return true;
+				}
+				window.location.assign(u.toString());
+				return true;
+			}
+			function envoyerLaNotice() {
+				if (envoiRate) { envoiRate.hidden = true; }
+				var donnees = new FormData(form);
+				donnees.append('na_arriere_plan', '1');
+				donnees.append('na_page', jetonDEnvoi);
+				poster(donnees, function (fait, total) {
+					if (fait < 0) {
+						mesurerEnvoi(0, 0);
+						direEnvoi('Tout est parti. Le serveur enregistre la notice' + FINE + '; ne fermez pas cette page.');
+						return;
+					}
+					mesurerEnvoi(fait, total);
+				}, function (xhr) { suiteDeLEnvoi(issue(xhr), true); });
+			}
+			// La page demande ce que sa notice est devenue, sans renvoyer ses
+			// fichiers.
+			function sonder() {
+				var donnees = new FormData();
+				donnees.append('notice_archeomed_envoi', '1');
+				donnees.append('na_arriere_plan', '1');
+				donnees.append('na_page', jetonDEnvoi);
+				donnees.append('na_sonde', '1');
+				poster(donnees, null, function (xhr) { suiteDeLEnvoi(issue(xhr), false); });
+			}
+			function suiteDeLEnvoi(r, complet) {
+				if (r.redirect) {
+					if (!aller(r.redirect)) { rendreLaPage(messageDeCoupure()); }
+					return;
+				}
+				if (r.attendre) {
+					// Une autre requête de cette page est en route : on attend
+					// sa fin, cinq minutes au plus, sans rien renvoyer.
+					attentes += 1;
+					if (attentes <= 60) {
+						direEnvoi('Le serveur enregistre la notice' + FINE + '; ne fermez pas cette page.');
+						window.setTimeout(sonder, Math.max(2, Math.min(30, Number(r.attendre) || 5)) * 1000);
+						return;
+					}
+					attentes = 0;
+					rendreLaPage('Le serveur n’a pas confirmé la réception de la notice. Cliquez de nouveau sur ' + guillemets(libelleBouton)
+						+ NBSP + ': si elle est reçue, la confirmation s’affichera, et elle ne partira pas en double.');
+					return;
+				}
+				if (r.absente) {
+					// Rien n'est arrivé : une fois, la page renvoie d'elle-même.
+					if (renvoisAuto < 1) {
+						renvoisAuto += 1;
+						direEnvoi('La connexion a flanché' + FINE + '; la page renvoie la notice. Ne fermez pas cette page.');
+						envoyerLaNotice();
+						return;
+					}
+					rendreLaPage(messageDeCoupure());
+					return;
+				}
+				if (r.echec === 413) {
+					rendreLaPage(messageTropLourd());
+					return;
+				}
+				// Un échec sans réponse lisible : la notice est peut-être
+				// arrivée. On le demande avant tout renvoi.
+				if (complet) {
+					sonder();
+					return;
+				}
+				rendreLaPage(messageDeCoupure());
+			}
 			form.addEventListener('submit', function (e) {
 				if (form.getAttribute('data-envoi') === '1') { e.preventDefault(); return; }
 				// Entrée dans un champ enverrait encore une saisie qui n'a plus
@@ -9047,6 +9243,14 @@ class Notice_Archeomed_Pactols {
 				relais.name = 'notice_archeomed_envoi';
 				relais.value = '1';
 				form.appendChild(relais);
+				// Sans ce qu'il faut pour envoyer elle-même, la page laisse le
+				// navigateur envoyer, comme avant.
+				if (enArrierePlan) {
+					e.preventDefault();
+					renvoisAuto = 0;
+					attentes = 0;
+					envoyerLaNotice();
+				}
 			});
 			// Revenu par le bouton Précédent, le navigateur rend la page telle
 			// qu'on l'a quittée : bouton bloqué, envoi « en cours ». On la rend
@@ -12131,6 +12335,7 @@ class Notice_Archeomed_Pactols {
 			return;
 		}
 		error_log( 'Notice Archeomed: requête de ' . $longueur . ' octets vidée par post_max_size.' );
+		$this->oublier_la_page();
 		$this->redirect_result( false, 'trop_lourd' );
 	}
 
@@ -12291,6 +12496,9 @@ class Notice_Archeomed_Pactols {
 		if ( ! isset( $_POST['notice_archeomed_envoi'] ) ) {
 			return;
 		}
+		// Une page qui renvoie après une coupure : si sa notice est déjà
+		// reçue, ou en train de l'être, on le lui dit sans rien refaire.
+		$this->reponse_deja_connue();
 		// Avant tout refus : la saisie gardée doit retrouver chaque figure à
 		// sa place, celles envoyées à part comprises.
 		$this->ranger_les_figures_a_part();
@@ -12374,6 +12582,7 @@ class Notice_Archeomed_Pactols {
 			$this->cause_du_refus = 'plafond de dépôts de toute la revue';
 			$this->redirect_result( false, 'quota' );
 		}
+		$this->reserver_la_page();
 		$this->garder_le_disque();
 		$d = array();
 		$d['rubrique_principale'] = $this->collect_select( 'rubrique_principale', $this->rubriques, true );
@@ -12544,6 +12753,9 @@ class Notice_Archeomed_Pactols {
 		$id = $this->file()->deposer( $d, $notice,
 			array_merge( $illustrations, array_values( $autorisations ) ), '', $reference );
 		if ( $id ) {
+			// La notice est reçue : une page qui renverrait, la réponse
+			// perdue ou la requête morte plus loin, apprend qu'elle l'est.
+			$this->retenir_la_page( $this->adresse_du_resultat( true, '', '', $reference ) );
 			set_transient( 'na_reprise_' . $vivant, array(
 				'corrige_id'       => $id,
 				'vivant'           => true,
@@ -14948,6 +15160,24 @@ class Notice_Archeomed_Pactols {
 		if ( ! $ok ) {
 			$this->noter_le_refus( $raison, $champs );
 		}
+		$redirect = $this->adresse_du_resultat( $ok, $raison, $champ, $reference, $champs, $jeton );
+		// Une notice qui porte une référence est reçue, même refusée à
+		// l'envoi du courriel : la page qui renverrait l'apprend. Sans
+		// référence, rien n'est reçu, et la page peut renvoyer.
+		if ( $ok || '' !== $reference ) {
+			$this->retenir_la_page( $redirect );
+		} else {
+			$this->liberer_la_page();
+		}
+		if ( $this->en_arriere_plan() ) {
+			$this->repondre_en_arriere_plan( array( 'redirect' => self::adresse_sure( $redirect ) ) );
+		}
+		wp_safe_redirect( $redirect );
+		exit;
+	}
+
+	/** L'adresse de la page de résultat, refus ou dépôt. */
+	private function adresse_du_resultat( $ok, $raison = '', $champ = '', $reference = '', $champs = array(), $jeton = '' ) {
 		$referer = $this->url_du_formulaire();
 		$redirect = add_query_arg( 'notice_envoyee', $ok ? '1' : '0', $referer );
 		if ( ! $ok && '' !== $raison ) {
@@ -14970,7 +15200,165 @@ class Notice_Archeomed_Pactols {
 		if ( $ok && $this->fichiers_refuses ) {
 			$redirect = add_query_arg( 'notice_sans_fichiers', '1', $redirect );
 		}
-		wp_safe_redirect( $redirect );
+		return $redirect;
+	}
+
+	// ── L'envoi en arrière-plan ────────────────────────────────────────────
+	//
+	// Le navigateur envoyait la page lui-même. Une connexion qui flanche le
+	// temps de téléverser une figure lourde — un réseau sans fil d'université,
+	// un train —, et l'hébergeur répondait « Request Time-out » sur une page
+	// blanche : la personne ne savait ni si la notice était partie, ni si
+	// elle pouvait renvoyer sans faire un doublon.
+	//
+	// La page envoie désormais elle-même, en mesurant ce qui est parti, et
+	// lit une courte réponse au lieu d'être redirigée. Elle tire un jeton,
+	// le même à chaque renvoi : le serveur retient, sous ce jeton, que la
+	// notice est en route, puis ce qu'elle est devenue. Une page qui renvoie
+	// après une coupure apprend ainsi que sa notice est reçue, ou en train
+	// de l'être, au lieu d'en déposer une seconde.
+
+	/**
+	 * Une requête ne calcule pas plus de deux minutes chez l'hébergeur, et
+	 * la page n'est retenue qu'une fois les fichiers arrivés : au-delà de
+	 * trois, un envoi resté « en route » est mort avec sa requête.
+	 */
+	const ATTENTE_D_UN_ENVOI = 180;
+
+	/** L'envoi vient-il de la page elle-même, qui attend une réponse courte ? */
+	private function en_arriere_plan() {
+		return ! empty( $_SERVER['HTTP_X_NA_ENVOI'] )
+			|| ( isset( $_POST['na_arriere_plan'] ) && '1' === $_POST['na_arriere_plan'] );
+	}
+
+	/** Le jeton de la page, s'il est bien formé ; sinon une chaîne vide. */
+	private static function page_postee() {
+		$page = isset( $_POST['na_page'] ) && is_string( $_POST['na_page'] ) ? strtolower( trim( wp_unslash( $_POST['na_page'] ) ) ) : '';
+		return 1 === preg_match( '/^[a-z0-9]{16,40}$/', $page ) ? $page : '';
+	}
+
+	private static function cle_de_la_page( $page ) {
+		return 'na_page_' . md5( (string) $page );
+	}
+
+	/**
+	 * Ce que le serveur sait de la page : null, ou l'heure où l'envoi a été
+	 * retenu et l'adresse du résultat, vide tant qu'il est en route. Lu en
+	 * base et non dans la mémoire de WordPress : un autre processus l'écrit.
+	 */
+	private static function etat_de_la_page( $page ) {
+		global $wpdb;
+		$valeur = $wpdb->get_var( $wpdb->prepare(
+			"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::cle_de_la_page( $page ) ) );
+		if ( null === $valeur ) {
+			return null;
+		}
+		$morceaux = explode( '|', (string) $valeur, 2 );
+		return array(
+			'valeur'  => (string) $valeur,
+			'ts'      => (int) $morceaux[0],
+			'adresse' => isset( $morceaux[1] ) ? $morceaux[1] : '',
+		);
+	}
+
+	/**
+	 * Avant tout contrôle : la page qui renvoie apprend ce que sa notice est
+	 * devenue. Une sonde — la page qui demande, sans renvoyer ses fichiers —
+	 * apprend aussi que rien n'est arrivé.
+	 */
+	private function reponse_deja_connue() {
+		$this->oublier_la_page();
+		$page = self::page_postee();
+		if ( '' === $page || ! $this->en_arriere_plan() ) {
+			return;
+		}
+		$this->page_envoyee = $page;
+		$etat = self::etat_de_la_page( $page );
+		if ( null !== $etat && '' !== $etat['adresse'] ) {
+			$this->repondre_en_arriere_plan( array( 'redirect' => self::adresse_sure( $etat['adresse'] ) ) );
+		}
+		if ( null !== $etat && time() - $etat['ts'] < self::ATTENTE_D_UN_ENVOI ) {
+			$this->repondre_en_arriere_plan( array( 'attendre' => 5 ) );
+		}
+		if ( null !== $etat ) {
+			// Un envoi mort en route, sans notice inscrite : la page peut
+			// renvoyer. Effacé seulement s'il n'a pas changé entre-temps.
+			global $wpdb;
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+				self::cle_de_la_page( $page ), $etat['valeur'] ) );
+		}
+		if ( isset( $_POST['na_sonde'] ) ) {
+			$this->repondre_en_arriere_plan( array( 'absente' => true ) );
+		}
+	}
+
+	/**
+	 * Retient la page, une fois les contrôles passés, par une écriture qui
+	 * ne réussit qu'une fois : deux renvois de la même page arrivés ensemble
+	 * ne déposent pas deux notices. Le second apprend que le premier est en
+	 * route. Les jetons de plus d'un jour s'effacent au passage.
+	 */
+	private function reserver_la_page() {
+		if ( '' === $this->page_envoyee ) {
+			return;
+		}
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND CAST(SUBSTRING_INDEX(option_value, '|', 1) AS UNSIGNED) < %d",
+			$wpdb->esc_like( 'na_page_' ) . '%', time() - DAY_IN_SECONDS ) );
+		$pris = $wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+			self::cle_de_la_page( $this->page_envoyee ), time() . '|' ) );
+		if ( 1 !== (int) $pris ) {
+			$this->repondre_en_arriere_plan( array( 'attendre' => 5 ) );
+		}
+		$this->page_reservee = true;
+	}
+
+	/** Chaque requête part sans page retenue. */
+	private function oublier_la_page() {
+		$this->page_envoyee  = '';
+		$this->page_reservee = false;
+	}
+
+	/** Ce que la notice est devenue, pour la page qui renverrait. */
+	private function retenir_la_page( $adresse ) {
+		if ( ! $this->page_reservee ) {
+			return;
+		}
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s",
+			time() . '|' . (string) $adresse, self::cle_de_la_page( $this->page_envoyee ) ) );
+	}
+
+	/** Rien n'est reçu : la page pourra renvoyer. */
+	private function liberer_la_page() {
+		if ( ! $this->page_reservee ) {
+			return;
+		}
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s",
+			self::cle_de_la_page( $this->page_envoyee ) ) );
+		$this->page_reservee = false;
+	}
+
+	/** Une adresse de ce site, ou l'accueil : la page s'y rendra d'elle-même. */
+	private static function adresse_sure( $adresse ) {
+		return wp_validate_redirect( (string) $adresse, home_url( '/' ) );
+	}
+
+	/**
+	 * La réponse courte que la page lit. L'action laisse les essais la lire
+	 * avant la sortie.
+	 */
+	private function repondre_en_arriere_plan( $donnees ) {
+		do_action( 'notice_archeomed_reponse_en_arriere_plan', $donnees );
+		if ( ! headers_sent() ) {
+			nocache_headers();
+			status_header( 200 );
+			header( 'Content-Type: application/json; charset=utf-8' );
+		}
+		echo wp_json_encode( $donnees );
 		exit;
 	}
 	/**

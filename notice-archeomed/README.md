@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.103
+# Formulaire des notices d’archéologie médiévale — version 3.104
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1253,6 +1253,30 @@ même ordre. Une autorisation de reproduction ne revient pas plus qu'un
 fichier : la figure dit qu'elle est à joindre de nouveau.
 
 La reprise vit une heure après un refus.
+
+### Une connexion qui flanche pendant l'envoi
+
+Depuis la 3.104, la page envoie la notice elle-même. Une barre dit ce qui
+est parti, en pourcentage et en mégaoctets ; une fois les fichiers arrivés,
+elle dit que le serveur enregistre la notice. Avant, une connexion qui
+flanchait pendant le téléversement d'une figure lourde laissait une page
+blanche (« Request Time-out »), sans dire si la notice était partie.
+
+Si la connexion se coupe :
+
+- la page reste telle quelle, saisie et fichiers compris ;
+- elle demande au serveur s'il a reçu la notice. S'il l'a reçue, la
+  confirmation s'affiche. Si elle est en train d'être enregistrée, la page
+  attend ;
+- si rien n'est arrivé, elle renvoie une fois d'elle-même. Si cela échoue
+  encore, elle dit de vérifier la connexion et de cliquer de nouveau.
+
+Chaque page tire un jeton, le même à chaque renvoi. Le serveur retient
+sous ce jeton que la notice est en route, puis ce qu'elle est devenue :
+un renvoi ne fait jamais de seconde notice. Un envoi trop lourd pour le
+serveur laisse lui aussi la page en place, fichiers compris, pour qu'on
+en retire un. Un navigateur trop ancien pour envoyer lui-même envoie
+comme avant.
 
 ## Corriger un dépôt déjà envoyé
 
