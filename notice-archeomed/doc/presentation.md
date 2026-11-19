@@ -26,7 +26,7 @@ Le formulaire ne refuse que l'indispensable — un champ obligatoire vide, un fi
 
 - une image dont la définition est insuffisante pour la taille d'impression prévue ;
 - une figure appelée dans le texte (« fig. 3 ») qui n'est pas jointe, une figure jointe que le texte n'appelle pas, ou une figure 2 appelée avant la 1 ;
-- un paragraphe sans ponctuation finale, signe fréquent d'un texte coupé au copier-coller, ou au contraire un intertitre qui finit par un point ;
+- un paragraphe sans ponctuation finale, signe fréquent d'un texte coupé au copier-coller ; une ligne courte sans ponctuation, qui est sans doute un intertitre à poser avec le bouton T1 (plusieurs lignes courtes qui se suivent ne font qu'un avis) ; ou au contraire un intertitre qui finit par un point ;
 - un ordinal fautif (« XIIème » pour « XIIe »), une année tapée avec une espace (« 1 250 ») ;
 - un sigle qui n'est pas développé à sa première mention, ou qui n'est pas écrit à la forme de la revue ;
 - un texte alternatif qui recopie la légende, qui se réduit à un nom de fichier, ou qui commence par « Image de » ;

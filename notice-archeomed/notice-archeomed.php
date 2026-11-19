@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version: 3.100
+ * Version: 3.101
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -7663,12 +7663,30 @@ class Notice_Archeomed_Pactols {
 			// la suite reprend en bas de casse — un retour de trop, venu d'un PDF.
 			// Le paragraphe en cours de frappe (« sauf ») attend sa fin.
 			var PARAGRAPHE_COURT = <?php echo (int) Notice_Archeomed_Controles::PARAGRAPHE_COURT; ?>;
+			function citeCourt(t) { return guillemets(points(t).length > 40 ? extrait(t, 40) + '…' : t); }
+			// Moins de huit mots : un intertitre posé sans le bouton T1, un
+			// élément de liste, une cellule de tableau, non une phrase tronquée.
+			// Les lignes courtes qui se suivent ne font qu'un avis (comme au
+			// serveur, Notice_Archeomed_Controles::lignes_courtes).
+			function lignesCourtes(paras, suite) {
+				var premier = suite[0], dernier = suite[suite.length - 1];
+				if (suite.length === 1) {
+					return 'Le paragraphe ' + (premier + 1) + ' (' + citeCourt(paras[premier]) + ') ne se termine par aucune ponctuation'
+						+ NBSP + ': si c’est un intertitre, posez-le avec le bouton T1' + NBSP + '; sinon, terminez la phrase.';
+				}
+				var deux = suite.length === 2;
+				return 'Les paragraphes ' + (premier + 1) + (deux ? ' et ' : ' à ') + (dernier + 1)
+					+ ' (' + citeCourt(paras[premier]) + (deux ? ' et ' : ' … ') + citeCourt(paras[dernier]) + ') ne se terminent par aucune ponctuation'
+					+ NBSP + ': des intertitres se posent avec le bouton T1, une liste peut rester ainsi' + NBSP + '; sinon, terminez les phrases.';
+			}
 			function ponctuationFinale(paras, sauf) {
-				var avis = [];
+				var avis = [], suite = [];
 				paras.forEach(function (p, i) {
-					// Moins de huit mots : un élément de liste ou une cellule de
-					// tableau collés, non une phrase tronquée (comme au serveur).
-					if (i === sauf || finitBien(p) || p.trim().split(/\s+/).length < PARAGRAPHE_COURT) { return; }
+					// Le paragraphe en cours de frappe coupe la suite des lignes
+					// courtes : il n'en est pas, tant qu'on y écrit.
+					if (i !== sauf && !finitBien(p) && p.trim().split(/\s+/).length < PARAGRAPHE_COURT) { suite.push(i); return; }
+					if (suite.length) { avis.push(lignesCourtes(paras, suite)); suite = []; }
+					if (i === sauf || finitBien(p)) { return; }
 					if (i + 1 < paras.length && reprendEnBasDeCasse(paras[i + 1])) {
 						avis.push('Le paragraphe ' + (i + 1) + ' s’arrête au milieu d’une phrase que le suivant reprend ('
 							+ guillemets('…' + extrait(p, -30)) + ' puis ' + guillemets(extrait(paras[i + 1], 30) + '…')
@@ -7678,6 +7696,7 @@ class Notice_Archeomed_Pactols {
 							+ guillemets('…' + extrait(p, -40)) + ')' + NBSP + ': texte tronqué' + NBSP + '?');
 					}
 				});
+				if (suite.length) { avis.push(lignesCourtes(paras, suite)); }
 				return avis;
 			}
 			// « fig. 3 » quand deux figures seulement sont jointes, ou une figure

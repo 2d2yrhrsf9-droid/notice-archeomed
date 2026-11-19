@@ -210,6 +210,51 @@ jobs:
           PY
           grep -q 'signaleEnFrappe\[cle\] = true' /tmp/formulaire.js \
             || { echo "::error::Le formulaire ne signale plus l'adresse à la frappe."; exit 1; }
+          # Les lignes courtes sans ponctuation : les mêmes avis, aux mêmes
+          # mots, que le serveur (Notice_Archeomed_Controles::lignes_courtes,
+          # essayé dans file-des-termes.php).
+          python3 - <<'PY'
+          import json, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          def variable(nom):
+              i = t.find('var ' + nom + ' =')
+              if i < 0:
+                  print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
+              return t[i:t.index('\n', i)]
+          code = '\n'.join([variable(v) for v in ('NBSP', 'PONCTUATION_FINALE', 'FERMANTS', 'PARAGRAPHE_COURT')]
+                            + [fonction(f) for f in ('motif', 'points', 'extrait', 'guillemets')]
+                            + [variable(v) for v in ('OUVRANTS', 'BAS_DE_CASSE')]
+                            + [fonction(f) for f in ('finitBien', 'reprendEnBasDeCasse', 'citeCourt', 'lignesCourtes', 'ponctuationFinale')])
+          long_ok = 'Le fossé nord de l’enclos a livré un abondant mobilier céramique.'
+          titre = 'Établissement agropastoral carolingien et constructions seigneuriales'
+          suite = ' ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.'
+          cas = [
+              [[long_ok, 'fdgdfgfdg', long_ok, 'vcvcvcbc', 'cvbvcb', long_ok, 'Phase 1', 'Phase 2', 'Phase 3', titre], -1, [
+                  'Le paragraphe 2 (« fdgdfgfdg ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
+                  'Les paragraphes 4 et 5 (« vcvcvcbc » et « cvbvcb »)' + suite,
+                  'Les paragraphes 7 à 10 (« Phase 1 » … « ' + titre[:40] + '… »)' + suite]],
+              [['Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau'], -1, ['Les paragraphes 1 à 4 (« Fosse 12 » … « Trou de poteau »)' + suite]],
+              [['Fosse 12.', 'Silo 4 ;', long_ok], -1, []],
+              # La ligne en cours de frappe n'est pas jugée, et coupe la suite.
+              [['Fosse 12', 'Silo 4', 'Foyer'], 1, [
+                  'Le paragraphe 1 (« Fosse 12 ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
+                  'Le paragraphe 3 (« Foyer ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.']],
+          ]
+          js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
+              + 'var faux = cas.filter(function (c) { return JSON.stringify(ponctuationFinale(c[0], c[1]).map(function (a) { return a.split(NBSP).join(" "); })) !== JSON.stringify(c[2]); });\n' \
+              + 'faux.forEach(function (c) { console.log("::error::" + JSON.stringify(c[0]) + " donne " + JSON.stringify(ponctuationFinale(c[0], c[1]))); });\n' \
+              + 'process.exit(faux.length ? 1 : 0);\n'
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
 
       - name: La relecture se fait sur une page du site, et le coordinateur n'entre pas dans l'administration
         working-directory: /tmp/wp

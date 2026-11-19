@@ -38,9 +38,10 @@ class Notice_Archeomed_Controles {
 
 	/**
 	 * En deçà de ce nombre de mots, un paragraphe qui ne finit pas par une
-	 * ponctuation n'est pas signalé : c'est un élément de liste, une cellule de
-	 * tableau, un libellé — que le collage a mis chacun en paragraphe. Un texte
-	 * tronqué, lui, est une phrase longue.
+	 * ponctuation n'est pas pris pour un texte tronqué : c'est un intertitre
+	 * posé sans le bouton T1, un élément de liste, une cellule de tableau, un
+	 * libellé. L'avis le dit autrement, et réunit les lignes courtes qui se
+	 * suivent : une liste collée ne donne qu'un avis.
 	 */
 	const PARAGRAPHE_COURT = 8;
 
@@ -229,13 +230,26 @@ class Notice_Archeomed_Controles {
 	 * une phrase tronquée au collage. Et, cas à part, le paragraphe coupé en
 	 * deux, dont la suite reprend en bas de casse — un retour de trop, venu
 	 * d'un PDF de rapport. Proposer d'y « ajouter le point » écrirait « au
-	 * contraire,. » : on le nomme donc autrement.
+	 * contraire,. » : on le nomme donc autrement. Les lignes courtes
+	 * (PARAGRAPHE_COURT) ont leur propre avis, un seul pour celles qui se
+	 * suivent.
 	 */
 	public static function ponctuation_finale( $paragraphes ) {
-		$avis = array();
-		$n    = count( $paragraphes );
+		$paragraphes = array_values( $paragraphes );
+		$avis        = array();
+		$n           = count( $paragraphes );
+		$suite       = array();
 		foreach ( $paragraphes as $i => $p ) {
-			if ( self::finit_bien( $p ) || count( preg_split( '/\s+/u', trim( $p ) ) ) < self::PARAGRAPHE_COURT ) {
+			$court = ! self::finit_bien( $p ) && count( preg_split( '/\s+/u', trim( $p ) ) ) < self::PARAGRAPHE_COURT;
+			if ( $court ) {
+				$suite[] = $i;
+				continue;
+			}
+			if ( $suite ) {
+				$avis[] = self::lignes_courtes( $paragraphes, $suite );
+				$suite  = array();
+			}
+			if ( self::finit_bien( $p ) ) {
 				continue;
 			}
 			$fin = self::extrait( $p, -40 );
@@ -246,7 +260,36 @@ class Notice_Archeomed_Controles {
 				$avis[] = sprintf( 'Le paragraphe %1$d ne se termine par aucune ponctuation (« …%2$s ») : texte tronqué ?', $i + 1, $fin );
 			}
 		}
+		if ( $suite ) {
+			$avis[] = self::lignes_courtes( $paragraphes, $suite );
+		}
 		return $avis;
+	}
+
+	/**
+	 * L'avis d'une ligne courte sans ponctuation, ou de plusieurs qui se
+	 * suivent : « fdgdfgfdg » tapé seul sur sa ligne n'était signalé nulle
+	 * part. Le formulaire porte la même règle (lignesCourtes).
+	 *
+	 * @param string[] $paragraphes Les paragraphes du texte.
+	 * @param int[]    $suite       Les rangs, consécutifs, des lignes courtes.
+	 */
+	private static function lignes_courtes( $paragraphes, $suite ) {
+		$premier = $suite[0];
+		$dernier = $suite[ count( $suite ) - 1 ];
+		if ( 1 === count( $suite ) ) {
+			return sprintf( 'Le paragraphe %1$d (%2$s) ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
+				$premier + 1, self::cite_court( $paragraphes[ $premier ] ) );
+		}
+		return sprintf( 'Les paragraphes %1$d %2$s %3$d (%4$s %5$s %6$s) ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
+			$premier + 1, 2 === count( $suite ) ? 'et' : 'à', $dernier + 1,
+			self::cite_court( $paragraphes[ $premier ] ), 2 === count( $suite ) ? 'et' : '…', self::cite_court( $paragraphes[ $dernier ] ) );
+	}
+
+	/** Une ligne courte entre guillemets, coupée au-delà de quarante caractères. */
+	private static function cite_court( $t ) {
+		$long = function_exists( 'mb_strlen' ) ? mb_strlen( $t, 'UTF-8' ) : strlen( $t );
+		return '« ' . ( $long > 40 ? self::extrait( $t, 40 ) . '…' : $t ) . ' »';
 	}
 
 	/**

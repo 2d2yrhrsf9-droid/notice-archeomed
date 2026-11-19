@@ -675,8 +675,23 @@ $avis_ponct = $C::ponctuation_finale( array( 'Certaines de ces structures sont d
 na_verifier( 2 === count( $avis_ponct ) && false !== strpos( $avis_ponct[0], 'suivant reprend' )
 	&& false !== strpos( $avis_ponct[1], 'aucune ponctuation' ),
 	'le paragraphe coupé et le texte tronqué se nomment chacun', $avis_ponct );
-na_verifier( array() === $C::ponctuation_finale( array( 'Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau' ) ),
-	'des éléments de liste ou des cellules de tableau collés (moins de huit mots) ne passent pas pour du texte tronqué' );
+$avis_liste = $C::ponctuation_finale( array( 'Fosse 12', 'Silo 4', 'Foyer du bâtiment', 'Trou de poteau' ) );
+na_verifier( array( 'Les paragraphes 1 à 4 (« Fosse 12 » … « Trou de poteau ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.' ) === $avis_liste,
+	'des éléments de liste collés (moins de huit mots) font un seul avis, qui ne parle pas de texte tronqué', $avis_liste );
+$long_ok = 'Le fossé nord de l’enclos a livré un abondant mobilier céramique.';
+$avis_court = $C::ponctuation_finale( array( $long_ok, 'fdgdfgfdg', $long_ok, 'vcvcvcbc', 'cvbvcb', $long_ok, 'Phase 1', 'Phase 2', 'Phase 3', 'Établissement agropastoral carolingien et constructions seigneuriales' ) );
+na_verifier( array(
+		'Le paragraphe 2 (« fdgdfgfdg ») ne se termine par aucune ponctuation : si c’est un intertitre, posez-le avec le bouton T1 ; sinon, terminez la phrase.',
+		'Les paragraphes 4 et 5 (« vcvcvcbc » et « cvbvcb ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
+		'Les paragraphes 7 à 10 (« Phase 1 » … « Établissement agropastoral carolingien e… ») ne se terminent par aucune ponctuation : des intertitres se posent avec le bouton T1, une liste peut rester ainsi ; sinon, terminez les phrases.',
+	) === $avis_court,
+	'une ligne courte sans ponctuation se signale seule, les lignes courtes qui se suivent ensemble, et un paragraphe ponctué sépare les suites', $avis_court );
+$avis_mixte = $C::ponctuation_finale( array( 'Sondage 3', 'Une fin sans point mais assez longue pour être une phrase tronquée au collage', 'Sondage 4' ) );
+na_verifier( 3 === count( $avis_mixte ) && false !== strpos( $avis_mixte[0], 'Le paragraphe 1 (« Sondage 3 »)' )
+	&& false !== strpos( $avis_mixte[1], 'texte tronqué' ) && false !== strpos( $avis_mixte[2], 'Le paragraphe 3 (« Sondage 4 »)' ),
+	'un paragraphe long sans ponctuation coupe la suite des lignes courtes et garde son propre avis', $avis_mixte );
+na_verifier( array() === $C::ponctuation_finale( array( 'Fosse 12.', 'Silo 4 ;', $long_ok ) ),
+	'une ligne courte ponctuée ne reçoit aucun avis' );
 $ordre_fig = $C::appels_de_figure( 'Le mur (fig. 2) et le fossé (fig. 1), puis la coupe (fig. 3).', 3 );
 na_verifier( array( "La fig.\u{00A0}2 est appelée avant la fig.\u{00A0}1\u{00A0}: le texte appelle les figures dans l’ordre." ) === $ordre_fig
 	&& array() === $C::appels_de_figure( 'Le fossé (fig. 1), le mur (fig. 2) et la coupe (fig. 3), puis encore fig. 1.', 3 )

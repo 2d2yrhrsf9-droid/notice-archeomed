@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.100
+# Formulaire des notices d’archéologie médiévale — version 3.101
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1713,7 +1713,10 @@ Un corpus de cas, dans les essais, fixe ce que chaque règle doit rendre.
 ## Les contrôles du dépôt
 
 Au dépôt, la notice est relue par des règles qui **avertissent sans jamais
-refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), un
+refuser** : un texte qui s'arrête sans ponctuation (collage tronqué), une
+ligne courte — moins de huit mots — sans ponctuation, qui est un intertitre
+posé sans le bouton T1 ou une liste (depuis la 3.101 ; les lignes courtes qui
+se suivent ne donnent qu'un avis, « Les paragraphes 2 à 4… »), un
 paragraphe coupé en deux, un intertitre qui finit par un point, une figure appelée dans le texte qui n'est pas
 jointe ou une figure jamais appelée, un appel écrit « (figure 3) » ou
 « fig 3 » au lieu de « (fig. 3) » — le mot entier n'est relevé qu'entre
