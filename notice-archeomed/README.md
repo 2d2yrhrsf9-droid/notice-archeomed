@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.108
+# Formulaire des notices d’archéologie médiévale — version 3.109
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -762,8 +762,9 @@ fascicule les refabrique sans rien perdre.
 ## La nature de l'opération, et le code Patriarche
 
 Depuis la version 3.107, la section « Nature de l'opération » s'ouvre, sous la
-consigne « Cochez toutes celles qui s'appliquent », sur deux cases de
-**cadre** : **Préventive** et **Programmée**. Vient ensuite le groupe **Type
+consigne « Cochez le cadre de l'opération, puis toutes les natures qui
+s'appliquent » (depuis la 3.109), sur deux cases de **cadre** : **Préventive**
+et **Programmée**. Vient ensuite le groupe **Type
 d'opération**, dans l'ordre voulu par la rédaction : Fouille, Étude de bâti,
 Sondage, Diagnostic, Surveillance de travaux. Les prospections, les projets
 collectifs et les autres natures suivent, comme avant.
@@ -772,18 +773,32 @@ Le cadre et le type se recomposent à l'enregistrement : Fouille et Préventive
 donnent « Fouille préventive », Étude de bâti et Programmée « Étude de bâti
 programmée », chacun avec son identifiant Pactols. La notice garde ainsi les
 mêmes termes qu'auparavant, et le document Word, le fascicule et l'ordre du
-volume n'en voient rien. Un type sans cadre reste tel quel. Les cadres ne
+volume n'en voient rien. Les cadres ne
 s'appliquent qu'aux types : une prospection reste une prospection, et un cadre
 coché à côté d'elle, sans type, ajoute « Opération d'archéologie préventive »
 ou « programmée ». Un cadre seul ne suffit pas : il faut cocher une nature.
 
-Depuis la version 3.108, **un diagnostic n'est jamais programmé** : Pactols en
-fait une « opération préventive de diagnostic ». Quand seul Programmée est
-coché, la case Diagnostic se grise et porte la mention « (toujours
-préventif) ». Une case déjà cochée ne se décoche jamais d'elle-même : une
-notice qui joint un diagnostic à une fouille programmée garde « Fouille
-programmée » et « Diagnostic ». La page de relecture applique la même règle à
-l'enregistrement.
+Depuis la version 3.109, **une notice n'a qu'un cadre**, et il est
+**obligatoire dès qu'un type d'opération est coché**. Les deux cases restent
+des cases : cocher Préventive décoche Programmée, et l'inverse ; un second
+clic décoche la case. Un type sans cadre est signalé avant l'envoi et refusé
+par le serveur, comme un champ manquant ; une prospection ou un projet
+collectif seul n'en demande pas.
+
+**Un diagnostic n'est jamais programmé** (depuis la 3.108) : Pactols en fait
+une « opération préventive de diagnostic ». Programmée cochée, la case
+Diagnostic se grise ; Diagnostic coché, c'est Programmée qui se grise. Les
+cases se grisent sans mention à côté (la 3.108 écrivait « (toujours
+préventif) », que la rédaction n'a pas gardé).
+
+Une case déjà cochée ne se grise ni ne se décoche jamais d'elle-même. Une
+saisie reprise — brouillon du navigateur, retour d'un refus, correction d'une
+notice reçue avant — qui porte les deux cadres, ou Programmée et Diagnostic,
+se rétablit telle quelle : rien ne se perd. Le formulaire le signale alors
+au-dessus des cases du cadre (« Gardez un seul cadre… », « Un diagnostic est
+toujours préventif… »), et le serveur la rend à corriger. Seule la page de
+relecture laisse encore deux cadres à une notice reçue avant qui les portait ;
+un clic sur l'un y décoche l'autre, et la fouille garde alors ses deux termes.
 
 Une notice reçue avant la 3.107 se rouvre — à la correction, à la relecture —
 dans ces cases : « Fouille préventive » coche Fouille et Préventive,

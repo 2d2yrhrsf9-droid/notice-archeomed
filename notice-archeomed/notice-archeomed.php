@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.108
+ * Version:           3.109
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -412,10 +412,12 @@ class Notice_Archeomed_Pactols {
 	 *
 	 * Un diagnostic est toujours préventif — Pactols en fait une « opération
 	 * préventive de diagnostic » — et la rédaction ne veut pas de
-	 * « Diagnostic programmé ». Coché avec le seul cadre programmé, il reste
-	 * « Diagnostic » : rien ne se perd d'une notice qui joint une fouille
-	 * programmée et un diagnostic. La page grise la case tant qu'elle n'est
-	 * pas cochée.
+	 * « Diagnostic programmé ». La page grise la case du diagnostic quand
+	 * Programmée est cochée, et Programmée quand le diagnostic l'est ; une
+	 * saisie reprise qui porte les deux se signale, et le serveur la rend à
+	 * corriger. Seule une notice reçue avant, qu'on rouvre à la relecture,
+	 * peut encore les joindre : le diagnostic y reste « Diagnostic », et
+	 * rien ne se perd.
 	 */
 	const CADRES_EXCLUS = array(
 		'Diagnostic' => array( 'Programmée' ),
@@ -1535,11 +1537,44 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
+	 * Ce qui ne va pas dans le cadre coché, ou une chaîne vide.
+	 *
+	 * Une notice décrit une seule opération, et une opération n'a qu'un
+	 * régime : préventive ou programmée. Les deux cases s'excluent dans la
+	 * page, mais une saisie reprise — brouillon, refus, correction d'une
+	 * notice reçue avant — peut les porter toutes deux : on les rend telles
+	 * quelles, et l'on demande d'en garder une. Un type d'opération demande
+	 * son cadre ; une prospection ou un projet collectif seul n'en a pas
+	 * besoin. Le navigateur suit la même règle (« fauteDuCadre »).
+	 *
+	 * Rend « cadre » s'il manque, « cadre_seul » s'il y en a deux,
+	 * « cadre_exclu » si un type coché ne l'admet pas.
+	 */
+	public function faute_du_cadre( $cadres, $cochees ) {
+		$cadres = array_values( array_intersect( array_keys( self::CADRES ), array_map( 'strval', (array) $cadres ) ) );
+		$types  = array_values( array_intersect( array_keys( self::TYPES_D_OPERATION ), array_map( 'strval', (array) $cochees ) ) );
+		if ( count( $cadres ) > 1 ) {
+			return 'cadre_seul';
+		}
+		if ( empty( $cadres ) ) {
+			return empty( $types ) ? '' : 'cadre';
+		}
+		foreach ( $types as $type ) {
+			if ( isset( self::CADRES_EXCLUS[ $type ] ) && in_array( $cadres[0], self::CADRES_EXCLUS[ $type ], true ) ) {
+				return 'cadre_exclu';
+			}
+		}
+		return '';
+	}
+
+	/**
 	 * Les termes que la notice garde, composés des cases cochées.
 	 *
-	 * Chaque type se compose avec chaque cadre coché — une fouille à la fois
-	 * préventive et programmée porte les deux termes —, ou reste seul sans
-	 * cadre. Une prospection ou un projet collectif passe tel quel, comme un
+	 * Chaque type se compose avec chaque cadre coché, ou reste seul sans
+	 * cadre. Le formulaire n'envoie plus qu'un cadre, et le refuse absent à
+	 * côté d'un type (« faute_du_cadre ») ; deux cadres ne viennent plus
+	 * que de la relecture d'une notice reçue avant, et la fouille porte
+	 * alors les deux termes. Une prospection ou un projet collectif passe tel quel, comme un
 	 * terme d'avant les types qu'envoie encore une page ouverte avant la
 	 * mise à jour. Un cadre sans aucun type, à côté d'une prospection, garde
 	 * son sens par « Opération d'archéologie programmée ». Un cadre seul ne
@@ -2638,26 +2673,6 @@ class Notice_Archeomed_Pactols {
 	}
 
 	/**
-	 * La mention d'un type qui n'admet pas tous les cadres — « (toujours
-	 * préventif) » pour le diagnostic —, que la page montre quand elle
-	 * grise sa case.
-	 */
-	private function note_hors_cadre( $type ) {
-		if ( ! isset( self::CADRES_EXCLUS[ $type ], self::TYPES_D_OPERATION[ $type ] ) ) {
-			return '';
-		}
-		$restants = array_diff( array_keys( self::CADRES ), self::CADRES_EXCLUS[ $type ] );
-		$accords  = array();
-		foreach ( $restants as $cadre ) {
-			$accords[] = self::CADRES[ $cadre ][ self::TYPES_D_OPERATION[ $type ] ];
-		}
-		if ( empty( $accords ) ) {
-			return '';
-		}
-		return ' <span class="na-note-cadre">(toujours ' . esc_html( implode( ' ou ', $accords ) ) . ')</span>';
-	}
-
-	/**
 	 * Le groupe « Nature de l'opération » : le cadre en tête, puis les types
 	 * d'opération, les prospections et les projets collectifs.
 	 *
@@ -2665,12 +2680,16 @@ class Notice_Archeomed_Pactols {
 	 * pour tous les types, et une fouille préventive n'est plus une case
 	 * parmi six. Les cases gardent leur nom, « nature[] », et le cadre le
 	 * sien, « cadre[] ».
+	 *
+	 * Les deux cadres restent des cases, que le script rend exclusives :
+	 * cocher l'une décoche l'autre, et un second clic la décoche. Un bouton
+	 * radio ne se décoche plus, et une prospection seule n'a pas de cadre.
 	 */
 	private function natures_html() {
 		$html  = '<fieldset class="na-sous-groupe na-champ" id="na-nature" aria-describedby="na-nature-aide">';
 		$html .= '<legend>Nature de l’opération <span class="na-requis" aria-hidden="true">*</span></legend>';
-		$html .= '<p class="na-help" id="na-nature-aide">Cochez toutes celles qui s’appliquent.</p>';
-		$html .= '<div class="na-checkboxes na-cadres" role="group" aria-label="Cadre de l’opération">';
+		$html .= '<p class="na-help" id="na-nature-aide">Cochez le cadre de l’opération, puis toutes les natures qui s’appliquent.</p>';
+		$html .= '<div class="na-checkboxes na-cadres" id="na-cadres" role="group" aria-label="Cadre de l’opération, un seul">';
 		$n = 0;
 		foreach ( $this->cadres_proposes() as $cadre ) {
 			++$n;
@@ -2691,7 +2710,6 @@ class Notice_Archeomed_Pactols {
 					. '<input type="checkbox" id="na-nature-' . $n . '" name="nature[]" value="'
 					. esc_attr( $opt ) . '"' . $this->repris_nature( 'nature', $opt ) . '> '
 					. esc_html( isset( $this->libelles_des_natures[ $opt ] ) ? $this->libelles_des_natures[ $opt ] : $opt )
-					. $this->note_hors_cadre( $opt )
 					. '</label>';
 			}
 			$html .= '</div></fieldset>';
@@ -2944,6 +2962,9 @@ class Notice_Archeomed_Pactols {
 			'lieu_dit'            => array( 'na-lieu-dit', 'Indiquez un lieu-dit, une adresse ou le nom du projet' ),
 			'rubrique_principale' => array( 'na-rubrique', 'Choisissez la rubrique principale de la notice' ),
 			'rubrique_matiere'    => array( 'na-matiere', 'Choisissez la sous-rubrique de l’installation artisanale (A, B ou C)' ),
+			'cadre'               => array( 'na-cadre-1', 'Cochez le cadre de l’opération, préventive ou programmée' ),
+			'cadre_seul'          => array( 'na-cadre-1', 'Gardez un seul cadre, préventive ou programmée : une notice décrit une seule opération' ),
+			'cadre_exclu'         => array( 'na-cadre-1', 'Un diagnostic est toujours préventif : cochez Préventive, ou décochez Diagnostic' ),
 			'nature'              => array( 'na-nature-1', 'Cochez au moins un type d’opération, une prospection ou un projet collectif de recherche' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
@@ -3512,10 +3533,8 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form label.na-check { display: flex; align-items: center; gap: var(--na-e3); min-height: var(--na-cible);
 				margin: 0; padding: var(--na-e1) var(--na-e2); font-weight: 400; line-height: 1.35; border-radius: var(--na-r1); cursor: pointer; }
 			.na-form#na-form label.na-check:hover { background: var(--na-fond); }
-			.na-form#na-form label.na-check .na-note-cadre { display: none; }
 			.na-form#na-form label.na-check.na-hors-cadre { color: var(--na-sourd); cursor: not-allowed; }
 			.na-form#na-form label.na-check.na-hors-cadre:hover { background: none; }
-			.na-form#na-form label.na-check.na-hors-cadre .na-note-cadre { display: inline; }
 			.na-form#na-form label.na-check.na-hors-cadre input[type=checkbox] { cursor: not-allowed; }
 			.na-form#na-form input[type=checkbox] { -webkit-appearance: auto; appearance: auto; flex: none;
 				width: 1.5rem; height: 1.5rem; margin: 0; accent-color: var(--na-accent); cursor: pointer; }
@@ -8644,6 +8663,24 @@ class Notice_Archeomed_Pactols {
 			function uneValeur(sel) {
 				return [].some.call(form.querySelectorAll(sel), function (c) { return !vide(c.value); });
 			}
+			// Ce qu'on reproche au cadre, avec les mêmes mots que le serveur
+			// (faute_du_cadre) : « cadre » s'il manque à un type d'opération,
+			// « cadre_seul » s'il y en a deux, « cadre_exclu » si un type coché
+			// ne l'admet pas ; rien sinon. Deux cadres viennent d'une saisie
+			// reprise : la page ne les laisse plus cocher ensemble.
+			var TYPES_D_OPERATION = <?php echo wp_json_encode( array_keys( self::TYPES_D_OPERATION ), JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			var CADRES_EXCLUS = <?php echo wp_json_encode( self::CADRES_EXCLUS, JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			function fauteDuCadre() {
+				var valeurs = function (nom) { return [].map.call(form.querySelectorAll('input[name="' + nom + '"]:checked'), function (c) { return c.value; }); };
+				var cadres = valeurs('cadre[]');
+				var types = valeurs('nature[]').filter(function (t) { return TYPES_D_OPERATION.indexOf(t) !== -1; });
+				if (cadres.length > 1) { return 'cadre_seul'; }
+				if (!cadres.length) { return types.length ? 'cadre' : ''; }
+				var exclu = types.some(function (t) {
+					return Object.prototype.hasOwnProperty.call(CADRES_EXCLUS, t) && CADRES_EXCLUS[t].indexOf(cadres[0]) !== -1;
+				});
+				return exclu ? 'cadre_exclu' : '';
+			}
 			// Chaque contrôle rend vrai si le champ est juste. Même ordre que la
 			// page, qui est celui du récapitulatif.
 			var CONTROLES = {
@@ -8657,6 +8694,11 @@ class Notice_Archeomed_Pactols {
 					var b = el('na-matiere-bloc');
 					return !b || b.hidden || !vide(el('na-matiere').value);
 				},
+				// Le cadre, comme le serveur le juge : absent avec un type, double,
+				// ou exclu par le type (un diagnostic programmé).
+				cadre: function () { return fauteDuCadre() !== 'cadre'; },
+				cadre_seul: function () { return fauteDuCadre() !== 'cadre_seul'; },
+				cadre_exclu: function () { return fauteDuCadre() !== 'cadre_exclu'; },
 				nature: function () { return !!form.querySelector('input[name="nature[]"]:checked'); },
 				annee: function () { return !vide(el('na-annee').value); },
 				organisme: function () { return uneValeur('.na-organisme'); },
@@ -8764,11 +8806,13 @@ class Notice_Archeomed_Pactols {
 			});
 			function cibleDe(cle) {
 				if (cle === 'nature') { return el('na-nature'); }
+				// Les fautes du cadre se disent au-dessus de ses deux cases.
+				if (/^cadre/.test(cle)) { return el('na-cadres'); }
 				if (cle === 'texte') { return quill ? quill.root : el('na-texte'); }
 				return el(CHAMPS[cle][0]);
 			}
 			function focaliser(cle) {
-				var c = cle === 'nature' ? el('na-nature-1') : cibleDe(cle);
+				var c = cle === 'nature' ? el('na-nature-1') : /^cadre/.test(cle) ? el('na-cadre-1') : cibleDe(cle);
 				// Revenu d'un refus, le formulaire n'a plus les fichiers : le
 				// lien du texte alternatif mène à la zone où les redéposer.
 				if (!c && /^illus_(titre|credits|alt|type)_/.test(cle)) { c = fileInput; }
@@ -8824,7 +8868,10 @@ class Notice_Archeomed_Pactols {
 					// Entre le libellé et la saisie : au-dessus du champ, ou du bloc
 					// qui le porte (liste de cases, éditeur, pièce de puzzle).
 					var conteneur = cible.closest('.na-champ');
-					var ancre = (conteneur && conteneur.querySelector('.na-ancre')) || cible;
+					// Les cases du cadre portent leur message, au-dessus de celui
+					// des natures.
+					var ancre = cible.classList && cible.classList.contains('na-cadres') ? cible
+						: ((conteneur && conteneur.querySelector('.na-ancre')) || cible);
 					ancre.parentNode.insertBefore(p, ancre);
 				}
 				p.textContent = message;
@@ -8842,9 +8889,12 @@ class Notice_Archeomed_Pactols {
 				e.cible.removeAttribute('aria-invalid');
 				retirerDescription(e.cible, e.p.id);
 				var champ = e.cible.closest('.na-champ');
-				if (champ) { champ.classList.remove('na-champ--erreur'); }
-				if (cle === 'texte') { el('na-texte').classList.remove('na-texte--erreur'); }
 				delete erreurs[cle];
+				// Le cadre et les natures partagent un bloc : il reste en erreur
+				// tant que l'un des deux l'est.
+				var encore = champ && Object.keys(erreurs).some(function (k) { return erreurs[k].cible.closest('.na-champ') === champ; });
+				if (champ && !encore) { champ.classList.remove('na-champ--erreur'); }
+				if (cle === 'texte') { el('na-texte').classList.remove('na-texte--erreur'); }
 				retirerDuRecap(cle);
 				if (!Object.keys(erreurs).length) { document.title = titreDeLaPage; }
 			}
@@ -9158,24 +9208,45 @@ class Notice_Archeomed_Pactols {
 					avisBrouillon = null;
 				}
 			}
-			// Un diagnostic n'est jamais programmé : avec ce seul cadre, sa case
-			// se grise et dit « (toujours préventif) ». Une case déjà cochée —
-			// une notice qui joint un diagnostic à une fouille programmée — ne
-			// se décoche jamais d'elle-même : le serveur en fait « Diagnostic ».
-			var CADRES_EXCLUS = <?php echo wp_json_encode( self::CADRES_EXCLUS, JSON_HEX_TAG | JSON_HEX_AMP ); ?>;
+			// Un diagnostic n'est jamais programmé : Programmée cochée, la case du
+			// diagnostic se grise ; Diagnostic coché, c'est Programmée. Une case
+			// déjà cochée ne se grise ni ne se décoche jamais d'elle-même : une
+			// saisie reprise qui joint les deux reste telle quelle, et se signale
+			// à l'envoi. CADRES_EXCLUS est posé plus haut, avec fauteDuCadre.
 			function accorderLesCadres() {
-				var cadres = [].map.call(form.querySelectorAll('input[name="cadre[]"]:checked'), function (c) { return c.value; });
-				[].forEach.call(form.querySelectorAll('input[name="nature[]"]'), function (c) {
-					var exclus = Object.prototype.hasOwnProperty.call(CADRES_EXCLUS, c.value) ? CADRES_EXCLUS[c.value] : null;
-					var hors = !!exclus && !c.checked && cadres.length > 0
-						&& cadres.every(function (k) { return exclus.indexOf(k) !== -1; });
+				var valeurs = function (nom) { return [].map.call(form.querySelectorAll('input[name="' + nom + '"]:checked'), function (c) { return c.value; }); };
+				var exclusDe = function (t) { return Object.prototype.hasOwnProperty.call(CADRES_EXCLUS, t) ? CADRES_EXCLUS[t] : null; };
+				var cadres = valeurs('cadre[]'), natures = valeurs('nature[]');
+				var griser = function (c, hors) {
 					c.disabled = hors;
 					var l = c.closest('label');
 					if (l) { l.classList.toggle('na-hors-cadre', hors); }
+				};
+				[].forEach.call(form.querySelectorAll('input[name="nature[]"]'), function (c) {
+					var exclus = exclusDe(c.value);
+					griser(c, !!exclus && !c.checked && cadres.length > 0
+						&& cadres.every(function (k) { return exclus.indexOf(k) !== -1; }));
+				});
+				[].forEach.call(form.querySelectorAll('input[name="cadre[]"]'), function (c) {
+					griser(c, !c.checked && natures.some(function (t) { var exclus = exclusDe(t); return !!exclus && exclus.indexOf(c.value) !== -1; }));
+				});
+			}
+			// Un seul cadre : cocher Préventive décoche Programmée, et l'inverse ;
+			// un second clic décoche la case, ce que ne permettrait pas un bouton
+			// radio. Rien ne se décoche au chargement ni à la reprise d'un
+			// brouillon : seul le geste de la personne compte.
+			function garderUnSeulCadre(c) {
+				if (!c || c.name !== 'cadre[]' || !c.checked) { return; }
+				[].forEach.call(form.querySelectorAll('input[name="cadre[]"]'), function (autre) {
+					if (autre !== c) { autre.checked = false; }
 				});
 			}
 			form.addEventListener('change', function (e) {
-				if (e.target && (e.target.name === 'cadre[]' || e.target.name === 'nature[]')) { accorderLesCadres(); }
+				if (e.target && (e.target.name === 'cadre[]' || e.target.name === 'nature[]')) {
+					garderUnSeulCadre(e.target);
+					accorderLesCadres();
+					effacerLErreurDe(e.target);
+				}
 			});
 			accorderLesCadres();
 			// Un brouillon d'avant les types gardait « Fouille préventive » en
@@ -10942,6 +11013,13 @@ class Notice_Archeomed_Pactols {
 		$ordre     = array( 'commune', 'departement', 'lieu_dit', 'rubrique_principale', 'nature', 'annee', 'organisme', 'id_patriarche',
 			'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst', 'texte' );
 		foreach ( $ordre as $champ ) {
+			// Le cadre vient avant les natures, comme sur la page.
+			if ( 'nature' === $champ ) {
+				$faute = $this->faute_du_cadre( $this->cases_postees( 'cadre' ), $this->cases_postees( 'nature' ) );
+				if ( '' !== $faute ) {
+					$manquants[] = $faute;
+				}
+			}
 			if ( 'resp_email' === $champ ) {
 				$vide = empty( $d['resp_email'] ) || ! is_email( $d['resp_email'] );
 			} elseif ( 'texte' === $champ ) {

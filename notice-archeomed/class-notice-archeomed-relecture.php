@@ -2600,6 +2600,17 @@ class Notice_Archeomed_Relecture {
 				if (e.target && (e.target.id === 'na-rel-departement' || e.target.id === 'na-rel-lieu_dit' || /^na-rel-commune-/.test(e.target.id))) { refaireLeTitre(); }
 			});
 
+			// Un seul cadre, comme au formulaire : cocher Préventive décoche
+			// Programmée, et l'inverse. Une notice reçue avant qui porte les
+			// deux se rouvre telle quelle ; seul un clic en retire un.
+			form.addEventListener('change', function (e) {
+				var c = e.target;
+				if (!c || c.name !== 'cadre[]' || !c.checked) { return; }
+				[].forEach.call(form.querySelectorAll('input[name="cadre[]"]'), function (autre) {
+					if (autre !== c) { autre.checked = false; }
+				});
+			});
+
 			// La matière ne vaut que pour la rubrique V : elle paraît quand la
 			// direction choisit V, et se vide quand elle en sort.
 			var matiere = document.getElementById('na-rel-matiere-bloc');

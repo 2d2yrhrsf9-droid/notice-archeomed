@@ -319,21 +319,29 @@ jobs:
           """
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
-          # Le diagnostic n'est jamais programmé : avec ce seul cadre, sa case
-          # se grise ; déjà cochée, elle ne se décoche jamais d'elle-même.
+          # Un diagnostic n'est jamais programmé : Programmée cochée, sa case
+          # se grise ; Diagnostic coché, c'est Programmée. Une case déjà
+          # cochée ne se grise ni ne se décoche d'elle-même. Les deux cadres
+          # s'excluent au clic, et le cadre se juge comme au serveur.
           python3 - <<'PY'
           import re, subprocess, sys
           t = open('/tmp/formulaire.js', encoding='utf-8').read()
           m = re.search(r'var CADRES_EXCLUS = (\{.*?\});\n', t)
-          i = t.find('function accorderLesCadres(')
-          if not m or i < 0:
-              print("::error::Le formulaire ne grise pas le diagnostic d'un cadre programmé."); sys.exit(1)
-          j, n = t.index('{', i), 0
-          for k in range(j, len(t)):
-              n += {'{': 1, '}': -1}.get(t[k], 0)
-              if n == 0:
-                  f = t[i:k + 1]; break
-          js = 'var CADRES_EXCLUS = ' + m.group(1) + ';\n' + r"""
+          m2 = re.search(r'var TYPES_D_OPERATION = (\[.*?\]);\n', t)
+          if not m or not m2:
+              print("::error::Le formulaire ne connaît pas les cadres exclus ou les types d'opération."); sys.exit(1)
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          if not re.search(r"garderUnSeulCadre\(e\.target\);\s*accorderLesCadres\(\);\s*effacerLErreurDe\(e\.target\);", t):
+              print("::error::Un clic sur un cadre ne décoche pas l'autre avant de griser les cases."); sys.exit(1)
+          js = 'var CADRES_EXCLUS = ' + m.group(1) + ';\nvar TYPES_D_OPERATION = ' + m2.group(1) + ';\n' + r"""
           function caseDe(nom, valeur) {
             var c = { name: nom, value: valeur, checked: false, disabled: false, hors: false };
             c.closest = function () { return { classList: { toggle: function (k, v) { if (k === 'na-hors-cadre') { c.hors = !!v; } } } }; };
@@ -341,28 +349,71 @@ jobs:
           }
           var cadres = [caseDe('cadre[]', 'Préventive'), caseDe('cadre[]', 'Programmée')];
           var natures = [caseDe('nature[]', 'Fouille'), caseDe('nature[]', 'Diagnostic'), caseDe('nature[]', 'Prospection pédestre')];
+          var cochees = function (l) { return l.filter(function (c) { return c.checked; }); };
           var form = { querySelectorAll: function (sel) {
-            if (sel === 'input[name="cadre[]"]:checked') { return cadres.filter(function (c) { return c.checked; }); }
+            if (sel === 'input[name="cadre[]"]:checked') { return cochees(cadres); }
+            if (sel === 'input[name="nature[]"]:checked') { return cochees(natures); }
+            if (sel === 'input[name="cadre[]"]') { return cadres; }
             if (sel === 'input[name="nature[]"]') { return natures; }
             throw new Error(sel);
           } };
-          """ + f + '\n' + r"""
-          var diag = natures[1], vu = [];
-          function etat() { accorderLesCadres(); vu.push([diag.disabled, diag.hors, diag.checked, natures[0].disabled, natures[2].disabled]); }
+          """ + fonction('accorderLesCadres') + '\n' + fonction('garderUnSeulCadre') + '\n' + fonction('fauteDuCadre') + '\n' + r"""
+          var prev = cadres[0], prog = cadres[1], fouille = natures[0], diag = natures[1], prosp = natures[2], vu = [];
+          function etat() {
+            accorderLesCadres();
+            vu.push([diag.disabled, diag.hors, diag.checked, fouille.disabled, prosp.disabled, prog.disabled, prog.hors, prev.disabled]);
+          }
           etat();                                                    // aucun cadre
-          cadres[1].checked = true; etat();                          // programmée seule
-          cadres[0].checked = true; etat();                          // les deux
-          cadres[0].checked = false; diag.checked = true; etat();    // programmée seule, diagnostic déjà coché
+          prog.checked = true; etat();                               // programmée seule
+          prev.checked = true; etat();                               // les deux, d'une saisie reprise
+          prev.checked = false; diag.checked = true; etat();         // programmée seule, diagnostic déjà coché
           diag.checked = false; etat();                              // on le décoche
-          cadres[1].checked = false; cadres[0].checked = true; etat(); // préventive seule
-          var attendu = [[false, false, false, false, false], [true, true, false, false, false], [false, false, false, false, false],
-            [false, false, true, false, false], [true, true, false, false, false], [false, false, false, false, false]];
+          prog.checked = false; prev.checked = true; etat();         // préventive seule
+          diag.checked = true; etat();                               // préventive et diagnostic
+          prev.checked = false; etat();                              // diagnostic sans cadre
+          diag.checked = false; etat();                              // plus rien
+          var attendu = [
+            [false, false, false, false, false, false, false, false],
+            [true, true, false, false, false, false, false, false],
+            [false, false, false, false, false, false, false, false],
+            [false, false, true, false, false, false, false, false],
+            [true, true, false, false, false, false, false, false],
+            [false, false, false, false, false, false, false, false],
+            [false, false, true, false, false, true, true, false],
+            [false, false, true, false, false, true, true, false],
+            [false, false, false, false, false, false, false, false]];
           var ok = JSON.stringify(vu) === JSON.stringify(attendu);
-          if (!ok) { console.log('::error::La case Diagnostic ne suit pas le cadre programmé : ' + JSON.stringify(vu)); }
+          if (!ok) { console.log('::error::Diagnostic et Programmée ne se grisent pas l’un l’autre : ' + JSON.stringify(vu)); }
+          // Un clic coche une case et décoche l'autre ; décocher ne touche à
+          // rien, et une nature non plus.
+          prev.checked = true; prog.checked = true; garderUnSeulCadre(prev);
+          var x1 = prev.checked && !prog.checked;
+          prog.checked = true; garderUnSeulCadre(prog);
+          var x2 = !prev.checked && prog.checked;
+          prog.checked = false; prev.checked = true; garderUnSeulCadre(prog);
+          var x3 = prev.checked && !prog.checked;
+          prog.checked = true; fouille.checked = true; garderUnSeulCadre(fouille);
+          var x4 = prev.checked && prog.checked;
+          if (!(x1 && x2 && x3 && x4)) { ok = false; console.log('::error::Les deux cadres ne s’excluent pas au clic : ' + JSON.stringify([x1, x2, x3, x4])); }
+          // Le cadre jugé comme au serveur (faute_du_cadre).
+          function poser(c, n) {
+            cadres.forEach(function (k) { k.checked = c.indexOf(k.value) !== -1; });
+            natures.forEach(function (k) { k.checked = n.indexOf(k.value) !== -1; });
+            return fauteDuCadre();
+          }
+          var fautes = [poser([], []), poser([], ['Prospection pédestre']), poser([], ['Fouille']), poser(['Préventive', 'Programmée'], ['Fouille']),
+            poser(['Préventive', 'Programmée'], []), poser(['Programmée'], ['Diagnostic']), poser(['Programmée'], ['Fouille', 'Diagnostic']),
+            poser(['Préventive'], ['Diagnostic', 'Fouille']), poser(['Programmée'], ['Fouille', 'Prospection pédestre']), poser(['Programmée'], [])];
+          var fautesAttendues = ['', '', 'cadre', 'cadre_seul', 'cadre_seul', 'cadre_exclu', 'cadre_exclu', '', '', ''];
+          if (JSON.stringify(fautes) !== JSON.stringify(fautesAttendues)) { ok = false; console.log('::error::Le navigateur ne juge pas le cadre comme le serveur : ' + JSON.stringify(fautes)); }
           process.exit(ok ? 0 : 1);
           """
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          for cle in cadre cadre_seul cadre_exclu; do
+            grep -q "$cle: function () { return fauteDuCadre() !== '$cle'; }" /tmp/formulaire.js \
+              || { echo "::error::Le navigateur ne contrôle pas « $cle »."; exit 1; }
+          done
           grep -q "id_patriarche: function () { return !vide(el('na-patriarche').value); }" /tmp/formulaire.js \
             || { echo "::error::Le navigateur n'exige pas le code Patriarche."; exit 1; }
           # La page telle que la rédaction l'a voulue : les deux cadres sous la
@@ -371,14 +422,15 @@ jobs:
           python3 - <<'PY'
           import re, sys
           t = open('/tmp/page.html', encoding='utf-8').read()
-          rangs = [t.find(x) for x in ('Cochez toutes celles qui s’appliquent', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"',
+          rangs = [t.find(x) for x in ('Cochez le cadre de l’opération', 'id="na-cadres"', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"',
                    'Type d’opération</legend>', 'value="Fouille"', 'value="Étude de bâti"', 'value="Sondage"', 'value="Diagnostic"', 'value="Surveillance de travaux"')]
           if -1 in rangs or rangs != sorted(rangs):
               print("::error::La nature de l'opération n'est pas dans l'ordre voulu : " + repr(rangs)); sys.exit(1)
           if 'value="Fouille préventive"' in t or 'Opérations de terrain</legend>' in t:
               print("::error::La page propose encore les anciennes natures."); sys.exit(1)
-          if t.count('<span class="na-note-cadre">(toujours préventif)</span>') != 1:
-              print("::error::La case Diagnostic ne dit pas qu'il est toujours préventif."); sys.exit(1)
+          # Les cases se grisent sans mention : la rédaction n'en veut pas.
+          if 'na-note-cadre' in t or '(toujours préventif)' in t:
+              print("::error::Une case de la nature porte encore une mention entre parenthèses."); sys.exit(1)
           if not re.search(r'<input[^>]*id="na-patriarche"[^>]*required', t):
               print("::error::Le code Patriarche n'est pas obligatoire dans la page."); sys.exit(1)
           PY

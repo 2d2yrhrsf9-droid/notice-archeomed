@@ -1314,7 +1314,7 @@ na_verifier( array( 'sondage préventif', 'sondage', 'étude de bâti programmé
 	'un terme composé qui emprunte le concept d\'un voisin s\'imprime tel que la case le dit : le cadre ne se perd pas', $graphies );
 $html_natures = na_appel( $plugin, 'natures_html' );
 $pos_natures  = array();
-foreach ( array( 'Cochez toutes celles qui s’appliquent', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"', '<legend>Type d’opération</legend>',
+foreach ( array( 'Cochez le cadre de l’opération', 'id="na-cadres"', 'name="cadre[]" value="Préventive"', 'name="cadre[]" value="Programmée"', '<legend>Type d’opération</legend>',
 	'value="Fouille"', 'value="Étude de bâti"', 'value="Sondage"', 'value="Diagnostic"', 'value="Surveillance de travaux"', '<legend>Prospections</legend>',
 	'<legend>Projets collectifs de recherche</legend>' ) as $repere ) {
 	$pos_natures[] = strpos( $html_natures, $repere );
@@ -1324,9 +1324,38 @@ sort( $triees_natures );
 na_verifier( ! in_array( false, $pos_natures, true ) && $triees_natures === $pos_natures
 	&& false === strpos( $html_natures, 'value="Fouille préventive"' ) && false === strpos( $html_natures, 'Opérations de terrain' )
 	&& false === strpos( $html_natures, 'value="Archéologie du bâti"' ) && 2 === substr_count( $html_natures, 'name="cadre[]"' )
-	&& 1 === preg_match( '#value="Diagnostic">\s*Diagnostic <span class="na-note-cadre">\(toujours préventif\)</span></label>#u', $html_natures )
-	&& 1 === substr_count( $html_natures, 'na-note-cadre' ),
-	'le formulaire met les deux cadres sous la consigne, puis « Type d’opération » dans l\'ordre de la rédaction, sans fouille préventive à part ; seul le diagnostic porte « (toujours préventif) »', $pos_natures );
+	&& 1 === preg_match( '#value="Diagnostic">\s*Diagnostic</label>#u', $html_natures )
+	&& 1 === preg_match( '#value="Programmée">\s*Programmée</label>#u', $html_natures )
+	&& false === strpos( $html_natures, 'na-note-cadre' ) && false === strpos( $html_natures, 'type="radio"' ),
+	'le formulaire met les deux cadres, en cases, sous la consigne, puis « Type d’opération » dans l\'ordre de la rédaction, sans fouille préventive à part ; aucune case ne porte de mention', $pos_natures );
+// Le cadre : un seul, exigé à côté d'un type, jamais programmé pour un
+// diagnostic ; une prospection seule n'en demande pas.
+$fautes_cadre = array();
+foreach ( array(
+	array( array(), array() ),
+	array( array(), array( 'Prospection pédestre' ) ),
+	array( array(), array( 'Fouille' ) ),
+	array( array( 'Préventive', 'Programmée' ), array( 'Fouille' ) ),
+	array( array( 'Préventive', 'Programmée' ), array() ),
+	array( array( 'Programmée' ), array( 'Diagnostic' ) ),
+	array( array( 'Programmée' ), array( 'Fouille', 'Diagnostic' ) ),
+	array( array( 'Préventive' ), array( 'Diagnostic', 'Fouille' ) ),
+	array( array( 'Programmée' ), array( 'Fouille', 'Prospection pédestre' ) ),
+	array( array( 'Programmée' ), array() ),
+	array( array( 'Autre' ), array( 'Fouille' ) ),
+) as $cas_cadre ) {
+	$fautes_cadre[] = $plugin->faute_du_cadre( $cas_cadre[0], $cas_cadre[1] );
+}
+na_verifier( array( '', '', 'cadre', 'cadre_seul', 'cadre_seul', 'cadre_exclu', 'cadre_exclu', '', '', '', 'cadre' ) === $fautes_cadre,
+	'le serveur exige un seul cadre à côté d\'un type, et jamais Programmée pour un diagnostic', $fautes_cadre );
+$table_cadre = na_appel( $plugin, 'champs_du_formulaire' );
+$cles_cadre  = array_keys( $table_cadre );
+na_verifier( isset( $table_cadre['cadre'], $table_cadre['cadre_seul'], $table_cadre['cadre_exclu'] )
+	&& 'na-cadre-1' === $table_cadre['cadre'][0] && 'na-cadre-1' === $table_cadre['cadre_seul'][0] && 'na-cadre-1' === $table_cadre['cadre_exclu'][0]
+	&& array_search( 'rubrique_principale', $cles_cadre, true ) < array_search( 'cadre', $cles_cadre, true )
+	&& array_search( 'cadre_exclu', $cles_cadre, true ) < array_search( 'nature', $cles_cadre, true )
+	&& false !== strpos( $table_cadre['cadre_seul'][1], 'un seul cadre' ) && false !== strpos( $table_cadre['cadre_exclu'][1], 'Diagnostic' ),
+	'les fautes du cadre ont leur message, qui mène à la première case, juste avant la nature', $cles_cadre );
 $reprise_nat = new ReflectionProperty( $plugin, 'reprise' );
 $reprise_nat->setAccessible( true );
 $reprise_nat->setValue( $plugin, array( 'nature' => array( 'Fouille programmée', 'Prospection pédestre' ) ) );
@@ -1350,6 +1379,18 @@ na_verifier( in_array( 'id_patriarche', $manque_pat, true ) && ! in_array( 'id_p
 	array( $manque_pat, $avec_pat ) );
 na_verifier( ! in_array( 'num_autorisation', na_appel( $plugin, 'champs_manquants', array( array_merge( $saisie_styles, array( 'num_autorisation' => '' ) ) ) ), true ),
 	'le numéro d\'arrêté ne manque jamais' );
+// Le refus du serveur nomme la faute du cadre, avant la nature : une
+// saisie reprise qui porte les deux cadres revient à corriger, telle quelle.
+$post_cadre = $_POST;
+$manque_cadre = array();
+foreach ( array( array( array( 'Préventive', 'Programmée' ), array( 'Fouille' ) ), array( array(), array( 'Sondage' ) ),
+	array( array( 'Programmée' ), array( 'Diagnostic' ) ), array( array( 'Préventive' ), array( 'Diagnostic' ) ), array( array(), array( 'Prospection pédestre' ) ) ) as $cas_post ) {
+	$_POST = array( 'cadre' => $cas_post[0], 'nature' => $cas_post[1] );
+	$manque_cadre[] = array_values( preg_grep( '/^cadre/', na_appel( $plugin, 'champs_manquants', array( $saisie_styles ) ) ) );
+}
+$_POST = $post_cadre;
+na_verifier( array( array( 'cadre_seul' ), array( 'cadre' ), array( 'cadre_exclu' ), array(), array() ) === $manque_cadre,
+	'le serveur refuse deux cadres, un type sans cadre et un diagnostic programmé ; il accepte un diagnostic préventif et une prospection seule', $manque_cadre );
 
 // La relecture ne réécrit pas une nature qu'on n'a pas touchée.
 $avant_nat = array_merge( $saisie_styles, array( 'nature' => 'Fouille préventive, Sondage',
