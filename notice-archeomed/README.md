@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.109
+# Formulaire des notices d’archéologie médiévale — version 3.110
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -87,6 +87,15 @@ rejoue pas. Rien d'autre n'est retenu entre l'affichage et l'envoi.
 Quand Cloudflare est injoignable, Turnstile laisse passer : le formulaire
 ajoute alors la pièce de puzzle à Turnstile, le temps que la sortie revienne
 (un jour après le dernier échec).
+
+Depuis la 3.110, il en va de même quand Cloudflare **refuse la clé secrète**
+enregistrée, ou répond par une panne : ce n'est pas la faute du déposant, et
+aucune notice n'est refusée pour cela. L'onglet **Hébergement** des réglages porte alors la
+ligne « Vérification Turnstile » en rouge, avec la cause (« clé refusée » ou
+« Cloudflare injoignable ») ; quand la clé est refusée, un avis s'affiche aussi
+en haut de l'administration. Recopier la clé secrète depuis le tableau de bord
+de Cloudflare et l'essayer dans les réglages lève l'alerte. Un jeton faux,
+expiré ou déjà servi reste refusé, comme avant.
 
 **Les autres garde-fous du serveur.** Le jeton du formulaire (`nonce`) vit de
 24 à 48 heures, pour ce seul formulaire, et non les 12 à 24 de WordPress : sans
@@ -1867,7 +1876,10 @@ jointe ou une figure jamais appelée, un appel écrit « (figure 3) » ou
 parenthèses, « la figure 3 montre » étant une phrase —, une photographie sous la norme annoncée
 (10 × 15 cm à 300 ppp, soit 1 182 × 1 772 pixels, lus dans l'en-tête du
 fichier), une figure sans crédits, « XIIème » pour « XIIe », une année tapée
-« 1 250 », un nom en capitales, deux personnes
+« 1 250 », un nom ou un prénom en capitales (dès trois lettres, « ROY » ;
+depuis la 3.110 pour le prénom et les noms courts), une légende, un complément
+de légende ou un texte alternatif tout en capitales (depuis la 3.110, dès quatre
+lettres : un sigle comme « ZAC » passe), deux personnes
 dans un même champ, une adresse dans le champ de l'institution, l'accessibilité
 des figures (voir « Le texte alternatif »), un sigle non développé à sa
 première mention.

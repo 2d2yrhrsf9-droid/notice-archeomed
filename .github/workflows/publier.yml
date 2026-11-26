@@ -291,6 +291,50 @@ jobs:
               + 'process.exit(ok ? 0 : 1);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # Les textes en capitales : un nom de trois lettres crie déjà, des
+          # initiales non, ni une écriture sans casse ; une légende crie à
+          # quatre lettres. Les mêmes règles que le serveur
+          # (Notice_Archeomed_Controles, essayé dans file-des-termes.php).
+          python3 - <<'PY'
+          import json, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          def variable(nom):
+              i = t.find('var ' + nom + ' =')
+              if i < 0:
+                  print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
+              return t[i:t.index('\n', i)]
+          code = '\n'.join([fonction(f) for f in ('motif', 'points')]
+                            + [variable(v) for v in ('NON_LETTRE', 'MINUSCULE', 'MAJUSCULE', 'TROIS_CAPITALES')]
+                            + [fonction(f) for f in ('enCapitales', 'nomEnCapitales', 'casseDeTitre')])
+          cas = [
+              ['nomEnCapitales', 'FERRAND', True], ['nomEnCapitales', 'ROY', True], ['nomEnCapitales', 'LE GOFF', True],
+              ['nomEnCapitales', 'D’ARCY', True], ['nomEnCapitales', 'ÉMILE', True], ['nomEnCapitales', 'Roy', False],
+              ['nomEnCapitales', 'McLEAN', False], ['nomEnCapitales', 'J.-CH.', False], ['nomEnCapitales', 'JP', False],
+              ['nomEnCapitales', '王小明', False], ['nomEnCapitales', '', False],
+              ['enCapitales', 'PLAN GÉNÉRAL DU SITE', True], ['enCapitales', 'ÉGLISE', True], ['enCapitales', 'Plan général', False],
+              ['enCapitales', 'ZAC', False], ['enCapitales', 'US 1024', False], ['enCapitales', '王小明的房子', False],
+              ['casseDeTitre', 'JEAN-PIERRE', 'Jean-Pierre'], ['casseDeTitre', 'MARIE-ÈVE', 'Marie-Ève'], ['casseDeTitre', 'LE GOFF', 'Le Goff'],
+          ]
+          js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
+              + 'var fns = { enCapitales: enCapitales, nomEnCapitales: nomEnCapitales, casseDeTitre: casseDeTitre };\n' \
+              + 'var faux = cas.filter(function (c) { return fns[c[0]](c[1]) !== c[2]; });\n' \
+              + 'faux.forEach(function (c) { console.log("::error::" + c[0] + "(" + JSON.stringify(c[1]) + ") donne " + JSON.stringify(fns[c[0]](c[1]))); });\n' \
+              + 'process.exit(faux.length ? 1 : 0);\n'
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
+          grep -q "'Le prénom ' + qui + ' est en capitales" /tmp/formulaire.js \
+            || { echo "::error::Le prénom en capitales ne se signale plus."; exit 1; }
+          grep -q "' est en capitales (' + guillemets(v) + ')'" /tmp/formulaire.js \
+            || { echo "::error::La légende en capitales ne se signale plus."; exit 1; }
           # Un brouillon gardé avant les types porte « Fouille préventive » :
           # il doit revenir en Fouille et Préventive, l'inconnu tel quel. La
           # table vient du serveur, telle que la page la sert.

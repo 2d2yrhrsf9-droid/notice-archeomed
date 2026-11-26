@@ -507,6 +507,18 @@ class Notice_Archeomed_Controles {
 					break;
 				}
 			}
+			// Une légende tapée en capitales paraît ainsi sous la figure.
+			$en_capitales = array(
+				'la légende'                => array( $titre, 'la' ),
+				'le complément de légende'  => array( $legende, 'le' ),
+				'le texte alternatif'       => array( isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '', 'le' ),
+			);
+			foreach ( $en_capitales as $quoi => $champ ) {
+				if ( self::en_capitales( $champ[0] ) ) {
+					$avis[] = sprintf( '%1$s : %2$s est en capitales (« %3$s »). Écrivez-%4$s en minuscules, avec les capitales d’usage.',
+						Notice_Archeomed_Normes::numero_de_figure( $rang ), $quoi, $champ[0], $champ[1] );
+				}
+			}
 			// L'accessibilité de la figure : des avis, que la case « accessibilité
 			// des figures » des normes permet de taire.
 			if ( Notice_Archeomed_Normes::avis_actif( 'accessibilite' ) ) {
@@ -938,7 +950,11 @@ class Notice_Archeomed_Controles {
 			if ( preg_match( '/(*UCP)[,;&]|\s(?:et|and)\s/u', $prenom . ' ' . $nom ) ) {
 				$avis[] = sprintf( 'Le nom %1$s semble contenir plusieurs personnes (« %2$s ») : une seule par champ.', $qui, trim( $prenom . ' ' . $nom ) );
 			}
-			if ( self::en_capitales( $nom ) ) {
+			if ( self::nom_en_capitales( $prenom ) ) {
+				$avis[] = sprintf( 'Le prénom %1$s est en capitales (« %2$s ») : à écrire « %3$s » si c’est bien sa graphie.', $qui, $prenom,
+					function_exists( 'mb_convert_case' ) ? mb_convert_case( $prenom, MB_CASE_TITLE, 'UTF-8' ) : ucwords( strtolower( $prenom ) ) );
+			}
+			if ( self::nom_en_capitales( $nom ) ) {
 				$avis[] = sprintf( 'Le nom %1$s est en capitales (« %2$s ») : à écrire « %3$s » si c’est bien sa graphie.', $qui, $nom,
 					function_exists( 'mb_convert_case' ) ? mb_convert_case( $nom, MB_CASE_TITLE, 'UTF-8' ) : ucwords( strtolower( $nom ) ) );
 			}
@@ -1032,10 +1048,23 @@ class Notice_Archeomed_Controles {
 		return array_unique( array_map( 'intval', $n[0] ) );
 	}
 
-	private static function en_capitales( $texte ) {
+	/**
+	 * Un texte tout en capitales : quatre lettres au moins, aucune minuscule,
+	 * une capitale au moins — une écriture sans casse ne crie pas.
+	 */
+	public static function en_capitales( $texte ) {
 		$lettres = preg_replace( '/\PL/u', '', (string) $texte );
 		$combien = preg_match_all( '/./us', $lettres );
-		return $combien >= 4 && ! preg_match( '/\p{Ll}/u', $lettres );
+		return $combien >= 4 && ! preg_match( '/\p{Ll}/u', $lettres ) && preg_match( '/\p{Lu}/u', $lettres );
+	}
+
+	/**
+	 * Un nom ou un prénom en capitales : trois capitales qui se suivent
+	 * (« ROY »), sans minuscule. Des initiales (« J.-CH. ») n'en sont pas.
+	 */
+	public static function nom_en_capitales( $texte ) {
+		$texte = (string) $texte;
+		return (bool) preg_match( '/\p{Lu}{3}/u', $texte ) && ! preg_match( '/\p{Ll}/u', $texte );
 	}
 
 	private static function extrait( $texte, $longueur ) {

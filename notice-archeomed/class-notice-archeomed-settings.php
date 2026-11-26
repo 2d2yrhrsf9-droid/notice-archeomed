@@ -167,6 +167,7 @@ class Notice_Archeomed_Settings {
 		add_filter( 'option_page_capability_' . self::OPTION_GROUP, array( __CLASS__, 'capacite_du_formulaire' ) );
 		add_action( self::HOOK_DISQUE, array( __CLASS__, 'remesurer_le_disque' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'signaler_le_disque' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'signaler_la_cle_refusee' ) );
 		add_filter( 'user_has_cap', array( __CLASS__, 'aux_administrateurs' ) );
 	}
 
@@ -846,10 +847,16 @@ class Notice_Archeomed_Settings {
 		}
 		$codes = isset( $body['error-codes'] ) ? (array) $body['error-codes'] : array();
 		if ( in_array( 'invalid-input-secret', $codes, true ) || in_array( 'missing-input-secret', $codes, true ) ) {
-			return array( 'ok' => false, 'message' => $joint . ' Mais il refuse la clé secrète enregistrée : vérifiez qu’elle correspond bien au site déclaré.' );
+			return array( 'ok' => false, 'message' => $joint . ' Mais il refuse la clé secrète enregistrée : vérifiez qu’elle correspond bien au site déclaré. D’ici là, aucune notice n’est refusée pour cela : le formulaire ajoute la pièce de puzzle.' );
 		}
 		// Tout autre code signifie que la clé a été acceptée et que seul le
-		// jeton de l'essai a été rejeté, ce qui est le résultat attendu.
+		// jeton de l'essai a été rejeté, ce qui est le résultat attendu. Une
+		// clé refusée naguère, désormais reconnue, ne laisse plus de panne.
+		$panne = Notice_Archeomed_Pactols::panne_de_turnstile();
+		if ( null !== $panne && 'cle' === $panne['cause'] && self::get( 'turnstile_secret' ) === $secret ) {
+			delete_transient( 'na_turnstile_injoignable' );
+			delete_transient( 'na_turnstile_cause' );
+		}
 		return array( 'ok' => true, 'message' => $joint . ' La clé secrète est reconnue : Turnstile peut servir.' );
 	}
 
@@ -1007,6 +1014,24 @@ class Notice_Archeomed_Settings {
 	}
 
 	/**
+	 * Une clé secrète refusée ne se corrige pas d'elle-même : on le dit sur
+	 * toutes les pages d'administration, comme le disque plein.
+	 */
+	public static function signaler_la_cle_refusee() {
+		if ( ! self::peut_regler() ) {
+			return;
+		}
+		$panne = Notice_Archeomed_Pactols::panne_de_turnstile();
+		if ( null === $panne || 'cle' !== $panne['cause'] ) {
+			return;
+		}
+		echo '<div class="notice notice-warning"><p><strong>'
+			. esc_html__( 'Chronique :', 'notice-archeomed' ) . '</strong> '
+			. esc_html( 'Cloudflare refuse la clé secrète de Turnstile. Les notices sont toujours reçues, la pièce de puzzle s’ajoutant au formulaire ; recopiez la clé depuis Cloudflare dans l’onglet Formulaire, puis refaites l’essai.' )
+			. '</p></div>';
+	}
+
+	/**
 	 * Ce dont le plugin a besoin, et ce que l'hébergement lui donne.
 	 *
 	 * On bâtissait au pari : personne ne savait si Imagick était là, ni quelle
@@ -1154,6 +1179,30 @@ class Notice_Archeomed_Settings {
 				'etat'     => $etat,
 				'ecart'    => 'manque' === $etat ? size_format( max( 0, $plafond - $disque['site'] ) ) . ' libres' : '',
 				'pourquoi' => 'Le plafond de l\'hébergeur vaut pour tout le site, fichiers de WordPress compris, et ne s\'étend pas. Mesure faite sur les téléversements, comptés toutes les quinze minutes : le reste du site s\'y ajoute. À 85 %, les notices sont reçues sans leurs fichiers, que l\'auteur envoie à part.',
+			);
+		}
+
+		// — Turnstile —
+		// La clé secrète ne s'éprouve qu'en servant : refusée, elle ne se
+		// voyait qu'aux notices refusées. Le formulaire se replie désormais
+		// sur le puzzle, et c'est ici qu'on l'apprend.
+		$panne      = Notice_Archeomed_Pactols::panne_de_turnstile();
+		$protection = self::get( 'protection' );
+		if ( null !== $panne || in_array( $protection, array( 'turnstile', 'les_deux' ), true ) ) {
+			$causes = array(
+				'cle'    => 'Cloudflare refuse la clé secrète enregistrée. Recopiez-la depuis le tableau de bord de Cloudflare (Turnstile, le widget du site), puis refaites l’essai de l’onglet Formulaire.',
+				'panne'  => 'Cloudflare a renvoyé une réponse inexploitable : la panne est de son côté, elle passe d’elle-même.',
+				'reseau' => 'Le serveur n’a pas joint Cloudflare : la sortie de l’hébergement (proxy) est à vérifier, par l’essai de l’onglet Formulaire.',
+			);
+			$lignes[] = array(
+				'quoi'     => 'Vérification Turnstile',
+				'requis'   => 'Cloudflare répond et reconnaît la clé',
+				'constate' => null === $panne ? 'aucun échec' : 'en échec depuis le ' . wp_date( 'j F Y à H:i', $panne['depuis'] ),
+				'etat'     => null === $panne ? 'ok' : 'manque',
+				'ecart'    => null === $panne ? '' : ( 'cle' === $panne['cause'] ? 'clé refusée' : 'Cloudflare injoignable' ),
+				'pourquoi' => null === $panne
+					? 'Chaque dépôt est vérifié auprès de Cloudflare.'
+					: $causes[ $panne['cause'] ] . ' D’ici là, aucune notice n’est refusée pour cela : le formulaire ajoute la pièce de puzzle.',
 			);
 		}
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.109
+ * Version:           3.110
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4703,13 +4703,24 @@ class Notice_Archeomed_Pactols {
 				z.hidden = false;
 				(champs || []).forEach(function (c) { if (c) { ajouterEnFin(c, z.id); } });
 			}
-			// Un nom tout en capitales : au moins quatre lettres, aucune minuscule.
+			// Un texte tout en capitales : au moins quatre lettres, aucune
+			// minuscule, et au moins une capitale — une écriture sans casse, le
+			// chinois par exemple, ne crie pas.
 			var NON_LETTRE = motif('\\P{L}', 'gu');
 			var MINUSCULE = motif('\\p{Ll}', 'u');
+			var MAJUSCULE = motif('\\p{Lu}', 'u');
 			function enCapitales(t) {
-				if (!NON_LETTRE || !MINUSCULE) { return false; }
+				if (!NON_LETTRE || !MINUSCULE || !MAJUSCULE) { return false; }
 				var lettres = String(t || '').replace(NON_LETTRE, '');
-				return points(lettres).length >= 4 && !MINUSCULE.test(lettres);
+				return points(lettres).length >= 4 && !MINUSCULE.test(lettres) && MAJUSCULE.test(lettres);
+			}
+			// Un nom ou un prénom : trois capitales qui se suivent suffisent
+			// (« ROY »), sans minuscule. Des initiales (« J.-CH. ») n'en sont pas.
+			var TROIS_CAPITALES = motif('\\p{Lu}{3}', 'u');
+			function nomEnCapitales(t) {
+				if (!TROIS_CAPITALES || !MINUSCULE) { return false; }
+				t = String(t || '');
+				return TROIS_CAPITALES.test(t) && !MINUSCULE.test(t);
 			}
 			// « DUPONT-MARTIN » en « Dupont-Martin », « D'ARCY » en « D'arcy » :
 			// une proposition, que l'auteur accepte ou non — « McLean » ne se
@@ -7736,6 +7747,14 @@ class Notice_Archeomed_Pactols {
 					};
 				});
 				if (deplacer) { liste.push(deplacer); }
+				// Une légende tapée en capitales paraît ainsi sous la figure.
+				[['titre', 'la légende', 'la'], ['legende', 'le complément de légende', 'le'], ['alt', 'le texte alternatif', 'le']].forEach(function (x) {
+					var v = net(x[0] === 'alt' ? separerEcoute(m.alt).alt : m[x[0]]);
+					if (e.vus[x[0]] && enCapitales(v)) {
+						liste.push(NORMES.figure + ' ' + rang + NBSP + ': ' + x[1] + ' est en capitales (' + guillemets(v) + ')'
+							+ '. Écrivez-' + x[2] + ' en minuscules, avec les capitales d’usage.');
+					}
+				});
 				// L'accessibilité de la figure : les avis du serveur, mot pour
 				// mot, chacun paru une fois quitté l'un des champs qu'il regarde.
 				// Le champ pour l'écoute porte, dans son premier paragraphe, le
@@ -8354,7 +8373,11 @@ class Notice_Archeomed_Pactols {
 						if (/[,;&]|\s(?:et|and)\s/.test(complet)) {
 							liste.push('Le nom ' + qui + ' semble contenir plusieurs personnes (' + guillemets(complet) + ')' + NBSP + ': une seule par champ.');
 						}
-						if (enCapitales(n)) {
+						if (nomEnCapitales(p)) {
+							liste.push('Le prénom ' + qui + ' est en capitales (' + guillemets(p) + ')' + NBSP + ': à écrire '
+								+ guillemets(casseDeTitre(p)) + ' si c’est bien sa graphie.');
+						}
+						if (nomEnCapitales(n)) {
 							liste.push('Le nom ' + qui + ' est en capitales (' + guillemets(n) + ')' + NBSP + ': à écrire '
 								+ guillemets(casseDeTitre(n)) + ' si c’est bien sa graphie.');
 						}
@@ -16022,17 +16045,71 @@ class Notice_Archeomed_Pactols {
 		);
 		if ( is_wp_error( $response ) ) {
 			error_log( 'Notice Archeomed: Turnstile request failed, degraded mode: ' . $response->get_error_message() );
-			// Le formulaire ajoute le puzzle tant que dure la panne : le
-			// moment où elle a commencé se garde, renouvelé à chaque échec.
-			$depuis = get_transient( 'na_turnstile_injoignable' );
-			set_transient( 'na_turnstile_injoignable', false !== $depuis ? (int) $depuis : time(), DAY_IN_SECONDS );
-			// Ouvert par défaut : derrière un proxy qui bloque Cloudflare, fermer
-			// perdrait toutes les notices. Une plateforme qui a ouvert la
-			// sortie le ferme (« add_filter( 'notice_archeomed_turnstile_ouvert', '__return_false' ) »).
-			return (bool) apply_filters( 'notice_archeomed_turnstile_ouvert', self::TURNSTILE_FAIL_OPEN_ON_NETWORK_ERROR );
+			return $this->repli_de_turnstile( 'reseau' );
 		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
 		$body = json_decode( wp_remote_retrieve_body( $response ), true );
-		return is_array( $body ) && ! empty( $body['success'] );
+		$erreurs = is_array( $body ) && isset( $body['error-codes'] ) ? (array) $body['error-codes'] : array();
+		// Une clé secrète refusée relève du réglage, non du déposant : elle
+		// refusait toutes les notices. Le déposant ne peut pas la provoquer,
+		// la clé ne quittant pas le serveur.
+		if ( array_intersect( $erreurs, array( 'invalid-input-secret', 'missing-input-secret' ) ) ) {
+			error_log( 'Notice Archeomed: Cloudflare refuse la clé secrète de Turnstile, repli sur le puzzle.' );
+			return $this->repli_de_turnstile( 'cle' );
+		}
+		// Cloudflare en panne de son côté : réponse illisible ou erreur interne.
+		if ( $code >= 500 || ! is_array( $body ) || in_array( 'internal-error', $erreurs, true ) ) {
+			error_log( 'Notice Archeomed: réponse de Cloudflare inexploitable (HTTP ' . $code . '), repli sur le puzzle.' );
+			return $this->repli_de_turnstile( 'panne' );
+		}
+		if ( empty( $body['success'] ) ) {
+			// Jeton absent, faux, expiré ou rejoué : cela, le déposant ou un
+			// robot peut le provoquer, et la notice est refusée.
+			return false;
+		}
+		// Cloudflare répond de nouveau et reconnaît la clé : le puzzle n'est
+		// plus nécessaire.
+		if ( false !== get_transient( 'na_turnstile_injoignable' ) ) {
+			delete_transient( 'na_turnstile_injoignable' );
+			delete_transient( 'na_turnstile_cause' );
+		}
+		return true;
+	}
+
+	/**
+	 * Turnstile ne peut pas trancher : le puzzle s'ajoute au formulaire.
+	 *
+	 * Le moment où la panne a commencé se garde, renouvelé à chaque échec,
+	 * avec sa cause, que dit l'onglet Hébergement. Ouvert par défaut : derrière un
+	 * proxy qui bloque Cloudflare, ou avec une clé mal recopiée, fermer
+	 * perdrait toutes les notices. Une plateforme qui préfère fermer le dit
+	 * (« add_filter( 'notice_archeomed_turnstile_ouvert', '__return_false' ) »).
+	 *
+	 * @param string $cause « reseau », « cle » ou « panne ».
+	 */
+	private function repli_de_turnstile( $cause ) {
+		$depuis = get_transient( 'na_turnstile_injoignable' );
+		set_transient( 'na_turnstile_injoignable', false !== $depuis ? (int) $depuis : time(), DAY_IN_SECONDS );
+		set_transient( 'na_turnstile_cause', $cause, DAY_IN_SECONDS );
+		return (bool) apply_filters( 'notice_archeomed_turnstile_ouvert', self::TURNSTILE_FAIL_OPEN_ON_NETWORK_ERROR );
+	}
+
+	/**
+	 * La panne de Turnstile en cours, s'il y en a une.
+	 *
+	 * @return array|null « depuis » (horodatage) et « cause » (« reseau »,
+	 *                    « cle » ou « panne »), ou null.
+	 */
+	public static function panne_de_turnstile() {
+		$depuis = get_transient( 'na_turnstile_injoignable' );
+		if ( false === $depuis ) {
+			return null;
+		}
+		$cause = get_transient( 'na_turnstile_cause' );
+		return array(
+			'depuis' => (int) $depuis,
+			'cause'  => in_array( $cause, array( 'reseau', 'cle', 'panne' ), true ) ? $cause : 'reseau',
+		);
 	}
 	/**
 	 * Combien d'interrogations du thésaurus une même connexion peut lancer.

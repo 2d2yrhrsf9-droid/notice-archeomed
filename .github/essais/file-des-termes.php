@@ -768,6 +768,27 @@ na_verifier( 2 === count( $avis_images ) && false !== strpos( $avis_images[0], '
 $avis_personnes = $C::personnes( array( 'resp_prenom' => 'Aude', 'resp_nom' => 'FERRAND', 'resp_inst' => 'Inrap',
 	'coauteur_prenom' => '', 'coauteur_nom' => 'Jean Dupont, Marie Martin', 'coauteur_inst' => 'a@b.fr' ) );
 na_verifier( 3 === count( $avis_personnes ), 'le nom en capitales, deux personnes dans un champ, une adresse dans l\'institution', $avis_personnes );
+na_verifier( $C::nom_en_capitales( 'ROY' ) && $C::nom_en_capitales( 'LE GOFF' ) && $C::nom_en_capitales( 'D’ARCY' )
+	&& ! $C::nom_en_capitales( 'Roy' ) && ! $C::nom_en_capitales( 'McLEAN' ) && ! $C::nom_en_capitales( 'J.-CH.' )
+	&& ! $C::nom_en_capitales( 'JP' ) && ! $C::nom_en_capitales( '王小明' ) && ! $C::nom_en_capitales( '' )
+	&& $C::en_capitales( 'PLAN GÉNÉRAL DU SITE' ) && ! $C::en_capitales( 'ZAC' ) && ! $C::en_capitales( 'US 1024' )
+	&& ! $C::en_capitales( 'Plan général' ) && ! $C::en_capitales( '王小明的房子' ),
+	'un nom crie dès trois capitales, une légende dès quatre lettres ; initiales, sigles et écritures sans casse passent' );
+$avis_capitales = $C::personnes( array( 'resp_prenom' => 'JEAN-PIERRE', 'resp_nom' => 'ROY', 'resp_inst' => 'INRAP' ) );
+na_verifier( 2 === count( $avis_capitales )
+	&& 1 === count( preg_grep( '/^Le prénom .* est en capitales \(« JEAN-PIERRE »\)\x{00A0}?\s?: à écrire « Jean-Pierre »/u', $avis_capitales ) )
+	&& 1 === count( preg_grep( '/^Le nom .* est en capitales \(« ROY »\).* « Roy »/u', $avis_capitales ) ),
+	'le prénom et un nom court en capitales se signalent, le sigle de l\'institution non', $avis_capitales );
+$avis_legendes = $C::figures( array(
+	array( 'rang' => 1, 'titre' => 'PLAN GÉNÉRAL', 'legende' => 'VUE DEPUIS LE NORD', 'credits' => 'INRAP', 'alt' => 'MURS DU CHÂTEAU', 'description' => 'Deux murs.' ),
+	array( 'rang' => 2, 'titre' => 'Plan de la ZAC', 'legende' => '', 'credits' => 'X', 'alt' => 'US 1024 et fossé', 'description' => 'Un fossé.' ),
+) );
+$capitales_vues = preg_grep( '/ est en capitales /u', $avis_legendes );
+na_verifier( 3 === count( $capitales_vues )
+	&& 1 === count( preg_grep( '/^Fig\. 1\x{00A0}?\s?: la légende est en capitales \(« PLAN GÉNÉRAL »\)\. Écrivez-la en minuscules/u', $capitales_vues ) )
+	&& 1 === count( preg_grep( '/le complément de légende est en capitales .*Écrivez-le/u', $capitales_vues ) )
+	&& 1 === count( preg_grep( '/le texte alternatif est en capitales/u', $capitales_vues ) ),
+	'la légende, son complément et le texte alternatif en capitales se signalent ; les crédits et un sigle dans la phrase non', $avis_legendes );
 na_verifier( 'Rue de Reviers' === $C::sans_point_final( 'Rue de Reviers.' ) && 'Le XXe s.' === $C::sans_point_final( 'Le XXe s.' )
 	&& 'Plan' === $C::titre_sans_numero( 'Fig. 1 : Plan', 1 ) && 'Fig. 2 Plan' === $C::titre_sans_numero( 'Fig. 2 Plan', 1 ),
 	'le point final du titre et le numéro retapé, abréviations et autre numéro laissés' );
@@ -1724,6 +1745,101 @@ $cf_reponse = array( 'response' => array( 'code' => 200, 'message' => 'OK' ), 'h
 $essai_cf   = na_appel( $pages_reglages, 'test_cloudflare', array( 'cle-bonne' ) );
 na_verifier( true === $essai_cf['ok'] && false !== strpos( $essai_cf['message'], 'reconnue' ) && 'cle-bonne' === end( $cf_vu )['secret'],
 	'une clé reconnue se dit', $essai_cf );
+
+WP_CLI::log( 'La vérification Turnstile d\'un dépôt' );
+$ts_reglages = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $ts_reglages, array( 'turnstile_secret' => 'cle-du-site', 'turnstile_site' => 'site-du-site', 'protection' => 'turnstile' ) ) );
+delete_transient( 'na_turnstile_injoignable' );
+delete_transient( 'na_turnstile_cause' );
+$ts_post_avant = $_POST;
+$_POST['cf-turnstile-response'] = 'jeton-du-navigateur';
+$ts_json = function ( $code, $corps ) {
+	return array( 'response' => array( 'code' => $code, 'message' => '' ), 'headers' => array(), 'cookies' => array(), 'body' => $corps );
+};
+$ts_ligne = function () {
+	foreach ( Notice_Archeomed_Settings::etat_du_serveur() as $l ) {
+		if ( 'Vérification Turnstile' === $l['quoi'] ) {
+			return $l;
+		}
+	}
+	return null;
+};
+$cf_reponse = $ts_json( 400, '{"success":false,"error-codes":["invalid-input-secret"]}' );
+$ts_passe   = na_appel( $plugin, 'verify_turnstile' );
+$ts_panne   = Notice_Archeomed_Pactols::panne_de_turnstile();
+$ts_l       = $ts_ligne();
+na_verifier( true === $ts_passe && null !== $ts_panne && 'cle' === $ts_panne['cause'] && 'cle-du-site' === end( $cf_vu )['secret'],
+	'une clé secrète refusée par Cloudflare ne refuse pas la notice : le puzzle prend le relais', array( $ts_passe, $ts_panne ) );
+na_verifier( Notice_Archeomed_Pactols::protection_suspendue() || 'les_deux' === na_appel( $plugin, 'protection' ),
+	'la clé refusée, le formulaire ajoute la pièce de puzzle à Turnstile', na_appel( $plugin, 'protection' ) );
+na_verifier( null !== $ts_l && 'manque' === $ts_l['etat'] && 'clé refusée' === $ts_l['ecart'] && false !== strpos( $ts_l['pourquoi'], 'Recopiez' ),
+	'l\'onglet Hébergement dit la clé refusée, et comment la corriger', $ts_l );
+ob_start();
+Notice_Archeomed_Settings::signaler_la_cle_refusee();
+$ts_avis = ob_get_clean();
+na_verifier( false !== strpos( $ts_avis, 'refuse la clé secrète' ), 'l\'administration avertit de la clé refusée', $ts_avis );
+$ts_depuis = $ts_panne['depuis'];
+
+$cf_reponse = $ts_json( 200, '{"success":false,"error-codes":["invalid-input-response"]}' );
+na_verifier( false === na_appel( $plugin, 'verify_turnstile' ), 'un jeton faux reste refusé, même pendant la panne' );
+$cf_reponse = $ts_json( 200, '{"success":false,"error-codes":["timeout-or-duplicate"]}' );
+na_verifier( false === na_appel( $plugin, 'verify_turnstile' ), 'un jeton expiré ou rejoué reste refusé' );
+$cf_reponse = $ts_json( 400, '{"success":false,"error-codes":["bad-request"]}' );
+na_verifier( false === na_appel( $plugin, 'verify_turnstile' ), 'une demande mal formée reste refusée' );
+$_POST['cf-turnstile-response'] = '';
+$cf_reponse = $ts_json( 400, '{"success":false,"error-codes":["invalid-input-secret"]}' );
+na_verifier( false === na_appel( $plugin, 'verify_turnstile' ), 'sans jeton, la notice est refusée sans même interroger Cloudflare' );
+$_POST['cf-turnstile-response'] = 'jeton-du-navigateur';
+
+$cf_reponse = $ts_json( 503, '<html>Service Unavailable</html>' );
+$ts_passe   = na_appel( $plugin, 'verify_turnstile' );
+$ts_panne   = Notice_Archeomed_Pactols::panne_de_turnstile();
+na_verifier( true === $ts_passe && 'panne' === $ts_panne['cause'] && $ts_depuis === $ts_panne['depuis'],
+	'Cloudflare en panne de son côté : la notice passe, et la panne garde son début', $ts_panne );
+$cf_reponse = $ts_json( 200, '{"success":false,"error-codes":["internal-error"]}' );
+na_verifier( true === na_appel( $plugin, 'verify_turnstile' ), 'une erreur interne de Cloudflare ne refuse pas la notice' );
+add_filter( 'notice_archeomed_turnstile_ouvert', '__return_false' );
+na_verifier( false === na_appel( $plugin, 'verify_turnstile' ), 'qui préfère fermer le peut toujours' );
+remove_filter( 'notice_archeomed_turnstile_ouvert', '__return_false' );
+$cf_reponse = new WP_Error( 'http_request_failed', 'cURL error 28: timed out' );
+$ts_panne   = null;
+na_verifier( true === na_appel( $plugin, 'verify_turnstile' ) && 'reseau' === Notice_Archeomed_Pactols::panne_de_turnstile()['cause'],
+	'Cloudflare injoignable : la notice passe, comme avant' );
+$ts_l = $ts_ligne();
+na_verifier( null !== $ts_l && 'Cloudflare injoignable' === $ts_l['ecart'], 'l\'onglet Hébergement dit Cloudflare injoignable', $ts_l );
+ob_start();
+Notice_Archeomed_Settings::signaler_la_cle_refusee();
+na_verifier( '' === ob_get_clean(), 'une panne de réseau n\'avertit pas sur toutes les pages : l\'onglet Hébergement suffit' );
+
+$cf_reponse = $ts_json( 200, '{"success":true,"error-codes":[]}' );
+na_verifier( true === na_appel( $plugin, 'verify_turnstile' ) && null === Notice_Archeomed_Pactols::panne_de_turnstile()
+	&& false === get_transient( 'na_turnstile_cause' ),
+	'Cloudflare de nouveau d\'accord : la panne est levée, le puzzle se retire' );
+$ts_l = $ts_ligne();
+na_verifier( null !== $ts_l && 'ok' === $ts_l['etat'], 'Turnstile choisi et sans panne, l\'onglet Hébergement le dit en ordre', $ts_l );
+na_verifier( Notice_Archeomed_Pactols::protection_suspendue() || 'turnstile' === na_appel( $plugin, 'protection' ),
+	'la panne levée, Turnstile reste seul', na_appel( $plugin, 'protection' ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) get_option( Notice_Archeomed_Settings::OPTION_NAME, array() ), array( 'protection' => 'locale' ) ) );
+na_verifier( null === $ts_ligne(), 'sans panne ni Turnstile choisi, l\'onglet Hébergement ne parle pas de Turnstile' );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) get_option( Notice_Archeomed_Settings::OPTION_NAME, array() ), array( 'protection' => 'turnstile' ) ) );
+
+$cf_reponse = $ts_json( 400, '{"success":false,"error-codes":["invalid-input-secret"]}' );
+na_appel( $plugin, 'verify_turnstile' );
+$cf_reponse = $ts_json( 200, '{"success":false,"error-codes":["invalid-input-response"]}' );
+$essai_cf = na_appel( $pages_reglages, 'test_cloudflare', array( 'cle-du-site' ) );
+na_verifier( true === $essai_cf['ok'] && null === Notice_Archeomed_Pactols::panne_de_turnstile(),
+	'la clé corrigée, l\'essai qui la reconnaît lève la panne', $essai_cf );
+$cf_reponse = new WP_Error( 'http_request_failed', 'cURL error 28: timed out' );
+na_appel( $plugin, 'verify_turnstile' );
+$cf_reponse = $ts_json( 200, '{"success":false,"error-codes":["invalid-input-response"]}' );
+na_appel( $pages_reglages, 'test_cloudflare', array( 'cle-du-site' ) );
+na_verifier( null !== Notice_Archeomed_Pactols::panne_de_turnstile(),
+	'l\'essai de la clé ne lève pas une panne de réseau : seul un vrai dépôt vérifié le fait' );
+
+delete_transient( 'na_turnstile_injoignable' );
+delete_transient( 'na_turnstile_cause' );
+$_POST = $ts_post_avant;
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $ts_reglages );
 remove_filter( 'pre_http_request', $cf_simul, 10 );
 
 WP_CLI::log( 'La liaison à sDrive' );
