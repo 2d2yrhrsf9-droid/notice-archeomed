@@ -427,15 +427,19 @@ jobs:
           # Les propositions de lieu-dit, sur des réponses réelles de l'IGN :
           # les fonctions telles que la page les sert, puis leur branchement.
           python3 - <<'PY'
-          import subprocess, sys
+          import os, subprocess, sys
           t = open('/tmp/formulaire.js', encoding='utf-8').read()
           i, j = t.find('function naIgnPlier('), t.find('function naIgnLieuDit(')
           if i < 0 or j < i:
               print("::error::Les propositions de lieu-dit manquent au formulaire."); sys.exit(1)
-          d = open('.github/essais/ign.json', encoding='utf-8').read()
-          e = open('.github/essais/ign.js', encoding='utf-8').read()
-          js = t[i:j] + '\nvar D = ' + d + ';\n' + e \
-              + '\nfaux.forEach(function (f) { console.log("::error::Lieu-dit, " + f); });\n' \
+          # L'étape tourne dans /tmp/wp : les essais se lisent dans le dépôt.
+          essais = os.path.join(os.environ['GITHUB_WORKSPACE'], '.github', 'essais')
+          d = open(os.path.join(essais, 'ign.json'), encoding='utf-8').read()
+          e = open(os.path.join(essais, 'ign.js'), encoding='utf-8').read()
+          # Une exception se dit, comme un cas manqué.
+          js = 'try {\n' + t[i:j] + '\nvar D = ' + d + ';\n' + e \
+              + '\n} catch (x) { faux = (typeof faux === "object" && faux) || []; faux.push("exception : " + x); }\n' \
+              + 'faux.forEach(function (f) { console.log("::error::Lieu-dit, " + f); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
