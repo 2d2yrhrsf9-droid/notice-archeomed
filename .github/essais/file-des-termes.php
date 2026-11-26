@@ -774,6 +774,13 @@ na_verifier( $C::nom_en_capitales( 'ROY' ) && $C::nom_en_capitales( 'LE GOFF' ) 
 	&& $C::en_capitales( 'PLAN GÉNÉRAL DU SITE' ) && ! $C::en_capitales( 'ZAC' ) && ! $C::en_capitales( 'US 1024' )
 	&& ! $C::en_capitales( 'Plan général' ) && ! $C::en_capitales( '王小明的房子' ),
 	'un nom crie dès trois capitales, une légende dès quatre lettres ; initiales, sigles et écritures sans casse passent' );
+na_verifier( 'Inrap' === $C::credits_sans_parentheses( '(Inrap)' ) && '© J. Dupont, Inrap' === $C::credits_sans_parentheses( " (\u{00A0}© J. Dupont, Inrap ) " )
+	&& 'cl. J. Dupont' === $C::credits_sans_parentheses( '((cl. J. Dupont))' ) && 'Inrap (relevé)' === $C::credits_sans_parentheses( '(Inrap (relevé))' )
+	&& '(A) et (B)' === $C::credits_sans_parentheses( '(A) et (B)' ) && 'Inrap (relevé J. Dupont)' === $C::credits_sans_parentheses( 'Inrap (relevé J. Dupont)' )
+	&& '' === $C::credits_sans_parentheses( '()' ) && '(' === $C::credits_sans_parentheses( '(' ) && 'Inrap' === $C::credits_sans_parentheses( 'Inrap' ),
+	'les parenthèses qui enferment tous les crédits s\'ôtent ; celles qui n\'en prennent qu\'une part restent' );
+$credits_nets = na_appel( $plugin, 'textes_de_figure', array( array( 'titre' => 'Plan', 'credits' => '(© J. Dupont, Inrap)', 'alt' => 'Plan du site' ), 1 ) );
+na_verifier( '© J. Dupont, Inrap' === $credits_nets['credits'], 'au dépôt et à la correction, les crédits perdent leurs parenthèses', $credits_nets['credits'] );
 $avis_capitales = $C::personnes( array( 'resp_prenom' => 'JEAN-PIERRE', 'resp_nom' => 'ROY', 'resp_inst' => 'INRAP' ) );
 na_verifier( 2 === count( $avis_capitales )
 	&& 1 === count( preg_grep( '/^Le prénom .* est en capitales \(« JEAN-PIERRE »\)\x{00A0}?\s?: à écrire « Jean-Pierre »/u', $avis_capitales ) )
@@ -782,13 +789,14 @@ na_verifier( 2 === count( $avis_capitales )
 $avis_legendes = $C::figures( array(
 	array( 'rang' => 1, 'titre' => 'PLAN GÉNÉRAL', 'legende' => 'VUE DEPUIS LE NORD', 'credits' => 'INRAP', 'alt' => 'MURS DU CHÂTEAU', 'description' => 'Deux murs.' ),
 	array( 'rang' => 2, 'titre' => 'Plan de la ZAC', 'legende' => '', 'credits' => 'X', 'alt' => 'US 1024 et fossé', 'description' => 'Un fossé.' ),
+	array( 'rang' => 3, 'titre' => 'IMG_2041.JPG', 'legende' => '', 'credits' => 'X', 'alt' => 'DSC_0042.JPG', 'description' => 'Un mur.' ),
 ) );
 $capitales_vues = preg_grep( '/ est en capitales /u', $avis_legendes );
 na_verifier( 3 === count( $capitales_vues )
 	&& 1 === count( preg_grep( '/^Fig\. 1\x{00A0}?\s?: la légende est en capitales \(« PLAN GÉNÉRAL »\)\. Écrivez-la en minuscules/u', $capitales_vues ) )
 	&& 1 === count( preg_grep( '/le complément de légende est en capitales .*Écrivez-le/u', $capitales_vues ) )
 	&& 1 === count( preg_grep( '/le texte alternatif est en capitales/u', $capitales_vues ) ),
-	'la légende, son complément et le texte alternatif en capitales se signalent ; les crédits et un sigle dans la phrase non', $avis_legendes );
+	'la légende, son complément et le texte alternatif en capitales se signalent ; les crédits, un sigle dans la phrase et un nom de fichier non', $avis_legendes );
 na_verifier( 'Rue de Reviers' === $C::sans_point_final( 'Rue de Reviers.' ) && 'Le XXe s.' === $C::sans_point_final( 'Le XXe s.' )
 	&& 'Plan' === $C::titre_sans_numero( 'Fig. 1 : Plan', 1 ) && 'Fig. 2 Plan' === $C::titre_sans_numero( 'Fig. 2 Plan', 1 ),
 	'le point final du titre et le numéro retapé, abréviations et autre numéro laissés' );

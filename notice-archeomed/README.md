@@ -863,6 +863,11 @@ portent un astérisque, dans tout le formulaire. Un champ libre commun recevait
 tout auparavant, et la rédaction devait deviner quelle ligne allait avec quelle
 image.
 
+Depuis la 3.110, **les parenthèses autour des crédits s'ôtent** :
+« (Inrap) » devient « Inrap » dès qu'on quitte le champ, et le
+serveur fait de même au dépôt et à la correction. Seule la paire qui enferme
+tout le texte s'en va : « Inrap (relevé J. Dupont) » reste tel quel.
+
 La carte montre une vignette de l'image : d'un JPEG, d'un PNG, d'un TIFF
 ou d'un PDF. Le TIFF et le PDF ne s'affichent pas tels quels : le navigateur
 en dessine une vignette pour l'écran seulement (UTIF.js ou pdf.js, chargés à

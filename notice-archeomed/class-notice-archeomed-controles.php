@@ -507,14 +507,16 @@ class Notice_Archeomed_Controles {
 					break;
 				}
 			}
-			// Une légende tapée en capitales paraît ainsi sous la figure.
+			// Une légende tapée en capitales paraît ainsi sous la figure. Un nom
+			// de fichier (« DSC_0042.JPG ») a déjà son avis : il n'en reçoit pas
+			// un second.
 			$en_capitales = array(
 				'la légende'                => array( $titre, 'la' ),
 				'le complément de légende'  => array( $legende, 'le' ),
 				'le texte alternatif'       => array( isset( $item['alt'] ) && is_scalar( $item['alt'] ) ? self::une_ligne( $item['alt'] ) : '', 'le' ),
 			);
 			foreach ( $en_capitales as $quoi => $champ ) {
-				if ( self::en_capitales( $champ[0] ) ) {
+				if ( self::en_capitales( $champ[0] ) && ! self::nom_de_fichier( $champ[0] ) ) {
 					$avis[] = sprintf( '%1$s : %2$s est en capitales (« %3$s »). Écrivez-%4$s en minuscules, avec les capitales d’usage.',
 						Notice_Archeomed_Normes::numero_de_figure( $rang ), $quoi, $champ[0], $champ[1] );
 				}
@@ -979,6 +981,45 @@ class Notice_Archeomed_Controles {
 			return $titre;
 		}
 		return rtrim( substr( $titre, 0, -1 ) );
+	}
+
+	/**
+	 * Les crédits sans les parenthèses dont l'auteur les entoure :
+	 * « (Inrap) » devient « Inrap », « ((cl. J. Dupont)) » « cl. J. Dupont ».
+	 * Seule la paire qui enferme tout le texte s'ôte : « (A) et (B) » et
+	 * « Inrap (relevé J. Dupont) » restent tels quels.
+	 */
+	public static function credits_sans_parentheses( $credits ) {
+		$texte = (string) $credits;
+		$s     = self::sans_blancs_aux_bouts( $texte );
+		$ote   = false;
+		while ( strlen( $s ) > 1 && '(' === $s[0] && ')' === substr( $s, -1 ) ) {
+			$l     = strlen( $s );
+			$n     = 0;
+			$ferme = -1;
+			for ( $i = 0; $i < $l; $i++ ) {
+				if ( '(' === $s[ $i ] ) {
+					++$n;
+				} elseif ( ')' === $s[ $i ] ) {
+					--$n;
+					if ( 0 === $n ) {
+						$ferme = $i;
+						break;
+					}
+				}
+			}
+			if ( $ferme !== $l - 1 ) {
+				break;
+			}
+			$s   = self::sans_blancs_aux_bouts( substr( $s, 1, -1 ) );
+			$ote = true;
+		}
+		return $ote ? $s : $texte;
+	}
+
+	/** Un texte sans ses blancs de début et de fin, insécables compris. */
+	private static function sans_blancs_aux_bouts( $texte ) {
+		return (string) preg_replace( '/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u', '', (string) $texte );
 	}
 
 	/**

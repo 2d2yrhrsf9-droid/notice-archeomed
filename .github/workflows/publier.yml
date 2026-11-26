@@ -314,7 +314,7 @@ jobs:
               return t[i:t.index('\n', i)]
           code = '\n'.join([fonction(f) for f in ('motif', 'points')]
                             + [variable(v) for v in ('NON_LETTRE', 'MINUSCULE', 'MAJUSCULE', 'TROIS_CAPITALES')]
-                            + [fonction(f) for f in ('enCapitales', 'nomEnCapitales', 'casseDeTitre')])
+                            + [fonction(f) for f in ('enCapitales', 'nomEnCapitales', 'casseDeTitre', 'creditsSansParentheses')])
           cas = [
               ['nomEnCapitales', 'FERRAND', True], ['nomEnCapitales', 'ROY', True], ['nomEnCapitales', 'LE GOFF', True],
               ['nomEnCapitales', 'D’ARCY', True], ['nomEnCapitales', 'ÉMILE', True], ['nomEnCapitales', 'Roy', False],
@@ -323,9 +323,13 @@ jobs:
               ['enCapitales', 'PLAN GÉNÉRAL DU SITE', True], ['enCapitales', 'ÉGLISE', True], ['enCapitales', 'Plan général', False],
               ['enCapitales', 'ZAC', False], ['enCapitales', 'US 1024', False], ['enCapitales', '王小明的房子', False],
               ['casseDeTitre', 'JEAN-PIERRE', 'Jean-Pierre'], ['casseDeTitre', 'MARIE-ÈVE', 'Marie-Ève'], ['casseDeTitre', 'LE GOFF', 'Le Goff'],
+              ['creditsSansParentheses', '(Inrap)', 'Inrap'], ['creditsSansParentheses', ' ( © J. Dupont, Inrap ) ', '© J. Dupont, Inrap'],
+              ['creditsSansParentheses', '((cl. J. Dupont))', 'cl. J. Dupont'], ['creditsSansParentheses', '(A) et (B)', '(A) et (B)'],
+              ['creditsSansParentheses', 'Inrap (relevé J. Dupont)', 'Inrap (relevé J. Dupont)'], ['creditsSansParentheses', '(Inrap (relevé))', 'Inrap (relevé)'],
+              ['creditsSansParentheses', '()', ''], ['creditsSansParentheses', '(', '('], ['creditsSansParentheses', 'Inrap', 'Inrap'],
           ]
           js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
-              + 'var fns = { enCapitales: enCapitales, nomEnCapitales: nomEnCapitales, casseDeTitre: casseDeTitre };\n' \
+              + 'var fns = { enCapitales: enCapitales, nomEnCapitales: nomEnCapitales, casseDeTitre: casseDeTitre, creditsSansParentheses: creditsSansParentheses };\n' \
               + 'var faux = cas.filter(function (c) { return fns[c[0]](c[1]) !== c[2]; });\n' \
               + 'faux.forEach(function (c) { console.log("::error::" + c[0] + "(" + JSON.stringify(c[1]) + ") donne " + JSON.stringify(fns[c[0]](c[1]))); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'
@@ -335,6 +339,8 @@ jobs:
             || { echo "::error::Le prénom en capitales ne se signale plus."; exit 1; }
           grep -q "' est en capitales (' + guillemets(v) + ')'" /tmp/formulaire.js \
             || { echo "::error::La légende en capitales ne se signale plus."; exit 1; }
+          grep -q "if (clef === 'credits') { oterLesParentheses(champ, idx); }" /tmp/formulaire.js \
+            || { echo "::error::Les parenthèses des crédits ne s'ôtent plus au formulaire."; exit 1; }
           # Un brouillon gardé avant les types porte « Fouille préventive » :
           # il doit revenir en Fouille et Préventive, l'inconnu tel quel. La
           # table vient du serveur, telle que la page la sert.

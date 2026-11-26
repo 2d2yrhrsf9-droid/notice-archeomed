@@ -4725,6 +4725,36 @@ class Notice_Archeomed_Pactols {
 			// « DUPONT-MARTIN » en « Dupont-Martin », « D'ARCY » en « D'arcy » :
 			// une proposition, que l'auteur accepte ou non — « McLean » ne se
 			// reconstitue pas.
+			// Les crédits sans la paire de parenthèses qui les enferme tout
+			// entiers, comme Notice_Archeomed_Controles::credits_sans_parentheses().
+			function creditsSansParentheses(t) {
+				var texte = String(t == null ? '' : t), s = texte.trim(), ote = false;
+				while (s.length > 1 && s.charAt(0) === '(' && s.charAt(s.length - 1) === ')') {
+					var n = 0, ferme = -1;
+					for (var i = 0; i < s.length; i++) {
+						if (s.charAt(i) === '(') { n++; } else if (s.charAt(i) === ')') { n--; if (n === 0) { ferme = i; break; } }
+					}
+					if (ferme !== s.length - 1) { break; }
+					s = s.slice(1, -1).trim();
+					ote = true;
+				}
+				return ote ? s : texte;
+			}
+			function oterLesParentheses(champ, idx) {
+				champ.addEventListener('change', function () {
+					var propre = creditsSansParentheses(champ.value);
+					if (propre === champ.value) { return; }
+					champ.value = propre;
+					if (typeof idx === 'number') {
+						if (!illusMeta[idx]) { illusMeta[idx] = {}; }
+						illusMeta[idx].credits = propre;
+					}
+				});
+			}
+			// Les figures déjà déposées, à la correction : leurs crédits aussi.
+			Array.prototype.forEach.call(document.querySelectorAll('#na-form input[name^="garde_credits["]'), function (champ) {
+				oterLesParentheses(champ);
+			});
 			function casseDeTitre(t) {
 				var avant = '';
 				return points(String(t).toLowerCase()).map(function (ch) {
@@ -7079,6 +7109,9 @@ class Notice_Archeomed_Pactols {
 					if (!illusMeta[idx]) { illusMeta[idx] = {}; }
 					illusMeta[idx][clef] = champ.value;
 				});
+				// Les parenthèses autour des crédits s'ôtent à la sortie du
+				// champ, comme le serveur les ôte : l'auteur voit ce qui part.
+				if (clef === 'credits') { oterLesParentheses(champ, idx); }
 				if (clef === 'alt') {
 					champ.maxLength = ALT_MAX + DESCRIPTION_MAX + 20;
 					champ.setAttribute('autocomplete', 'off');
@@ -7747,10 +7780,12 @@ class Notice_Archeomed_Pactols {
 					};
 				});
 				if (deplacer) { liste.push(deplacer); }
-				// Une légende tapée en capitales paraît ainsi sous la figure.
+				// Une légende tapée en capitales paraît ainsi sous la figure. Un
+				// nom de fichier (« DSC_0042.JPG ») a déjà son avis : il n'en
+				// reçoit pas un second.
 				[['titre', 'la légende', 'la'], ['legende', 'le complément de légende', 'le'], ['alt', 'le texte alternatif', 'le']].forEach(function (x) {
 					var v = net(x[0] === 'alt' ? separerEcoute(m.alt).alt : m[x[0]]);
-					if (e.vus[x[0]] && enCapitales(v)) {
+					if (e.vus[x[0]] && enCapitales(v) && !nomDeFichierA11y(v, '')) {
 						liste.push(NORMES.figure + ' ' + rang + NBSP + ': ' + x[1] + ' est en capitales (' + guillemets(v) + ')'
 							+ '. Écrivez-' + x[2] + ' en minuscules, avec les capitales d’usage.');
 					}
@@ -10592,6 +10627,9 @@ class Notice_Archeomed_Pactols {
 		// « Fig. 1 : Plan » retapé dans le titre donnait « Fig. 1 Fig. 1 :
 		// Plan » : le numéro, c'est le plugin qui le pose.
 		$item['titre'] = Notice_Archeomed_Controles::titre_sans_numero( $item['titre'], $rang );
+		// « (Inrap) » : les parenthèses que l'auteur met autour des crédits
+		// s'ôtent ; le style du document les présente seul.
+		$item['credits'] = Notice_Archeomed_Controles::credits_sans_parentheses( $item['credits'] );
 		// La mise en forme de l'auteur — titre, légende, description —,
 		// accordée aux textes qu'on vient de garder : les trois clefs
 		// toujours, vides quand rien ne s'accorde, pour qu'une forme d'avant
