@@ -5055,6 +5055,24 @@ wp_unschedule_hook( Notice_Archeomed_File::HOOK_UNE );
 $GLOBALS['wpdb']->query( $GLOBALS['wpdb']->prepare( "DELETE FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE %s",
 	$GLOBALS['wpdb']->esc_like( 'na_page_' ) . '%' ) );
 
+WP_CLI::log( 'Les propositions de lieu-dit (IGN)' );
+// Oui par défaut ; « non » coupe le service, et la page n'en dit plus rien.
+$reglages_ign = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$sans_ign     = (array) $reglages_ign;
+unset( $sans_ign['ign_lieu_dit'] );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $sans_ign );
+na_verifier( Notice_Archeomed_Geocodage::SERVICE === Notice_Archeomed_Geocodage::service(),
+	'les propositions de lieu-dit sont offertes par défaut', Notice_Archeomed_Geocodage::service() );
+$nettoie_ign = ( new ReflectionClass( 'Notice_Archeomed_Settings' ) )->newInstanceWithoutConstructor();
+$ign_non     = $nettoie_ign->sanitize( array( 'ign_lieu_dit' => 'non' ) );
+$ign_autre   = $nettoie_ign->sanitize( array( 'ign_lieu_dit' => '<b>peut-être</b>' ) );
+na_verifier( 'non' === $ign_non['ign_lieu_dit'] && 'oui' === $ign_autre['ign_lieu_dit'],
+	'le réglage des propositions ne garde que « oui » ou « non »', array( $ign_non['ign_lieu_dit'], $ign_autre['ign_lieu_dit'] ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( $sans_ign, array( 'ign_lieu_dit' => 'non' ) ) );
+na_verifier( '' === Notice_Archeomed_Geocodage::service() && ! Notice_Archeomed_Geocodage::actif(),
+	'« non » coupe les propositions de lieu-dit', Notice_Archeomed_Geocodage::service() );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_ign );
+
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();
 na_verifier( false === wp_next_scheduled( Notice_Archeomed_Pactols::HOOK_TERMES ),

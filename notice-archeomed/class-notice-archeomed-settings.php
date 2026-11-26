@@ -87,6 +87,9 @@ class Notice_Archeomed_Settings {
 		// (forme préférée, chaîne, blocs d'index) ? À couper quand le proxy
 		// de l'hébergement refuse la sortie.
 		'pactols_serveur'    => 'oui',
+		// « oui » ou « non » : le champ du lieu-dit propose-t-il les voies
+		// et lieux nommés de la commune, d'après la Géoplateforme de l'IGN ?
+		'ign_lieu_dit'       => 'oui',
 
 		// — L'iconographie d'un numéro —
 		// Le numéro en préparation ouvre le nom de chaque illustration, comme
@@ -585,6 +588,10 @@ class Notice_Archeomed_Settings {
 			if ( 'non' === $out['pactols_serveur'] ) {
 				wp_clear_scheduled_hook( Notice_Archeomed_Pactols::HOOK_TERMES );
 			}
+		}
+
+		if ( isset( $input['ign_lieu_dit'] ) ) {
+			$out['ign_lieu_dit'] = 'non' === $input['ign_lieu_dit'] ? 'non' : 'oui';
 		}
 
 		if ( isset( $input['protection'] ) ) {
@@ -3012,6 +3019,7 @@ class Notice_Archeomed_Settings {
 			self::resultat( $essai['resultat'] );
 		}
 		$lit = 'non' !== self::get( 'pactols_serveur' );
+		$ign = 'non' !== self::get( 'ign_lieu_dit' );
 		self::ouvrir_les_reglages();
 		?>
 		<table class="form-table" role="presentation">
@@ -3038,6 +3046,31 @@ class Notice_Archeomed_Settings {
 						il manque seulement la forme préférée et le fichier des blocs d’index
 						du dossier&nbsp;; le Word ne signale plus de terme «&nbsp;non lu&nbsp;», et le
 						serveur cesse de réessayer.
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Propositions de lieu-dit (IGN)</th>
+				<td>
+					<fieldset>
+						<legend class="screen-reader-text">Propositions de lieu-dit (IGN)</legend>
+						<label style="display:block;margin-bottom:6px">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[ign_lieu_dit]"
+								value="oui" <?php checked( $ign ); ?>>
+							Oui — le champ du lieu-dit propose les voies et lieux nommés de la commune
+						</label>
+						<label style="display:block">
+							<input type="radio" name="<?php echo esc_attr( self::OPTION_NAME ); ?>[ign_lieu_dit]"
+								value="non" <?php checked( ! $ign ); ?>>
+							Non — l’auteur écrit le lieu-dit sans propositions
+						</label>
+					</fieldset>
+					<p class="description" style="max-width:46em">
+						Le navigateur de l’auteur interroge lui-même la Géoplateforme de l’IGN,
+						comme il le fait de Pactols&nbsp;: le serveur n’y prend aucune part. Les
+						propositions ne paraissent que pour une commune que l’IGN reconnaît sans
+						doute possible&nbsp;; rien n’oblige à les prendre, et un service muet ne
+						gêne pas le dépôt.
 					</p>
 				</td>
 			</tr>

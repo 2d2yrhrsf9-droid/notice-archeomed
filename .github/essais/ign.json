@@ -1,0 +1,741 @@
+{
+"_": "Réponses réelles de la Géoplateforme de l'IGN (data.geopf.fr/geocodage/search), relevées le 26 novembre 2026 et réduites aux champs que lit le formulaire.",
+"caen-abb-adr": [],
+"caen-abb-poi": [
+{
+"properties": {
+"name": [
+"Abbaye aux Dames"
+],
+"category": [
+"construction",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Abbaye aux Hommes"
+],
+"category": [
+"construction",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"14118"
+]
+}
+}
+],
+"caen-carm-adr": [
+{
+"properties": {
+"name": "Rue des Carmes",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+},
+{
+"properties": {
+"name": "Rue des Carmélites",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+},
+{
+"properties": {
+"name": "Place des Carmes",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+}
+],
+"caen-carm-poi": [],
+"caen-stj-adr": [
+{
+"properties": {
+"name": "Rue Saint-Jean",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+},
+{
+"properties": {
+"name": "Rue Neuve Saint-Jean",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+}
+],
+"caen-stj-poi": [],
+"caen-stp-adr": [
+{
+"properties": {
+"name": "Rue Saint-Pierre",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+},
+{
+"properties": {
+"name": "Place Saint-Pierre",
+"citycode": "14118",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+}
+],
+"caen-stp-poi": [
+{
+"properties": {
+"name": [
+"Saint-Pierre"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Saint-Pierre"
+],
+"category": [
+"station de tramway",
+"transport",
+"équipement de transport"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Cimetière Saint-Pierre"
+],
+"category": [
+"cimetière"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Calvaire Saint-Pierre"
+],
+"category": [
+"station de tramway",
+"transport",
+"équipement de transport"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Port de Caen Bassin Saint-Pierre"
+],
+"category": [
+"port",
+"transport",
+"équipement de transport"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Bassin Saint-Pierre"
+],
+"category": [
+"cours d'eau",
+"hydrographie"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Résidence Bassin Saint-Pierre"
+],
+"category": [
+"quartier",
+"zone d'habitation"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Bassin Saint-Pierre"
+],
+"category": [
+"cours d'eau",
+"hydrographie"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"le Calvaire Saint-Pierre"
+],
+"category": [
+"quartier",
+"zone d'habitation"
+],
+"citycode": [
+"14118"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Collège Saint-Pierre"
+],
+"category": [
+"collège",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"14118"
+]
+}
+}
+],
+"commune-caen": [
+{
+"properties": {
+"type": "municipality",
+"name": "Caen",
+"citycode": "14118",
+"context": "14, Calvados, Normandie"
+}
+}
+],
+"commune-coulonces": [
+{
+"properties": {
+"type": "municipality",
+"name": "Coulonces",
+"citycode": "61123",
+"context": "61, Orne, Normandie"
+}
+}
+],
+"commune-falaise": [
+{
+"properties": {
+"type": "municipality",
+"name": "Falaise",
+"citycode": "14258",
+"context": "14, Calvados, Normandie"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Falaise",
+"citycode": "08164",
+"context": "08, Ardennes, Grand Est"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "La Falaise",
+"citycode": "78230",
+"context": "78, Yvelines, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Villy-lez-Falaise",
+"citycode": "14759",
+"context": "14, Calvados, Normandie"
+}
+}
+],
+"commune-paris": [
+{
+"properties": {
+"type": "municipality",
+"name": "Paris",
+"citycode": "75056",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 15e Arrondissement",
+"citycode": "75115",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 20e Arrondissement",
+"citycode": "75120",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 18e Arrondissement",
+"citycode": "75118",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 13e Arrondissement",
+"citycode": "75113",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 19e Arrondissement",
+"citycode": "75119",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 16e Arrondissement",
+"citycode": "75116",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 17e Arrondissement",
+"citycode": "75117",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 11e Arrondissement",
+"citycode": "75111",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 12e Arrondissement",
+"citycode": "75112",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 14e Arrondissement",
+"citycode": "75114",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 10e Arrondissement",
+"citycode": "75110",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 9e Arrondissement",
+"citycode": "75109",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 5e Arrondissement",
+"citycode": "75105",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 7e Arrondissement",
+"citycode": "75107",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 6e Arrondissement",
+"citycode": "75106",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 8e Arrondissement",
+"citycode": "75108",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 3e Arrondissement",
+"citycode": "75103",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 4e Arrondissement",
+"citycode": "75104",
+"context": "75, Paris, Île-de-France"
+}
+},
+{
+"properties": {
+"type": "municipality",
+"name": "Paris 2e Arrondissement",
+"citycode": "75102",
+"context": "75, Paris, Île-de-France"
+}
+}
+],
+"falaise-chat-adr": [
+{
+"properties": {
+"name": "Rue de la Porte du Château",
+"citycode": "14258",
+"context": "14, Calvados, Normandie",
+"type": "street"
+}
+}
+],
+"falaise-chat-poi": [
+{
+"properties": {
+"name": [
+"Château"
+],
+"category": [
+"château",
+"zone d'habitation"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Château"
+],
+"category": [
+"château",
+"zone d'habitation"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Château de la Fresnaye"
+],
+"category": [
+"château",
+"zone d'habitation"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Château Guillaume-le-Conquérant"
+],
+"category": [
+"château",
+"zone d'habitation"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Château d'eau"
+],
+"category": [
+"château d'eau",
+"réservoir"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"le Château"
+],
+"category": [
+"camping",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"14258"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Réservoir d'eau ou château d'eau au sol"
+],
+"category": [
+"réservoir d'eau ou château d'eau au sol",
+"réservoir"
+],
+"citycode": [
+"14258"
+]
+}
+}
+],
+"paris-mouf-adr": [
+{
+"properties": {
+"name": "Rue Mouffetard",
+"citycode": "75105",
+"context": "75, Paris, Île-de-France",
+"type": "street"
+}
+},
+{
+"properties": {
+"name": "Rue Moufle",
+"citycode": "75111",
+"context": "75, Paris, Île-de-France",
+"type": "street"
+}
+}
+],
+"paris-mouf-poi": [],
+"paris-notre-poi": [
+{
+"properties": {
+"name": [
+"Notre-Dame-des-Champs"
+],
+"category": [
+"station de métro",
+"transport",
+"équipement de transport"
+],
+"citycode": [
+"75056",
+"75106"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Notre-Dame des Champs"
+],
+"category": [
+"quartier",
+"zone d'habitation"
+],
+"citycode": [
+"75056",
+"75106"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Notre-Dame-de-Lorette"
+],
+"category": [
+"station de métro",
+"transport",
+"équipement de transport"
+],
+"citycode": [
+"75109",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Notre-Dame"
+],
+"category": [
+"quartier",
+"zone d'habitation"
+],
+"citycode": [
+"75104",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Cathédrale Notre-Dame"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75104",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Église Notre-Dame de Clignancourt"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75118",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Église Notre-Dame des Otages"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75120",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Église Notre-Dame d'Espérance"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75111",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Église Notre-Dame de Bercy"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75112",
+"75056"
+]
+}
+},
+{
+"properties": {
+"name": [
+"Église Notre-Dame des Victoires"
+],
+"category": [
+"culte chrétien",
+"zone d'activité ou d'intérêt"
+],
+"citycode": [
+"75102",
+"75056"
+]
+}
+}
+]
+}

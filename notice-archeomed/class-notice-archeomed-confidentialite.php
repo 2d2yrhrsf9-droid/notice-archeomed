@@ -181,6 +181,9 @@ class Notice_Archeomed_Confidentialite {
 		$texte .= '<p>' . esc_html__( 'Ces informations sont conservées sur ce site et adressées par courriel à la rédaction de la revue ; une copie est envoyée aux personnes citées. Elles servent à l’instruction éditoriale des notices.', 'notice-archeomed' ) . '</p>';
 		$texte .= '<p>' . esc_html__( 'Pendant la saisie, un brouillon est gardé dans le navigateur, sur l’appareil de l’auteur, trente jours au plus ; il est effacé après l’envoi.', 'notice-archeomed' ) . '</p>';
 		$texte .= '<p>' . esc_html__( 'La recherche des lieux et des mots-clés interroge directement, depuis le navigateur, le service Pactols du réseau Frantiq ; l’adresse IP du visiteur lui est donc transmise. Selon la protection choisie, le service Turnstile de Cloudflare vérifie qu’un visiteur n’est pas un robot.', 'notice-archeomed' ) . '</p>';
+		if ( Notice_Archeomed_Geocodage::actif() ) {
+			$texte .= '<p>' . esc_html__( 'Quand la commune est écrite, le champ du lieu-dit propose des voies et des lieux nommés : le navigateur envoie alors à la Géoplateforme de l’Institut national de l’information géographique et forestière (IGN) le nom de la commune et le lieu-dit en cours de frappe, avec l’adresse IP du visiteur.', 'notice-archeomed' ) . '</p>';
+		}
 		$texte .= '<p><em>' . esc_html__( 'À compléter par la revue : le responsable du traitement, la base légale, la durée de conservation des notices et la manière d’exercer ses droits.', 'notice-archeomed' ) . '</em></p>';
 		wp_add_privacy_policy_content( __( 'Formulaire des notices d’archéologie médiévale', 'notice-archeomed' ), wp_kses_post( wpautop( $texte, false ) ) );
 	}

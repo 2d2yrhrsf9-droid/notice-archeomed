@@ -32,6 +32,7 @@ notice-archeomed/                     le dossier de l'extension, tel qu'il est i
   class-notice-archeomed-thesaurus.php la lecture des concepts Pactols et les blocs d'index TEI
   class-notice-archeomed-typographie.php la typographie française du texte
   class-notice-archeomed-lieu-dit.php la mise en forme du lieu-dit et son éditeur d'une ligne
+  class-notice-archeomed-geocodage.php les propositions de lieu-dit d'après l'IGN
   class-notice-archeomed-forme.php    la mise en forme des titres, légendes et descriptions des figures
   class-notice-archeomed-controles.php les avis donnés au dépôt, communs au serveur et au navigateur
   class-notice-archeomed-prenoms.php  les prénoms connus, pour l'avis sur le prénom tapé
@@ -272,7 +273,7 @@ Destinataires · Numéro et iconographie · Normes éditoriales · Styles Métop
 - **Protection** : `protection` (`locale`, `turnstile`, `les_deux`), `turnstile_site`, `turnstile_secret`.
 - **Envoi** : `mode_envoi` (`differe`, `immediat`), `envoi_mode` (`php` ou `smtp`) et `smtp_*`, `poids_courriel` (Mo).
 - **Iconographie** : `numero`, `nom_modele`, `br_*` (basse définition : côté le plus long — 2 500 px —, ppp — 150 —, poids — 1 000 Ko —, tolérance — 10 %), `hr_*` (haute définition des photographies et des traits), `garder_originaux`.
-- **Pactols** : `pactols_serveur` (`oui`/`non` : le serveur lit-il les termes).
+- **Pactols** : `pactols_serveur` (`oui`/`non` : le serveur lit-il les termes), `ign_lieu_dit` (`oui`/`non` : le lieu-dit propose-t-il les voies et lieux nommés de l'IGN).
 - **Mises à jour** : `maj_github`, `github_depot`, `github_jeton`.
 - **`normes`** : les choix éditoriaux, décrits par `Notice_Archeomed_Normes::catalogue()` — siècles (`siecle_mot`, `siecle_chiffres`, `siecle_ordinal`), typographie (`typographie`, `espace_ponctuation`, `annees`), composition (`titre_notice`, `lieu_dit_italique`, `figure_abreviation`, `figure_numero`), dépôt (`photo_largeur_cm`, `photo_hauteur_cm`, `photo_ppp`, `trait_ppp`, `mots_min`, `mots_max`, `alt_conseille`), `sigles` (liste « SIGLE = développement »), `avis` (les familles d'avis données au dépôt). Le code lit une norme par `Notice_Archeomed_Normes::valeur( 'cle' )`.
 - **`styles`** : la correspondance de chaque bloc de la notice avec un style de la feuille, décrite par `Notice_Archeomed_Styles::catalogue()`. Le code n'écrit jamais un nom de style en dur : il appelle `Notice_Archeomed_Styles::de( 'bloc' )`. Un choix est refusé s'il n'existe pas dans la feuille installée.
@@ -320,6 +321,8 @@ Avis éventuels (« à supprimer ») ; titre (lieux, département, lieu-dit) ; m
 ## 10. Le formulaire, côté navigateur
 
 Tout le JavaScript est en ligne dans `render_form()`, sans outil de construction, et doit rester compatible avec les navigateurs courants sans transpilation (ni `?.`, ni assertion arrière dans les expressions régulières). Les données du serveur arrivent par `wp_json_encode` : normes, phrases et motifs des avis (`A11Y`), plafonds réels de PHP. Les avis du navigateur et ceux du serveur doivent rester identiques : **toute modification d'un contrôle se fait des deux côtés**, et les essais comparent les phrases.
+
+**Les propositions de lieu-dit** (`Notice_Archeomed_Geocodage`, depuis la 3.115) : le navigateur interroge `data.geopf.fr/geocodage/search` (CORS ouvert, sans clé). La commune se cherche une fois (`index=address&type=municipality`) et ne se retient que si un seul résultat porte ce nom et, s'il y a une parenthèse, ce département ou cette région dans son contexte ; sinon rien n'est proposé. La voie — ce qui suit la dernière virgule ou le dernier point-virgule, numéro ôté — part en deux requêtes parallèles, `index=address&autocomplete=1` (voies, lieux-dits) et `index=poi` (lieux nommés), 350 ms après la dernière frappe, au bout du champ seulement et dès trois lettres. Les réponses se trient dans le navigateur (`naIgnRessemble` : chaque mot tapé trouve le sien, le dernier en début de mot), les arrêts de transport sont écartés, six propositions au plus. Un compteur écarte les réponses en retard ; les échecs sont muets et ne se retiennent pas. Les fonctions `naIgn…` qui ne touchent pas la page sont essayées en CI sur des réponses réelles de l'IGN. Le choix remplace la voie tapée par une opération Quill (`'api'`) qui garde l'italique et les petites capitales.
 
 Accessibilité : chaque champ a son étiquette et son `aria-describedby`, les erreurs sont listées et reliées à leur champ, les états ne reposent, en règle générale, pas sur la seule couleur (un point connu : l'état actif de la barre d'outils de l'éditeur), le puzzle se manœuvre au clavier. L'onglet Accessibilité fait passer la page publiée à axe-core. Ces points sont pris en compte à la conception ; **ils n'ont pas fait l'objet d'un audit RGAA complet** ni d'essais systématiques avec des utilisateurs de lecteurs d'écran.
 

@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.114
+# Formulaire des notices d’archéologie médiévale — version 3.115
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -767,6 +767,26 @@ un thésaurus.
 
 Les notices reçues avant cette version portent une commune unique ; le
 fascicule les refabrique sans rien perdre.
+
+**Depuis la 3.115, le lieu-dit propose les voies et lieux nommés de la
+commune**, d'après la Géoplateforme de l'IGN. Une fois la commune écrite,
+« 12, rue des carm » offre « 12, rue des Carmes », « Château, abbaye aux d »
+offre l'Abbaye aux Dames ; « rue st jean » trouve la rue Saint-Jean. Le
+numéro, avec ou sans virgule, se garde et s'écrit « 12, » ; ce qui précède la
+dernière virgule reste tel quel. Chaque proposition dit ce qu'elle est (voie,
+lieu-dit, construction, culte chrétien…) ; les arrêts de transport et les
+châteaux d'eau ne sont pas proposés. Paris, Lyon et Marseille donnent les
+voies de leurs arrondissements.
+
+Rien ne s'impose : la liste se referme sans rien changer (Échap, ou on
+continue de taper), et le titre d'un projet collectif s'écrit comme avant. Les
+propositions ne paraissent que pour une commune que l'IGN reconnaît sans
+doute possible — Falaise se départage par sa parenthèse, Calvados ou
+Ardennes ; une commune déléguée qu'il ne connaît plus, ou un nom de moins de
+trois lettres (Eu, Y), restent sans propositions. Un service lent ou muet ne
+dit rien et ne gêne pas le dépôt. C'est le navigateur qui interroge l'IGN,
+comme il le fait de Pactols ; le réglage « Propositions de lieu-dit (IGN) »,
+sous Pactols, coupe le tout.
 
 ## La nature de l'opération, et le code Patriarche
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.114
+ * Version:           3.115
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -40,6 +40,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-confidentiali
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-relecture.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-stockage.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-annuaire.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-geocodage.php';
 
 new Notice_Archeomed_Relecture();
 new Notice_Archeomed_Settings();
@@ -3596,7 +3597,7 @@ class Notice_Archeomed_Pactols {
 			.na-form#na-form .na-texte--erreur #na-editor.ql-container.ql-snow,
 			.na-form#na-form .na-texte--erreur .ql-toolbar.ql-snow { border-color: var(--na-erreur); }
 			/* Le lieu-dit : un champ d'une ligne, sa petite barre au-dessus. */
-			.na-form#na-form .na-lieu-dit-riche { background: var(--na-papier); border: 1px solid var(--na-filet); border-radius: var(--na-r1);
+			.na-form#na-form .na-lieu-dit-riche { position: relative; background: var(--na-papier); border: 1px solid var(--na-filet); border-radius: var(--na-r1);
 				transition: border-color .15s ease; }
 			.na-form#na-form .na-lieu-dit-riche:hover { border-color: var(--na-encre); }
 			.na-form#na-form .na-lieu-dit-riche:focus-within { border-color: var(--na-accent); outline: var(--na-anneau); outline-offset: 2px; }
@@ -4006,7 +4007,7 @@ class Notice_Archeomed_Pactols {
 					</div>
 					<div class="na-champ">
 						<label for="na-lieu-dit">Lieu-dit, adresse ou nom du projet <span class="na-requis" aria-hidden="true">*</span></label>
-						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&nbsp;; 12, rue des Carmes&nbsp;; ou le titre d’un projet collectif de recherche.</p>
+						<p class="na-help" id="na-lieu-dit-aide">Par exemple&nbsp;: Château, salle de l’Échiquier&nbsp;; 12, rue des Carmes&nbsp;; ou le titre d’un projet collectif de recherche.<?php if ( Notice_Archeomed_Geocodage::actif() ) : ?> Quand la commune est écrite, des voies et lieux nommés de l’IGN vous sont proposés pendant la frappe&nbsp;; rien n’oblige à les prendre.<?php endif; ?></p>
 						<input type="text" id="na-lieu-dit" name="lieu_dit" required
 							aria-describedby="na-lieu-dit-aide na-apercu"
 							value="<?php echo esc_attr( $this->repris( 'lieu_dit' ) ); ?>">
@@ -5266,6 +5267,7 @@ class Notice_Archeomed_Pactols {
 			// ── Le titre : lieux, parenthèse, lieu-dit, et leur aperçu ──────
 <?php echo Notice_Archeomed_Lieu_Dit::script(); ?>
 <?php echo Notice_Archeomed_Forme::script(); ?>
+<?php echo Notice_Archeomed_Geocodage::script(); ?>
 			var deptInput = document.getElementById('na-departement');
 			var deptAuto = document.getElementById('na-departement-auto');
 			var lieuDitInput = document.getElementById('na-lieu-dit');
@@ -5274,6 +5276,10 @@ class Notice_Archeomed_Pactols {
 			// à côté.
 			var lieuDitForme = document.getElementById('na-lieu-dit-forme');
 			var lieuDitRiche = quill ? naLieuDitRiche(lieuDitInput, lieuDitForme, { classe: 'na-ancre', italiqueDuTitre: !!NORMES.lieuDitItalique }) : null;
+			// Les voies et lieux nommés de la commune, proposés par l'IGN
+			// pendant qu'on tape ; vide, le réglage les a coupés.
+			var IGN = <?php echo wp_json_encode( Notice_Archeomed_Geocodage::service() ); ?>;
+			if (lieuDitRiche && IGN) { naIgnLieuDit(lieuDitRiche, { service: IGN, form: form, dept: deptInput }); }
 			// Comme au serveur (capitale_initiale) : la première lettre, et elle
 			// seule, passe en capitale ; les blancs de tête ne comptent pas.
 			function capitaleInitiale(t) {
