@@ -1101,7 +1101,7 @@ foreach ( $fins as $fin ) {
 }
 na_verifier( array_column( $fins, 1 ) === $fins_vues,
 	'le texte perd ses paragraphes vides et le saut de ligne qui le terminent, rien d\'autre', $fins_vues );
-$long = str_repeat( '<p>' . str_repeat( 'Un mur de pierre. ', 400 ) . '</p>', 4 );
+$long = str_repeat( '<p>' . rtrim( str_repeat( 'Un mur de pierre. ', 400 ) ) . '</p>', 4 );
 na_verifier( $long === na_appel( $plugin, 'sans_fin_vide', array( $long . '<p><br></p>' ) ),
 	'un long texte garde tout ce qu\'il dit' );
 na_verifier( ! Notice_Archeomed_Styles::responsabilites_a_part(), 'la mention est collée au texte pour les essais qui suivent' );
