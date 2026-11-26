@@ -487,6 +487,10 @@ jobs:
           PY
           grep -q "if (avisActif('prenoms')) { liste = liste.concat(avisDuPrenom(p, n, qui)); }" /tmp/formulaire.js \
             || { echo "::error::Les prénoms ne se jugent plus en tapant."; exit 1; }
+          grep -q "montrerConseils(z, avisActif('prenoms') ? avisDuPrenom(net(prenom.value), net(nom.value), 'du déposant') : \[\], \[prenom, nom\]);" /tmp/formulaire.js \
+            || { echo "::error::Le prénom du déposant ne se juge plus."; exit 1; }
+          grep -q "var z = zoneDeConseils('na-deposant-conseils', ligne);" /tmp/formulaire.js \
+            || { echo "::error::Les avis du déposant ne paraissent plus sous son prénom et son nom."; exit 1; }
           grep -q "if (ligneDuNom && ligneDuNom.parentNode === bloc) { bloc.insertBefore(z, ligneDuNom.nextSibling); }" /tmp/formulaire.js \
             || { echo "::error::Les avis sur une personne ne paraissent plus sous son prénom et son nom."; exit 1; }
           # Les propositions de lieu-dit, sur des réponses réelles de l'IGN :

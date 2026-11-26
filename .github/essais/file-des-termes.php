@@ -921,9 +921,12 @@ na_verifier( mb_strlen( $prenoms_navigateur['accents'], 'UTF-8' ) === strlen( $p
 $prenoms_noms_connus = array_intersect( explode( ' ', $prenoms_navigateur['noms'] ), explode( ' ', $prenoms_navigateur['connus'] ) );
 na_verifier( array() === $prenoms_noms_connus, 'aucun nom de famille de la liste n\'est aussi un prénom connu', $prenoms_noms_connus );
 $avis_prenoms = $C::prenoms( array( 'resp_prenom' => 'Helene', 'resp_nom' => 'Ferrand', 'coresp_prenom' => 'Katarzyna', 'coresp_nom' => 'Nowak',
-	'coauteur_prenom' => 'Moreau', 'coauteur_nom' => 'Anne' ) );
-na_verifier( 2 === count( $avis_prenoms ) && false !== strpos( $avis_prenoms[0], 'du responsable (« Helene »)' ) && false !== strpos( $avis_prenoms[1], 'Le nom du co-auteur (« Anne »)' ),
-	'les contrôles jugent le prénom de chaque personne', $avis_prenoms );
+	'coauteur_prenom' => 'Moreau', 'coauteur_nom' => 'Anne', 'deposant_prenom' => 'Nicloas', 'deposant_nom' => 'Martin' ) );
+na_verifier( 3 === count( $avis_prenoms ) && false !== strpos( $avis_prenoms[0], 'du responsable (« Helene »)' ) && false !== strpos( $avis_prenoms[1], 'Le nom du co-auteur (« Anne »)' )
+	&& 'La graphie du prénom du déposant (« Nicloas ») ne semble pas habituelle : s’écrit-il « Nicolas » ? Merci de vérifier.' === $avis_prenoms[2],
+	'les contrôles jugent le prénom de chaque personne, déposant compris', $avis_prenoms );
+$avis_sans_deposant = $C::prenoms( array( 'resp_prenom' => 'Jean', 'resp_nom' => 'Dupont' ) );
+na_verifier( array() === $avis_sans_deposant, 'sans déposant, rien sur le déposant', $avis_sans_deposant );
 na_verifier( preg_grep( '/Hélène/u', $C::avis( array( 'resp_prenom' => 'Helene', 'resp_nom' => 'Ferrand', 'illustrations' => array() ) ) )
 	&& in_array( 'prenoms', (array) Notice_Archeomed_Normes::valeur( 'avis' ), true ),
 	'la famille des prénoms est cochée d\'office et passe dans les avis' );

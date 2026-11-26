@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.120
+ * Version:           3.121
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -8658,12 +8658,24 @@ class Notice_Archeomed_Pactols {
 					if (e.target === prenom || e.target === nom || e.target === inst || e.target === mel) { maj(); }
 				});
 			});
-			// Le déposant n'a pas d'avis, mais son nom simple reçoit aussi sa
-			// capitale : il signe les courriels.
+			// Le déposant signe les courriels : son nom simple reçoit aussi sa
+			// capitale, et son prénom les avis des prénoms, sous la ligne de son
+			// prénom et de son nom, comme au serveur (Controles::prenoms()).
 			['na-deposant-prenom', 'na-deposant-nom'].forEach(function (id) {
 				var champ = el(id);
 				if (champ) { champ.addEventListener('blur', function () { mettreLaCapitale(champ); }); }
 			});
+			(function () {
+				var prenom = el('na-deposant-prenom'), nom = el('na-deposant-nom');
+				var ligne = prenom && nom && prenom.closest ? prenom.closest('.na-half') : null;
+				if (!ligne) { return; }
+				var z = zoneDeConseils('na-deposant-conseils', ligne);
+				function maj() {
+					montrerConseils(z, avisActif('prenoms') ? avisDuPrenom(net(prenom.value), net(nom.value), 'du déposant') : [], [prenom, nom]);
+				}
+				prenom.addEventListener('blur', maj);
+				nom.addEventListener('blur', maj);
+			}());
 			(function () {
 				var z = zoneDeConseils('na-lieu-dit-conseils', lieuDitInput);
 				lieuDitInput.addEventListener('blur', function () {

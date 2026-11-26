@@ -982,8 +982,9 @@ class Notice_Archeomed_Controles {
 
 	/**
 	 * Le prénom de chaque personne, confronté aux prénoms connus : un accent
-	 * qui semble manquer, un prénom et un nom qui semblent échangés
-	 * (Notice_Archeomed_Prenoms).
+	 * qui semble manquer, une faute de frappe, un prénom et un nom qui
+	 * semblent échangés (Notice_Archeomed_Prenoms). Le déposant aussi : il
+	 * signe les courriels.
 	 */
 	public static function prenoms( $d ) {
 		$avis  = array();
@@ -991,6 +992,7 @@ class Notice_Archeomed_Controles {
 			'resp'     => 'du responsable',
 			'coresp'   => 'du co-responsable',
 			'coauteur' => 'du co-auteur',
+			'deposant' => 'du déposant',
 		);
 		foreach ( $roles as $cle => $qui ) {
 			$avis = array_merge( $avis, Notice_Archeomed_Prenoms::avis(

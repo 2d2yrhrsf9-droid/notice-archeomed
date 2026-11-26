@@ -229,7 +229,7 @@ class Notice_Archeomed_Normes {
 							'ordinaux'         => '« XIIème » pour « XIIe », « 1ère » pour « 1re »',
 							'annees_espacees'  => 'une année tapée avec une espace, « 1 250 »',
 							'personnes'        => 'un nom en capitales, deux personnes dans un champ, une adresse dans l’institution',
-							'prenoms'          => 'un prénom auquel semble manquer un accent, ou qui paraît échangé avec le nom',
+							'prenoms'          => 'un prénom auquel semble manquer un accent, qui semble porter une faute de frappe, ou qui paraît échangé avec le nom',
 							'accessibilite'    => 'l’accessibilité des figures : un texte alternatif trop long, qui reprend le titre ou la légende, qui n’est qu’un nom de fichier ou « Photo », une couleur qui porte seule l’information, une description détaillée recommandée',
 							'sigles'           => 'un sigle de la liste ci-dessus qui n’est pas développé à sa première mention, ou qui n’est pas écrit à sa forme',
 						),

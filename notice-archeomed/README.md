@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.120
+# Formulaire des notices d’archéologie médiévale — version 3.121
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1991,7 +1991,10 @@ six cents prénoms donnés en France, d'après le fichier des prénoms de l'Inse
 (édition 2025), qui sont à une faute d'un prénom connu (Margaud, Marija,
 Markus), et quelques prénoms étrangers dans le même cas (Petr, Pere,
 Mercè) : ceux-là passent. Une lettre de plus ou de moins n'est pas relevée :
-elle fait souvent un autre prénom, rare et juste (Jehanne).
+elle fait souvent un autre prénom, rare et juste (Jehanne). Ces avis valent
+pour le responsable, le co-responsable, le co-auteur et, depuis la 3.121,
+pour la personne qui dépose à la place du responsable : elle signe les
+courriels.
 La case se décoche dans **Normes éditoriales ▸ Les avis donnés au dépôt**.
 Depuis la 3.113, les avis sur une personne paraissent sous la ligne du
 prénom et du nom, et non plus au bas de son bloc, hors de la vue.
