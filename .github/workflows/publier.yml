@@ -255,6 +255,65 @@ jobs:
               + 'process.exit(faux.length ? 1 : 0);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # Le plafond des mots : le compteur le dit dès la frappe, le
+          # contrôle refuse l'envoi au-delà, et la rédaction n'y est pas
+          # tenue (plafond à 0). Le nom du département perd « Département
+          # d'… » comme « Département du… ».
+          python3 - <<'PY'
+          import json, re, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          def variable(nom):
+              i = t.find('var ' + nom + ' =')
+              if i < 0:
+                  print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
+              return t[i:t.index('\n', i)]
+          for attendu in ('"motsPlafond":800', "? 'long' : true", "il compte ' + nombreDeMots("):
+              if attendu not in t:
+                  print("::error::Le plafond des mots manque au formulaire : " + attendu); sys.exit(1)
+          m = re.search(r"deptLabel\.replace\((/\^D\[ée\]partement.*?/i), ''\)", t)
+          if not m:
+              print("::error::Le nettoyage du nom du département manque au formulaire."); sys.exit(1)
+          code = '\n'.join([variable('NBSP'), fonction('nombreDeMots'), fonction('countWords')])
+          js = code + r'''
+          var texte = '', quill = { getText: function () { return texte; } };
+          var wc = { textContent: '', classList: { toggle: function (c, v) { wc.hors = v; } } };
+          var texteQuitte = false, FINE = ' ';
+          function mots(n) { var a = []; for (var i = 0; i < n; i++) { a.push('mot'); } return a.join(' '); }
+          function lire(n, plafond) {
+              NORMES = { motsMin: 300, motsMax: 700, motsPlafond: plafond };
+              texte = mots(n) + '\n';
+              var r = countWords();
+              return [r, wc.textContent.split(NBSP).join(' ').split(FINE).join(' '), wc.hors];
+          }
+          var NORMES, faux = [];
+          var cas = [
+              [lire(700, 800), [700, '700 mots — dans la fourchette recommandée', false]],
+              [lire(701, 800), [701, '701 mots — au-delà des 700 recommandés ; l’envoi est refusé au-delà de 800', true]],
+              [lire(800, 800), [800, '800 mots — au-delà des 700 recommandés ; l’envoi est refusé au-delà de 800', true]],
+              [lire(801, 800), [801, '801 mots — au-delà des 800 admis : raccourcissez le texte pour pouvoir l’envoyer', true]],
+              [lire(2000, 0), [2000, '2000 mots — au-delà des 700 recommandés', true]],
+              [[nombreDeMots('  Un\n\ndeux trois\t'), nombreDeMots(''), nombreDeMots('\n')], [3, 0, 0]]
+          ];
+          cas.forEach(function (c) { if (JSON.stringify(c[0]) !== JSON.stringify(c[1])) { faux.push(c); } });
+          var dept = ''' + m.group(1) + r''';
+          [['Département d’Ille-et-Vilaine', 'Ille-et-Vilaine'], ['Département d\'Indre-et-Loire', 'Indre-et-Loire'],
+           ['Département du Calvados', 'Calvados'], ['Département de la Manche', 'Manche'], ['Département de l\'Aude', 'Aude'],
+           ['Département des Côtes-d\'Armor', 'Côtes-d\'Armor'], ['Département de Paris', 'Paris'], ['Calvados', 'Calvados']]
+              .forEach(function (c) { var r = c[0].replace(dept, '').trim(); if (r !== c[1]) { faux.push([r, c[1]]); } });
+          faux.forEach(function (c) { console.log('::error::' + JSON.stringify(c[0]) + ' au lieu de ' + JSON.stringify(c[1])); });
+          process.exit(faux.length ? 1 : 0);
+          '''
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
           # La liste à puces : le bouton est à la barre, la liste ne se crée
           # pas à la frappe, et une liste collée, numérotée, devient à puces.
           grep -q "{ 'list': 'bullet' }" /tmp/formulaire.js \

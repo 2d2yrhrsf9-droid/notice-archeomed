@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.117
+ * Version:           3.118
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -218,6 +218,11 @@ class Notice_Archeomed_Pactols {
 	// Bure-les-Temple, Duesme, Vanvey (Côte-d'Or), Mont Aigu ». Cinq lignes
 	// couvrent ce qu'on voit passer, et chacune garde son identifiant Pactols.
 	const MAX_LIEUX           = 5;
+	// Le serveur compte les mots du texte autrement que l'éditeur, qui les
+	// compte dans la page : il ne refuse qu'au-delà du plafond des normes
+	// augmenté de cette part, pour ne jamais refuser ce que le compteur a
+	// laissé passer.
+	const MARGE_DU_PLAFOND    = 0.05;
 	// La gestion administrative d'une opération se partage : en recherche
 	// programmée, une université et un service de collectivité la portent
 	// ensemble. Trois lignes suffisent à ce qu'on voit passer.
@@ -2881,6 +2886,7 @@ class Notice_Archeomed_Pactols {
 			'verification'    => 'La vérification n’a pas abouti. Faites glisser la pièce jusqu’à son encoche, puis renvoyez le formulaire.',
 			'champs'          => 'Un renseignement obligatoire manque ou n’est pas valide.',
 			'texte'           => 'Le texte de la notice est vide, ou dépasse la longueur admise.',
+			'texte_long'      => 'Le texte de la notice dépasse les ' . self::entier( Notice_Archeomed_Normes::valeur( 'mots_plafond' ) ) . "\u{00A0}mots que la revue admet. Raccourcissez-le, puis renvoyez le formulaire.",
 			'fichiers'        => 'Un fichier joint n’a pas pu être reçu par le serveur. Renvoyez le formulaire.',
 			'fichier_lourd'   => 'Un fichier dépasse la taille que le serveur accepte par fichier (' . $fichier . '). Joignez-en une version plus légère.',
 			'fichier_coupe'   => 'Un fichier n’est arrivé qu’en partie : la connexion a sans doute été coupée pendant l’envoi. Renvoyez le formulaire.',
@@ -2898,7 +2904,7 @@ class Notice_Archeomed_Pactols {
 		$mot = isset( $messages[ $raison ] ) ? $messages[ $raison ] : 'Une erreur est survenue lors de l’envoi.';
 		// Un champ oublié se corrige dans la page : l'adresse de la rédaction
 		// n'y ajouterait qu'une tentation d'écrire au lieu de corriger.
-		if ( in_array( $raison, array( 'champs', 'texte' ), true ) ) {
+		if ( in_array( $raison, array( 'champs', 'texte', 'texte_long' ), true ) ) {
 			return $this->typo( $mot );
 		}
 		$redaction = $this->adresse_de_contact();
@@ -2970,7 +2976,7 @@ class Notice_Archeomed_Pactols {
 			'nature'              => array( 'na-nature-1', 'Cochez au moins un type d’opération, une prospection ou un projet collectif de recherche' ),
 			'annee'               => array( 'na-annee', 'Indiquez l’année de l’opération, par exemple 2024' ),
 			'organisme'           => array( 'na-organisme-1', 'Indiquez l’opérateur ou l’organisme porteur de l’opération' ),
-			'id_patriarche'       => array( 'na-patriarche', 'Indiquez le code d’opération Patriarche (n° d’OA), que le service régional de l’archéologie peut vous donner' ),
+			'id_patriarche'       => array( 'na-patriarche', 'Indiquez le code national d’opération Patriarche (n° d’OA), que le service régional de l’archéologie peut vous donner' ),
 			'rapport_lien'        => array( 'na-rapport', 'Saisissez l’adresse complète du rapport, par exemple https://hal.science/hal-01234567' ),
 			'donnees_lien'        => array( 'na-donnees', 'Saisissez l’adresse complète du jeu de données, par exemple https://doi.org/10.34847/nkl.abcd1234' ),
 			'resp_prenom'         => array( 'na-resp-prenom', 'Indiquez le prénom du responsable d’opération' ),
@@ -3273,6 +3279,29 @@ class Notice_Archeomed_Pactols {
 	 */
 	private static function entier( $n ) {
 		return number_format( (float) $n, 0, ',', "\u{00A0}" );
+	}
+
+	/**
+	 * Le nombre de mots d'un texte de notice tel qu'il arrive, en HTML. Une
+	 * fin de paragraphe, de liste ou d'intertitre sépare deux mots comme le
+	 * retour à la ligne de l'éditeur ; les entités se lisent, et l'espace
+	 * insécable sépare comme l'espace.
+	 */
+	public static function mots_du_texte( $html ) {
+		$html  = preg_replace( '#<br\s*/?>|</(?:p|li|h[1-6]|div|blockquote)>#i', ' ', (string) $html );
+		$texte = html_entity_decode( wp_strip_all_tags( (string) $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$mots  = preg_split( '/[\s\p{Z}]+/u', $texte, -1, PREG_SPLIT_NO_EMPTY );
+		return false === $mots ? 0 : count( $mots );
+	}
+
+	/**
+	 * Le texte passe-t-il le plafond des normes, marge comprise ? Le
+	 * plafond à 0 n'en met aucun.
+	 */
+	private static function texte_trop_long( $html ) {
+		$plafond = (int) Notice_Archeomed_Normes::valeur( 'mots_plafond' );
+		return $plafond > 0
+			&& self::mots_du_texte( $html ) > $plafond + (int) ceil( $plafond * self::MARGE_DU_PLAFOND );
 	}
 
 	/**
@@ -4093,7 +4122,7 @@ class Notice_Archeomed_Pactols {
 							value="<?php echo esc_attr( $this->repris( 'num_autorisation' ) ); ?>">
 					</div>
 					<div class="na-champ">
-						<label for="na-patriarche">Code d’opération Patriarche (n° d’OA) <span class="na-requis" aria-hidden="true">*</span></label>
+						<label for="na-patriarche">Code national d’opération Patriarche (n° d’OA) <span class="na-requis" aria-hidden="true">*</span></label>
 						<p class="na-help" id="na-patriarche-aide">Le numéro d’opération archéologique (OA) que le service régional de l’archéologie a donné à l’opération dans Patriarche&nbsp;: c’est lui qui permet de retrouver le rapport.</p>
 						<input type="text" id="na-patriarche" name="id_patriarche" required aria-describedby="na-patriarche-aide"
 							value="<?php echo esc_attr( $this->repris( 'id_patriarche' ) ); ?>">
@@ -4252,7 +4281,8 @@ class Notice_Archeomed_Pactols {
 				<h2 class="na-section-titre" id="na-s4"><span class="na-section-num" aria-hidden="true">4</span> Le texte</h2>
 				<div class="na-champ">
 					<p class="na-libelle" id="na-texte-libelle">Texte de la notice <span class="na-requis" aria-hidden="true">*</span></p>
-					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants, les paragraphes et les listes sont conservés. Un intertitre se pose par le bouton T1, une liste par le bouton Liste à puces&nbsp;; une liste numérotée devient une liste à puces. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
+					<?php $plafond_des_mots = $par_la_redaction ? 0 : (int) Notice_Archeomed_Normes::valeur( 'mots_plafond' ); ?>
+					<p class="na-help" id="na-texte-aide"><?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots<?php if ( $plafond_des_mots > 0 ) : ?>&nbsp;; au-delà de <?php echo esc_html( self::entier( $plafond_des_mots ) ); ?>, l’envoi est refusé, et le texte reste dans le champ pour être raccourci<?php endif; ?>. Collez-le depuis votre traitement de texte&nbsp;: l’italique, le gras, les exposants, les paragraphes et les listes sont conservés. Un intertitre se pose par le bouton T1, une liste par le bouton Liste à puces&nbsp;; une liste numérotée devient une liste à puces. Au clavier, Ctrl+B (⌘+B sur Mac) met en gras et Ctrl+I en italique. Les notes de bas de page ne sont pas possibles&nbsp;: intégrez l’information au texte. Inutile d’y répéter le titre ou les noms des responsables&nbsp;: ils s’ajoutent d’eux-mêmes. Développez chaque sigle à sa première mention&nbsp;: service régional de l’archéologie (SRA).</p>
 					<div class="na-editeur na-ancre" id="na-texte"><div id="na-editor"></div></div>
 					<p class="na-wordcount" id="na-wordcount">0 mot</p>
 					<input type="hidden" name="texte_notice" id="na-texte-notice" value="<?php echo esc_attr( $this->repris( 'texte_notice' ) ); ?>">
@@ -4530,10 +4560,13 @@ class Notice_Archeomed_Pactols {
 			?>;
 			// Les autres normes de la revue que le navigateur applique : la
 			// longueur du texte, l'appel d'une figure, le titre, les avis.
+			// Le plafond des mots ne tient pas la rédaction qui corrige une
+			// notice depuis sa fiche : 0 le lève.
 			var NORMES = <?php
 				echo wp_json_encode( array(
 					'motsMin'         => (int) Notice_Archeomed_Normes::valeur( 'mots_min' ),
 					'motsMax'         => (int) Notice_Archeomed_Normes::valeur( 'mots_max' ),
+					'motsPlafond'     => $par_la_redaction ? 0 : (int) Notice_Archeomed_Normes::valeur( 'mots_plafond' ),
 					'figure'          => trim( substr( Notice_Archeomed_Normes::numero_de_figure( 1 ), 0, -1 ) ),
 					'avis'            => array_values( (array) Notice_Archeomed_Normes::valeur( 'avis' ) ),
 					'avantLieuDit'    => Notice_Archeomed_Normes::avant_le_lieu_dit(),
@@ -5114,18 +5147,28 @@ class Notice_Archeomed_Pactols {
 			// Le compteur passait au rouge dès le premier mot et jusqu'au
 			// deux-cent-quatre-vingt-dix-neuvième : il alarmait pendant qu'on
 			// écrivait. Sous la fourchette, il ne le dit qu'à la sortie.
+			// Au-delà du plafond, l'envoi est refusé : le compteur le dit dès
+			// la frappe, et le texte reste dans le champ pour être raccourci.
 			var wc = document.getElementById('na-wordcount');
 			var texteQuitte = false;
+			function nombreDeMots(texte) {
+				texte = String(texte || '').trim();
+				return texte.length ? texte.split(/\s+/).length : 0;
+			}
 			function countWords() {
 				if (!quill) {
 					wc.textContent = 'éditeur indisponible';
 					return 0;
 				}
-				var text = quill.getText().trim();
-				var n = text.length ? text.split(/\s+/).length : 0;
+				var n = nombreDeMots(quill.getText());
 				var mots = n + (n > 1 ? ' mots' : ' mot');
 				var hors = false;
-				if (n > NORMES.motsMax) { mots += ' — au-delà des ' + NORMES.motsMax + ' recommandés'; hors = true; }
+				var plafond = NORMES.motsPlafond;
+				if (plafond > 0 && n > plafond) { mots += ' — au-delà des ' + plafond + ' admis' + NBSP + ': raccourcissez le texte pour pouvoir l’envoyer'; hors = true; }
+				else if (n > NORMES.motsMax) {
+					mots += ' — au-delà des ' + NORMES.motsMax + ' recommandés' + (plafond > NORMES.motsMax ? FINE + '; l’envoi est refusé au-delà de ' + plafond : '');
+					hors = true;
+				}
 				else if (n >= NORMES.motsMin) { mots += ' — dans la fourchette recommandée'; }
 				else if (n > 0 && texteQuitte) { mots += ' — la rédaction recommande au moins ' + NORMES.motsMin; hors = true; }
 				wc.textContent = mots;
@@ -5229,8 +5272,9 @@ class Notice_Archeomed_Pactols {
 				return m ? m[1] : '';
 			}
 			// Le département d'une commune, d'après son ARK : l'avant-dernier
-			// élément du chemin, débarrassé de « Département du… ». Chaque ARK
-			// n'est demandé qu'une fois.
+			// élément du chemin, débarrassé de « Département du… », « de la »,
+			// « de l' », « des », « de » ou « d' ». Chaque ARK n'est demandé
+			// qu'une fois.
 			var departements = {};
 			function getDepartmentFromArk(arkUri) {
 				var arkPath = arkPathFromUri(arkUri);
@@ -5252,7 +5296,7 @@ class Notice_Archeomed_Pactols {
 								}
 							}
 						}
-						return deptLabel.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|de\s+)/i, '').trim();
+						return deptLabel.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|d['’]\s*|de\s+)/i, '').trim();
 					})
 					.catch(function () { delete departements[arkPath]; return ''; });
 				return departements[arkPath];
@@ -8906,7 +8950,12 @@ class Notice_Archeomed_Pactols {
 				coresp_email: function () { var v = el('na-coresp-email').value.trim(); return !v || courrielValide(v); },
 				coauteur_email: function () { var v = el('na-coauteur-email').value.trim(); return !v || courrielValide(v); },
 				deposant_email: function () { var v = el('na-deposant-email').value.trim(); return !v || courrielValide(v); },
-				texte: function () { return !quill || !vide(quill.getText()); },
+				texte: function () {
+					if (!quill) { return true; }
+					var t = quill.getText();
+					if (vide(t)) { return false; }
+					return NORMES.motsPlafond > 0 && nombreDeMots(t) > NORMES.motsPlafond ? 'long' : true;
+				},
 				// Le titre, les crédits et le texte alternatif de chaque figure
 				// choisie. Le contrôle ne joue que si la carte est là : sans
 				// fichier, rien à décrire.
@@ -9009,6 +9058,10 @@ class Notice_Archeomed_Pactols {
 				try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
 			}
 			function messageDe(cle, resultat) {
+				if (cle === 'texte' && resultat === 'long') {
+					return 'Raccourcissez le texte de la notice' + NBSP + ': il compte ' + nombreDeMots(quill ? quill.getText() : '')
+						+ ' mots, la revue en admet ' + NORMES.motsPlafond + ' au plus';
+				}
 				if (COURRIELS.indexOf(cle) !== -1) {
 					var base = cle === 'resp_email' && resultat === 'forme' ? CHAMPS.email_forme[1] : CHAMPS[cle][1];
 					var c = cibleDe(cle), hors = c ? horsDUneAdresse(c.value) : '';
@@ -10331,7 +10384,12 @@ class Notice_Archeomed_Pactols {
 		// laissait l'article, faute d'admettre l'apostrophe collée au nom.
 		// Aucun département ni aucune région ne s'écrit ainsi en tête de
 		// parenthèse ; les notices déjà reçues se redressent ici.
-		return preg_replace( "/^l['’]\\s*(?=\\p{Lu})/u", '', $valeur );
+		$valeur = preg_replace( "/^l['’]\\s*(?=\\p{Lu})/u", '', $valeur );
+		// Pactols nomme le département tantôt seul, tantôt « Département
+		// d'Ille-et-Vilaine » ; la revue ne garde que le nom. Le navigateur
+		// l'ôtait déjà, sauf après « d' » ; ce qu'il laisse passer, ou ce
+		// qu'on tape, tombe ici.
+		return preg_replace( "/^[Dd][ée]partement\\s+(?:du\\s+|de\\s+la\\s+|de\\s+l['’]\\s*|des\\s+|d['’]\\s*|de\\s+)(?=\\p{Lu})/u", '', $valeur );
 	}
 
 	/**
@@ -13339,6 +13397,16 @@ class Notice_Archeomed_Pactols {
 			$autres = array_values( array_diff( $manquants, array( 'texte' ) ) );
 			$this->redirect_result( false, array( 'texte' ) === $manquants ? 'texte' : 'champs',
 				empty( $autres ) ? '' : $autres[0], '', $manquants );
+		}
+		// Le formulaire refuse déjà l'envoi d'un texte trop long ; le serveur
+		// n'est qu'un filet, pour une page ouverte avant que la limite existe
+		// ou un navigateur sans script. Il compte autrement que l'éditeur
+		// (balises, entités), d'où la marge : un texte que le compteur
+		// acceptait n'est jamais refusé ici. La saisie est gardée, comme à
+		// tout refus.
+		if ( ! $redaction && ! $essai && self::texte_trop_long( $d['texte_notice'] ) ) {
+			error_log( 'Notice Archeomed: notice text over the word limit.' );
+			$this->redirect_result( false, 'texte_long' );
 		}
 		if ( ! $redaction && ! $essai && ! $this->check_send_limit( $d['resp_email'] ) ) {
 			error_log( 'Notice Archeomed: send limit reached.' );

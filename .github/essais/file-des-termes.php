@@ -612,6 +612,14 @@ na_verifier( '' === Notice_Archeomed_Thesaurus::index_tei( 'partie d\'église', 
 na_verifier( 'Aude' === na_appel( $plugin, 'sans_parentheses', array( "(l'Aude)" ) )
 	&& 'Côte-d’Or' === na_appel( $plugin, 'sans_parentheses', array( 'Côte-d’Or' ) ),
 	'l\'article collé au département s\'ôte, le reste ne bouge pas' );
+$dep = function ( $v ) use ( $plugin ) { return na_appel( $plugin, 'sans_parentheses', array( $v ) ); };
+na_verifier( 'Ille-et-Vilaine' === $dep( 'Département d\'Ille-et-Vilaine' ) && 'Ille-et-Vilaine' === $dep( '(Département d’Ille-et-Vilaine)' )
+	&& 'Calvados' === $dep( 'Département du Calvados' ) && 'Manche' === $dep( 'département de la Manche' )
+	&& 'Aude' === $dep( 'Département de l’Aude' ) && 'Côtes-d’Armor' === $dep( 'Département des Côtes-d’Armor' )
+	&& 'Paris' === $dep( 'Département de Paris' ) && 'Département' === $dep( 'Département' )
+	&& 'Champagne, Alsace' === $dep( 'Champagne, Alsace' ),
+	'le département perd « Département d’… », « du », « de la » et les autres, comme dans le navigateur',
+	array( $dep( 'Département d\'Ille-et-Vilaine' ), $dep( 'département de la Manche' ) ) );
 $colle = na_appel( $plugin, 'clean_richtext', array( '<p>Trois phases :</p><ol><li>fossé</li><li>mur</li></ol><h2>Fin</h2>' ) );
 $paras = ( new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) ) )->html_to_paragraphs( $colle );
 na_verifier( 4 === count( $paras ), 'les éléments de liste et les intertitres collés font chacun un paragraphe', $colle );
@@ -5137,6 +5145,45 @@ update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( $sans_ign, a
 na_verifier( '' === Notice_Archeomed_Geocodage::service() && ! Notice_Archeomed_Geocodage::actif(),
 	'« non » coupe les propositions de lieu-dit', Notice_Archeomed_Geocodage::service() );
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_ign );
+
+WP_CLI::log( 'Le plafond des mots' );
+// Le serveur compte comme l'éditeur : une fin de paragraphe, d'intertitre
+// ou d'élément de liste sépare deux mots, l'insécable aussi, et une entité
+// ne fait pas un mot de plus.
+$mots_de = function ( $html ) { return Notice_Archeomed_Pactols::mots_du_texte( $html ); };
+na_verifier( 0 === $mots_de( '' ) && 0 === $mots_de( '<p><br></p>' ) && 2 === $mots_de( '<p>Un</p><p>deux</p>' )
+	&& 3 === $mots_de( '<h3>Le</h3><p>mur<br>neuf</p>' ) && 4 === $mots_de( '<p>Trois :</p><ul><li>fossé</li><li>mur</li></ul>' )
+	&& 4 === $mots_de( "<p>12\u{00A0}m de\u{202F}long</p>" ) && 4 === $mots_de( '<p>12&nbsp;m <em>de</em>&#8239;long</p>' )
+	&& 2 === $mots_de( '<p>l&rsquo;abbaye <sup>2</sup></p>' ),
+	'le serveur compte les mots du texte comme l’éditeur',
+	array( $mots_de( '<p>Un</p><p>deux</p>' ), $mots_de( '<p>12&nbsp;m <em>de</em>&#8239;long</p>' ) ) );
+$texte_de = function ( $n ) { return '<p>' . trim( str_repeat( 'mot ', $n ) ) . '</p>'; };
+$trop_long = function ( $n ) use ( $texte_de ) { return na_appel( 'Notice_Archeomed_Pactols', 'texte_trop_long', array( $texte_de( $n ) ) ); };
+$reglages_mots = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$poser_les_normes_mots = function ( $normes ) use ( $reglages_mots ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_mots, array( Notice_Archeomed_Normes::CLE => $normes ) ) );
+	Notice_Archeomed_Normes::oublier();
+};
+$poser_les_normes_mots( array() );
+$plafond_d_usine = Notice_Archeomed_Normes::valeur( 'mots_plafond' );
+// 800 mots et la marge de 5 % : 840 passent, 841 non.
+$bornes_800 = array( $trop_long( 800 ), $trop_long( 840 ), $trop_long( 841 ) );
+$message_800 = na_appel( $plugin, 'message_derreur', array( 'texte_long' ) );
+$poser_les_normes_mots( Notice_Archeomed_Normes::nettoyer( array( 'mots_plafond' => '0' ) ) );
+$sans_plafond = array( Notice_Archeomed_Normes::valeur( 'mots_plafond' ), $trop_long( 30000 ) );
+$poser_les_normes_mots( Notice_Archeomed_Normes::nettoyer( array( 'mots_plafond' => '1000' ) ) );
+$bornes_1000 = array( $trop_long( 1050 ), $trop_long( 1051 ) );
+$message_1000 = na_appel( $plugin, 'message_derreur', array( 'texte_long' ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_mots );
+Notice_Archeomed_Normes::oublier();
+na_verifier( 800 === $plafond_d_usine && array( false, false, true ) === $bornes_800,
+	'au-delà de 800 mots et de la marge, le serveur refuse le texte', array( $plafond_d_usine, $bornes_800 ) );
+na_verifier( array( 0, false ) === $sans_plafond && array( false, true ) === $bornes_1000,
+	'le plafond suit les normes, et 0 le lève', array( $sans_plafond, $bornes_1000 ) );
+na_verifier( false !== strpos( $message_800, "800\u{00A0}mots" ) && false !== strpos( $message_800, 'Raccourcissez-le' )
+	&& false === strpos( $message_800, '@' ) && false === strpos( $message_800, 'écrivez à' )
+	&& false !== strpos( $message_1000, "1\u{00A0}000\u{00A0}mots" ),
+	'le refus dit le plafond et demande de raccourcir, sans renvoyer vers la rédaction', array( $message_800, $message_1000 ) );
 
 WP_CLI::log( 'La désactivation' );
 Notice_Archeomed_Pactols::desactiver();

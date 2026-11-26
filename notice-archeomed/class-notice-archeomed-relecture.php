@@ -2531,7 +2531,7 @@ class Notice_Archeomed_Relecture {
 							if (chemin[i].label && chemin[i].label.indexOf('épartement') !== -1) { nom = chemin[i].label; break; }
 						}
 					}
-					return nom.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|de\s+)/i, '').trim();
+					return nom.replace(/^D[ée]partement\s+(du\s+|de la\s+|de l['’]\s*|des\s+|d['’]\s*|de\s+)/i, '').trim();
 				}).catch(function () { delete departements[m[1]]; return ''; });
 				return departements[m[1]];
 			}

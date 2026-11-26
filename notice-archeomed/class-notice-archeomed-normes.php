@@ -185,6 +185,14 @@ class Notice_Archeomed_Normes {
 					'trait_ppp'        => array( 'libelle' => 'Dessins au trait : résolution', 'unite' => 'ppp', 'defaut' => 1200, 'min' => 72, 'max' => 4800 ),
 					'mots_min'         => array( 'libelle' => 'Texte : longueur recommandée, au moins', 'unite' => 'mots', 'defaut' => 300, 'min' => 0, 'max' => 10000 ),
 					'mots_max'         => array( 'libelle' => 'Texte : longueur recommandée, au plus', 'unite' => 'mots', 'defaut' => 700, 'min' => 1, 'max' => 20000 ),
+					'mots_plafond'     => array(
+						'libelle' => 'Texte : envoi refusé au-delà de',
+						'unite'   => 'mots',
+						'aide'    => 'Au-delà, le formulaire refuse l’envoi et garde le texte dans le champ, pour qu’on le raccourcisse sans rien perdre. 0 lève la limite. La rédaction, quand elle corrige une notice depuis sa fiche, n’y est pas tenue.',
+						'defaut'  => 800,
+						'min'     => 0,
+						'max'     => 20000,
+					),
 				),
 			),
 			'accessibilite' => array(

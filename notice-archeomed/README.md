@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.117
+# Formulaire des notices d’archéologie médiévale — version 3.118
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -392,6 +392,21 @@ Sorbonne.) ». Une institution qui finit déjà sur un point (« etc. »), un
 « ? », un « ! » ou des points de suspension n'en prend pas un second ; le
 bloc mis à part dans son propre paragraphe finit de même.
 
+**Depuis la 3.118, le texte ne dépasse pas 800 mots.** Le compteur avertit
+au-delà de 700 (« au-delà des 700 recommandés ; l'envoi est refusé au-delà
+de 800 ») et, au-delà de 800, demande de raccourcir ; le formulaire refuse
+alors l'envoi et mène au champ, « Raccourcissez le texte de la notice : il
+compte 912 mots, la revue en admet 800 au plus ». Le texte reste dans le
+champ, rien ne se perd. Le serveur refait le compte, pour une page ouverte
+avant la mise à jour, avec une marge de 5 % : il compte autrement que
+l'éditeur et ne doit jamais refuser ce que le compteur a laissé passer. La
+saisie est alors gardée, comme à tout refus. Le plafond se règle dans les
+normes (0 le lève) ; la rédaction qui corrige une notice depuis sa fiche n'y
+est pas tenue, ni un essai de charge. L'aide du champ l'annonce.
+
+Le libellé du code Patriarche devient « Code national d'opération Patriarche
+(n° d'OA) ».
+
 **Depuis la 3.117, un paragraphe vide à la fin du texte ne détache plus le
 bloc** : quand l'auteur tape Entrée après le dernier point, l'éditeur laisse
 un paragraphe vide, et le courriel à la rédaction comme la page de relecture
@@ -764,6 +779,14 @@ est retouché ailleurs. La parenthèse se remplit toute seule à partir
 du **premier** lieu quand c'est une commune ; les suivants sont réputés du même
 département.
 
+**Depuis la 3.118, la parenthèse ne garde que le nom du département.**
+Pactols le nomme tantôt seul, tantôt « Département d'Ille-et-Vilaine » ; le
+remplissage automatique ôtait déjà « Département du », « de la », « de l' »,
+« des » et « de », mais non « d' », et « Département d'Ille-et-Vilaine »
+passait entier jusque dans l'objet du courriel. Le formulaire, la page de
+relecture et le serveur l'ôtent désormais tous trois : ce qu'on tape à la
+main tombe aussi, et une notice déjà reçue se redresse dans son Word.
+
 **La parenthèse n'est pas indexée.** Elle est du texte : « Champagne, Alsace,
 Lorraine » n'y reçoit aucun identifiant. Quand elle nomme des territoires, il
 faut les reprendre dans « Lieux autres que celui de la notice » pour qu'ils en
@@ -855,7 +878,7 @@ brouillon gardé par le navigateur avant la mise à jour se rouvre de même, et
 une page ouverte avant la mise à jour envoie encore les anciens termes, qui
 sont acceptés tels quels.
 
-Le **code d'opération Patriarche** (le numéro d'OA) est **obligatoire** pour
+Le **code national d'opération Patriarche** (le numéro d'OA) est **obligatoire** pour
 toutes les notices : c'est lui qui permet de retrouver le rapport auprès du
 service régional de l'archéologie. Le navigateur le demande avant l'envoi, et
 le serveur le redemande. Le numéro d'arrêté reste facultatif.
@@ -1854,6 +1877,7 @@ formulaire à ses propres usages sans toucher au code :
 | Entre le numéro et le titre d'une figure | une espace | un deux-points ; un point |
 | Norme des photographies, des dessins au trait | 10 × 15 cm à 300 ppp ; 1 200 ppp | chiffres libres |
 | Longueur recommandée du texte | 300 à 700 mots | chiffres libres |
+| Texte : envoi refusé au-delà de | 800 mots | chiffres libres ; 0 lève la limite |
 | Texte alternatif : avis au-delà de | 150 caractères | de 20 à 300 |
 | Sigles à développer à leur première mention | une liste de sigles courants | une ligne par sigle, « SIGLE = développement » |
 | Les avis donnés au dépôt | tous | chacun se coche ou se décoche |
