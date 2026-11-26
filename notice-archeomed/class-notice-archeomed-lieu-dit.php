@@ -30,6 +30,87 @@ class Notice_Archeomed_Lieu_Dit {
 	const BORNE_LONGUE = 100000;
 
 	/**
+	 * Un numéro suivi d'un nom de voie, en tête du lieu-dit ou après une
+	 * virgule ou un point-virgule : « 53 rue Haute », « Château, 3 bis place
+	 * Saint-Pierre ». Le même motif sert au navigateur, qui le reçoit tel
+	 * quel. Seuls les noms de voie le déclenchent : « 3 Moulins » reste
+	 * comme il est écrit.
+	 */
+	const VOIE_NUMEROTEE = '(^|[;,])(\\s*)(\\d{1,5}(?:\\s*(?:bis|ter|quater|[a-z]))?)(?:\\s*,\\s*|\\s+)'
+		. '(rond[\\s-]point|ruelle|ruette|rue|placette|place|avenue|boulevard|chemin|impasse|all[ée]e|quai|route|square'
+		. '|cours|passage|sentier|faubourg|promenade|esplanade|voie|venelle|mont[ée]e|c[ôo]te|carrefour|parvis|cit[ée]'
+		. '|traverse|mail|sente)(?=[\\s\'’,;.]|$)';
+
+	/**
+	 * La virgule après le numéro d'une voie, et le nom de voie en minuscule :
+	 * « 53 rue Haute » devient « 53, rue Haute », comme quand on choisit une
+	 * voie proposée par l'IGN — mais pour une voie qu'il ne connaît pas.
+	 */
+	public static function virgule_du_numero( $texte ) {
+		$texte = (string) $texte;
+		$fait  = preg_replace_callback(
+			'/(*UCP)' . self::VOIE_NUMEROTEE . '/iu',
+			function ( $m ) {
+				return $m[1] . $m[2] . self::numero( $m[3] ) . ', ' . self::en_minuscules( $m[4] );
+			},
+			$texte
+		);
+		return null === $fait ? $texte : $fait;
+	}
+
+	/** « 3  bis » s'écrit « 3 bis ». */
+	private static function numero( $numero ) {
+		return preg_replace( '/\s+/u', ' ', $numero );
+	}
+
+	private static function en_minuscules( $mot ) {
+		return function_exists( 'mb_strtolower' ) ? mb_strtolower( $mot, 'UTF-8' ) : strtolower( $mot );
+	}
+
+	/**
+	 * La même virgule, posée dans les morceaux : le numéro, la virgule et le
+	 * nom de voie prennent la mise en forme du numéro, le reste garde la
+	 * sienne.
+	 */
+	private static function virgule_dans_les_morceaux( $runs ) {
+		$brut = self::texte( $runs );
+		if ( ! preg_match_all( '/(*UCP)' . self::VOIE_NUMEROTEE . '/iu', $brut, $vus, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			return $runs;
+		}
+		foreach ( array_reverse( $vus ) as $m ) {
+			$debut = $m[3][1];
+			$fin   = $m[4][1] + strlen( $m[4][0] );
+			$runs  = self::remplacer( $runs, $debut, $fin, self::numero( $m[3][0] ) . ', ' . self::en_minuscules( $m[4][0] ) );
+		}
+		return $runs;
+	}
+
+	/**
+	 * Les octets de « $debut » à « $fin » du texte des morceaux, remplacés
+	 * par « $par », placé dans le morceau où commence l'endroit remplacé.
+	 */
+	private static function remplacer( $runs, $debut, $fin, $par ) {
+		$pos   = 0;
+		$pose  = false;
+		$garde = array();
+		foreach ( $runs as $run ) {
+			$texte = $run['text'];
+			$a     = $pos;
+			$n     = strlen( $texte );
+			$pos  += $n;
+			if ( $a + $n > $debut && $a < $fin ) {
+				$de          = max( 0, $debut - $a );
+				$run['text'] = substr( $texte, 0, $de ) . ( $pose ? '' : $par ) . substr( $texte, min( $n, $fin - $a ) );
+				$pose        = true;
+			}
+			if ( '' !== $run['text'] ) {
+				$garde[] = $run;
+			}
+		}
+		return $garde;
+	}
+
+	/**
 	 * Les morceaux d'une forme, dans l'ordre : chacun porte son texte et ses
 	 * trois marques. Les balises inconnues s'ignorent, leur texte reste ; les
 	 * blancs des deux bouts s'ôtent, comme au champ brut.
@@ -140,8 +221,9 @@ class Notice_Archeomed_Lieu_Dit {
 	/**
 	 * La forme postée, accordée au lieu-dit tel que le serveur l'a reçu.
 	 *
-	 * Le serveur ôte le point final et met la première lettre en capitale :
-	 * la forme reçoit les mêmes corrections. Rend la forme canonique, ou une
+	 * Le serveur ôte le point final, met la virgule après le numéro d'une
+	 * voie et la première lettre en capitale : la forme reçoit les mêmes
+	 * corrections. Rend la forme canonique, ou une
 	 * chaîne vide si elle n'a aucune marque ou ne correspond pas au texte.
 	 */
 	public static function accorder( $forme, $texte ) {
@@ -159,7 +241,7 @@ class Notice_Archeomed_Lieu_Dit {
 		return self::en_html( $runs, false );
 	}
 
-	/** Le point final ôté et la capitale initiale posée, comme au champ brut. */
+	/** Le point final ôté, la virgule et la capitale initiale posées, comme au champ brut. */
 	private static function corriger_comme_le_texte( $runs ) {
 		if ( empty( $runs ) ) {
 			return $runs;
@@ -170,6 +252,7 @@ class Notice_Archeomed_Lieu_Dit {
 			$runs[ $n ]['text'] = substr( $runs[ $n ]['text'], 0, -1 );
 			$runs                 = self::sans_blancs_aux_bouts( $runs );
 		}
+		$runs = self::virgule_dans_les_morceaux( $runs );
 		if ( ! empty( $runs ) ) {
 			$premier         = $runs[0]['text'];
 			$runs[0]['text'] = function_exists( 'mb_substr' )
@@ -236,8 +319,73 @@ class Notice_Archeomed_Lieu_Dit {
 	 * Sans Quill, le champ brut reste visible, tel qu'il était.
 	 */
 	public static function script() {
-		return <<<'JS'
+		// Le motif de la virgule après le numéro, le même qu'au serveur.
+		return "\t\t\tvar NA_LIEU_DIT_VOIE = " . wp_json_encode( self::VOIE_NUMEROTEE ) . ";\n" . <<<'JS'
 			// ── Le lieu-dit : petites capitales, italique, exposant ──────────
+			// Comme au serveur (virgule_du_numero) : « 53 rue Haute » devient
+			// « 53, rue Haute », même pour une voie que l'IGN ne connaît pas.
+			function naLieuDitVoie() {
+				try { return new RegExp(NA_LIEU_DIT_VOIE, 'giu'); } catch (e) { return null; }
+			}
+			function naLieuDitVirgule(t) {
+				t = String(t || '');
+				var re = naLieuDitVoie();
+				return re ? t.replace(re, function (tout, avant, blancs, numero, voie) {
+					return avant + blancs + numero.replace(/\s+/g, ' ') + ', ' + voie.toLowerCase();
+				}) : t;
+			}
+			// La même virgule dans les morceaux : le numéro, la virgule et le
+			// nom de voie prennent la mise en forme du numéro.
+			function naLieuDitVirguleDesMorceaux(runs) {
+				var re = naLieuDitVoie();
+				if (!re) { return runs; }
+				var brut = naLieuDitTexte(runs), vus = [], m;
+				while ((m = re.exec(brut))) { vus.push(m); }
+				for (var k = vus.length - 1; k >= 0; k--) {
+					m = vus[k];
+					runs = naLieuDitRemplacer(runs, m.index + m[1].length + m[2].length, m.index + m[0].length,
+						m[3].replace(/\s+/g, ' ') + ', ' + m[4].toLowerCase());
+				}
+				return runs;
+			}
+			// Les signes de « debut » à « fin », remplacés par « par », placé
+			// dans le morceau où commence l'endroit remplacé.
+			function naLieuDitRemplacer(runs, debut, fin, par) {
+				var pos = 0, pose = false, garde = [];
+				runs.forEach(function (r) {
+					var a = pos, n = r.text.length;
+					pos += n;
+					if (a + n > debut && a < fin) {
+						r.text = r.text.slice(0, Math.max(0, debut - a)) + (pose ? '' : par) + r.text.slice(Math.min(n, fin - a));
+						pose = true;
+					}
+					if (r.text) { garde.push(r); }
+				});
+				return garde;
+			}
+			// Ce qui change d'un texte à l'autre, en endroits du premier : on
+			// y ôte « n » signes et l'on y met « ins ». Chaque lettre gardée
+			// garde ainsi sa mise en forme. Trop long, rien : on réécrit tout.
+			function naLieuDitEcarts(a, b) {
+				a = String(a); b = String(b);
+				var n = a.length, m = b.length, i, j;
+				if ((n + 1) * (m + 1) > 160000) { return null; }
+				var L = [];
+				for (i = n; i >= 0; i--) {
+					L[i] = [];
+					for (j = m; j >= 0; j--) {
+						L[i][j] = i === n || j === m ? 0 : a.charAt(i) === b.charAt(j) ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+					}
+				}
+				var out = [], cur = null;
+				i = 0; j = 0;
+				while (i < n || j < m) {
+					if (i < n && j < m && a.charAt(i) === b.charAt(j)) { cur = null; i++; j++; continue; }
+					if (!cur) { cur = { a: i, n: 0, ins: '' }; out.push(cur); }
+					if (j < m && (i === n || L[i][j + 1] >= L[i + 1][j])) { cur.ins += b.charAt(j); j++; } else { cur.n++; i++; }
+				}
+				return out;
+			}
 			// Ce qui sépare devient une espace, les autres contrôles s'ôtent :
 			// comme au serveur.
 			function naLieuDitPropre(t) {
@@ -303,6 +451,7 @@ class Notice_Archeomed_Lieu_Dit {
 						copie[n].text = copie[n].text.slice(0, -1);
 						naLieuDitRogner(copie);
 					}
+					copie = naLieuDitVirguleDesMorceaux(copie);
 					if (copie.length) {
 						copie[0].text = copie[0].text.replace(/^(\s*)(\S)/, function (tout, blancs, l) { return blancs + l.toUpperCase(); });
 					}
@@ -501,19 +650,20 @@ class Notice_Archeomed_Lieu_Dit {
 				}
 				q.on('editor-change', boutonsAJour);
 				// En sortant, le champ brut reçoit sa sortie à lui — la capitale
-				// initiale, les conseils —, et l'éditeur reprend ce qu'il en a fait.
-				// Une lettre changée garde sa mise en forme.
+				// initiale, la virgule après le numéro, les conseils —, et
+				// l'éditeur reprend ce qu'il en a fait. Les lettres gardées
+				// gardent leur mise en forme ; une lettre mise prend celle de la
+				// lettre qu'elle remplace, ou de celle qui la précède.
 				function reprendre() {
 					var t = texteDeLEditeur(), v = input.value || '';
 					if (t === v) { return; }
 					enCours = true;
-					if (t.length === v.length) {
-						for (var k = 0; k < v.length; k++) {
-							if (t.charAt(k) !== v.charAt(k)) {
-								var f = q.getFormat(k, 1);
-								q.deleteText(k, 1, 'silent');
-								q.insertText(k, v.charAt(k), f, 'silent');
-							}
+					var ecarts = naLieuDitEcarts(q.getText().replace(/\n$/, ''), v);
+					if (ecarts) {
+						for (var k = ecarts.length - 1; k >= 0; k--) {
+							var e = ecarts[k], f = q.getFormat(e.n ? e.a : Math.max(0, e.a - 1), 1);
+							if (e.n) { q.deleteText(e.a, e.n, 'silent'); }
+							if (e.ins) { q.insertText(e.a, e.ins, f, 'silent'); }
 						}
 					} else {
 						q.setText(v, 'silent');

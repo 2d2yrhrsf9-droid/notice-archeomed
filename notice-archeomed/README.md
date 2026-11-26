@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.115
+# Formulaire des notices d’archéologie médiévale — version 3.116
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -787,6 +787,14 @@ trois lettres (Eu, Y), restent sans propositions. Un service lent ou muet ne
 dit rien et ne gêne pas le dépôt. C'est le navigateur qui interroge l'IGN,
 comme il le fait de Pactols ; le réglage « Propositions de lieu-dit (IGN) »,
 sous Pactols, coupe le tout.
+
+**Depuis la 3.116, la virgule après le numéro se met seule**, même pour une
+voie que l'IGN ne connaît pas : en sortant du champ, « 53 rue machin »
+devient « 53, rue machin », « 3 bis Place Saint-Pierre » « 3 bis, place
+Saint-Pierre », « Château, 12 rue Haute » « Château, 12, rue Haute ». Elle
+ne se met que devant un nom de voie (rue, place, avenue, chemin, allée,
+quai…) : « 3 Moulins » reste comme il est écrit. Le serveur fait de même à
+la réception, et l'italique posé dans le lieu-dit se garde.
 
 ## La nature de l'opération, et le code Patriarche
 

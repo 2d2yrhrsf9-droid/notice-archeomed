@@ -1375,6 +1375,25 @@ $ld_sans = na_appel( $plugin, 'textes_postes', array( array( 'lieu_dit' ) ) );
 $_POST = $ld_post;
 na_verifier( 'La rue Haute' === $ld_recu['lieu_dit'] && 'La rue <em>Haute</em>' === $ld_recu['lieu_dit_forme'] && ! array_key_exists( 'lieu_dit_forme', $ld_sans ),
 	'la forme postée est reçue avec le lieu-dit ; sans elle, rien ne s\'écrit à sa place', array( $ld_recu, $ld_sans ) );
+// La virgule après le numéro d'une voie : les cas du navigateur.
+$ld_virgules = array();
+foreach ( json_decode( file_get_contents( __DIR__ . '/virgule.json' ), true ) as $c ) {
+	if ( $LD::virgule_du_numero( $c[0] ) !== $c[1] ) {
+		$ld_virgules[] = $c[0] . ' → ' . $LD::virgule_du_numero( $c[0] );
+	}
+}
+na_verifier( array() === $ld_virgules && '53, rue machin' === $LD::virgule_du_numero( $LD::virgule_du_numero( '53 rue machin' ) ),
+	'« 53 rue Haute » devient « 53, rue Haute », comme au navigateur ; « 3 Moulins » reste tel quel', $ld_virgules );
+na_verifier( '53, rue du <em>Pourquoi-Pas</em>' === $LD::accorder( '53 rue du <em>Pourquoi-Pas</em>', '53, rue du Pourquoi-Pas' )
+	&& '<em>53, rue</em> Haute' === $LD::accorder( '<em>53 </em>Rue Haute', '53, rue Haute' )
+	&& 'Château, 3, rue du <em>Moulin</em>' === $LD::accorder( 'château, 3 rue du <em>Moulin</em>.', 'Château, 3, rue du Moulin' )
+	&& '' === $LD::accorder( '3 rue du <em>Roi</em>', '4, rue du Roi' ),
+	'la forme reçoit la virgule comme le texte, et garde son italique' );
+$_POST = array( 'lieu_dit' => '53 Rue du Moulin.', 'lieu_dit_forme' => wp_slash( '53 Rue du <em>Moulin</em>.' ) );
+$ld_voie = na_appel( $plugin, 'textes_postes', array( array( 'lieu_dit' ) ) );
+$_POST = $ld_post;
+na_verifier( '53, rue du Moulin' === $ld_voie['lieu_dit'] && '53, rue du <em>Moulin</em>' === $ld_voie['lieu_dit_forme'],
+	'le serveur met la virgule après le numéro, forme comprise', $ld_voie );
 na_verifier( array( 'Falaise', 'Coulonces (Vire Normandie)' ) === array_column( na_appel( $plugin, 'lieux_de', array( array(
 	'departement' => '(Calvados)', 'lieux' => array( array( 'nom' => 'Falaise (Calvados)', 'ark' => '' ),
 		array( 'nom' => 'Coulonces (Vire Normandie)', 'ark' => 'javascript:alert(1)' ) ) ) ) ), 'nom' ),

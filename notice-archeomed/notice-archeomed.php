@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.115
+ * Version:           3.116
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -5373,7 +5373,7 @@ class Notice_Archeomed_Pactols {
 				var dept = sansParentheses(deptInput.value);
 				// Sans le point final qu'on y met par habitude, comme au document —
 				// sauf abréviation : « Le XXe s. ».
-				var lieuDit = capitaleInitiale(net(lieuDitInput.value));
+				var lieuDit = capitaleInitiale(naLieuDitVirgule(net(lieuDitInput.value)));
 				if (/\.$/.test(lieuDit) && !/\.\.\.$/.test(lieuDit) && !/(^|\s)(\S{1,3}|\S+\.\S*)\.$/.test(lieuDit)) {
 					lieuDit = lieuDit.slice(0, -1).trim();
 				}
@@ -5393,7 +5393,7 @@ class Notice_Archeomed_Pactols {
 				if (lieuDit) {
 					// La mise en forme de l'auteur, accordée au texte tel que le
 					// titre l'imprime ; l'italique renversé dans l'italique.
-					var brut = capitaleInitiale(naLieuDitPropre(lieuDitInput.value).trim());
+					var brut = capitaleInitiale(naLieuDitVirgule(naLieuDitPropre(lieuDitInput.value).trim()));
 					if (/\.$/.test(brut) && !/\.$/.test(lieuDit)) { brut = brut.slice(0, -1).trim(); }
 					naLieuDitPoser(apercuTitre, lieuDitForme ? lieuDitForme.value : '', brut, NORMES.lieuDitItalique);
 				} else {
@@ -8571,8 +8571,9 @@ class Notice_Archeomed_Pactols {
 				lieuDitInput.addEventListener('blur', function () {
 					// La première lettre en capitale, comme le titre l'imprimera :
 					// « la Croix-Blanche » devient « La Croix-Blanche ».
-					var cap = capitaleInitiale(lieuDitInput.value);
-					if (cap !== lieuDitInput.value) { lieuDitInput.value = cap; marquerModifie(); }
+					// Et la virgule après le numéro : « 53, rue Haute ».
+					var cap = capitaleInitiale(naLieuDitVirgule(lieuDitInput.value));
+					if (cap !== lieuDitInput.value) { lieuDitInput.value = cap; marquerModifie(); majApercu(); }
 					var v = net(lieuDitInput.value);
 					montrerConseils(z, enCapitales(v)
 						? ['Le lieu-dit est en capitales (' + guillemets(v) + ')' + NBSP
@@ -13079,7 +13080,9 @@ class Notice_Archeomed_Pactols {
 			$d['lieu_dit'] = Notice_Archeomed_Controles::sans_point_final( $d['lieu_dit'] );
 			// La première lettre en capitale : le lieu-dit ouvre une phrase du
 			// titre, après le point — « Caen (Calvados). La Croix-Blanche ».
-			$d['lieu_dit'] = $this->capitale_initiale( $d['lieu_dit'] );
+			// La virgule après le numéro d'une voie : « 53 rue Haute » devient
+			// « 53, rue Haute », comme le formulaire l'écrit en sortant du champ.
+			$d['lieu_dit'] = $this->capitale_initiale( Notice_Archeomed_Lieu_Dit::virgule_du_numero( $d['lieu_dit'] ) );
 			// Sa mise en forme, quand le formulaire la poste : elle reçoit les
 			// mêmes corrections, et ne se garde que si elle dit le même texte.
 			if ( isset( $_POST['lieu_dit_forme'] ) && is_string( $_POST['lieu_dit_forme'] ) ) {

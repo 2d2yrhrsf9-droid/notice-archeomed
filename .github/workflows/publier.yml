@@ -443,6 +443,27 @@ jobs:
               + 'process.exit(faux.length ? 1 : 0);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
+          # La virgule après le numéro d'une voie, et la mise en forme qu'elle
+          # garde : les fonctions du lieu-dit telles que la page les sert.
+          python3 - <<'PY'
+          import os, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          i, j = t.find('var NA_LIEU_DIT_VOIE = '), t.find('function naLieuDitRiche(')
+          if i < 0 or j < i:
+              print("::error::La virgule du lieu-dit manque au formulaire."); sys.exit(1)
+          essais = os.path.join(os.environ['GITHUB_WORKSPACE'], '.github', 'essais')
+          v = open(os.path.join(essais, 'virgule.json'), encoding='utf-8').read()
+          e = open(os.path.join(essais, 'lieu-dit.js'), encoding='utf-8').read()
+          js = 'try {\n' + t[i:j] + '\nvar V = ' + v + ';\n' + e \
+              + '\n} catch (x) { faux = (typeof faux === "object" && faux) || []; faux.push("exception : " + x); }\n' \
+              + 'faux.forEach(function (f) { console.log("::error::Lieu-dit, " + f); });\n' \
+              + 'process.exit(faux.length ? 1 : 0);\n'
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
+          grep -q "var cap = capitaleInitiale(naLieuDitVirgule(lieuDitInput.value));" /tmp/formulaire.js \
+            || { echo "::error::Le lieu-dit ne reçoit plus sa virgule en sortant du champ."; exit 1; }
+          grep -q "var ecarts = naLieuDitEcarts(q.getText().replace(" /tmp/formulaire.js \
+            || { echo "::error::L'éditeur du lieu-dit ne garde plus sa mise en forme quand le texte change."; exit 1; }
           grep -q 'var IGN = "https:\\/\\/data.geopf.fr\\/geocodage\\/search";' /tmp/formulaire.js \
             || { echo "::error::Le formulaire ne connaît plus le service de l'IGN."; exit 1; }
           grep -q "if (lieuDitRiche && IGN) { naIgnLieuDit(lieuDitRiche, { service: IGN, form: form, dept: deptInput }); }" /tmp/formulaire.js \
