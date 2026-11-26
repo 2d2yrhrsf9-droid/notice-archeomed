@@ -1077,6 +1077,52 @@ na_verifier( '' === na_appel( $plugin, 'point_final', array( "  \u{00A0}" ) ) &&
 	&& '' === na_appel( $plugin, 'point_final', array( 'Inrap…' ) ) && '' === na_appel( $plugin, 'point_final', array( 'Inrap. ' ) ),
 	'le point final : rien sur du vide, sur des points de suspension ou un point suivi d\'une espace' );
 
+// Un texte qui finit sur un paragraphe vide — Entrée après le dernier point :
+// la mention se collait à ce paragraphe vide, au courriel et à la page de
+// relecture, et paraissait à part sous une ligne blanche.
+$fins = array(
+	array( '<p>Un.</p><p>Deux.</p><p><br></p>', '<p>Un.</p><p>Deux.</p>' ),
+	array( "<p>Un.</p><p>Deux.</p>\n<p><br></p><p> &nbsp; </p><p>\u{00A0}<br/></p>\n", '<p>Un.</p><p>Deux.</p>' ),
+	array( '<p>Un.</p><p>Deux.<br></p>', '<p>Un.</p><p>Deux.</p>' ),
+	array( '<p>Un.</p><p>Deux. <br> <br></p><p><span class="na-pc"></span></p>', '<p>Un.</p><p>Deux.</p>' ),
+	array( '<h3>Le site</h3><p><br></p>', '<h3>Le site</h3>' ),
+	array( '<p>Un.</p><h3> </h3>', '<p>Un.</p>' ),
+	array( '<p><br></p><p>Un.</p>', '<p><br></p><p>Un.</p>' ),
+	array( '<p>Un.<br>Deux.</p>', '<p>Un.<br>Deux.</p>' ),
+	array( '<p class="x">Un.</p>', '<p class="x">Un.</p>' ),
+	array( '<p>Un.</p>suite', '<p>Un.</p>suite' ),
+	array( 'Un texte sans balise.', 'Un texte sans balise.' ),
+	array( '<p><br></p>', '' ),
+	array( '', '' ),
+);
+$fins_vues = array();
+foreach ( $fins as $fin ) {
+	$fins_vues[] = na_appel( $plugin, 'sans_fin_vide', array( $fin[0] ) );
+}
+na_verifier( array_column( $fins, 1 ) === $fins_vues,
+	'le texte perd ses paragraphes vides et le saut de ligne qui le terminent, rien d\'autre', $fins_vues );
+$long = str_repeat( '<p>' . str_repeat( 'Un mur de pierre. ', 400 ) . '</p>', 4 );
+na_verifier( $long === na_appel( $plugin, 'sans_fin_vide', array( $long . '<p><br></p>' ) ),
+	'un long texte garde tout ce qu\'il dit' );
+na_verifier( ! Notice_Archeomed_Styles::responsabilites_a_part(), 'la mention est collée au texte pour les essais qui suivent' );
+$saisie_fin_vide = array_merge( $saisie_styles, array( 'texte_notice' => '<p>Premier.</p><p>Aucun mobilier n’a été repéré.</p><p><br></p>' ) );
+$courriel_fin_vide = na_appel( $plugin, 'build_notice', array( $saisie_fin_vide ) );
+na_verifier( false !== strpos( $courriel_fin_vide, 'repéré. (Responsable de l&#039;opération : Aude Ferrand, Inrap.)</p>' )
+	&& false === strpos( $courriel_fin_vide, '<p><br>' ),
+	'au courriel, la mention se colle au dernier paragraphe écrit, non au paragraphe vide', $courriel_fin_vide );
+$page_fin_vide = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_fin_vide ) ) );
+na_verifier( false !== strpos( $page_fin_vide, 'repéré. (Responsable de l&#039;opération : Aude Ferrand, Inrap.)</p>' )
+	&& false === strpos( $page_fin_vide, '<p><br>' ),
+	'à la page de relecture, de même', substr( $page_fin_vide, 0, 4000 ) );
+$doc_fin_vide = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style( 'docx' ) );
+na_appel( $plugin, 'remplir_le_document', array( $doc_fin_vide, array_merge( $saisie_fin_vide,
+	array( 'texte_notice' => '<p>Premier.</p><p>Aucun mobilier n’a été repéré.<br></p><p><br></p>' ) ) ) );
+$xml_fin_vide = implode( '', $corps->getValue( $doc_fin_vide ) );
+$apres_repere = substr( $xml_fin_vide, (int) strpos( $xml_fin_vide, 'repéré.' ), 400 );
+na_verifier( false !== strpos( $xml_fin_vide, 'repéré.' ) && false === strpos( $apres_repere, '<w:br' )
+	&& false === strpos( $apres_repere, '</w:p>' ) && false !== strpos( $apres_repere, 'Responsable de l' ),
+	'au Word, la mention suit le dernier mot écrit, sans saut de ligne', $apres_repere );
+
 WP_CLI::log( 'La prise d\'une notice' );
 // Deux passages ne l'expédient jamais tous les deux : un seul gagne la prise,
 // même quand l'autre l'a lue « en attente » juste avant qu'elle change.

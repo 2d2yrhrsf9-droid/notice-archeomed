@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.116
+ * Version:           3.117
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -1297,8 +1297,8 @@ class Notice_Archeomed_Pactols {
 			// de s'en remettre à ce qui est en base.
 			// La même typographie que le document : la page montrait le texte
 			// tel qu'il avait été tapé, le Word du même dossier corrigé.
-			$texte_html = self::petites_capitales_du_html( self::siecles_du_html(
-				self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) ) );
+			$texte_html = self::sans_fin_vide( self::petites_capitales_du_html( self::siecles_du_html(
+				self::typographie_du_html( $this->clean_richtext( $d['texte_notice'] ) ) ) ) );
 			// La mention de responsabilité, comme le document la pose : collée au
 			// point final du dernier paragraphe, dans la police du texte — ou, si
 			// la correspondance des styles lui donne son paragraphe, à part et
@@ -11653,7 +11653,7 @@ class Notice_Archeomed_Pactols {
 		// relecture : le courriel, la copie de l'auteur et la fiche montraient
 		// la saisie brute, et l'on croyait les siècles restés en capitales.
 		// Les notices déjà reçues gardent ce qui leur a été envoyé.
-		$texte = trim( self::petites_capitales_du_html( self::siecles_du_html(
+		$texte = self::sans_fin_vide( self::petites_capitales_du_html( self::siecles_du_html(
 			self::typographie_du_html( (string) $d['texte_notice'] ) ) ) );
 		// Le bloc responsable se colle juste après le point final, dans le fil du texte.
 		if ( '' === $texte ) {
@@ -12406,7 +12406,7 @@ class Notice_Archeomed_Pactols {
 		// Les paragraphes et les intertitres, chacun sous son style. Un
 		// « h4 » d'une notice ancienne est un intertitre comme un autre : la
 		// notice n'en a qu'un niveau.
-		$blocs     = $doc->html_to_blocs( $d['texte_notice'] );
+		$blocs     = $doc->html_to_blocs( self::sans_fin_vide( $d['texte_notice'] ) );
 		$a_part    = Notice_Archeomed_Styles::responsabilites_a_part();
 		$bloc_resp = $this->responsables_rtf( $doc, $d, ! $a_part );
 		if ( ! $a_part ) {
@@ -12852,6 +12852,49 @@ class Notice_Archeomed_Pactols {
 		return $doc->plain( $apres_le_texte ? ' (' : '(' )
 			. implode( $doc->plain( ' ; ' ), $segments )
 			. $doc->plain( $point . ')' );
+	}
+
+	/**
+	 * Le texte de la notice sans ce qui le termine à vide : les paragraphes
+	 * sans un caractère — l'éditeur en laisse un quand on tape Entrée après
+	 * le dernier point — et le saut de ligne posé juste avant la fin.
+	 *
+	 * La mention de responsabilité se colle au dernier paragraphe : le
+	 * courriel et la page de relecture la collaient à ce paragraphe vide, et
+	 * elle paraissait à part, sous une ligne blanche, quand le Word la
+	 * donnait dans le fil du texte.
+	 */
+	private static function sans_fin_vide( $html ) {
+		$html = rtrim( (string) $html );
+		// Cent tours au plus : chaque tour ôte quelque chose ou s'arrête.
+		for ( $tour = 0; $tour < 100; $tour++ ) {
+			// Le dernier bloc seul, pour qu'une expression ne parcoure jamais
+			// tout le texte : sur trente mille caractères, elle pourrait
+			// échouer, et le texte se vider.
+			$debut = -1;
+			foreach ( array( '<p', '<h3', '<h4' ) as $ouvrante ) {
+				$pos = strripos( $html, $ouvrante );
+				if ( false !== $pos && $pos > $debut ) {
+					$debut = $pos;
+				}
+			}
+			if ( $debut < 0 || ! preg_match( '#^<(p|h3|h4)\b([^>]*)>(.*)</\1>$#is', substr( $html, $debut ), $m ) ) {
+				break;
+			}
+			$contenu = preg_replace( '#(?:\s|<br\s*/?>)+$#i', '', $m[3] );
+			if ( null === $contenu ) {
+				break;
+			}
+			if ( '' === trim( str_replace( "\u{00A0}", ' ', html_entity_decode( wp_strip_all_tags( $contenu ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ) ) {
+				$html = rtrim( substr( $html, 0, $debut ) );
+				continue;
+			}
+			if ( $contenu !== $m[3] ) {
+				$html = substr( $html, 0, $debut ) . '<' . $m[1] . $m[2] . '>' . $contenu . '</' . $m[1] . '>';
+			}
+			break;
+		}
+		return $html;
 	}
 
 	/**

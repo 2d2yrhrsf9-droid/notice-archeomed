@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.116
+# Formulaire des notices d’archéologie médiévale — version 3.117
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -391,6 +391,14 @@ CNRS ; co-responsable de l'opération : Claude Burgelin, Université
 Sorbonne.) ». Une institution qui finit déjà sur un point (« etc. »), un
 « ? », un « ! » ou des points de suspension n'en prend pas un second ; le
 bloc mis à part dans son propre paragraphe finit de même.
+
+**Depuis la 3.117, un paragraphe vide à la fin du texte ne détache plus le
+bloc** : quand l'auteur tape Entrée après le dernier point, l'éditeur laisse
+un paragraphe vide, et le courriel à la rédaction comme la page de relecture
+y collaient le bloc, qui paraissait à part sous une ligne blanche. Les
+paragraphes vides de la fin, et un saut de ligne laissé juste avant elle,
+s'ôtent désormais avant que le bloc se colle, au courriel, à la page et au
+Word.
 
 Le **jeu de données** de l'opération (Nakala, Zenodo, un DOI…) est facultatif :
 quand l'auteur le donne, il suit le rapport final, son adresse en lien. La
