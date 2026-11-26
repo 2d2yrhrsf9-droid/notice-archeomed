@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.118
+# Formulaire des notices d’archéologie médiévale — version 3.119
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -405,7 +405,11 @@ normes (0 le lève) ; la rédaction qui corrige une notice depuis sa fiche n'y
 est pas tenue, ni un essai de charge. L'aide du champ l'annonce.
 
 Le libellé du code Patriarche devient « Code national d'opération Patriarche
-(n° d'OA) ».
+(n° d'OA) ». Depuis la 3.119, le même nom vaut partout : le Word et le
+courriel à la rédaction écrivent « Code national d'opération Patriarche : … »,
+la relecture, les réglages des styles et les messages du formulaire le
+nomment de même. Le style Métopes garde son nom,
+`TEI_archeoCHR_IDpatriarche`.
 
 **Depuis la 3.117, un paragraphe vide à la fin du texte ne détache plus le
 bloc** : quand l'auteur tape Entrée après le dernier point, l'éditeur laisse
@@ -612,7 +616,7 @@ propose que les styles du bon type — paragraphe ou caractère — que porte la
 feuille installée, la correspondance d'origine y est marquée, et un style
 enregistré qui aurait disparu de la feuille est signalé en rouge. C'est là
 qu'on tranche les questions ouvertes avec Métopes : un numéro d'autorisation
-qui ne serait plus l'identifiant Patriarche (« à supprimer », ou un autre
+qui ne serait plus celui du code national d'opération (« à supprimer », ou un autre
 style), un bloc de responsabilité dans son propre paragraphe
 (`TEI_archeoCHR_authority`, sans parenthèses) plutôt que collé au texte. Les
 blocs d'index Pactols nomment le style réglé dans leur `rend`.
@@ -644,7 +648,7 @@ exemple, pour la tenir hors de l'imprimé).
 | Autres lieux | `TEI_keywords_subjects:geography` |
 | Période historique | `TEI_archeoCHR_keywords_subjects:chronology` |
 | Année de l'opération | `TEI_archeoCHR_fieldwork_year` |
-| Numéro d'autorisation, identifiant Patriarche | `TEI_archeoCHR_IDpatriarche` |
+| Numéro d'autorisation, code national d'opération Patriarche | `TEI_archeoCHR_IDpatriarche` |
 | Rapport final (lien) | `TEI_archeoCHR_reportlink` |
 | Jeu de données (lien, facultatif) | `TEI_linked_data` |
 | Organisme(s) porteur(s) de l'opération | `TEI_archeoCHR_holder` |
@@ -827,7 +831,7 @@ ne se met que devant un nom de voie (rue, place, avenue, chemin, allée,
 quai…) : « 3 Moulins » reste comme il est écrit. Le serveur fait de même à
 la réception, et l'italique posé dans le lieu-dit se garde.
 
-## La nature de l'opération, et le code Patriarche
+## La nature de l'opération, et le code national d'opération
 
 Depuis la version 3.107, la section « Nature de l'opération » s'ouvre, sous la
 consigne « Cochez le cadre de l'opération, puis toutes les natures qui

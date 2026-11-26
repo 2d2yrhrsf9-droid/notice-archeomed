@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.118
+ * Version:           3.119
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -1269,7 +1269,7 @@ class Notice_Archeomed_Pactols {
 				$meta[] = esc_html( "Numéro d'autorisation : " . $d['num_autorisation'] );
 			}
 			if ( ! empty( $d['id_patriarche'] ) ) {
-				$meta[] = esc_html( 'Identifiant Patriarche : ' . $d['id_patriarche'] );
+				$meta[] = esc_html( 'Code national d’opération Patriarche : ' . $d['id_patriarche'] );
 			}
 			if ( ! empty( $d['rapport_lien'] ) ) {
 				$meta[] = esc_html( 'Rapport final : ' ) . '<a href="'
@@ -3955,7 +3955,7 @@ class Notice_Archeomed_Pactols {
 				<p><strong>Ayez sous la main&nbsp;:</strong></p>
 				<ul>
 					<li>le texte de la notice (<?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_min' ) ) ); ?> à <?php echo esc_html( self::entier( Notice_Archeomed_Normes::valeur( 'mots_max' ) ) ); ?>&nbsp;mots), à coller depuis votre traitement de texte&nbsp;;</li>
-					<li>l’année et la nature de l’opération, son code Patriarche (n° d’OA) et, si vous le connaissez, son numéro d’arrêté&nbsp;;</li>
+					<li>l’année et la nature de l’opération, son code national d’opération Patriarche (n° d’OA) et, si vous le connaissez, son numéro d’arrêté&nbsp;;</li>
 					<li>jusqu’à trois illustrations, de préférence un plan, une vue d’ensemble et un échantillon du mobilier (JPEG, TIFF ou PDF, <?php echo esc_html( $total_mo ); ?>&nbsp;Mo en tout<?php echo $par_fichier; // Chiffre calculé, entités seulement. ?>), avec pour chacune sa légende, son crédit et une phrase qui décrit l’image pour les lecteurs aveugles ou malvoyants.</li>
 				</ul>
 				<p>Les champs obligatoires portent un astérisque (<span class="na-requis">*</span>)&nbsp;; les autres sont marqués «&nbsp;facultatif&nbsp;».<?php if ( ! $correction ) : ?></p>
@@ -8650,7 +8650,7 @@ class Notice_Archeomed_Pactols {
 			// la saisie, figures, lieux, organismes).
 			var LONGUEURS = [
 				['#na-departement', 120, 'La précision géographique'], ['#na-lieu-dit', 200, 'Le lieu-dit'], ['#na-annee', 20, 'L’année'],
-				['#na-autorisation', 120, 'Le numéro d’autorisation'], ['#na-patriarche', 120, 'L’identifiant Patriarche'],
+				['#na-autorisation', 120, 'Le numéro d’autorisation'], ['#na-patriarche', 120, 'Le code national d’opération'],
 				['.na-commune', 120, 'Le lieu'], ['.na-organisme', 200, 'L’opérateur'], ['#na-commentaires', 3000, 'Le message à la rédaction'],
 				['#na-rapport', 500, 'L’adresse du rapport'], ['#na-donnees', 500, 'L’adresse du jeu de données'], ['#na-originaux', 500, 'Le lien des originaux']
 			];
@@ -11640,7 +11640,7 @@ class Notice_Archeomed_Pactols {
 			$admin_lines[] = $this->meta_line( 'Numéro d\'autorisation', $d['num_autorisation'] );
 		}
 		if ( ! empty( $d['id_patriarche'] ) ) {
-			$admin_lines[] = $this->meta_line( 'Identifiant Patriarche', $d['id_patriarche'] );
+			$admin_lines[] = $this->meta_line( 'Code national d’opération Patriarche', $d['id_patriarche'] );
 		}
 		// Les figures envoyées à part, lien par lien, et le lien unique des
 		// originaux des notices plus anciennes.
@@ -12407,7 +12407,7 @@ class Notice_Archeomed_Pactols {
 				array( array( 'text' => "Numéro d'autorisation : " ), array( 'text' => $d['num_autorisation'], 'brut' => true ) )
 			);
 		}
-		// L'identifiant Patriarche partage par défaut le style du numéro
+		// Le code national d'opération partage par défaut le style du numéro
 		// d'autorisation — c'est celui que Métopes nomme « Identifiant
 		// Patriarche », et rien d'autre ne lui convient mieux. Les deux
 		// renseignements sont distincts : l'un est un arrêté, l'autre une
@@ -12416,7 +12416,7 @@ class Notice_Archeomed_Pactols {
 		if ( ! empty( $d['id_patriarche'] ) ) {
 			$doc->add_paragraph(
 				Notice_Archeomed_Styles::de( 'id_patriarche' ),
-				array( array( 'text' => 'Identifiant Patriarche : ' ), array( 'text' => $d['id_patriarche'], 'brut' => true ) )
+				array( array( 'text' => 'Code national d’opération Patriarche : ' ), array( 'text' => $d['id_patriarche'], 'brut' => true ) )
 			);
 		}
 		if ( ! empty( $d['rapport_lien'] ) ) {
@@ -13154,7 +13154,7 @@ class Notice_Archeomed_Pactols {
 	private function textes_postes( $champs ) {
 		$noms_des_champs = array(
 			'departement' => 'la précision géographique', 'lieu_dit' => 'le lieu-dit', 'annee' => 'l’année',
-			'num_autorisation' => 'le numéro d’arrêté', 'id_patriarche' => 'le code Patriarche',
+			'num_autorisation' => 'le numéro d’arrêté', 'id_patriarche' => 'le code national d’opération',
 			'resp_prenom' => 'le prénom du responsable', 'resp_nom' => 'le nom du responsable', 'resp_inst' => 'l’institution du responsable',
 			'coresp_prenom' => 'le prénom du co-responsable', 'coresp_nom' => 'le nom du co-responsable', 'coresp_inst' => 'l’institution du co-responsable',
 			'coauteur_prenom' => 'le prénom du co-auteur', 'coauteur_nom' => 'le nom du co-auteur', 'coauteur_inst' => 'l’institution du co-auteur',
@@ -16862,7 +16862,7 @@ class Notice_Archeomed_Pactols {
 			'le lieu-dit'                 => array( 'lieu_dit', 'lieu_dit_forme' ),
 			'l’année'                     => array( 'annee' ),
 			'le numéro d’arrêté'          => array( 'num_autorisation' ),
-			'le code Patriarche'          => array( 'id_patriarche' ),
+			'le code national d’opération' => array( 'id_patriarche' ),
 			'l’opérateur'                 => array( 'organismes', 'organisme' ),
 			'le responsable'              => array( 'resp_prenom', 'resp_nom', 'resp_email', 'resp_inst' ),
 			'le co-responsable'           => array( 'coresp_prenom', 'coresp_nom', 'coresp_email', 'coresp_inst' ),

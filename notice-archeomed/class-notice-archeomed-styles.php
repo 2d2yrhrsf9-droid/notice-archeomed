@@ -6,7 +6,7 @@
  * Chaque bloc — le titre, la nature, l'année, une légende, le nom d'un
  * responsable — sortait sous un style écrit dans le code. Or certaines
  * correspondances sont des questions ouvertes avec Métopes : le numéro
- * d'autorisation partage le style de l'identifiant Patriarche, le bloc de
+ * d'autorisation partage le style du code national d'opération, le bloc de
  * responsabilité se colle au texte au lieu d'avoir son paragraphe. Les voici
  * réglables, bloc par bloc, parmi les styles que la feuille installée porte
  * vraiment, avec la correspondance actuelle par défaut.
@@ -64,7 +64,7 @@ class Notice_Archeomed_Styles {
 					'periodes'         => array( 'libelle' => 'Période historique', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_keywords_subjects:chronology' ),
 					'annee'            => array( 'libelle' => 'Année de l’opération', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_fieldwork_year' ),
 					'num_autorisation' => array( 'libelle' => 'Numéro d’autorisation', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_IDpatriarche' ),
-					'id_patriarche'    => array( 'libelle' => 'Identifiant Patriarche', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_IDpatriarche' ),
+					'id_patriarche'    => array( 'libelle' => 'Code national d’opération Patriarche', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_IDpatriarche' ),
 					'rapport'          => array( 'libelle' => 'Rapport final (lien)', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_reportlink' ),
 					'donnees'          => array( 'libelle' => 'Jeu de données (lien)', 'type' => 'paragraphe', 'defaut' => 'TEI_linked_data' ),
 					'organismes'       => array( 'libelle' => 'Organisme(s) porteur(s) de l’opération', 'type' => 'paragraphe', 'defaut' => 'TEI_archeoCHR_holder' ),

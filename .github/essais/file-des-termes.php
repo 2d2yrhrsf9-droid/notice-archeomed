@@ -1025,6 +1025,19 @@ $doc_id = new Notice_Archeomed_DOCX( Notice_Archeomed_Pactols::feuille_de_style(
 na_appel( $plugin, 'remplir_le_document', array( $doc_id, array_merge( $saisie_styles, array( 'id_patriarche' => '14 118 0012' ) ) ) );
 $xml_id = implode( '', $corps->getValue( $doc_id ) );
 na_verifier( false !== strpos( $xml_id, '>14 118 0012<' ), 'un identifiant Patriarche garde ses espaces : la typographie ne le prend pas pour un nombre', $xml_id );
+// Le code porte le même nom partout : au Word, au courriel, à la page de
+// relecture et dans la liste de ce qu'une correction a changé.
+$saisie_code = array_merge( $saisie_styles, array( 'id_patriarche' => '14 118 0012' ) );
+$courriel_code = na_appel( $plugin, 'build_notice', array( $saisie_code ) );
+$page_code     = na_appel( $plugin, 'page_de_relecture', array( 'I', array( $saisie_code ) ) );
+na_verifier( false !== strpos( $xml_id, 'Code national d’opération Patriarche' ) && false === strpos( $xml_id, 'Identifiant Patriarche' ),
+	'au Word, le code se nomme « Code national d’opération Patriarche »', $xml_id );
+na_verifier( false !== strpos( $courriel_code, '<strong>Code national d’opération Patriarche :</strong> 14 118 0012' ) && false === strpos( $courriel_code, 'Identifiant Patriarche' ),
+	'le courriel nomme le code national d’opération', $courriel_code );
+na_verifier( false !== strpos( $page_code, 'Code national d’opération Patriarche : 14 118 0012' ) && false === strpos( $page_code, 'Identifiant Patriarche' ),
+	'la page de relecture nomme le code national d’opération', substr( $page_code, 0, 3000 ) );
+na_verifier( array( 'le code national d’opération' ) === na_appel( $plugin, 'champs_changes', array( $saisie_code, array_merge( $saisie_code, array( 'id_patriarche' => '14 118 0013' ) ), false ) ),
+	'une correction du code se nomme « le code national d’opération »' );
 update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_avant );
 $ST::oublier();
 
