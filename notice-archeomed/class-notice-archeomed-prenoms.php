@@ -8,7 +8,7 @@
  * prénom qu'elle ignore n'est pas faux, il est rare ou étranger (Katarzyna,
  * Iñaki, Wandrille), et l'on se tait. L'avis ne retient pas l'envoi.
  *
- * Trois avis, et un seul par personne :
+ * Quatre avis, et un seul par personne :
  *  - le prénom est un nom de famille fréquent, et le nom un prénom connu :
  *    les deux champs semblent échangés (« Durand », « Martin ») ;
  *  - le prénom est connu sans accent, et la liste ne le connaît qu'avec un
@@ -17,9 +17,15 @@
  *    formes étrangères qui s'écrivent sans accent (Andrea, Felix, Kevin) ;
  *  - une lettre tapée trois fois de suite (« Jeannne ») : aucun prénom de
  *    la liste n'en a, c'est une faute de frappe sûre. On propose la forme
- *    connue qu'elle cache, en doublant ou en simple ; à défaut, on le dit.
- *    C'est la seule faute de frappe que l'on relève : une lettre de plus
- *    ou de moins fait souvent un autre prénom, rare et juste (Jehanne).
+ *    connue qu'elle cache, en doublant ou en simple ; à défaut, on le dit ;
+ *  - deux lettres échangées (« Jaenne ») ou une touche voisine sur un
+ *    clavier français (« Jeamne ») : si un seul prénom connu est à cette
+ *    distance, on le propose. La première lettre n'est jamais en cause, ni
+ *    un prénom de moins de quatre lettres, et une lettre de plus ou de moins
+ *    ne se relève pas : elle fait souvent un autre prénom, rare et juste
+ *    (Jehanne). Un prénom rare mais donné en France, à une faute d'un
+ *    prénom connu (Jeanine, Maelle), est tenu pour juste : la liste RARES
+ *    les réunit, tirée du fichier des prénoms de l'Insee (2025).
  *
  * Le navigateur reçoit les mêmes listes (pour_le_navigateur()) et applique
  * les mêmes règles : l'auteur lit en tapant ce que la rédaction lit ensuite.
@@ -341,6 +347,192 @@ reynaud riou riviere roche rodriguez rossi rousseau roussel roux roy royer sanch
 schneider teixeira tessier vallet vasseur vidal weber
 LISTE;
 
+	/**
+	 * Des prénoms donnés en France, plus rares, que l'on ne prend pas pour
+	 * une faute de frappe du prénom connu dont ils sont voisins : tous ceux
+	 * du fichier de l'Insee qui sont à une lettre échangée ou à une touche
+	 * voisine d'un prénom connu, et quelques prénoms étrangers dans le même
+	 * cas (Petr, Pere, Mercè).
+	 */
+	const RARES = <<<'LISTE'
+aallyah aalyiah aanya aara aaya abas abass abdelazis abdelhalim abderrhamane abdillah abes abla
+abril achley acil acya adaam adah adams adao adda adeel adei adelle ademe adhan adhane adia
+adian adiana adiel adim adis adiza adjan adlene adna adon adonia adonie adra adriaan adriani
+adrina adya adyan aelya aelye aelyna aeon aesa aewen aeya afan afia afnan afnane afraham agan
+agana agnel agnela ahana ahlan ahmar ahmes ahna ahya aian aiana aiba aidah aifa aila ailan ailee
+ailie ailsa aily aima aimed ainoha aira airelle aislinn aiya aiza aizen ajan ajana ajla ajlin
+ajna akan akana akcel akcil akia akil akima akina akio aksha aksim alai alaia alani alara alaya
+alaz albans alce alda alden aldin alecia alehandro aleix ales alesia alev alexandar alexei
+alexian alexien alexsandro alfa alhan alhem aliaa alian alias alic alica alicja alifa aliha
+alija alijah alim alin alis alise alisea alisee alisia alisja alisya alita alixia aliyan aliz
+aliza alizon alkan alkis alla allma allya allyah almee alna aloha aloma alona alone alonso altin
+aluna alva alvanie alvine alyan alyha alyia alyiah alys alysea alysia alyxia amad amada amae
+amale amalys aman amana amane amans amanza amao amelien amelis amelja ameo amicia amid amida
+amie amisha amissa amit amiya amla amma amni amon amor amora amra amri amsa amycia amyssia anaa
+anaelie anai anaia anaid anaiz anar anase anastacia anastazia anay anays andde ander andres
+andrra anea anel anfel anfele angeli angelien angelise angell angels anges angy anha anic anie
+anifa anine anisa anise aniya anja anka annela annelies anneline annis anoa anoushka ansa ansel
+ansi anta ante antonie antonu anyelo anys aona apdil aqsa aram arame aran arcene ardian ardiana
+arel aren arfa arie ariette arin ariz arkam arkane arkene arla armanc armane arsa arsen arta
+arthis arys asad asan asel aseline asen asha ashraf asil asja asra assim assita asta aswa atlan
+atman atmane atmen aton aubery auda audelia audelie auden aure aureline aurella aurelle aurlane
+avan avel avelina aveline aven avigael avigaelle avigail avraham aweb awel axele axeline axil
+ayaa ayaan ayad ayae ayas ayat aycan ayce ayha ayia aykan aylah aylane aylem aylen aylon aylone
+ayma aymeris aynaa aynes ayra ayran aysen ayvan ayven ayza ayzan ayzen azae azam azan azar azel
+azele azelie azelina azeline azem azia azid azilis azis azriel badia badie baha balthasar baris
+bashir bazile beatris beila belal belma bengy beniamin benjy benyamin berfin berrin berta berte
+bertie bertina berton bertrane berty bethy bety beyda bilell bili blaize blanca bouchta boushra
+brajan brando brayn briag briec brieux brigithe brithany bryce cael caela cagla calen calev
+caliste calixta cami camie candide carma carmo casey cassis cattia catty caty cedrix celien
+celiha cellia cezar cezarine chadli chafia chahines chahir chaida chaila chaira charki charlee
+charleen charlet charlise charliz charlye charmette charmine chayam chazia chedi chedine chelcy
+chemsy cherly chjara chleo christain christiaen christien ciarah ciline cira cirine clarie
+claudien cleia clem cleya clhoe cody cole colene colins corry cozette cristian cyprine czeslas
+daan daba dabia daby dael dafina dagan daha dahia dahila daila daina dainna dajana dalhia dalis
+dalla dallia dame damia damjan dang danh danis danka danye dareen daril daris darko darly daryo
+davis davud dayaan dayah daylia dayna deborha dehra delal denia denice deniss denize denya
+denyce denyss devon devora dhalia diaba diabe diamila dian dianga diba didie diena dieneba diman
+dinaa dinna dion djalal djalel djalila djana djanna djeneva doga doina dolan dominico dona donan
+dorene doriand dorien dorina dorka dorlan dorlane dorone duena dwyane dyane eather eban eben
+edan edann edeline edelyne edin edine editte edma edmone edvard edwan edwig edwine efna egan
+ehan ehden ehtan eila eilan eily eiya eiza ekin elaa elae elain elaina elais elaka elanie elay
+elayna elda eldana eldin eldina eleha eleis elfi elga elha eliab eliad eliah eliaz elida elide
+elidie elien eliesa eliez eliha elija elijha elim elin elinah elior elioth elira elis elisca
+elisea eliss elisse eliyah eliz elize elizee elke ellan ellana elle elli ellioth ellis elma
+elmie elna eloa eloah eloana eloanne eloe eloen eloha elohan elohann eloize elone elorie elory
+elouna eloy elsia elson eluan eluna elvia elvie elyad elyan elyasa elyaz elyesa elyha elys
+elysea elyza elyze eman emee emelle emeris emia emiline emille emin emina emra emya enae enao
+enda enee eneo enez enia enid enoah enoal enrick enso enzi eona epona eran erhan erico erij
+erind erio eris erisa erla eron ersa ersan ersin erza esaie esen esna estevan ethem etna ettan
+evah evahn evana evane evanh exan eyan eyla eylen eyven fadima fadl fahil fahima fahmi faid
+faida faisa fanya faousi faran fardi fared farez farha fariha farila farima faris fariza farna
+fatah fatha fathia fatiah fatila fatim fatin fatina fatiya fatoma fatuma fatumata favian
+favienne favio fayim fayna faysal fayz fazia fazila felixia ferda ferdy filbert fiora fiore
+fiorine flavine flona floraine floria florien florina florus fohad fousia francie francka frane
+frans fransisco frederico fredj gais gaja gala gali gaspare gavin gavriel germanie gert ghilaine
+ghizlaine ghylaine gian giano giovano gishlaine gismaine gizele gizelle gleb glodia glwadys
+goeffrey golbert golda gradie grasiella gregorie grey guevan guilia guilian guiliana guiliane
+guiliano guilio guislain guyliane guyslaine gwenhaelle gwenval habid habida hada hadel hadia
+hadry hadya hafca hafif hafiz hafiza hailye haina haja hajra hakila halan haled halid halil
+halley halmi hamda hamdi hamim hamir hamis hamsa hanad hanah hanis hannae hannan hany hanz hardy
+hassna havid havida hayem hazem helois hemen hendy herline hermande hevi hichma hifa hilarie
+hisham hishem hiva hnia hodaya hortence houra housine hughes hughette hulda iara ibragim idaline
+idan idem idene idia ihlan ihlem ilaan ilahn ilaina ilane ilayna ilen ilene ilhana ilhane ilina
+iliona ilisa iljana ilkan illana illina ilman ilna iloan iloha ilyaas ilyad ilyah ilyam ilyase
+ilyaz ilyese ilyna imae imana imann imna imra imrah inais inan inata inayat inayha inea ineia
+inesa inga inha insia insya ioan ioana ioane ioann ioen iqra iram iria irie irman irmane irsa
+isaam isea ishai ishal ishan isia isie issac issao ivaan ivah iyas iyes izaac izabel izabella
+izabelle izai izaiah izaline izhak izhaq izis izra jabier jace jacen jacquemine jadd jadon jaha
+jahden jahe jahelle jahina jahis jahna jalal jalel jalila jamil janelie jania janic jannat
+jannie janos jaren jasin jaslyn jaume jaxon jaydon jayen jayzon jaze jazmine jazon jeaninne jeef
+jehna jena jenan jenane jenine jennat jeyan jhana jhoan jhon jhonathan jhonny jhony jian jiana
+jianny jihan jihanne jilan jilian jiliane jilyan jinane joab joah joahn joam jocleyn joddy joee
+joeffrey joelie joffret johanan johane johna johnattan joleen jona jonan jonaz jonhy jonn
+jonnathan jonny jordans jori joric jorry jory joscelin josceline joscelyne joseba joset josiah
+josie josquin joss josse josuan josuha josy jouan jouanna joye joze jozef jozefa jozette joziane
+judd juge julina juluan julyna juna jury jyan jylian kabil kada kadel kadi kadim kadjatou kadri
+kael kaela kafia kahim kahlan kahlil kaia kaira kalel kalil kalila kalya kalyan kamilla kamla
+kana kanya kaona karell karem karia karil karma kasey kasija katel katelle kathlene kati katina
+katja katlheen kattia katty kaya kayal kayan kaydon kayil kayila kayina kaylah kaylian kaylis
+kaylla kayllah kayra kaysen kayton kayven kayz kayzen keann keden kehan kehlia keila keilan
+keily keilya keiran keis keity keiyan kelhan keliah kelina kelis keliya kella kellan kellys
+keloan kelyah kelyna kelys kenai kenay kenda kendi kendy kengy kenna kenni kensi kensy kent
+kesiah kethy keti keylah keylis keylla keymia keyn keysia kezian khadidia khadiya khail khaina
+khalia khalie khalif khamis kheria khiera kiana kilina killan kirsty klelya kleya kolyan krisha
+kristian kyana kyllan kymie ladislaw laena lahra lahsen laian laiba laika laim laima laira lais
+lala lalia lalla lalya lamis lamys lanha lania lanna laona lars latufa lauane laude laudine
+laugane laula launa lauraine laurens laurenz laurien lauris layaan layah layal layba layha layia
+layka layl laynna layra lazard leahna leahne lean leander leaticia leatitia lebna leely leha
+lehny leian leika leine leis leith lejla lella lelya lemia lenae lenais lenha lenhy leno lenoe
+lens lenya lenz leobard leoh leonice leonid leonis leonise leovan leslye letisia leyal leyan
+leyia leyn leyns leys lhana lhena lhiam lhyam liahm lian liane liann lianne lias liba licia
+liciana liciano licio lida lidiane lidio lidivine liee lien liena lies ligia liha lihan lihana
+liia lijana lika lilae liliah lilja lilla lillo lilo liloa liloe liloo lilu lima linaa linea
+link lion liona lira liria lisea lisia lisio lisna lita litana livai liwen lixia liyam liyan
+lizae lizandro lize lizette lizia liziane lizon llana llona lluis lluna llyah llyana loah loam
+loar loda lodia loen loena loene loenie loey logann loham lohana lohane lohanne lohis loica
+loice loid loide loika loina loiss loiz loize loli lolia lolie lolly loly lolya loma lona lonan
+long loraine loran loreen lorelie lorenda lorens lorenso lorenz loria loric lorien lorriane lors
+lorya loryc lorye losa louange louba louei louhna louiss louize louizon loula lounea lounia
+lounna louva lovan lovia loya loyan loyana loyann loyna lozea luam luanna luara luba lucaz
+lucine lucja lucka ludie ludovine ludwin ludwine ludy luixa luiz luiza lukaz luli lulia lulian
+luliana luma lunaa lune lusia luvia luvio luyana lyaa lyaan lyahm lyahna lyan lyanha lyas lyat
+lycia lyciana lyciano lycio lyda lydiane lydivine lyed lyel lyena lyha lyia lyiah lyiana lyliah
+lylla lyloo lyma lynea lynh lyria lysia lysie lyvai lyvie lyza lyze lyzia lyziane lyzie mabelle
+macine macy mada madeo madhi madian madiana madiane madiba madie madiha madilyn madilyne madin
+madine madiya madlie madline madly madlyne madona madyline maedy maeh maeley maelic maelien
+maelise maeliz maella maellya maellye maelon maelone maelye maelyse maesha maevin maewa maewan
+magdi magdy magy maha mahar mahdy mahed mahee mahel mahelle mahi mahid mahlon mahlone mahon
+mahrane mahreen maian maid maida maide maiha maija maiky maila mailya mailye maira mairam
+mairame maire mairon maiya maja majd majdi maje maka mala malal malau male malea maleo maley
+maleya malha mali malicka malie malio malka malkia malle mally maloa maloh malohe malte malwen
+malwenn malys mamia mamou manali manao manda mandi mane manea manek maneo mano manoha manoli
+maoh maona maral marat marcellien marck marga margaud mari mariah marica mariel marig mariia
+marija marik marila marino marita marize marja marjan marjana marjane marjanna marko markus
+marleen marlen marlette marlie marline marlo marly marlyne marlys marni marnia marnie maro maroa
+maroi maroia maroin marry mars marsel marso martins marton martta marvel marwah marx maryo
+maryon marys maryze mata matar mate mateho matei matel mathei mathia mathie mathiss mathya matia
+matin matina matine matio matiss matiya mattei mattew matthia mattias mattieu mattin matty
+mattys maty matya maur maura maure maurene maurise mauve mavel maveline mavy maxene maxense maxy
+mayda maydon maye mayer mayla maylah maylia maylin mayram mayreen mayrine mays maysaa mayton
+mayz mazna meana mediba mediha medni meggan meghna meila meivyn meiya mejdi meldin melha melian
+meliane melica melida melie meliha melin meliss meliza melona melos melua melyan melyha melys
+mency mendi merce merima merina merine merjem meruem mevan meyan meydi meyla meyram meyrem mhedi
+mhedy mialy mian miana miassa michela miguette miha miia mija mika milaan milah mile mili milia
+milka milly milyan miora mirab mirah miraj mirielle mirna mitsy moan moha mohrad moina molene
+molla mondy moran morvan mounis mouraz moya muad muguel mulan muna myassa myia mylah myli myran
+myriel myrielle naaim nabel nabia nabyl nacia nacio nader nadera nadie nadim nadja naelie naem
+nafila nagia nagla nahei nahila nahim nahis nahtan nahym naid naida naik naika naimi naja najah
+najia najih najla najm najma nakib nala nalha nali nalia nalla nalya nami namia nana nandy nane
+naoh naoial naola naolie naoly naoma naos nara naria naser nasera nasia nasim nasir nassef
+nassila nassita nastasja nastazia nata natia natnael nattan natteo nava nayal nayan nayem nayha
+nayhan nayil nayka nayma nays naza nazia nazir nazmi neal neels neema negla nehla neika neils
+neily neim neima neiya nejla nelcon neli nelma nelo neola neoline neomie neyma nhael nhoa nholan
+niah niama nibel nica nico nicolae nida niel niele niha niham nihan nila nilan nilann nile nima
+nimah ninel nini ninno ninog nira nirma nisar noahm noahn noami noar noeli noelien noely noem
+noema noemia nohra noia noira nolah nolahn nolanh nolyan noman nona nono nooa noran norcine
+norha noris norlan norsine nouar nourcine noursine noya noyan nuna nyno ohian oifa okhan olaf
+olicia olta olya omra oria oris orlana orland orlanne ornelia ottman ottmane otton oumra
+patrisia paulien pavlo pere petar petr pressilia rabab rabat rabha rabya radja rafah rafia rahan
+rahia rahil rahyan raia raid raida raim raina rajan rali raly ramadan ramina ramiz ramsi rana
+ranim rashel rashid rathana raya rayah rayban rayd rayhaan rayim raym rayma raymone rayn rayna
+raynale rayne rayyan rayyana razia read rean regan regia rehan rehane rejan remo reva reyane
+reza rhama rhianna rian riaz rich richelle rico rihad rihan rija rijad riman rimane rinda riva
+riya riyanna riyas riza roaa roann roby rock rocky roda rodine rody rogee rojan rojda rolan
+romains romanie romel rona ronin rosaline rosane rosanne rosenn ross rouan roxy royan roza
+rozalia rozalie roze rozie rozy ruan ryaz ryda ryiad ryna saana saba sabaa saban sabha sabia
+sabien sabir sabra sacia sada sadi sadik sadim sadiq sadiya sadja sadjo sadra safah safiha
+safine safyia saga sagia sagra sahar sahid sahina sahna sahyna saif saifa saim saima saina saira
+sajaa sajda sajia salam salha salhia sali salia salime salina salira saliya salla salmah salmi
+saloa saloia saloy saly salya samah samid samie samiel samiha samil samna sanad sanaf sanah
+sanai sancie sandor sandri sandu sanja sanka sansa santiano sanya saran saray sarha saria sarine
+sariya sarta sata satia sava savia savine savio saya sayma sayna sayra scoty seba seban sedan
+sedine sefkan sega selio selyna semin serfe serigne serrine servine sety sevag seylan shaan
+shadi shafi shaila shain shan shania shanise shanley shanonn shanya shaona shara shauna shayan
+shayla shayn sheily sheima shella shellsy sherly sherone shurley shyana sian siane siar sidar
+sidgey sidjey sido sidoine siera sifa sifra siga sihan sihane sika silan silene siline silly
+sima simine sinaa sinam sinem sinna sirra sita siyam siyem soah soahn soana soanh soban sobia
+sofine sogan sogane sohad soham soifa soina soisic sola solam solane solanne soleen solune sona
+sonay sonna sora soria sorian soriane sorine souan souane soupaya soyan soyane soyann staecy
+stana stane stanislaw steban stedy steev stefani stefen stefy stelia stelly stesy stevan stevano
+stevee steveen stevene stevy suelly sundy sura susy suzan syan syane syanna syldia syldie sylla
+sylvester sylvian sylvins taar tadek tahia tahiana tahis tahlia tahlya taho tahra tahya taia
+taian taiba taiga taila taim talha tali talis talla talys tamia tamime tamya tana tanis tanja
+tanys taos tata tatjana taya tayla tayna tedi teha teho teilo teina tereza thai thaila thalys
+thana thayla thereza thibaux tian tiano tibo tidjane tiffaine tiga tiha tileo timoe timy tiny
+tobia tomaz tomeo tona tong tory tricha tuana tulio tuna tyleo tyloan tymoe umit vahina veda
+veena vega veran victorie vidian vidiane vincenso wali walis wassima wilfride wilheim willa
+williame willis wissel xabier yaasir yacin yaelie yafa yahn yahnis yalina yaline yang yanhis
+yanic yanise yannic yannie yaqin yasid yasine yasline yassri yazin yazmina yban ydan ydann yina
+ylang ylhan ylhann ylina yllana yloan yman ynais yoah yoahn yogan yohenn yohna yoona youan youba
+youga younese youns younse younss yousef ysra yuan yuba yunis yusif yzaline yzee zahar zaian
+zaid zaiha zakaryia zalia zarha zayah zayna zaynah zayr zayra zays zemia zeynel zhara zhora zian
+ziana zida ziha zihad zira zohar zoia zorha zoura zyan
+LISTE;
+
+	/** Les rangées d'un clavier français, pour les touches voisines. */
+	const CLAVIER = 'azertyuiop qsdfghjklm wxcvbn';
+
 	/** La seule forme accentuée que la liste connaisse à ces prénoms. */
 	const ACCENTUES = <<<'LISTE'
 adèle adélie aimé aimée alizée aliénor amélie anaé andré andrée angèle angéline angélique arsène
@@ -375,10 +567,68 @@ LISTE;
 				'connus'    => $table( self::CONNUS ),
 				'ecartes'   => $table( self::ECARTES ),
 				'noms'      => $table( self::NOMS ),
+				'rares'     => $table( self::RARES ),
 				'accentues' => $accentues,
+				'voisines'  => self::voisines(),
 			);
 		}
 		return self::$listes;
+	}
+
+	/**
+	 * Les touches voisines de chaque lettre : à côté sur la même rangée, ou
+	 * sur la rangée du dessus ou du dessous, à une colonne au plus.
+	 */
+	private static function voisines() {
+		$rangees  = explode( ' ', self::CLAVIER );
+		$voisines = array();
+		foreach ( $rangees as $r => $rangee ) {
+			for ( $i = 0; $i < strlen( $rangee ); $i++ ) {
+				$v = '';
+				foreach ( $rangees as $r2 => $autre ) {
+					for ( $j = 0; $j < strlen( $autre ); $j++ ) {
+						if ( ( $r2 === $r && abs( $j - $i ) === 1 ) || ( abs( $r2 - $r ) === 1 && abs( $j - $i ) <= 1 ) ) {
+							$v .= $autre[ $j ];
+						}
+					}
+				}
+				$voisines[ $rangee[ $i ] ] = $v;
+			}
+		}
+		return $voisines;
+	}
+
+	/** La longueur d'un prénom en deçà de laquelle on ne relève pas de faute de frappe. */
+	const COURT = 4;
+
+	/**
+	 * Le prénom connu, et le seul, dont une partie inconnue est à deux lettres
+	 * échangées ou à une touche voisine, la première lettre gardée ; ou null.
+	 * La partie est une clé, en minuscules et sans accents ; ses $debut
+	 * premiers signes viennent de la première lettre (deux pour « Œ »).
+	 */
+	private static function voisin( $c, $debut ) {
+		$l = self::listes();
+		if ( strlen( $c ) < self::COURT || ! preg_match( '/^[a-z]+$/', $c ) || isset( $l['rares'][ $c ] ) ) {
+			return null;
+		}
+		$trouves = array();
+		$n       = strlen( $c );
+		for ( $i = max( 1, $debut ); $i < $n; $i++ ) {
+			if ( $i < $n - 1 && $c[ $i ] !== $c[ $i + 1 ] ) {
+				$essai = substr( $c, 0, $i ) . $c[ $i + 1 ] . $c[ $i ] . substr( $c, $i + 2 );
+				if ( isset( $l['connus'][ $essai ] ) ) {
+					$trouves[ $essai ] = true;
+				}
+			}
+			foreach ( str_split( $l['voisines'][ $c[ $i ] ] ) as $d ) {
+				$essai = substr( $c, 0, $i ) . $d . substr( $c, $i + 1 );
+				if ( isset( $l['connus'][ $essai ] ) ) {
+					$trouves[ $essai ] = true;
+				}
+			}
+		}
+		return 1 === count( $trouves ) ? (string) key( $trouves ) : null;
 	}
 
 	/**
@@ -490,7 +740,31 @@ LISTE;
 			}
 			$base = implode( '', $morceaux );
 		} elseif ( $inconnue ) {
-			return array();
+			// Chaque partie inconnue doit être une faute de frappe sûre d'un
+			// prénom connu ; une seule qui ne l'est pas, rare ou étrangère, et
+			// l'on se tait.
+			$corriges = array();
+			foreach ( $parties as $partie ) {
+				$c = self::cle( $partie );
+				if ( ! isset( $l['connus'][ $c ] ) ) {
+					$k = self::voisin( $c, strlen( self::cle( mb_substr( $partie, 0, 1, 'UTF-8' ) ) ) );
+					if ( null === $k ) {
+						return array();
+					}
+					$corriges[ $c ] = $k;
+				}
+			}
+			$morceaux = preg_split( '/(*UCP)([\s-]+)/u', $prenom, -1, PREG_SPLIT_DELIM_CAPTURE );
+			foreach ( $morceaux as $i => $partie ) {
+				$c = self::cle( $partie );
+				if ( isset( $corriges[ $c ] ) ) {
+					$k              = $corriges[ $c ];
+					$forme          = isset( $l['accentues'][ $k ] ) ? $l['accentues'][ $k ] : $k;
+					$tete           = mb_substr( $partie, 0, 1, 'UTF-8' );
+					$morceaux[ $i ] = $tete . mb_substr( $forme, strlen( self::cle( $tete ) ), null, 'UTF-8' );
+				}
+			}
+			$base = implode( '', $morceaux );
 		}
 		// Partie par partie, les séparateurs gardés : « Jean-Francois »
 		// devient « Jean-François », la capitale tapée reste la sienne.
@@ -516,6 +790,9 @@ LISTE;
 			'connus'    => preg_replace( '/\s+/', ' ', trim( self::CONNUS ) ),
 			'ecartes'   => preg_replace( '/\s+/', ' ', trim( self::ECARTES ) ),
 			'noms'      => preg_replace( '/\s+/', ' ', trim( self::NOMS ) ),
+			'rares'     => preg_replace( '/\s+/', ' ', trim( self::RARES ) ),
+			'clavier'   => self::CLAVIER,
+			'court'     => self::COURT,
 			'accentues' => preg_replace( '/\s+/', ' ', trim( self::ACCENTUES ) ),
 		);
 	}

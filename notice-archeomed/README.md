@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.119
+# Formulaire des notices d’archéologie médiévale — version 3.120
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1950,7 +1950,8 @@ depuis la 3.110 pour le prénom et les noms courts), une légende, un complémen
 de légende ou un texte alternatif tout en capitales (depuis la 3.110, dès quatre
 lettres : un sigle comme « ZAC » passe), un nom ou un prénom sans aucune
 capitale (depuis la 3.111), un prénom auquel semble manquer un accent ou qui
-paraît échangé avec le nom (depuis la 3.112), deux personnes
+paraît échangé avec le nom (depuis la 3.112), ou dont deux lettres semblent
+échangées ou une touche voisine tapée (depuis la 3.120), deux personnes
 dans un même champ, une adresse dans le champ de l'institution, l'accessibilité
 des figures (voir « Le texte alternatif »), un sigle non développé à sa
 première mention.
@@ -1975,12 +1976,22 @@ s'écrit-il « Hélène » ? Merci de vérifier » ; le tréma n'est jamais prop
 tapé comme nom (« Durand », « Martin »), appelle « merci de vérifier que le
 prénom et le nom ne sont pas inversés ». Un prénom que la liste ignore n'est
 pas signalé : il est rare ou étranger (Katarzyna, Iñaki, Wandrille), non faux.
-Depuis la 3.114, une seule faute de frappe se relève : la même lettre tapée
-trois fois de suite, qu'aucun prénom de la liste ne porte. « Jeannne »
-appelle « s'écrit-il « Jeanne » ? », la lettre doublée d'abord, puis simple
-(« Emmma », « Emma ») ; sans forme connue derrière, l'avis dit seulement que
-la même lettre paraît trois fois. Une lettre de plus ou de moins n'est pas
-relevée : elle fait souvent un autre prénom, rare et juste (Jehanne).
+Depuis la 3.114, la même lettre tapée trois fois de suite, qu'aucun prénom
+de la liste ne porte, se relève. « Jeannne » appelle « s'écrit-il « Jeanne »
+? », la lettre doublée d'abord, puis simple (« Emmma », « Emma ») ; sans
+forme connue derrière, l'avis dit seulement que la même lettre paraît trois
+fois. Depuis la 3.120, deux autres fautes de frappe se relèvent : deux
+lettres échangées (« Nicloas », « Nicolas » ; « Fraçnois », « François »)
+et une touche voisine sur un clavier français (« Jeanbe », « Jeanne »).
+L'avis ne vient que si un seul prénom de la liste est à cette distance ; la
+première lettre n'est jamais en cause, ni un prénom de moins de quatre
+lettres (« Jaen » pourrait être Jean ou Jane : rien). Pour ne pas prendre un
+prénom rare pour une faute, une seconde liste réunit les quelque deux mille
+six cents prénoms donnés en France, d'après le fichier des prénoms de l'Insee
+(édition 2025), qui sont à une faute d'un prénom connu (Margaud, Marija,
+Markus), et quelques prénoms étrangers dans le même cas (Petr, Pere,
+Mercè) : ceux-là passent. Une lettre de plus ou de moins n'est pas relevée :
+elle fait souvent un autre prénom, rare et juste (Jehanne).
 La case se décoche dans **Normes éditoriales ▸ Les avis donnés au dépôt**.
 Depuis la 3.113, les avis sur une personne paraissent sous la ligne du
 prénom et du nom, et non plus au bas de son bloc, hors de la vue.

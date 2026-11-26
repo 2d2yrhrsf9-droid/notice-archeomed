@@ -859,18 +859,54 @@ foreach ( array(
 	array( 'Emmma', 'Dupont', '« Emma »' ),
 	array( 'Jehanne', 'Dupont', '' ),
 	array( 'Jeannnnne', 'Dupont', '« Jeanne »' ),
+	array( 'Jaenne', 'Dupont', 's’écrit-il « Jeanne » ?' ),
+	array( 'Jeanbe', 'Dupont', '« Jeanne »' ),
+	array( 'Nicloas', 'Martin', '« Nicolas »' ),
+	array( 'NICLOAS', 'MARTIN', '« Nicolas »' ),
+	array( 'Clémetn', 'Dupont', '« Clément »' ),
+	array( 'Clemetn', 'Dupont', '« Clément »' ),
+	array( 'Helnee', 'Martin', '« Hélène »' ),
+	array( 'Fraçnois', 'Dupont', '« François »' ),
+	array( 'Jaenne-Marie', 'Dupont', '« Jeanne-Marie »' ),
+	array( 'Jaenne-Marei', 'Dupont', '« Jeanne-Marie »' ),
+	array( 'Jean-Fraçnois', 'Dupont', '« Jean-François »' ),
+	array( 'Jaenne Wandrille', 'Bernard', '' ),
+	array( 'Cahterine', 'Dupont', '« Catherine »' ),
+	array( 'Isabelel', 'Dupont', '« Isabelle »' ),
+	array( 'Ælsy', 'Dupont', '« Ælys »' ),
+	array( 'Œdpie', 'Dupont', '' ),
+	array( 'Jaen', 'Dupont', '' ),
+	array( 'Lao', 'Dupont', '' ),
+	array( 'Petr', 'Novák', '' ),
+	array( 'Pere', 'Puig', '' ),
+	array( 'Mercè', 'Puig', '' ),
+	array( 'Jeanine', 'Dupont', '' ),
+	array( 'Maelle', 'Dupont', '' ),
+	array( 'Margaud', 'Dupont', '' ),
+	array( 'Marija', 'Novak', '' ),
+	array( 'Markus', 'Weber', '' ),
+	array( 'J. Nicloas', 'Martin', '« J. Nicolas »' ),
 ) as $prenom_cas ) {
 	$prenom_avis = implode( ' | ', Notice_Archeomed_Prenoms::avis( $prenom_cas[0], $prenom_cas[1], 'du responsable' ) );
 	if ( '' === $prenom_cas[2] ? '' !== $prenom_avis : false === strpos( $prenom_avis, $prenom_cas[2] ) ) {
 		$prenom_ratees[] = $prenom_cas[0] . ' / ' . $prenom_cas[1] . ' → ' . $prenom_avis;
 	}
 }
-na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, une lettre triplée se corrige, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
+na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, une lettre triplée, deux lettres échangées ou une touche voisine se corrigent, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
 $prenom_inverse = Notice_Archeomed_Prenoms::avis( 'Durand', 'Martin', 'du co-auteur' );
 $prenom_accent  = Notice_Archeomed_Prenoms::avis( 'Jean-Francois', 'Dupont', 'du responsable' );
 na_verifier( array( 'Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.' ) === $prenom_inverse
 	&& array( 'La graphie du prénom du responsable (« Jean-Francois ») ne semble pas habituelle : s’écrit-il « Jean-François » ? Merci de vérifier.' ) === $prenom_accent,
 	'les deux avis des prénoms, mot pour mot', array( $prenom_inverse, $prenom_accent ) );
+$prenom_frappe = Notice_Archeomed_Prenoms::avis( 'Nicloas', 'Martin', 'du co-auteur' );
+na_verifier( array( 'La graphie du prénom du co-auteur (« Nicloas ») ne semble pas habituelle : s’écrit-il « Nicolas » ? Merci de vérifier.' ) === $prenom_frappe,
+	'deux lettres échangées dans un prénom, mot pour mot', $prenom_frappe );
+$prenom_listes = Notice_Archeomed_Prenoms::pour_le_navigateur();
+$prenom_rares  = explode( ' ', $prenom_listes['rares'] );
+na_verifier( array() === array_values( array_intersect( $prenom_rares, explode( ' ', $prenom_listes['connus'] ) ) )
+	&& in_array( 'margaud', $prenom_rares, true ) && in_array( 'petr', $prenom_rares, true ) && count( $prenom_rares ) > 2000
+	&& 'azertyuiop qsdfghjklm wxcvbn' === $prenom_listes['clavier'] && 4 === $prenom_listes['court'],
+	'les prénoms rares ne sont pas des prénoms connus, et le formulaire reçoit le clavier', array_slice( array_intersect( $prenom_rares, explode( ' ', $prenom_listes['connus'] ) ), 0, 5 ) );
 $prenom_triple = Notice_Archeomed_Prenoms::avis( 'Zzzorro', 'Martin', 'du co-auteur' );
 na_verifier( array( 'Le prénom du co-auteur (« Zzzorro ») porte trois fois de suite la même lettre : merci de vérifier.' ) === $prenom_triple,
 	'une lettre triplée sans forme connue, mot pour mot', $prenom_triple );

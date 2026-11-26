@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.119
+ * Version:           3.120
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4793,7 +4793,7 @@ class Notice_Archeomed_Pactols {
 			function tablesPrenoms() {
 				if (!tablesDesPrenoms) {
 					// Sans prototype : un prénom tapé « constructor » n'est pas connu.
-					var t = { lettres: Object.create(null), connus: Object.create(null), ecartes: Object.create(null), noms: Object.create(null), accentues: Object.create(null) };
+					var t = { lettres: Object.create(null), connus: Object.create(null), ecartes: Object.create(null), noms: Object.create(null), rares: Object.create(null), accentues: Object.create(null), voisines: Object.create(null) };
 					var de = points(PRENOMS.accents), vers = points(PRENOMS.nues);
 					de.forEach(function (c, i) { t.lettres[c] = vers[i]; });
 					t.lettres['œ'] = 'oe'; t.lettres['æ'] = 'ae'; t.lettres['ß'] = 'ss'; t.lettres['’'] = "'";
@@ -4801,6 +4801,20 @@ class Notice_Archeomed_Pactols {
 					PRENOMS.connus.split(' ').forEach(function (k) { t.connus[k] = true; });
 					PRENOMS.ecartes.split(' ').forEach(function (k) { t.ecartes[k] = true; });
 					PRENOMS.noms.split(' ').forEach(function (k) { t.noms[k] = true; });
+					PRENOMS.rares.split(' ').forEach(function (k) { t.rares[k] = true; });
+					// Les touches voisines, comme Notice_Archeomed_Prenoms::voisines().
+					var rangees = PRENOMS.clavier.split(' ');
+					rangees.forEach(function (rangee, r) {
+						rangee.split('').forEach(function (lettre, i) {
+							var v = '';
+							rangees.forEach(function (autre, r2) {
+								autre.split('').forEach(function (d, j) {
+									if ((r2 === r && Math.abs(j - i) === 1) || (Math.abs(r2 - r) === 1 && Math.abs(j - i) <= 1)) { v += d; }
+								});
+							});
+							t.voisines[lettre] = v;
+						});
+					});
 					PRENOMS.accentues.split(' ').forEach(function (f) { t.accentues[cleDuPrenom(f)] = f; });
 				}
 				return tablesDesPrenoms;
@@ -4813,6 +4827,26 @@ class Notice_Archeomed_Pactols {
 				t = String(t || '').trim();
 				if (!t || !PRENOM_LETTRES || !PRENOM_LETTRES.test(t) || /\s(?:et|and)\s/.test(t)) { return null; }
 				return t.split(/[\s-]+/).filter(function (x) { return x && x.slice(-1) !== '.' && points(x).length > 1; });
+			}
+			// Le prénom connu, et le seul, à deux lettres échangées ou à une
+			// touche voisine de la clé c, ses debut premiers signes gardés ;
+			// ou null. Comme Notice_Archeomed_Prenoms::voisin().
+			function voisinDuPrenom(c, debut) {
+				var l = tablesPrenoms();
+				if (c.length < PRENOMS.court || !/^[a-z]+$/.test(c) || l.rares[c]) { return null; }
+				var trouves = Object.create(null), n = c.length, compte = 0, dernier = null;
+				function essayer(essai) {
+					if (l.connus[essai] && !trouves[essai]) { trouves[essai] = true; compte++; dernier = essai; }
+				}
+				for (var i = Math.max(1, debut); i < n; i++) {
+					if (i < n - 1 && c.charAt(i) !== c.charAt(i + 1)) {
+						essayer(c.slice(0, i) + c.charAt(i + 1) + c.charAt(i) + c.slice(i + 2));
+					}
+					(l.voisines[c.charAt(i)] || '').split('').forEach(function (d) {
+						essayer(c.slice(0, i) + d + c.slice(i + 1));
+					});
+				}
+				return compte === 1 ? dernier : null;
 			}
 			function avisDuPrenom(prenom, nom, qui) {
 				prenom = String(prenom || '').trim();
@@ -4850,7 +4884,27 @@ class Notice_Archeomed_Pactols {
 					if (manque) {
 						return ['Le prénom ' + qui + ' (' + guillemets(prenom) + ') porte trois fois de suite la même lettre' + NBSP + ': merci de vérifier.'];
 					}
-				} else if (parties.some(function (x) { return !l.connus[cleDuPrenom(x)]; })) { return []; }
+				} else if (parties.some(function (x) { return !l.connus[cleDuPrenom(x)]; })) {
+					// Chaque partie inconnue doit être une faute de frappe sûre
+					// d'un prénom connu ; une seule qui ne l'est pas, rare ou
+					// étrangère, et l'on se tait.
+					var corriges = Object.create(null);
+					var sure = parties.every(function (x) {
+						var c = cleDuPrenom(x);
+						if (l.connus[c]) { return true; }
+						var k = voisinDuPrenom(c, cleDuPrenom(points(x)[0]).length);
+						if (k === null) { return false; }
+						corriges[c] = k;
+						return true;
+					});
+					if (!sure) { return []; }
+					base = prenom.split(/([\s-]+)/).map(function (x) {
+						var k = corriges[cleDuPrenom(x)];
+						if (k === undefined) { return x; }
+						var tete = points(x)[0], forme = l.accentues[k] || k;
+						return tete + points(forme).slice(cleDuPrenom(tete).length).join('');
+					}).join('');
+				}
 				var propose = base.split(/([\s-]+)/).map(function (x) {
 					var c = cleDuPrenom(x);
 					return l.accentues[c] && c === x.toLowerCase() ? points(x)[0] + points(l.accentues[c]).slice(1).join('') : x;
