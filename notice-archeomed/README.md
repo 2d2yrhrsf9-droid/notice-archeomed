@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.110
+# Formulaire des notices d’archéologie médiévale — version 3.111
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1884,10 +1884,21 @@ fichier), une figure sans crédits, « XIIème » pour « XIIe », une année ta
 « 1 250 », un nom ou un prénom en capitales (dès trois lettres, « ROY » ;
 depuis la 3.110 pour le prénom et les noms courts), une légende, un complément
 de légende ou un texte alternatif tout en capitales (depuis la 3.110, dès quatre
-lettres : un sigle comme « ZAC » passe), deux personnes
+lettres : un sigle comme « ZAC » passe), un nom ou un prénom sans aucune
+capitale (depuis la 3.111), deux personnes
 dans un même champ, une adresse dans le champ de l'institution, l'accessibilité
 des figures (voir « Le texte alternatif »), un sigle non développé à sa
 première mention.
+
+**Les noms et les prénoms**, depuis la 3.111, reçoivent une consigne plutôt
+qu'une question : tapé en capitales, « ROY » appelle « écrivez-le en
+minuscules, avec la capitale initiale (« Roy ») ». Tapé sans capitale, un nom
+simple — des lettres et des traits d'union, « dupont », « jean-pierre » — la
+reçoit seul à la sortie du champ : « Dupont », « Jean-Pierre » ; celui du
+déposant aussi, qui signe les courriels. Un nom à particule ou à apostrophe
+(« de la tour », « d’arcy ») ne se devine pas — « de La Tour » ou « De la
+Tour » — et reste tel quel, avec l'avis « ajoutez celles que demande sa
+graphie ».
 
 **Les sigles.** La liste se règle dans **Normes éditoriales ▸
 L'accessibilité** : une ligne par sigle, « SRA = service régional de

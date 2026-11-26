@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.110
+ * Version:           3.111
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4722,9 +4722,26 @@ class Notice_Archeomed_Pactols {
 				t = String(t || '');
 				return TROIS_CAPITALES.test(t) && !MINUSCULE.test(t);
 			}
-			// « DUPONT-MARTIN » en « Dupont-Martin », « D'ARCY » en « D'arcy » :
-			// une proposition, que l'auteur accepte ou non — « McLean » ne se
-			// reconstitue pas.
+			// Un nom ou un prénom sans aucune capitale : « dupont », « de la tour ».
+			function nomEnMinuscules(t) {
+				if (!MINUSCULE || !MAJUSCULE) { return false; }
+				t = String(t || '');
+				return MINUSCULE.test(t) && !MAJUSCULE.test(t);
+			}
+			// La capitale d'un nom simple tapé en minuscules — des lettres, des
+			// traits d'union : « jean-pierre » devient « Jean-Pierre », comme
+			// Notice_Archeomed_Controles::capitale_du_nom(). Une particule, une
+			// apostrophe, une espace : la place des capitales ne se devine pas
+			// (« de La Tour », « d'Arcy »), le nom reste et l'avis le dit.
+			var NOM_SIMPLE = motif('^\\p{Ll}+(?:-\\p{Ll}+)*$', 'u');
+			function capitaleDuNom(t) {
+				var texte = String(t == null ? '' : t), net = texte.trim();
+				return NOM_SIMPLE && NOM_SIMPLE.test(net) ? casseDeTitre(net) : texte;
+			}
+			function mettreLaCapitale(champ) {
+				var cap = capitaleDuNom(champ.value);
+				if (cap !== champ.value) { champ.value = cap; marquerModifie(); }
+			}
 			// Les crédits sans la paire de parenthèses qui les enferme tout
 			// entiers, comme Notice_Archeomed_Controles::credits_sans_parentheses().
 			function creditsSansParentheses(t) {
@@ -4755,6 +4772,9 @@ class Notice_Archeomed_Pactols {
 			Array.prototype.forEach.call(document.querySelectorAll('#na-form input[name^="garde_credits["]'), function (champ) {
 				oterLesParentheses(champ);
 			});
+			// « DUPONT-MARTIN » en « Dupont-Martin », « D'ARCY » en « D'arcy » :
+			// une proposition, que l'auteur accepte ou non — « McLean » ne se
+			// reconstitue pas.
 			function casseDeTitre(t) {
 				var avant = '';
 				return points(String(t).toLowerCase()).map(function (ch) {
@@ -8408,14 +8428,18 @@ class Notice_Archeomed_Pactols {
 						if (/[,;&]|\s(?:et|and)\s/.test(complet)) {
 							liste.push('Le nom ' + qui + ' semble contenir plusieurs personnes (' + guillemets(complet) + ')' + NBSP + ': une seule par champ.');
 						}
-						if (nomEnCapitales(p)) {
-							liste.push('Le prénom ' + qui + ' est en capitales (' + guillemets(p) + ')' + NBSP + ': à écrire '
-								+ guillemets(casseDeTitre(p)) + ' si c’est bien sa graphie.');
-						}
-						if (nomEnCapitales(n)) {
-							liste.push('Le nom ' + qui + ' est en capitales (' + guillemets(n) + ')' + NBSP + ': à écrire '
-								+ guillemets(casseDeTitre(n)) + ' si c’est bien sa graphie.');
-						}
+						// Une consigne, comme au serveur : la revue n'imprime
+						// jamais un nom en capitales.
+						[['Le prénom', p], ['Le nom', n]].forEach(function (x) {
+							if (nomEnCapitales(x[1])) {
+								liste.push(x[0] + ' ' + qui + ' est en capitales (' + guillemets(x[1]) + ')' + NBSP
+									+ ': écrivez-le en minuscules, avec la capitale initiale (' + guillemets(casseDeTitre(x[1])) + ').');
+							} else if (nomEnMinuscules(x[1])) {
+								var cap = capitaleDuNom(x[1]);
+								liste.push(x[0] + ' ' + qui + ' n’a pas de capitale (' + guillemets(x[1]) + ')' + NBSP
+									+ (cap !== x[1] ? ': écrivez-le ' + guillemets(cap) + '.' : ': ajoutez celles que demande sa graphie.'));
+							}
+						});
 						if (i && i.indexOf('@') !== -1) {
 							liste.push('L’institution ' + qui + ' contient une adresse électronique (' + guillemets(i) + ').');
 						}
@@ -8437,8 +8461,15 @@ class Notice_Archeomed_Pactols {
 				}
 				bloc.addEventListener('focusout', function (e) {
 					if (!(e.relatedTarget && bloc.contains(e.relatedTarget))) { quitte = true; }
+					if (e.target === prenom || e.target === nom) { mettreLaCapitale(e.target); }
 					if (e.target === prenom || e.target === nom || e.target === inst || e.target === mel) { maj(); }
 				});
+			});
+			// Le déposant n'a pas d'avis, mais son nom simple reçoit aussi sa
+			// capitale : il signe les courriels.
+			['na-deposant-prenom', 'na-deposant-nom'].forEach(function (id) {
+				var champ = el(id);
+				if (champ) { champ.addEventListener('blur', function () { mettreLaCapitale(champ); }); }
 			});
 			(function () {
 				var z = zoneDeConseils('na-lieu-dit-conseils', lieuDitInput);

@@ -783,9 +783,25 @@ $credits_nets = na_appel( $plugin, 'textes_de_figure', array( array( 'titre' => 
 na_verifier( '© J. Dupont, Inrap' === $credits_nets['credits'], 'au dépôt et à la correction, les crédits perdent leurs parenthèses', $credits_nets['credits'] );
 $avis_capitales = $C::personnes( array( 'resp_prenom' => 'JEAN-PIERRE', 'resp_nom' => 'ROY', 'resp_inst' => 'INRAP' ) );
 na_verifier( 2 === count( $avis_capitales )
-	&& 1 === count( preg_grep( '/^Le prénom .* est en capitales \(« JEAN-PIERRE »\)\x{00A0}?\s?: à écrire « Jean-Pierre »/u', $avis_capitales ) )
-	&& 1 === count( preg_grep( '/^Le nom .* est en capitales \(« ROY »\).* « Roy »/u', $avis_capitales ) ),
+	&& 1 === count( preg_grep( '/^Le prénom .* est en capitales \(« JEAN-PIERRE »\)\x{00A0}?\s?: écrivez-le en minuscules, avec la capitale initiale \(« Jean-Pierre »\)\.$/u', $avis_capitales ) )
+	&& 1 === count( preg_grep( '/^Le nom .* est en capitales \(« ROY »\).* \(« Roy »\)\.$/u', $avis_capitales ) ),
 	'le prénom et un nom court en capitales se signalent, le sigle de l\'institution non', $avis_capitales );
+na_verifier( $C::nom_en_minuscules( 'dupont' ) && $C::nom_en_minuscules( 'de la tour' ) && ! $C::nom_en_minuscules( 'Dupont' )
+	&& ! $C::nom_en_minuscules( 'de La Tour' ) && ! $C::nom_en_minuscules( 'ROY' ) && ! $C::nom_en_minuscules( '王小明' ) && ! $C::nom_en_minuscules( '' ),
+	'un nom sans aucune capitale se reconnaît ; une capitale, une écriture sans casse, un champ vide non' );
+na_verifier( 'Dupont' === $C::capitale_du_nom( 'dupont' ) && 'Jean-Pierre' === $C::capitale_du_nom( ' jean-pierre ' )
+	&& 'Émilie' === $C::capitale_du_nom( 'émilie' ) && 'Saint-Exupéry' === $C::capitale_du_nom( 'saint-exupéry' )
+	&& 'de la tour' === $C::capitale_du_nom( 'de la tour' ) && 'd’arcy' === $C::capitale_du_nom( 'd’arcy' )
+	&& 'j.' === $C::capitale_du_nom( 'j.' ) && 'McLean' === $C::capitale_du_nom( 'McLean' ) && 'jean-' === $C::capitale_du_nom( 'jean-' )
+	&& '' === $C::capitale_du_nom( '' ),
+	'un nom simple en minuscules prend sa capitale ; particule, apostrophe, initiale et nom déjà casé restent', array(
+		$C::capitale_du_nom( 'dupont' ), $C::capitale_du_nom( ' jean-pierre ' ), $C::capitale_du_nom( 'émilie' ) ) );
+$avis_minuscules = $C::personnes( array( 'resp_prenom' => 'émilie', 'resp_nom' => 'de la tour', 'resp_inst' => 'Inrap',
+	'coauteur_prenom' => 'Jean', 'coauteur_nom' => 'Dupont', 'coauteur_inst' => 'CNRS' ) );
+na_verifier( 2 === count( $avis_minuscules )
+	&& 1 === count( preg_grep( '/^Le prénom du responsable n’a pas de capitale \(« émilie »\) : écrivez-le « Émilie »\.$/u', $avis_minuscules ) )
+	&& 1 === count( preg_grep( '/^Le nom du responsable n’a pas de capitale \(« de la tour »\) : ajoutez celles que demande sa graphie\.$/u', $avis_minuscules ) ),
+	'un prénom et un nom sans capitale se signalent, avec la graphie quand elle se devine ; un nom bien casé non', $avis_minuscules );
 $avis_legendes = $C::figures( array(
 	array( 'rang' => 1, 'titre' => 'PLAN GÉNÉRAL', 'legende' => 'VUE DEPUIS LE NORD', 'credits' => 'INRAP', 'alt' => 'MURS DU CHÂTEAU', 'description' => 'Deux murs.' ),
 	array( 'rang' => 2, 'titre' => 'Plan de la ZAC', 'legende' => '', 'credits' => 'X', 'alt' => 'US 1024 et fossé', 'description' => 'Un fossé.' ),

@@ -313,13 +313,21 @@ jobs:
                   print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
               return t[i:t.index('\n', i)]
           code = '\n'.join([fonction(f) for f in ('motif', 'points')]
-                            + [variable(v) for v in ('NON_LETTRE', 'MINUSCULE', 'MAJUSCULE', 'TROIS_CAPITALES')]
-                            + [fonction(f) for f in ('enCapitales', 'nomEnCapitales', 'casseDeTitre', 'creditsSansParentheses')])
+                            + [variable(v) for v in ('NON_LETTRE', 'MINUSCULE', 'MAJUSCULE', 'TROIS_CAPITALES', 'NOM_SIMPLE')]
+                            + [fonction(f) for f in ('enCapitales', 'nomEnCapitales', 'nomEnMinuscules', 'capitaleDuNom',
+                                                     'casseDeTitre', 'creditsSansParentheses')])
           cas = [
               ['nomEnCapitales', 'FERRAND', True], ['nomEnCapitales', 'ROY', True], ['nomEnCapitales', 'LE GOFF', True],
               ['nomEnCapitales', 'D’ARCY', True], ['nomEnCapitales', 'ÉMILE', True], ['nomEnCapitales', 'Roy', False],
               ['nomEnCapitales', 'McLEAN', False], ['nomEnCapitales', 'J.-CH.', False], ['nomEnCapitales', 'JP', False],
               ['nomEnCapitales', '王小明', False], ['nomEnCapitales', '', False],
+              ['nomEnMinuscules', 'dupont', True], ['nomEnMinuscules', 'de la tour', True], ['nomEnMinuscules', 'Dupont', False],
+              ['nomEnMinuscules', 'de La Tour', False], ['nomEnMinuscules', 'ROY', False], ['nomEnMinuscules', '王小明', False],
+              ['nomEnMinuscules', '', False],
+              ['capitaleDuNom', 'dupont', 'Dupont'], ['capitaleDuNom', ' jean-pierre ', 'Jean-Pierre'], ['capitaleDuNom', 'émilie', 'Émilie'],
+              ['capitaleDuNom', 'saint-exupéry', 'Saint-Exupéry'], ['capitaleDuNom', 'de la tour', 'de la tour'],
+              ['capitaleDuNom', 'd’arcy', 'd’arcy'], ['capitaleDuNom', 'j.', 'j.'], ['capitaleDuNom', 'McLean', 'McLean'],
+              ['capitaleDuNom', 'jean-', 'jean-'], ['capitaleDuNom', '', ''],
               ['enCapitales', 'PLAN GÉNÉRAL DU SITE', True], ['enCapitales', 'ÉGLISE', True], ['enCapitales', 'Plan général', False],
               ['enCapitales', 'ZAC', False], ['enCapitales', 'US 1024', False], ['enCapitales', '王小明的房子', False],
               ['casseDeTitre', 'JEAN-PIERRE', 'Jean-Pierre'], ['casseDeTitre', 'MARIE-ÈVE', 'Marie-Ève'], ['casseDeTitre', 'LE GOFF', 'Le Goff'],
@@ -329,14 +337,19 @@ jobs:
               ['creditsSansParentheses', '()', ''], ['creditsSansParentheses', '(', '('], ['creditsSansParentheses', 'Inrap', 'Inrap'],
           ]
           js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
-              + 'var fns = { enCapitales: enCapitales, nomEnCapitales: nomEnCapitales, casseDeTitre: casseDeTitre, creditsSansParentheses: creditsSansParentheses };\n' \
+              + 'var fns = { enCapitales: enCapitales, nomEnCapitales: nomEnCapitales, nomEnMinuscules: nomEnMinuscules, capitaleDuNom: capitaleDuNom,\n' \
+              + '  casseDeTitre: casseDeTitre, creditsSansParentheses: creditsSansParentheses };\n' \
               + 'var faux = cas.filter(function (c) { return fns[c[0]](c[1]) !== c[2]; });\n' \
               + 'faux.forEach(function (c) { console.log("::error::" + c[0] + "(" + JSON.stringify(c[1]) + ") donne " + JSON.stringify(fns[c[0]](c[1]))); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)
           PY
-          grep -q "'Le prénom ' + qui + ' est en capitales" /tmp/formulaire.js \
-            || { echo "::error::Le prénom en capitales ne se signale plus."; exit 1; }
+          grep -q "': écrivez-le en minuscules, avec la capitale initiale ('" /tmp/formulaire.js \
+            || { echo "::error::Le nom en capitales ne se signale plus."; exit 1; }
+          grep -q "' n’a pas de capitale ('" /tmp/formulaire.js \
+            || { echo "::error::Le nom sans capitale ne se signale plus."; exit 1; }
+          grep -q "if (e.target === prenom || e.target === nom) { mettreLaCapitale(e.target); }" /tmp/formulaire.js \
+            || { echo "::error::Le nom simple ne prend plus seul sa capitale."; exit 1; }
           grep -q "' est en capitales (' + guillemets(v) + ')'" /tmp/formulaire.js \
             || { echo "::error::La légende en capitales ne se signale plus."; exit 1; }
           grep -q "if (clef === 'credits') { oterLesParentheses(champ, idx); }" /tmp/formulaire.js \

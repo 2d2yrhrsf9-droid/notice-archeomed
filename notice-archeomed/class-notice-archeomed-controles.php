@@ -931,7 +931,7 @@ class Notice_Archeomed_Controles {
 
 	/**
 	 * Les personnes : une seule par champ, une institution qui n'est pas une
-	 * adresse, un nom qui n'est pas tapé en capitales.
+	 * adresse, un nom qui n'est tapé ni en capitales ni sans capitale.
 	 */
 	public static function personnes( $d ) {
 		$avis  = array();
@@ -952,13 +952,20 @@ class Notice_Archeomed_Controles {
 			if ( preg_match( '/(*UCP)[,;&]|\s(?:et|and)\s/u', $prenom . ' ' . $nom ) ) {
 				$avis[] = sprintf( 'Le nom %1$s semble contenir plusieurs personnes (« %2$s ») : une seule par champ.', $qui, trim( $prenom . ' ' . $nom ) );
 			}
-			if ( self::nom_en_capitales( $prenom ) ) {
-				$avis[] = sprintf( 'Le prénom %1$s est en capitales (« %2$s ») : à écrire « %3$s » si c’est bien sa graphie.', $qui, $prenom,
-					function_exists( 'mb_convert_case' ) ? mb_convert_case( $prenom, MB_CASE_TITLE, 'UTF-8' ) : ucwords( strtolower( $prenom ) ) );
-			}
-			if ( self::nom_en_capitales( $nom ) ) {
-				$avis[] = sprintf( 'Le nom %1$s est en capitales (« %2$s ») : à écrire « %3$s » si c’est bien sa graphie.', $qui, $nom,
-					function_exists( 'mb_convert_case' ) ? mb_convert_case( $nom, MB_CASE_TITLE, 'UTF-8' ) : ucwords( strtolower( $nom ) ) );
+			// Une consigne plutôt qu'une question : la revue n'imprime jamais un
+			// nom en capitales, et l'auteur sait mieux que nous où vont les
+			// siennes. Le formulaire met seul la capitale d'un nom simple tapé
+			// en minuscules (capitale_du_nom()) ; ce qui reste ici lui a échappé.
+			foreach ( array( 'Le prénom' => $prenom, 'Le nom' => $nom ) as $libelle => $valeur ) {
+				if ( self::nom_en_capitales( $valeur ) ) {
+					$avis[] = sprintf( '%1$s %2$s est en capitales (« %3$s ») : écrivez-le en minuscules, avec la capitale initiale (« %4$s »).', $libelle, $qui, $valeur,
+						function_exists( 'mb_convert_case' ) ? mb_convert_case( $valeur, MB_CASE_TITLE, 'UTF-8' ) : ucwords( strtolower( $valeur ) ) );
+				} elseif ( self::nom_en_minuscules( $valeur ) ) {
+					$capitale = self::capitale_du_nom( $valeur );
+					$avis[]   = $capitale !== $valeur
+						? sprintf( '%1$s %2$s n’a pas de capitale (« %3$s ») : écrivez-le « %4$s ».', $libelle, $qui, $valeur, $capitale )
+						: sprintf( '%1$s %2$s n’a pas de capitale (« %3$s ») : ajoutez celles que demande sa graphie.', $libelle, $qui, $valeur );
+				}
 			}
 			if ( '' !== $inst && false !== strpos( $inst, '@' ) ) {
 				$avis[] = sprintf( 'L’institution %1$s contient une adresse électronique (« %2$s »).', $qui, $inst );
@@ -1106,6 +1113,32 @@ class Notice_Archeomed_Controles {
 	public static function nom_en_capitales( $texte ) {
 		$texte = (string) $texte;
 		return (bool) preg_match( '/\p{Lu}{3}/u', $texte ) && ! preg_match( '/\p{Ll}/u', $texte );
+	}
+
+	/**
+	 * Un nom ou un prénom sans aucune capitale : « dupont », « de la tour ».
+	 * Une écriture sans casse n'a pas de minuscule et n'est pas visée.
+	 */
+	public static function nom_en_minuscules( $texte ) {
+		$texte = (string) $texte;
+		return (bool) preg_match( '/\p{Ll}/u', $texte ) && ! preg_match( '/\p{Lu}/u', $texte );
+	}
+
+	/**
+	 * La capitale d'un nom simple tapé en minuscules — des lettres, des traits
+	 * d'union : « jean-pierre » devient « Jean-Pierre ». Comme capitaleDuNom()
+	 * au formulaire. Une particule, une apostrophe, une espace : la place des
+	 * capitales ne se devine pas (« de La Tour », « d'Arcy »), le nom reste.
+	 */
+	public static function capitale_du_nom( $texte ) {
+		$texte = (string) $texte;
+		$net   = self::sans_blancs_aux_bouts( $texte );
+		if ( ! preg_match( '/^\p{Ll}+(?:-\p{Ll}+)*$/u', $net ) ) {
+			return $texte;
+		}
+		return (string) preg_replace_callback( '/(^|-)(\p{Ll})/u', function ( $m ) {
+			return $m[1] . ( function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $m[2], 'UTF-8' ) : strtoupper( $m[2] ) );
+		}, $net );
 	}
 
 	private static function extrait( $texte, $longueur ) {
