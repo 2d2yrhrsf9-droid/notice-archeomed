@@ -467,6 +467,7 @@ jobs:
               ["Jaenne", "Dupont", "s’écrit-il « Jeanne » ?"], ["Jeanbe", "Dupont", "« Jeanne »"], ["Nicloas", "Martin", "« Nicolas »"], ["NICLOAS", "MARTIN", "« Nicolas »"], ["Clémetn", "Dupont", "« Clément »"], ["Clemetn", "Dupont", "« Clément »"], ["Helnee", "Martin", "« Hélène »"], ["Fraçnois", "Dupont", "« François »"], ["Jaenne-Marie", "Dupont", "« Jeanne-Marie »"],
               ["Jaenne-Marei", "Dupont", "« Jeanne-Marie »"], ["Jean-Fraçnois", "Dupont", "« Jean-François »"], ["Jaenne Wandrille", "Bernard", ""], ["Cahterine", "Dupont", "« Catherine »"], ["Isabelel", "Dupont", "« Isabelle »"], ["Ælsy", "Dupont", "« Ælys »"], ["Œdpie", "Dupont", ""], ["Jaen", "Dupont", ""], ["Lao", "Dupont", ""],
               ["Petr", "Novák", ""], ["Pere", "Puig", ""], ["Mercè", "Puig", ""], ["Jeanine", "Dupont", ""], ["Maelle", "Dupont", ""], ["Margaud", "Dupont", ""], ["Marija", "Novak", ""], ["Markus", "Weber", ""], ["J. Nicloas", "Martin", "« J. Nicolas »"],
+              ["Ccile", "Dupont", "« Cécile »"], ["Sophe", "Dupont", "« Sophie »"], ["Alxandre", "Dupont", "« Alexandre »"], ["Mathiu", "Martin", "« Mathieu »"], ["Mrie", "Dupont", "« Marie »"], ["Jeane", "Dupont", ""], ["Isabele", "Dupont", ""], ["Judit", "Puig", ""], ["Arnau", "Puig", ""], ["Nicols", "Martin", ""],
           ]
           js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
               + 'var faux = [];\n' \
@@ -480,6 +481,8 @@ jobs:
               + 'if (triple !== "Le prénom du co-auteur (« Zzzorro ») porte trois fois de suite la même lettre : merci de vérifier.") { faux.push("mot pour mot : " + triple); }\n' \
               + 'var frappe = avisDuPrenom("Nicloas", "Martin", "du co-auteur").join("|").replace(/[\\u00a0\\u202f]/g, " ");\n' \
               + 'if (frappe !== "La graphie du prénom du co-auteur (« Nicloas ») ne semble pas habituelle : s’écrit-il « Nicolas » ? Merci de vérifier.") { faux.push("mot pour mot : " + frappe); }\n' \
+              + 'var oubli = avisDuPrenom("Ccile", "Martin", "du co-auteur").join("|").replace(/[\\u00a0\\u202f]/g, " ");\n' \
+              + 'if (oubli !== "La graphie du prénom du co-auteur (« Ccile ») ne semble pas habituelle : s’écrit-il « Cécile » ? Merci de vérifier.") { faux.push("mot pour mot : " + oubli); }\n' \
               + 'if (avisDuPrenom("Jeannne", "Dupont", "").join() !== avisDuPrenom("Jeannne", "Dupont", "").join()) { faux.push("la lettre triplée se juge autrement au second appel"); }\n' \
               + 'faux.forEach(function (f) { console.log("::error::Prénom " + f); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'

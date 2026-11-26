@@ -886,13 +886,23 @@ foreach ( array(
 	array( 'Marija', 'Novak', '' ),
 	array( 'Markus', 'Weber', '' ),
 	array( 'J. Nicloas', 'Martin', '« J. Nicolas »' ),
+	array( 'Ccile', 'Dupont', '« Cécile »' ),
+	array( 'Sophe', 'Dupont', '« Sophie »' ),
+	array( 'Alxandre', 'Dupont', '« Alexandre »' ),
+	array( 'Mathiu', 'Martin', '« Mathieu »' ),
+	array( 'Mrie', 'Dupont', '« Marie »' ),
+	array( 'Jeane', 'Dupont', '' ),
+	array( 'Isabele', 'Dupont', '' ),
+	array( 'Judit', 'Puig', '' ),
+	array( 'Arnau', 'Puig', '' ),
+	array( 'Nicols', 'Martin', '' ),
 ) as $prenom_cas ) {
 	$prenom_avis = implode( ' | ', Notice_Archeomed_Prenoms::avis( $prenom_cas[0], $prenom_cas[1], 'du responsable' ) );
 	if ( '' === $prenom_cas[2] ? '' !== $prenom_avis : false === strpos( $prenom_avis, $prenom_cas[2] ) ) {
 		$prenom_ratees[] = $prenom_cas[0] . ' / ' . $prenom_cas[1] . ' → ' . $prenom_avis;
 	}
 }
-na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, une lettre triplée, deux lettres échangées ou une touche voisine se corrigent, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
+na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, une lettre triplée, deux lettres échangées, une touche voisine ou une lettre oubliée se corrigent, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
 $prenom_inverse = Notice_Archeomed_Prenoms::avis( 'Durand', 'Martin', 'du co-auteur' );
 $prenom_accent  = Notice_Archeomed_Prenoms::avis( 'Jean-Francois', 'Dupont', 'du responsable' );
 na_verifier( array( 'Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.' ) === $prenom_inverse
@@ -901,6 +911,9 @@ na_verifier( array( 'Le nom du co-auteur (« Martin ») est d’ordinaire un pr�
 $prenom_frappe = Notice_Archeomed_Prenoms::avis( 'Nicloas', 'Martin', 'du co-auteur' );
 na_verifier( array( 'La graphie du prénom du co-auteur (« Nicloas ») ne semble pas habituelle : s’écrit-il « Nicolas » ? Merci de vérifier.' ) === $prenom_frappe,
 	'deux lettres échangées dans un prénom, mot pour mot', $prenom_frappe );
+$prenom_oubli = Notice_Archeomed_Prenoms::avis( 'Ccile', 'Martin', 'du co-auteur' );
+na_verifier( array( 'La graphie du prénom du co-auteur (« Ccile ») ne semble pas habituelle : s’écrit-il « Cécile » ? Merci de vérifier.' ) === $prenom_oubli,
+	'une lettre oubliée dans un prénom, mot pour mot', $prenom_oubli );
 $prenom_listes = Notice_Archeomed_Prenoms::pour_le_navigateur();
 $prenom_rares  = explode( ' ', $prenom_listes['rares'] );
 na_verifier( array() === array_values( array_intersect( $prenom_rares, explode( ' ', $prenom_listes['connus'] ) ) )

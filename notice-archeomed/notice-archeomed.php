@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.121
+ * Version:           3.122
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4828,9 +4828,10 @@ class Notice_Archeomed_Pactols {
 				if (!t || !PRENOM_LETTRES || !PRENOM_LETTRES.test(t) || /\s(?:et|and)\s/.test(t)) { return null; }
 				return t.split(/[\s-]+/).filter(function (x) { return x && x.slice(-1) !== '.' && points(x).length > 1; });
 			}
-			// Le prénom connu, et le seul, à deux lettres échangées ou à une
-			// touche voisine de la clé c, ses debut premiers signes gardés ;
-			// ou null. Comme Notice_Archeomed_Prenoms::voisin().
+			// Le prénom connu, et le seul, à deux lettres échangées, à une
+			// touche voisine ou à une lettre oubliée de la clé c, ses debut
+			// premiers signes gardés ; ou null. Comme
+			// Notice_Archeomed_Prenoms::voisin().
 			function voisinDuPrenom(c, debut) {
 				var l = tablesPrenoms();
 				if (c.length < PRENOMS.court || !/^[a-z]+$/.test(c) || l.rares[c]) { return null; }
@@ -4838,7 +4839,9 @@ class Notice_Archeomed_Pactols {
 				function essayer(essai) {
 					if (l.connus[essai] && !trouves[essai]) { trouves[essai] = true; compte++; dernier = essai; }
 				}
-				for (var i = Math.max(1, debut); i < n; i++) {
+				for (var i = Math.max(1, debut); i <= n; i++) {
+					for (var a = 97; a <= 122; a++) { essayer(c.slice(0, i) + String.fromCharCode(a) + c.slice(i)); }
+					if (i === n) { break; }
 					if (i < n - 1 && c.charAt(i) !== c.charAt(i + 1)) {
 						essayer(c.slice(0, i) + c.charAt(i + 1) + c.charAt(i) + c.slice(i + 2));
 					}

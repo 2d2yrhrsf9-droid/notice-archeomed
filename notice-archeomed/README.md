@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.121
+# Formulaire des notices d’archéologie médiévale — version 3.122
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1990,8 +1990,13 @@ prénom rare pour une faute, une seconde liste réunit les quelque deux mille
 six cents prénoms donnés en France, d'après le fichier des prénoms de l'Insee
 (édition 2025), qui sont à une faute d'un prénom connu (Margaud, Marija,
 Markus), et quelques prénoms étrangers dans le même cas (Petr, Pere,
-Mercè) : ceux-là passent. Une lettre de plus ou de moins n'est pas relevée :
-elle fait souvent un autre prénom, rare et juste (Jehanne). Ces avis valent
+Mercè) : ceux-là passent. Depuis la 3.122, une lettre oubliée est relevée
+aussi (« Ccile », « Cécile » ; « Sophe », « Sophie ») ; la liste des
+prénoms rares compte alors quelque quatre mille cinq cents prénoms (Jeane,
+Isabele, Judit, Arnau passent). Une lettre de trop ne l'est pas, hors la
+lettre triplée : elle fait souvent un autre prénom, rare et juste
+(Jehanne), et il faudrait doubler encore cette liste pour ne pas les
+prendre pour des fautes. Ces avis valent
 pour le responsable, le co-responsable, le co-auteur et, depuis la 3.121,
 pour la personne qui dépose à la place du responsable : elle signe les
 courriels.
