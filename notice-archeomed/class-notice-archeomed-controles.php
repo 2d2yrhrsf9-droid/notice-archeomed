@@ -165,6 +165,9 @@ class Notice_Archeomed_Controles {
 			'personnes'        => function () use ( $d ) {
 				return self::personnes( $d );
 			},
+			'prenoms'          => function () use ( $d ) {
+				return self::prenoms( $d );
+			},
 			'sigles'           => function () use ( $paragraphes ) {
 				$sigles = self::sigles_de_la_norme();
 				return array_merge( self::sigles_non_developpes( $paragraphes, $sigles ), self::sigles_mal_ecrits( $paragraphes, $sigles ) );
@@ -973,6 +976,28 @@ class Notice_Archeomed_Controles {
 			if ( '' === $inst && 'resp' !== $cle ) {
 				$avis[] = sprintf( 'Pas d’institution de rattachement pour le nom %1$s (« %2$s »).', $qui, trim( $prenom . ' ' . $nom ) );
 			}
+		}
+		return $avis;
+	}
+
+	/**
+	 * Le prénom de chaque personne, confronté aux prénoms connus : un accent
+	 * qui semble manquer, un prénom et un nom qui semblent échangés
+	 * (Notice_Archeomed_Prenoms).
+	 */
+	public static function prenoms( $d ) {
+		$avis  = array();
+		$roles = array(
+			'resp'     => 'du responsable',
+			'coresp'   => 'du co-responsable',
+			'coauteur' => 'du co-auteur',
+		);
+		foreach ( $roles as $cle => $qui ) {
+			$avis = array_merge( $avis, Notice_Archeomed_Prenoms::avis(
+				isset( $d[ $cle . '_prenom' ] ) ? $d[ $cle . '_prenom' ] : '',
+				isset( $d[ $cle . '_nom' ] ) ? $d[ $cle . '_nom' ] : '',
+				$qui
+			) );
 		}
 		return $avis;
 	}

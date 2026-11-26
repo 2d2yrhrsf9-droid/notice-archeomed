@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.111
+ * Version:           3.112
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -21,6 +21,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-maj.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-rtf.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-typographie.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-controles.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-prenoms.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-normes.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-lieu-dit.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-notice-archeomed-forme.php';
@@ -4742,6 +4743,60 @@ class Notice_Archeomed_Pactols {
 				var cap = capitaleDuNom(champ.value);
 				if (cap !== champ.value) { champ.value = cap; marquerModifie(); }
 			}
+			// Le prénom confronté aux prénoms connus, avec les listes et les
+			// règles de Notice_Archeomed_Prenoms : une graphie inhabituelle, un
+			// accent qui manque, un prénom et un nom qui semblent échangés.
+			var PRENOMS = <?php echo wp_json_encode( Notice_Archeomed_Prenoms::pour_le_navigateur() ); ?>;
+			var PRENOM_LETTRES = motif('^[\\p{L}\\s\'’.-]+$', 'u');
+			var tablesDesPrenoms = null;
+			function tablesPrenoms() {
+				if (!tablesDesPrenoms) {
+					// Sans prototype : un prénom tapé « constructor » n'est pas connu.
+					var t = { lettres: Object.create(null), connus: Object.create(null), ecartes: Object.create(null), noms: Object.create(null), accentues: Object.create(null) };
+					var de = points(PRENOMS.accents), vers = points(PRENOMS.nues);
+					de.forEach(function (c, i) { t.lettres[c] = vers[i]; });
+					t.lettres['œ'] = 'oe'; t.lettres['æ'] = 'ae'; t.lettres['ß'] = 'ss'; t.lettres['’'] = "'";
+					tablesDesPrenoms = t;
+					PRENOMS.connus.split(' ').forEach(function (k) { t.connus[k] = true; });
+					PRENOMS.ecartes.split(' ').forEach(function (k) { t.ecartes[k] = true; });
+					PRENOMS.noms.split(' ').forEach(function (k) { t.noms[k] = true; });
+					PRENOMS.accentues.split(' ').forEach(function (f) { t.accentues[cleDuPrenom(f)] = f; });
+				}
+				return tablesDesPrenoms;
+			}
+			function cleDuPrenom(t) {
+				var l = tablesPrenoms().lettres;
+				return points(String(t).toLowerCase()).map(function (c) { return l[c] !== undefined ? l[c] : c; }).join('');
+			}
+			function partiesDuPrenom(t) {
+				t = String(t || '').trim();
+				if (!t || !PRENOM_LETTRES || !PRENOM_LETTRES.test(t) || /\s(?:et|and)\s/.test(t)) { return null; }
+				return t.split(/[\s-]+/).filter(function (x) { return x && x.slice(-1) !== '.' && points(x).length > 1; });
+			}
+			function avisDuPrenom(prenom, nom, qui) {
+				prenom = String(prenom || '').trim();
+				var parties = partiesDuPrenom(prenom);
+				if (!parties || !parties.length) { return []; }
+				var l = tablesPrenoms();
+				// Un nom de famille fréquent tapé comme prénom, un prénom comme nom :
+				// les champs échangés. Un prénom inconnu, lui, est rare ou
+				// étranger, et l'on se tait.
+				if (l.noms[parties.map(cleDuPrenom).join('_')]) {
+					nom = String(nom || '').trim();
+					var siens = partiesDuPrenom(nom);
+					if (siens && siens.length && siens.every(function (x) { var c = cleDuPrenom(x); return l.connus[c] && !l.ecartes[c]; })) {
+						return ['Le nom ' + qui + ' (' + guillemets(nom) + ') est d’ordinaire un prénom' + NBSP + ': merci de vérifier que le prénom et le nom ne sont pas inversés.'];
+					}
+				}
+				if (parties.some(function (x) { return !l.connus[cleDuPrenom(x)]; })) { return []; }
+				var propose = prenom.split(/([\s-]+)/).map(function (x) {
+					var c = cleDuPrenom(x);
+					return l.accentues[c] && c === x.toLowerCase() ? points(x)[0] + points(l.accentues[c]).slice(1).join('') : x;
+				}).join('');
+				return propose !== prenom
+					? ['La graphie du prénom ' + qui + ' (' + guillemets(prenom) + ') ne semble pas habituelle' + NBSP + ': s’écrit-il ' + guillemets(propose) + NBSP + '? Merci de vérifier.']
+					: [];
+			}
 			// Les crédits sans la paire de parenthèses qui les enferme tout
 			// entiers, comme Notice_Archeomed_Controles::credits_sans_parentheses().
 			function creditsSansParentheses(t) {
@@ -8440,6 +8495,7 @@ class Notice_Archeomed_Pactols {
 									+ (cap !== x[1] ? ': écrivez-le ' + guillemets(cap) + '.' : ': ajoutez celles que demande sa graphie.'));
 							}
 						});
+						if (avisActif('prenoms')) { liste = liste.concat(avisDuPrenom(p, n, qui)); }
 						if (i && i.indexOf('@') !== -1) {
 							liste.push('L’institution ' + qui + ' contient une adresse électronique (' + guillemets(i) + ').');
 						}

@@ -781,6 +781,106 @@ na_verifier( 'Inrap' === $C::credits_sans_parentheses( '(Inrap)' ) && '© J. Dup
 	'les parenthèses qui enferment tous les crédits s\'ôtent ; celles qui n\'en prennent qu\'une part restent' );
 $credits_nets = na_appel( $plugin, 'textes_de_figure', array( array( 'titre' => 'Plan', 'credits' => '(© J. Dupont, Inrap)', 'alt' => 'Plan du site' ), 1 ) );
 na_verifier( '© J. Dupont, Inrap' === $credits_nets['credits'], 'au dépôt et à la correction, les crédits perdent leurs parenthèses', $credits_nets['credits'] );
+$prenom_ratees = array();
+foreach ( array(
+	array( 'Jean', 'Dupont', '' ),
+	array( 'Hélène', 'Martin', '' ),
+	array( 'Helene', 'Martin', 's’écrit-il « Hélène » ?' ),
+	array( 'Jean-Francois', 'Dupont', '« Jean-François »' ),
+	array( 'jean-francois', 'dupont', '« jean-françois »' ),
+	array( 'HELENE', 'DURAND', '« Hélène »' ),
+	array( 'Eric', 'Dupont', '' ),
+	array( 'Emilie', 'Dupont', '' ),
+	array( 'Mael', 'Le Goff', '' ),
+	array( 'Andrea', 'Rossi', '' ),
+	array( 'Daniele', 'Rossi', '' ),
+	array( 'Kevin', 'Dupont', '' ),
+	array( 'Benoit', 'Dupont', '' ),
+	array( 'Durand', 'Martin', 'Le nom du responsable (« Martin ») est d’ordinaire un prénom' ),
+	array( 'Dupont', 'Jean-Pierre', '(« Jean-Pierre ») est d’ordinaire un prénom' ),
+	array( 'Pascal', 'Martin', '' ),
+	array( 'Gwenc’hlan', 'Le Scouëzec', '' ),
+	array( 'Durand', 'Fleury', '' ),
+	array( 'Durand', 'Le Goff', '' ),
+	array( 'J.-P.', 'Dupont', '' ),
+	array( 'J.', 'Dupont', '' ),
+	array( 'Jean, Marie', 'Dupont', '' ),
+	array( 'Jean et Marie', 'Dupont', '' ),
+	array( 'Durand', 'Jean et Marie', '' ),
+	array( '', 'Martin', '' ),
+	array( 'Durand', '', '' ),
+	array( 'constructor', 'Martin', '' ),
+	array( 'Siobhan', 'Thomas', '' ),
+	array( 'Wolfgang', 'Müller', '' ),
+	array( 'Rene', 'Dupont', '« René »' ),
+	array( 'Jean-Pierre', 'Dupont', '' ),
+	array( 'Jean Pierre', 'Dupont', '' ),
+	array( 'Marie-Helene', 'Dupont', '« Marie-Hélène »' ),
+	array( 'Francoise', 'Dupont', '« Françoise »' ),
+	array( 'Œdipe', 'Dupont', '' ),
+	array( 'Milan', 'Dupont', '' ),
+	array( 'Victoire', 'Dupont', '' ),
+	array( 'X', 'Martin', '' ),
+	array( ' Helene ', 'Martin', '(« Helene »)' ),
+	array( 'Ch.', 'Dupont', '' ),
+	array( 'Marie-José', 'Dupont', '' ),
+	array( 'Marie-Jose', 'Dupont', '« Marie-José »' ),
+	array( 'Katarzyna', 'Martin', '' ),
+	array( 'Micael', 'Allainguillaume', '' ),
+	array( 'Iñaki', 'Thomas', '' ),
+	array( 'Wandrille', 'Bernard', '' ),
+	array( 'Le Goff', 'Yann', 'est d’ordinaire un prénom' ),
+	array( 'LE GOFF', 'Yann', 'est d’ordinaire un prénom' ),
+	array( 'Da Silva', 'Maria', 'est d’ordinaire un prénom' ),
+	array( 'Le Goff', 'Le Gall', '' ),
+	array( 'Durand', 'Fleury', '' ),
+	array( 'Durand', '', '' ),
+	array( 'toString', 'Martin', '' ),
+	array( 'Moreau', 'Anne-Sophie', 'est d’ordinaire un prénom' ),
+	array( 'Moreau', 'Dupont', '' ),
+	array( 'Moreaux', 'Anne', '' ),
+) as $prenom_cas ) {
+	$prenom_avis = implode( ' | ', Notice_Archeomed_Prenoms::avis( $prenom_cas[0], $prenom_cas[1], 'du responsable' ) );
+	if ( '' === $prenom_cas[2] ? '' !== $prenom_avis : false === strpos( $prenom_avis, $prenom_cas[2] ) ) {
+		$prenom_ratees[] = $prenom_cas[0] . ' / ' . $prenom_cas[1] . ' → ' . $prenom_avis;
+	}
+}
+na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
+$prenom_inverse = Notice_Archeomed_Prenoms::avis( 'Durand', 'Martin', 'du co-auteur' );
+$prenom_accent  = Notice_Archeomed_Prenoms::avis( 'Jean-Francois', 'Dupont', 'du responsable' );
+na_verifier( array( 'Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.' ) === $prenom_inverse
+	&& array( 'La graphie du prénom du responsable (« Jean-Francois ») ne semble pas habituelle : s’écrit-il « Jean-François » ? Merci de vérifier.' ) === $prenom_accent,
+	'les deux avis des prénoms, mot pour mot', array( $prenom_inverse, $prenom_accent ) );
+na_verifier( 'helene' === Notice_Archeomed_Prenoms::cle( 'HÉLÈNE' ) && 'oedipe' === Notice_Archeomed_Prenoms::cle( 'Œdipe' )
+	&& 'gwenc\'hlan' === Notice_Archeomed_Prenoms::cle( 'Gwenc’hlan' ) && 'malgorzata' === Notice_Archeomed_Prenoms::cle( 'Małgorzata' ),
+	'la clé d\'un prénom : minuscules, sans accents, ligatures défaites' );
+$prenoms_navigateur = Notice_Archeomed_Prenoms::pour_le_navigateur();
+na_verifier( mb_strlen( $prenoms_navigateur['accents'], 'UTF-8' ) === strlen( $prenoms_navigateur['nues'] )
+	&& false !== strpos( ' ' . $prenoms_navigateur['connus'] . ' ', ' helene ' ) && false !== strpos( ' ' . $prenoms_navigateur['noms'] . ' ', ' le_goff ' )
+	&& false !== strpos( ' ' . $prenoms_navigateur['accentues'] . ' ', ' hélène ' ) && false === strpos( $prenoms_navigateur['connus'], "\n" ),
+	'le formulaire reçoit les mêmes listes, sur une ligne' );
+$prenoms_noms_connus = array_intersect( explode( ' ', $prenoms_navigateur['noms'] ), explode( ' ', $prenoms_navigateur['connus'] ) );
+na_verifier( array() === $prenoms_noms_connus, 'aucun nom de famille de la liste n\'est aussi un prénom connu', $prenoms_noms_connus );
+$avis_prenoms = $C::prenoms( array( 'resp_prenom' => 'Helene', 'resp_nom' => 'Ferrand', 'coresp_prenom' => 'Katarzyna', 'coresp_nom' => 'Nowak',
+	'coauteur_prenom' => 'Moreau', 'coauteur_nom' => 'Anne' ) );
+na_verifier( 2 === count( $avis_prenoms ) && false !== strpos( $avis_prenoms[0], 'du responsable (« Helene »)' ) && false !== strpos( $avis_prenoms[1], 'Le nom du co-auteur (« Anne »)' ),
+	'les contrôles jugent le prénom de chaque personne', $avis_prenoms );
+na_verifier( preg_grep( '/Hélène/u', $C::avis( array( 'resp_prenom' => 'Helene', 'resp_nom' => 'Ferrand', 'illustrations' => array() ) ) )
+	&& in_array( 'prenoms', (array) Notice_Archeomed_Normes::valeur( 'avis' ), true ),
+	'la famille des prénoms est cochée d\'office et passe dans les avis' );
+$reglages_prenoms = get_option( Notice_Archeomed_Settings::OPTION_NAME, array() );
+$poser_les_normes_prenoms = function ( $normes ) use ( $reglages_prenoms ) {
+	update_option( Notice_Archeomed_Settings::OPTION_NAME, array_merge( (array) $reglages_prenoms, array( Notice_Archeomed_Normes::CLE => $normes ) ) );
+	Notice_Archeomed_Normes::oublier();
+};
+$poser_les_normes_prenoms( array( 'avis' => array( 'credits', 'ordinaux' ) ) );
+$prenoms_d_avant = Notice_Archeomed_Normes::avis_actif( 'prenoms' );
+$poser_les_normes_prenoms( Notice_Archeomed_Normes::nettoyer( array( 'avis' => array( 'credits' ) ) ) );
+$prenoms_eteints = preg_grep( '/Hélène/u', $C::avis( array( 'resp_prenom' => 'Helene', 'resp_nom' => 'Ferrand', 'illustrations' => array() ) ) );
+update_option( Notice_Archeomed_Settings::OPTION_NAME, $reglages_prenoms );
+Notice_Archeomed_Normes::oublier();
+na_verifier( $prenoms_d_avant && array() === $prenoms_eteints,
+	'des avis enregistrés avant la case des prénoms ne l\'éteignent pas ; décochée, elle se tait', $prenoms_eteints );
 $avis_capitales = $C::personnes( array( 'resp_prenom' => 'JEAN-PIERRE', 'resp_nom' => 'ROY', 'resp_inst' => 'INRAP' ) );
 na_verifier( 2 === count( $avis_capitales )
 	&& 1 === count( preg_grep( '/^Le prénom .* est en capitales \(« JEAN-PIERRE »\)\x{00A0}?\s?: écrivez-le en minuscules, avec la capitale initiale \(« Jean-Pierre »\)\.$/u', $avis_capitales ) )

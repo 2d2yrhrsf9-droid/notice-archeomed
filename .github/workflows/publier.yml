@@ -354,6 +354,67 @@ jobs:
             || { echo "::error::La légende en capitales ne se signale plus."; exit 1; }
           grep -q "if (clef === 'credits') { oterLesParentheses(champ, idx); }" /tmp/formulaire.js \
             || { echo "::error::Les parenthèses des crédits ne s'ôtent plus au formulaire."; exit 1; }
+          # Les prénoms : un accent qui manque se propose, un nom de famille
+          # tapé comme prénom face à un prénom tapé comme nom se signale ; un
+          # prénom rare ou étranger passe. Les mêmes cas que le serveur
+          # (Notice_Archeomed_Prenoms, essayé dans file-des-termes.php), avec
+          # les listes telles que la page les sert.
+          python3 - <<'PY'
+          import json, subprocess, sys
+          t = open('/tmp/formulaire.js', encoding='utf-8').read()
+          def fonction(nom):
+              i = t.find('function ' + nom + '(')
+              if i < 0:
+                  print("::error::La fonction " + nom + " manque au formulaire."); sys.exit(1)
+              j, n = t.index('{', i), 0
+              for k in range(j, len(t)):
+                  n += {'{': 1, '}': -1}.get(t[k], 0)
+                  if n == 0:
+                      return t[i:k + 1]
+          def variable(nom):
+              i = t.find('var ' + nom + ' =')
+              if i < 0:
+                  print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
+              return t[i:t.index('\n', i)]
+          code = '\n'.join([fonction(f) for f in ('motif', 'points', 'guillemets')]
+                            + [variable(v) for v in ('NBSP', 'PRENOMS', 'PRENOM_LETTRES', 'tablesDesPrenoms')]
+                            + [fonction(f) for f in ('tablesPrenoms', 'cleDuPrenom', 'partiesDuPrenom', 'avisDuPrenom')])
+          cas = [
+              ["Jean", "Dupont", ""], ["Hélène", "Martin", ""], ["Helene", "Martin", "s’écrit-il « Hélène » ?"],
+              ["Jean-Francois", "Dupont", "« Jean-François »"], ["jean-francois", "dupont", "« jean-françois »"],
+              ["HELENE", "DURAND", "« Hélène »"], ["Eric", "Dupont", ""], ["Emilie", "Dupont", ""],
+              ["Mael", "Le Goff", ""], ["Andrea", "Rossi", ""], ["Daniele", "Rossi", ""], ["Kevin", "Dupont", ""],
+              ["Benoit", "Dupont", ""],
+              ["Durand", "Martin", "Le nom du responsable (« Martin ») est d’ordinaire un prénom"],
+              ["Dupont", "Jean-Pierre", "(« Jean-Pierre ») est d’ordinaire un prénom"], ["Pascal", "Martin", ""],
+              ["Gwenc’hlan", "Le Scouëzec", ""], ["Durand", "Fleury", ""], ["Durand", "Le Goff", ""],
+              ["J.-P.", "Dupont", ""], ["J.", "Dupont", ""], ["Jean, Marie", "Dupont", ""],
+              ["Jean et Marie", "Dupont", ""], ["Durand", "Jean et Marie", ""], ["", "Martin", ""], ["Durand", "", ""],
+              ["constructor", "Martin", ""], ["Siobhan", "Thomas", ""], ["Wolfgang", "Müller", ""],
+              ["Rene", "Dupont", "« René »"], ["Jean-Pierre", "Dupont", ""], ["Jean Pierre", "Dupont", ""],
+              ["Marie-Helene", "Dupont", "« Marie-Hélène »"], ["Francoise", "Dupont", "« Françoise »"],
+              ["Œdipe", "Dupont", ""], ["Milan", "Dupont", ""], ["Victoire", "Dupont", ""], ["X", "Martin", ""],
+              [" Helene ", "Martin", "(« Helene »)"], ["Ch.", "Dupont", ""], ["Marie-José", "Dupont", ""],
+              ["Marie-Jose", "Dupont", "« Marie-José »"], ["Katarzyna", "Martin", ""], ["Micael", "Allainguillaume", ""],
+              ["Iñaki", "Thomas", ""], ["Wandrille", "Bernard", ""], ["Le Goff", "Yann", "est d’ordinaire un prénom"],
+              ["LE GOFF", "Yann", "est d’ordinaire un prénom"], ["Da Silva", "Maria", "est d’ordinaire un prénom"],
+              ["Le Goff", "Le Gall", ""], ["Durand", "Fleury", ""], ["Durand", "", ""], ["toString", "Martin", ""],
+              ["Moreau", "Anne-Sophie", "est d’ordinaire un prénom"], ["Moreau", "Dupont", ""], ["Moreaux", "Anne", ""],
+          ]
+          js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
+              + 'var faux = [];\n' \
+              + 'cas.forEach(function (c) {\n' \
+              + '  var r = avisDuPrenom(c[0], c[1], "du responsable").join(" | ").replace(/[\\u00a0\\u202f]/g, " ");\n' \
+              + '  if (c[2] === "" ? r !== "" : r.indexOf(c[2]) === -1) { faux.push(c[0] + " / " + c[1] + " donne " + JSON.stringify(r)); }\n' \
+              + '});\n' \
+              + 'var mot = avisDuPrenom("Durand", "Martin", "du co-auteur").join("|").replace(/[\\u00a0\\u202f]/g, " ");\n' \
+              + 'if (mot !== "Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.") { faux.push("mot pour mot : " + mot); }\n' \
+              + 'faux.forEach(function (f) { console.log("::error::Prénom " + f); });\n' \
+              + 'process.exit(faux.length ? 1 : 0);\n'
+          sys.exit(subprocess.run(['node', '-e', js]).returncode)
+          PY
+          grep -q "if (avisActif('prenoms')) { liste = liste.concat(avisDuPrenom(p, n, qui)); }" /tmp/formulaire.js \
+            || { echo "::error::Les prénoms ne se jugent plus en tapant."; exit 1; }
           # Un brouillon gardé avant les types porte « Fouille préventive » :
           # il doit revenir en Fouille et Préventive, l'inconnu tel quel. La
           # table vient du serveur, telle que la page la sert.

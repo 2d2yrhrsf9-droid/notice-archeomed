@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.111
+# Formulaire des notices d’archéologie médiévale — version 3.112
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1885,7 +1885,8 @@ fichier), une figure sans crédits, « XIIème » pour « XIIe », une année ta
 depuis la 3.110 pour le prénom et les noms courts), une légende, un complément
 de légende ou un texte alternatif tout en capitales (depuis la 3.110, dès quatre
 lettres : un sigle comme « ZAC » passe), un nom ou un prénom sans aucune
-capitale (depuis la 3.111), deux personnes
+capitale (depuis la 3.111), un prénom auquel semble manquer un accent ou qui
+paraît échangé avec le nom (depuis la 3.112), deux personnes
 dans un même champ, une adresse dans le champ de l'institution, l'accessibilité
 des figures (voir « Le texte alternatif »), un sigle non développé à sa
 première mention.
@@ -1899,6 +1900,18 @@ déposant aussi, qui signe les courriels. Un nom à particule ou à apostrophe
 (« de la tour », « d’arcy ») ne se devine pas — « de La Tour » ou « De la
 Tour » — et reste tel quel, avec l'avis « ajoutez celles que demande sa
 graphie ».
+
+**Les prénoms**, depuis la 3.112, se confrontent à une liste d'environ trois
+mille cinq cents prénoms d'usage en France et à l'étranger. Deux avis, très
+prudents et jamais bloquants. Un prénom connu sans son accent (« Helene »,
+« Jean-Francois ») appelle « la graphie du prénom ne semble pas habituelle :
+s'écrit-il « Hélène » ? Merci de vérifier » ; le tréma n'est jamais proposé
+(Mael, Loic, Anais sont des graphies d'usage), ni un accent sur l'initiale
+(Eric, Emilie). Un nom de famille fréquent tapé comme prénom, face à un prénom
+tapé comme nom (« Durand », « Martin »), appelle « merci de vérifier que le
+prénom et le nom ne sont pas inversés ». Un prénom que la liste ignore n'est
+pas signalé : il est rare ou étranger (Katarzyna, Iñaki, Wandrille), non faux.
+La case se décoche dans **Normes éditoriales ▸ Les avis donnés au dépôt**.
 
 **Les sigles.** La liste se règle dans **Normes éditoriales ▸
 L'accessibilité** : une ligne par sigle, « SRA = service régional de
