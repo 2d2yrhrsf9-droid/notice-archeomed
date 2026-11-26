@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.112
+# Formulaire des notices d’archéologie médiévale — version 3.113
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1912,6 +1912,8 @@ tapé comme nom (« Durand », « Martin »), appelle « merci de vérifier que 
 prénom et le nom ne sont pas inversés ». Un prénom que la liste ignore n'est
 pas signalé : il est rare ou étranger (Katarzyna, Iñaki, Wandrille), non faux.
 La case se décoche dans **Normes éditoriales ▸ Les avis donnés au dépôt**.
+Depuis la 3.113, les avis sur une personne paraissent sous la ligne du
+prénom et du nom, et non plus au bas de son bloc, hors de la vue.
 
 **Les sigles.** La liste se règle dans **Normes éditoriales ▸
 L'accessibilité** : une ligne par sigle, « SRA = service régional de

@@ -415,6 +415,8 @@ jobs:
           PY
           grep -q "if (avisActif('prenoms')) { liste = liste.concat(avisDuPrenom(p, n, qui)); }" /tmp/formulaire.js \
             || { echo "::error::Les prénoms ne se jugent plus en tapant."; exit 1; }
+          grep -q "if (ligneDuNom && ligneDuNom.parentNode === bloc) { bloc.insertBefore(z, ligneDuNom.nextSibling); }" /tmp/formulaire.js \
+            || { echo "::error::Les avis sur une personne ne paraissent plus sous son prénom et son nom."; exit 1; }
           # Un brouillon gardé avant les types porte « Fouille préventive » :
           # il doit revenir en Fouille et Préventive, l'inconnu tel quel. La
           # table vient du serveur, telle que la page la sert.
