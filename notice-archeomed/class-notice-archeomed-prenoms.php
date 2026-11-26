@@ -8,13 +8,18 @@
  * prénom qu'elle ignore n'est pas faux, il est rare ou étranger (Katarzyna,
  * Iñaki, Wandrille), et l'on se tait. L'avis ne retient pas l'envoi.
  *
- * Deux avis, et un seul par personne :
+ * Trois avis, et un seul par personne :
  *  - le prénom est un nom de famille fréquent, et le nom un prénom connu :
  *    les deux champs semblent échangés (« Durand », « Martin ») ;
  *  - le prénom est connu sans accent, et la liste ne le connaît qu'avec un
  *    seul (« Helene », « Hélène ») : on propose cette forme. Le tréma n'est
  *    jamais proposé — Mael, Loic, Anais sont des graphies d'usage — ni les
- *    formes étrangères qui s'écrivent sans accent (Andrea, Felix, Kevin).
+ *    formes étrangères qui s'écrivent sans accent (Andrea, Felix, Kevin) ;
+ *  - une lettre tapée trois fois de suite (« Jeannne ») : aucun prénom de
+ *    la liste n'en a, c'est une faute de frappe sûre. On propose la forme
+ *    connue qu'elle cache, en doublant ou en simple ; à défaut, on le dit.
+ *    C'est la seule faute de frappe que l'on relève : une lettre de plus
+ *    ou de moins fait souvent un autre prénom, rare et juste (Jehanne).
  *
  * Le navigateur reçoit les mêmes listes (pour_le_navigateur()) et applique
  * les mêmes règles : l'auteur lit en tapant ce que la rédaction lit ensuite.
@@ -414,6 +419,9 @@ LISTE;
 		return $parties;
 	}
 
+	/** Une lettre trois fois de suite, quelle que soit sa casse ; les deux premières telles que tapées. */
+	const TRIPLE = '/(*UCP)((\p{L})\2)\2+/iu';
+
 	/**
 	 * L'avis sur le prénom d'une personne, ou rien.
 	 *
@@ -456,12 +464,37 @@ LISTE;
 				return array( sprintf( 'Le nom %1$s (« %2$s ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.', $qui, $nom ) );
 			}
 		}
-		if ( $inconnue ) {
+		// Une lettre trois fois de suite : la forme connue qu'elle cache, partie
+		// par partie, la lettre doublée d'abord (« Jeannne », « Jeanne »),
+		// puis simple. Une autre partie inconnue ne fait pas taire l'avis :
+		// la faute, elle, est sûre.
+		$base = $prenom;
+		if ( preg_match( self::TRIPLE, $prenom ) ) {
+			$morceaux = preg_split( '/(*UCP)([\s-]+)/u', $prenom, -1, PREG_SPLIT_DELIM_CAPTURE );
+			foreach ( $morceaux as $i => $partie ) {
+				if ( ! preg_match( self::TRIPLE, $partie ) ) {
+					continue;
+				}
+				$trouve = null;
+				foreach ( array( '$1', '$2' ) as $par ) {
+					$essai = preg_replace( self::TRIPLE, $par, $partie );
+					if ( is_string( $essai ) && isset( $l['connus'][ self::cle( $essai ) ] ) ) {
+						$trouve = $essai;
+						break;
+					}
+				}
+				if ( null === $trouve ) {
+					return array( sprintf( 'Le prénom %1$s (« %2$s ») porte trois fois de suite la même lettre : merci de vérifier.', $qui, $prenom ) );
+				}
+				$morceaux[ $i ] = $trouve;
+			}
+			$base = implode( '', $morceaux );
+		} elseif ( $inconnue ) {
 			return array();
 		}
 		// Partie par partie, les séparateurs gardés : « Jean-Francois »
 		// devient « Jean-François », la capitale tapée reste la sienne.
-		$morceaux = preg_split( '/(*UCP)([\s-]+)/u', $prenom, -1, PREG_SPLIT_DELIM_CAPTURE );
+		$morceaux = preg_split( '/(*UCP)([\s-]+)/u', $base, -1, PREG_SPLIT_DELIM_CAPTURE );
 		foreach ( $morceaux as $i => $partie ) {
 			$c = self::cle( $partie );
 			if ( isset( $l['accentues'][ $c ] ) && $c === mb_strtolower( $partie, 'UTF-8' ) ) {

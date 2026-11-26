@@ -1,4 +1,4 @@
-# Formulaire des notices d’archéologie médiévale — version 3.113
+# Formulaire des notices d’archéologie médiévale — version 3.114
 
 Formulaire de soumission des notices d'opération pour la Chronique
 d'*Archéologie médiévale*. La rédaction reçoit le courriel habituel,
@@ -1911,6 +1911,12 @@ s'écrit-il « Hélène » ? Merci de vérifier » ; le tréma n'est jamais prop
 tapé comme nom (« Durand », « Martin »), appelle « merci de vérifier que le
 prénom et le nom ne sont pas inversés ». Un prénom que la liste ignore n'est
 pas signalé : il est rare ou étranger (Katarzyna, Iñaki, Wandrille), non faux.
+Depuis la 3.114, une seule faute de frappe se relève : la même lettre tapée
+trois fois de suite, qu'aucun prénom de la liste ne porte. « Jeannne »
+appelle « s'écrit-il « Jeanne » ? », la lettre doublée d'abord, puis simple
+(« Emmma », « Emma ») ; sans forme connue derrière, l'avis dit seulement que
+la même lettre paraît trois fois. Une lettre de plus ou de moins n'est pas
+relevée : elle fait souvent un autre prénom, rare et juste (Jehanne).
 La case se décoche dans **Normes éditoriales ▸ Les avis donnés au dépôt**.
 Depuis la 3.113, les avis sur une personne paraissent sous la ligne du
 prénom et du nom, et non plus au bas de son bloc, hors de la vue.

@@ -377,7 +377,7 @@ jobs:
                   print("::error::La variable " + nom + " manque au formulaire."); sys.exit(1)
               return t[i:t.index('\n', i)]
           code = '\n'.join([fonction(f) for f in ('motif', 'points', 'guillemets')]
-                            + [variable(v) for v in ('NBSP', 'PRENOMS', 'PRENOM_LETTRES', 'tablesDesPrenoms')]
+                            + [variable(v) for v in ('NBSP', 'PRENOMS', 'PRENOM_LETTRES', 'PRENOM_TRIPLE', 'tablesDesPrenoms')]
                             + [fonction(f) for f in ('tablesPrenoms', 'cleDuPrenom', 'partiesDuPrenom', 'avisDuPrenom')])
           cas = [
               ["Jean", "Dupont", ""], ["Hélène", "Martin", ""], ["Helene", "Martin", "s’écrit-il « Hélène » ?"],
@@ -400,6 +400,10 @@ jobs:
               ["LE GOFF", "Yann", "est d’ordinaire un prénom"], ["Da Silva", "Maria", "est d’ordinaire un prénom"],
               ["Le Goff", "Le Gall", ""], ["Durand", "Fleury", ""], ["Durand", "", ""], ["toString", "Martin", ""],
               ["Moreau", "Anne-Sophie", "est d’ordinaire un prénom"], ["Moreau", "Dupont", ""], ["Moreaux", "Anne", ""],
+              ["Jeannne", "Dupont", "s’écrit-il « Jeanne » ?"], ["Jeannne-Mariiie", "Dupont", "« Jeanne-Marie »"], ["Helennne", "Martin", "« Hélène »"],
+              ["Hélènnne", "Martin", "« Hélène »"], ["Aaaron", "Martin", "« Aaron »"], ["JEANNNE", "DUPONT", "« JEANNE »"],
+              ["Zzzorro", "Martin", "porte trois fois de suite la même lettre"], ["Jeannne Wandrille", "Bernard", "« Jeanne Wandrille »"], ["Annne", "Dupont", "« Anne »"],
+              ["Emmma", "Dupont", "« Emma »"], ["Jehanne", "Dupont", ""], ["Jeannnnne", "Dupont", "« Jeanne »"],
           ]
           js = code + '\nvar cas = ' + json.dumps(cas, ensure_ascii=False) + ';\n' \
               + 'var faux = [];\n' \
@@ -409,6 +413,9 @@ jobs:
               + '});\n' \
               + 'var mot = avisDuPrenom("Durand", "Martin", "du co-auteur").join("|").replace(/[\\u00a0\\u202f]/g, " ");\n' \
               + 'if (mot !== "Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.") { faux.push("mot pour mot : " + mot); }\n' \
+              + 'var triple = avisDuPrenom("Zzzorro", "Martin", "du co-auteur").join("|").replace(/[\\u00a0\\u202f]/g, " ");\n' \
+              + 'if (triple !== "Le prénom du co-auteur (« Zzzorro ») porte trois fois de suite la même lettre : merci de vérifier.") { faux.push("mot pour mot : " + triple); }\n' \
+              + 'if (avisDuPrenom("Jeannne", "Dupont", "").join() !== avisDuPrenom("Jeannne", "Dupont", "").join()) { faux.push("la lettre triplée se juge autrement au second appel"); }\n' \
               + 'faux.forEach(function (f) { console.log("::error::Prénom " + f); });\n' \
               + 'process.exit(faux.length ? 1 : 0);\n'
           sys.exit(subprocess.run(['node', '-e', js]).returncode)

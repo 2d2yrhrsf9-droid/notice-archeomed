@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Formulaire des notices d’archéologie médiévale
  * Description: Formulaire de soumission de notice d'opération archéologique pour la Chronique d'Archéologie médiévale. Le courriel adressé à la rédaction est accompagné d'un fichier DOCX stylé Métopes. Shortcode : [notice_archeomed_pactols]
- * Version:           3.113
+ * Version:           3.114
  * Author: Rédaction d'Archéologie médiévale
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -4745,9 +4745,16 @@ class Notice_Archeomed_Pactols {
 			}
 			// Le prénom confronté aux prénoms connus, avec les listes et les
 			// règles de Notice_Archeomed_Prenoms : une graphie inhabituelle, un
-			// accent qui manque, un prénom et un nom qui semblent échangés.
+			// accent qui manque, une lettre tapée trois fois, un prénom et un
+			// nom qui semblent échangés.
 			var PRENOMS = <?php echo wp_json_encode( Notice_Archeomed_Prenoms::pour_le_navigateur() ); ?>;
 			var PRENOM_LETTRES = motif('^[\\p{L}\\s\'’.-]+$', 'u');
+			// Une lettre trois fois de suite, quelle que soit sa casse, les deux
+			// premières gardées telles que tapées (« Aaaron », « Aaron »). Toutes
+			// les suites se corrigent, comme au serveur : d'où « g », et
+			// search() plutôt que test(), qui garderait sa position d'un appel
+			// à l'autre.
+			var PRENOM_TRIPLE = motif('((\\p{L})\\2)\\2+', 'giu');
 			var tablesDesPrenoms = null;
 			function tablesPrenoms() {
 				if (!tablesDesPrenoms) {
@@ -4788,8 +4795,29 @@ class Notice_Archeomed_Pactols {
 						return ['Le nom ' + qui + ' (' + guillemets(nom) + ') est d’ordinaire un prénom' + NBSP + ': merci de vérifier que le prénom et le nom ne sont pas inversés.'];
 					}
 				}
-				if (parties.some(function (x) { return !l.connus[cleDuPrenom(x)]; })) { return []; }
-				var propose = prenom.split(/([\s-]+)/).map(function (x) {
+				// Une lettre trois fois de suite : la forme connue qu'elle cache,
+				// partie par partie, la lettre doublée d'abord (« Jeannne »,
+				// « Jeanne »), puis simple. Une autre partie inconnue ne fait pas
+				// taire l'avis : la faute, elle, est sûre.
+				var base = prenom;
+				if (PRENOM_TRIPLE && prenom.search(PRENOM_TRIPLE) !== -1) {
+					var manque = false;
+					base = prenom.split(/([\s-]+)/).map(function (x) {
+						if (manque || x.search(PRENOM_TRIPLE) === -1) { return x; }
+						var trouve = null;
+						['$1', '$2'].some(function (par) {
+							var essai = x.replace(PRENOM_TRIPLE, par);
+							if (l.connus[cleDuPrenom(essai)]) { trouve = essai; return true; }
+							return false;
+						});
+						if (trouve === null) { manque = true; return x; }
+						return trouve;
+					}).join('');
+					if (manque) {
+						return ['Le prénom ' + qui + ' (' + guillemets(prenom) + ') porte trois fois de suite la même lettre' + NBSP + ': merci de vérifier.'];
+					}
+				} else if (parties.some(function (x) { return !l.connus[cleDuPrenom(x)]; })) { return []; }
+				var propose = base.split(/([\s-]+)/).map(function (x) {
 					var c = cleDuPrenom(x);
 					return l.accentues[c] && c === x.toLowerCase() ? points(x)[0] + points(l.accentues[c]).slice(1).join('') : x;
 				}).join('');

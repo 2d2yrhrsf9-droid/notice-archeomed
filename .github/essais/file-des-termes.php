@@ -839,18 +839,33 @@ foreach ( array(
 	array( 'Moreau', 'Anne-Sophie', 'est d’ordinaire un prénom' ),
 	array( 'Moreau', 'Dupont', '' ),
 	array( 'Moreaux', 'Anne', '' ),
+	array( 'Jeannne', 'Dupont', 's’écrit-il « Jeanne » ?' ),
+	array( 'Jeannne-Mariiie', 'Dupont', '« Jeanne-Marie »' ),
+	array( 'Helennne', 'Martin', '« Hélène »' ),
+	array( 'Hélènnne', 'Martin', '« Hélène »' ),
+	array( 'Aaaron', 'Martin', '« Aaron »' ),
+	array( 'JEANNNE', 'DUPONT', '« JEANNE »' ),
+	array( 'Zzzorro', 'Martin', 'porte trois fois de suite la même lettre' ),
+	array( 'Jeannne Wandrille', 'Bernard', '« Jeanne Wandrille »' ),
+	array( 'Annne', 'Dupont', '« Anne »' ),
+	array( 'Emmma', 'Dupont', '« Emma »' ),
+	array( 'Jehanne', 'Dupont', '' ),
+	array( 'Jeannnnne', 'Dupont', '« Jeanne »' ),
 ) as $prenom_cas ) {
 	$prenom_avis = implode( ' | ', Notice_Archeomed_Prenoms::avis( $prenom_cas[0], $prenom_cas[1], 'du responsable' ) );
 	if ( '' === $prenom_cas[2] ? '' !== $prenom_avis : false === strpos( $prenom_avis, $prenom_cas[2] ) ) {
 		$prenom_ratees[] = $prenom_cas[0] . ' / ' . $prenom_cas[1] . ' → ' . $prenom_avis;
 	}
 }
-na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
+na_verifier( array() === $prenom_ratees, 'un accent qui manque se propose, une lettre triplée se corrige, des champs échangés se signalent ; un prénom rare, étranger ou une initiale passent', $prenom_ratees );
 $prenom_inverse = Notice_Archeomed_Prenoms::avis( 'Durand', 'Martin', 'du co-auteur' );
 $prenom_accent  = Notice_Archeomed_Prenoms::avis( 'Jean-Francois', 'Dupont', 'du responsable' );
 na_verifier( array( 'Le nom du co-auteur (« Martin ») est d’ordinaire un prénom : merci de vérifier que le prénom et le nom ne sont pas inversés.' ) === $prenom_inverse
 	&& array( 'La graphie du prénom du responsable (« Jean-Francois ») ne semble pas habituelle : s’écrit-il « Jean-François » ? Merci de vérifier.' ) === $prenom_accent,
 	'les deux avis des prénoms, mot pour mot', array( $prenom_inverse, $prenom_accent ) );
+$prenom_triple = Notice_Archeomed_Prenoms::avis( 'Zzzorro', 'Martin', 'du co-auteur' );
+na_verifier( array( 'Le prénom du co-auteur (« Zzzorro ») porte trois fois de suite la même lettre : merci de vérifier.' ) === $prenom_triple,
+	'une lettre triplée sans forme connue, mot pour mot', $prenom_triple );
 na_verifier( 'helene' === Notice_Archeomed_Prenoms::cle( 'HÉLÈNE' ) && 'oedipe' === Notice_Archeomed_Prenoms::cle( 'Œdipe' )
 	&& 'gwenc\'hlan' === Notice_Archeomed_Prenoms::cle( 'Gwenc’hlan' ) && 'malgorzata' === Notice_Archeomed_Prenoms::cle( 'Małgorzata' ),
 	'la clé d\'un prénom : minuscules, sans accents, ligatures défaites' );
